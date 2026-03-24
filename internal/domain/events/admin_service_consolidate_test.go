@@ -377,8 +377,9 @@ func TestConsolidate_PromotePath_SelfExcludedFromNearDup(t *testing.T) {
 
 	canon := makeVenueCanonEvent("uuid-canon", consolidateCanonULID, "Canon Event", now)
 	known := map[string]*Event{
-		consolidateCanonULID:  canon,
-		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
+		consolidateCanonULID:     canon,
+		consolidateRetireULID:    makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
+		consolidateCompanionULID: makePublishedEvent("uuid-companion", consolidateCompanionULID, "Weekly Yoga"),
 	}
 	repo := makeConsolidateRepo(known)
 
@@ -523,8 +524,9 @@ func TestConsolidate_PromotePath_CrossWeekSeriesCompanion(t *testing.T) {
 
 	canon := makeVenueCanonEvent("uuid-canon", consolidateCanonULID, "Weekly Yoga", now)
 	known := map[string]*Event{
-		consolidateCanonULID:  canon,
-		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
+		consolidateCanonULID:     canon,
+		consolidateRetireULID:    makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
+		consolidateCompanionULID: makePublishedEvent("uuid-companion", consolidateCompanionULID, "Weekly Yoga"),
 	}
 	repo := makeConsolidateRepo(known)
 
@@ -1310,6 +1312,240 @@ func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOf
 	}
 	if !foundCrossWeek {
 		t.Errorf("cross_week_series_companion must survive when its companion_ulid is not retired; remaining: %+v", remaining)
+	}
+}
+
+// TestConsolidate_PostRetirementSeriesCheck_ReplacesStaleCanonicalCompanion verifies
+// that after the retire list is applied, the canonical's cross_week_series_companion
+// warning is recomputed against the surviving events instead of continuing to point at
+// the just-retired same-day duplicate.
+func TestConsolidate_PostRetirementSeriesCheck_ReplacesStaleCanonicalCompanion(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 3, 31, 10, 0, 0, 0, time.UTC)
+	week2ULID := "01KM1B4HXH4WEEK2SURVIVOR001"
+	staleRetiredULID := consolidateRetireULID
+
+	venueID := "venue-uuid-1"
+	venueName := "Pottery Studio"
+	canon := &Event{
+		ID:               "uuid-canon",
+		ULID:             consolidateCanonULID,
+		Name:             "RS-11 Pottery Studio",
+		Description:      "Morning event",
+		PublicURL:        "https://example.com/week1",
+		LifecycleState:   "pending_review",
+		PrimaryVenueID:   &venueID,
+		PrimaryVenueName: &venueName,
+		Occurrences:      []Occurrence{{StartTime: now}},
+	}
+	retired := &Event{
+		ID:             "uuid-retire",
+		ULID:           staleRetiredULID,
+		Name:           "RS-11 Pottery Studio - Afternoon Session",
+		LifecycleState: "pending_review",
+	}
+
+	staleWarnings, _ := json.Marshal([]ValidationWarning{{
+		Field:   "name",
+		Code:    "cross_week_series_companion",
+		Message: "stale warning",
+		Details: map[string]any{
+			"companion_ulid": staleRetiredULID,
+			"companion_name": retired.Name,
+			"companion_date": "2026-04-07",
+			"companion_time": "10:00:00",
+			"venue_name":     venueName,
+		},
+	}})
+	canonReview := &ReviewQueueEntry{
+		ID:        41,
+		Status:    "pending",
+		EventULID: consolidateCanonULID,
+		Warnings:  staleWarnings,
+	}
+
+	repo := makeConsolidateRepo(map[string]*Event{
+		consolidateCanonULID: canon,
+		staleRetiredULID:     retired,
+		week2ULID:            makePublishedEvent("uuid-week2", week2ULID, "RS-11 Pottery Studio"),
+	})
+	repo.findSeriesCompanionFunc = func(_ context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+		if params.ExcludeULID != consolidateCanonULID {
+			t.Fatalf("ExcludeULID = %q, want %q", params.ExcludeULID, consolidateCanonULID)
+		}
+		return &CrossWeekCompanion{
+			ULID:      week2ULID,
+			Name:      "RS-11 Pottery Studio",
+			StartDate: "2026-04-07",
+			StartTime: "06:00:00",
+			VenueName: venueName,
+		}, nil
+	}
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == consolidateCanonULID {
+			return canonReview, nil
+		}
+		return nil, nil
+	}
+	var updatedWarningsJSON []byte
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id == canonReview.ID && params.Warnings != nil {
+			updatedWarningsJSON = *params.Warnings
+		}
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{staleRetiredULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !result.NeedsReview {
+		t.Fatal("expected NeedsReview=true after surviving week companion found")
+	}
+	var found bool
+	for _, w := range result.Warnings {
+		if w.Code == "cross_week_series_companion" {
+			found = true
+			if got := w.Details["companion_ulid"]; got != week2ULID {
+				t.Fatalf("companion_ulid = %v, want %s", got, week2ULID)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected recomputed cross_week_series_companion warning")
+	}
+	if updatedWarningsJSON == nil {
+		t.Fatal("expected canonical review warnings to be updated")
+	}
+	var updated []ValidationWarning
+	if err := json.Unmarshal(updatedWarningsJSON, &updated); err != nil {
+		t.Fatalf("unmarshal updated warnings: %v", err)
+	}
+	if len(updated) != 1 || updated[0].Code != "cross_week_series_companion" {
+		t.Fatalf("updated warnings = %+v, want one cross_week_series_companion", updated)
+	}
+	if got := updated[0].Details["companion_ulid"]; got != week2ULID {
+		t.Fatalf("updated companion_ulid = %v, want %s", got, week2ULID)
+	}
+}
+
+// TestConsolidate_PostRetirementSeriesCheck_UpsertsCompanionReview verifies that
+// a second same-day consolidation backfills or refreshes the surviving companion's
+// pending review entry so both week-level canonicals point at each other.
+func TestConsolidate_PostRetirementSeriesCheck_UpsertsCompanionReview(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 4, 7, 6, 0, 0, 0, time.UTC)
+	week1ULID := "01KM1B4HXH4WEEK1SURVIVOR001"
+	week2RetiredULID := consolidateRetireULID
+	venueID := "venue-uuid-1"
+	venueName := "Pottery Studio"
+
+	canon := &Event{
+		ID:               "uuid-week2",
+		ULID:             consolidateCanonULID,
+		Name:             "RS-11 Pottery Studio",
+		Description:      "Week 2 morning",
+		PublicURL:        "https://example.com/week2",
+		LifecycleState:   "published",
+		PrimaryVenueID:   &venueID,
+		PrimaryVenueName: &venueName,
+		Occurrences:      []Occurrence{{StartTime: now}},
+	}
+	retired := &Event{ID: "uuid-retire", ULID: week2RetiredULID, Name: "Week 2 afternoon", LifecycleState: "pending_review"}
+	week1 := &Event{
+		ID:               "uuid-week1",
+		ULID:             week1ULID,
+		Name:             "RS-11 Pottery Studio",
+		Description:      "Week 1 morning",
+		PublicURL:        "https://example.com/week1",
+		LifecycleState:   "pending_review",
+		PrimaryVenueID:   &venueID,
+		PrimaryVenueName: &venueName,
+		Occurrences:      []Occurrence{{StartTime: now.Add(-7 * 24 * time.Hour)}},
+	}
+
+	week1ReviewWarnings, _ := json.Marshal([]ValidationWarning{{
+		Field:   "name",
+		Code:    "cross_week_series_companion",
+		Message: "old weekly pairing",
+		Details: map[string]any{
+			"companion_ulid": "01KM1B4HXHOLDRETIRE000001",
+			"companion_name": "Week 1 old same-day pair",
+			"companion_date": "2026-03-31",
+			"companion_time": "10:00:00",
+			"venue_name":     venueName,
+		},
+	}})
+	week1Review := &ReviewQueueEntry{ID: 52, Status: "pending", EventULID: week1ULID, Warnings: week1ReviewWarnings}
+
+	repo := makeConsolidateRepo(map[string]*Event{
+		consolidateCanonULID: canon,
+		week2RetiredULID:     retired,
+		week1ULID:            week1,
+	})
+	repo.findSeriesCompanionFunc = func(_ context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+		if params.ExcludeULID != consolidateCanonULID {
+			return nil, nil
+		}
+		return &CrossWeekCompanion{
+			ULID:      week1ULID,
+			Name:      week1.Name,
+			StartDate: "2026-03-31",
+			StartTime: "06:00:00",
+			VenueName: venueName,
+		}, nil
+	}
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		switch ulid {
+		case consolidateCanonULID:
+			return nil, nil
+		case week1ULID:
+			return week1Review, nil
+		default:
+			return nil, nil
+		}
+	}
+	var companionUpdatedWarnings []byte
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id == week1Review.ID && params.Warnings != nil {
+			companionUpdatedWarnings = *params.Warnings
+		}
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{week2RetiredULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !result.NeedsReview {
+		t.Fatal("expected week2 canonical to need review after finding week1 companion")
+	}
+	if companionUpdatedWarnings == nil {
+		t.Fatal("expected week1 companion review entry to be refreshed")
+	}
+	var updated []ValidationWarning
+	if err := json.Unmarshal(companionUpdatedWarnings, &updated); err != nil {
+		t.Fatalf("unmarshal week1 updated warnings: %v", err)
+	}
+	var found bool
+	for _, w := range updated {
+		if w.Code == "cross_week_series_companion" {
+			found = true
+			if got := w.Details["companion_ulid"]; got != consolidateCanonULID {
+				t.Fatalf("week1 companion_ulid = %v, want %s", got, consolidateCanonULID)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected week1 review entry to contain cross_week_series_companion")
 	}
 }
 

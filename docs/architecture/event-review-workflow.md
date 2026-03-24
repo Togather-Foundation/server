@@ -376,7 +376,7 @@ If any warnings are generated, the canonical is stored with `lifecycle_state = '
 
 **Promote path — post-promotion pipeline:**
 
-The promoted event is not re-normalized or re-validated (it already exists). When `event` is supplied alongside `event_ulid` (promote + patch), the patchable fields (`name`, `description`, `url`, `image`, `keywords`, `eventDomain`) are applied to the canonical inside the same database transaction, and the canonical is re-read post-patch before the dedup checks run. Only the Layer 2 near-duplicate check runs post-promotion (same filtering: skip self, skip retired events). Matches produce `potential_duplicate` warnings and flip the canonical to `pending_review`.
+The promoted event is not re-normalized or re-validated (it already exists). When `event` is supplied alongside `event_ulid` (promote + patch), the patchable fields (`name`, `description`, `url`, `image`, `keywords`, `eventDomain`) are applied to the canonical inside the same database transaction, and the canonical is re-read post-patch before the dedup checks run. After the retire list is applied, consolidation re-runs the post-promotion duplicate checks against the surviving event graph: Layer 2 near-duplicate warnings still apply, and cross-week series companion detection is refreshed so surviving canonicals point at each other rather than at retired same-day duplicates. Matching warnings flip the canonical to `pending_review`, and the surviving companion's review entry is updated or created so both sides show the `cross_week_series_companion` relationship.
 
 **Transaction scope:**
 

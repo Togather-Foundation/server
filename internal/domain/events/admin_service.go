@@ -1692,8 +1692,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 	// Step 4: Resolve canonical event.
 	var canonicalEvent *Event
 	var warnings []ValidationWarning
-	needsReview := false
-	isDuplicate := false
+	createPathExactDuplicate := false
 
 	if params.EventULID != "" {
 		// Promote path: fetch and lock existing event.
@@ -1749,8 +1748,6 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 					Str("canonical_ulid", canonicalEvent.ULID).
 					Msg("Consolidate: dedup warning checks failed, continuing")
 			} else if len(dedupWarnings) > 0 {
-				needsReview = true
-				isDuplicate = true
 				warnings = append(warnings, dedupWarnings...)
 			}
 		}
@@ -1773,10 +1770,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		canonicalEvent = coreResult.Event
 		warnings = append(warnings, coreResult.Warnings...)
 		if coreResult.IsDuplicate {
-			isDuplicate = true
-		}
-		if coreResult.NeedsReview {
-			needsReview = true
+			createPathExactDuplicate = true
 		}
 	}
 
@@ -1786,11 +1780,27 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		return nil, err
 	}
 
-	// Step 6b: Strip stale dup warnings from the canonical's existing review entry.
-	dismissedIDs, err = s.consolidateStripRetiredDupWarnings(ctx, txRepo, canonicalEvent, params.Retire, dismissedIDs)
+	// Step 6c: Re-check cross-week series companions against the post-retirement
+	// state and update the surviving companion's review entry. This mirrors ingest's
+	// series cross-linking so that after consolidating same-day duplicates, the two
+	// surviving week-level canonicals point at each other rather than stale retired
+	// events.
+	seriesCompanion, err := s.consolidateSyncSeriesCompanion(ctx, txRepo, canonicalEvent, params.Retire)
 	if err != nil {
 		return nil, err
 	}
+
+	// Step 6b: Strip stale dup warnings from the canonical's existing review entry,
+	// then replace any stale cross-week warning with the surviving companion found
+	// above.
+	dismissedIDs, err = s.consolidateStripRetiredDupWarnings(ctx, txRepo, canonicalEvent, params.Retire, seriesCompanion, dismissedIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	warnings = replaceCrossWeekSeriesCompanionWarning(warnings, seriesCompanion)
+	needsReview := len(warnings) > 0
+	isDuplicate := createPathExactDuplicate || hasDuplicateWarning(warnings)
 
 	// Step 7: If needs review, set lifecycle to pending_review and update review entry.
 	// Also refresh the review queue payload when a patch was applied on the promote
@@ -1941,6 +1951,7 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 	txRepo Repository,
 	canonicalEvent *Event,
 	retireULIDs []string,
+	replacementCompanion *CrossWeekCompanion,
 	dismissedIDs []int,
 ) (updatedDismissedIDs []int, err error) {
 	// Look up the canonical event's pending review entry.
@@ -2037,6 +2048,10 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 	if !changed {
 		// Nothing was stripped — leave the entry as-is.
 		return dismissedIDs, nil
+	}
+
+	if replacementCompanion != nil {
+		filtered = replaceCrossWeekSeriesCompanionWarning(filtered, replacementCompanion)
 	}
 
 	if len(filtered) == 0 {
@@ -2160,6 +2175,183 @@ func (s *AdminService) consolidateResolvePending(
 		}
 	}
 	return nil
+}
+
+// consolidateSyncSeriesCompanion re-runs the cross-week series check against the
+// post-consolidation state and mirrors the surviving canonical onto the companion
+// event's pending review entry (or creates one if needed). Returns the current
+// companion for the canonical, if any.
+func (s *AdminService) consolidateSyncSeriesCompanion(
+	ctx context.Context,
+	txRepo Repository,
+	canonical *Event,
+	retireULIDs []string,
+) (*CrossWeekCompanion, error) {
+	if canonical == nil || canonical.PrimaryVenueID == nil || len(canonical.Occurrences) == 0 {
+		return nil, nil
+	}
+
+	companion, err := txRepo.FindSeriesCompanion(ctx, SeriesCompanionQuery{
+		NormalizedName: canonical.Name,
+		VenueID:        *canonical.PrimaryVenueID,
+		StartTime:      canonical.Occurrences[0].StartTime,
+		ExcludeULID:    canonical.ULID,
+	})
+	if err != nil {
+		log.Warn().Err(err).
+			Str("canonical_ulid", canonical.ULID).
+			Msg("Consolidate: post-retirement cross-week series check failed, continuing")
+		return nil, nil
+	}
+	if companion == nil {
+		return nil, nil
+	}
+	for _, retiredULID := range retireULIDs {
+		if companion.ULID == retiredULID {
+			return nil, nil
+		}
+	}
+
+	warning, err := crossWeekSeriesWarningForEvent(canonical, companion.VenueName)
+	if err != nil {
+		return nil, fmt.Errorf("build companion cross-week warning for canonical %s: %w", canonical.ULID, err)
+	}
+	warningJSON, err := json.Marshal([]ValidationWarning{warning})
+	if err != nil {
+		return nil, fmt.Errorf("marshal companion cross-week warning for canonical %s: %w", canonical.ULID, err)
+	}
+
+	existingReview, err := txRepo.GetPendingReviewByEventUlid(ctx, companion.ULID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return nil, fmt.Errorf("look up companion review for event %s: %w", companion.ULID, err)
+	}
+	if existingReview != nil {
+		updatedWarnings, err := upsertCrossWeekSeriesWarning(existingReview.Warnings, warningJSON)
+		if err != nil {
+			return nil, fmt.Errorf("merge cross-week warning into companion review %d: %w", existingReview.ID, err)
+		}
+		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
+			Warnings: &updatedWarnings,
+		}); err != nil {
+			return nil, fmt.Errorf("update companion review %d with cross-week warning: %w", existingReview.ID, err)
+		}
+		return companion, nil
+	}
+
+	companionEvent, err := txRepo.GetByULID(ctx, companion.ULID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch companion event %s: %w", companion.ULID, err)
+	}
+	if companionEvent.LifecycleState == "published" {
+		pendingReview := "pending_review"
+		if _, err := txRepo.UpdateEvent(ctx, companion.ULID, UpdateEventParams{
+			LifecycleState: &pendingReview,
+		}); err != nil {
+			return nil, fmt.Errorf("set companion event %s to pending_review: %w", companion.ULID, err)
+		}
+	}
+
+	companionStart, companionEnd := parseEventTimesFromEvent(companionEvent)
+	reconstructedPayload, err := reconstructPayloadFromEvent(companionEvent)
+	if err != nil {
+		return nil, fmt.Errorf("reconstruct payload for companion event %s: %w", companion.ULID, err)
+	}
+	if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+		EventID:           companionEvent.ID,
+		OriginalPayload:   reconstructedPayload,
+		NormalizedPayload: reconstructedPayload,
+		EventStartTime:    companionStart,
+		EventEndTime:      companionEnd,
+		Warnings:          warningJSON,
+	}); err != nil {
+		return nil, fmt.Errorf("create companion review entry for event %s: %w", companion.ULID, err)
+	}
+
+	return companion, nil
+}
+
+func replaceCrossWeekSeriesCompanionWarning(warnings []ValidationWarning, companion *CrossWeekCompanion) []ValidationWarning {
+	filtered := make([]ValidationWarning, 0, len(warnings)+1)
+	for _, w := range warnings {
+		if w.Code == "cross_week_series_companion" {
+			continue
+		}
+		filtered = append(filtered, w)
+	}
+	if companion != nil {
+		filtered = append(filtered, crossWeekSeriesWarningForCompanion(companion))
+	}
+	return filtered
+}
+
+func hasDuplicateWarning(warnings []ValidationWarning) bool {
+	for _, w := range warnings {
+		switch w.Code {
+		case "exact_duplicate", "potential_duplicate", "near_duplicate_of_new_event", "cross_week_series_companion":
+			return true
+		}
+	}
+	return false
+}
+
+func crossWeekSeriesWarningForCompanion(companion *CrossWeekCompanion) ValidationWarning {
+	return ValidationWarning{
+		Field:   "name",
+		Message: fmt.Sprintf("Event appears to be part of a recurring series with existing event %q at the same venue on %s", companion.Name, companion.StartDate),
+		Code:    "cross_week_series_companion",
+		Details: map[string]any{
+			"companion_ulid": companion.ULID,
+			"companion_name": companion.Name,
+			"companion_date": companion.StartDate,
+			"companion_time": companion.StartTime,
+			"venue_name":     companion.VenueName,
+		},
+	}
+}
+
+func crossWeekSeriesWarningForEvent(event *Event, venueName string) (ValidationWarning, error) {
+	startTime, _ := parseEventTimesFromEvent(event)
+	if startTime.IsZero() {
+		return ValidationWarning{}, fmt.Errorf("event %s has no start time", event.ULID)
+	}
+	startDate := startTime.UTC().Format("2006-01-02")
+	startTimeStr := startTime.UTC().Format("15:04:05")
+	return ValidationWarning{
+		Field:   "name",
+		Message: fmt.Sprintf("Event appears to be part of a recurring series with existing event %q at the same venue on %s", event.Name, startDate),
+		Code:    "cross_week_series_companion",
+		Details: map[string]any{
+			"companion_ulid": event.ULID,
+			"companion_name": event.Name,
+			"companion_date": startDate,
+			"companion_time": startTimeStr,
+			"venue_name":     venueName,
+		},
+	}, nil
+}
+
+func upsertCrossWeekSeriesWarning(existing []byte, replacement []byte) ([]byte, error) {
+	var existingList []ValidationWarning
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &existingList); err != nil {
+			return nil, fmt.Errorf("unmarshal existing warnings: %w", err)
+		}
+	}
+	var replacementList []ValidationWarning
+	if len(replacement) > 0 {
+		if err := json.Unmarshal(replacement, &replacementList); err != nil {
+			return nil, fmt.Errorf("unmarshal replacement warnings: %w", err)
+		}
+	}
+	filtered := make([]ValidationWarning, 0, len(existingList)+len(replacementList))
+	for _, w := range existingList {
+		if w.Code == "cross_week_series_companion" {
+			continue
+		}
+		filtered = append(filtered, w)
+	}
+	filtered = append(filtered, replacementList...)
+	return json.Marshal(filtered)
 }
 
 // consolidateRefreshReviewPayload refreshes the normalized_payload and original_payload

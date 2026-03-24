@@ -554,7 +554,7 @@ All are from Eventbrite, at The Tranzac, with similar names but different times.
 - Near-duplicate detection fires on **same-day pairs** (similarity ~0.64 + same venue + same date → above 0.4 threshold):
   - Morning Session ↔ Afternoon Session (same Monday)
   - Morning Session (Mon+7) ↔ Afternoon Session (Mon+7)
-- Cross-week series detection **does fire** for this fixture: `FindSeriesCompanion` uses a 7–21 day window and matches by normalized name. "RS-11 Pottery Studio — Morning Session" on week 1 matches "Morning Session" on week 2, generating `cross_week_series_companion` warnings on both Week 2 events. Note: this uses a different mechanism than `multi_session_likely` — the latter only fires for patterns like "weekly" or "(6 sessions)" in the name/description.
+- Cross-week series detection **does fire** for this fixture: `FindSeriesCompanion` uses a 7–21 day window and matches by normalized name. Before consolidation, "RS-11 Pottery Studio — Morning Session" on week 1 matches "Morning Session" on week 2, generating `cross_week_series_companion` warnings on the Week 2 entries. After each same-day consolidation, the check is re-run against the surviving canonicals so the Week 1 and Week 2 survivors point at each other (not at the retired Afternoon Session rows). Note: this uses a different mechanism than `multi_session_likely` — the latter only fires for patterns like "weekly" or "(6 sessions)" in the name/description.
 - All 4 events are `pending_review`. Each same-day pair has companion near-duplicate review entries:
   - Week 1 Morning Session: `near_duplicate_of_new_event` (pointing at the Week 1 Afternoon Session ingested after it)
   - Week 1 Afternoon Session: `potential_duplicate` (pointing at the Week 1 Morning Session already in DB)
@@ -572,8 +572,9 @@ All are from Eventbrite, at The Tranzac, with similar names but different times.
 3. Execute your chosen consolidation strategy.
 4. Verify:
    - [ ] Final state matches your intent (correct number of events, correct occurrences on each).
-   - [ ] All review entries are resolved (no orphaned pending reviews).
-   - [ ] Week 1 surviving events are `published`; Week 2 Morning remains `pending_review` due to remaining `cross_week_series_companion` warning pointing at Week 1 Morning.
+   - [ ] All review entries are resolved except the surviving cross-week pair.
+   - [ ] After consolidating Week 1, any remaining `cross_week_series_companion` warning on the Week 1 survivor points at the Week 2 survivor (not the retired Week 1 Afternoon Session row).
+   - [ ] After consolidating Week 2, both surviving canonicals remain `pending_review` with `cross_week_series_companion` warnings pointing at each other.
    - [ ] **Critical (regression check):** After approving one event of a same-day pair, the companion review entry is automatically dismissed. No orphaned `pending` entry remains pointing at the now-published event.
 
 **Consolidation example (2 morning+afternoon series):**
@@ -586,7 +587,7 @@ Consolidate each same-day pair independently — earlier time (Morning, 6am) as 
       "$BASE/admin/events/consolidate" \
       -d '{"event_ulid":"<week1-morning-ulid>","retire":["<week1-afternoon-ulid>"],"transfer_occurrences":true}'
     ```
-    Result: Week 1 Morning becomes `published`, Week 1 Afternoon is `deleted`.
+    Result: Week 1 Morning remains linked to the Week 2 surviving canonical via a refreshed `cross_week_series_companion` warning if Week 2 still exists; Week 1 Afternoon is `deleted`.
 
  2. Consolidate Week 2 pair (Morning Session canonical, Afternoon Session retired):
     ```bash
@@ -594,7 +595,7 @@ Consolidate each same-day pair independently — earlier time (Morning, 6am) as 
       "$BASE/admin/events/consolidate" \
       -d '{"event_ulid":"<week2-morning-ulid>","retire":["<week2-afternoon-ulid>"],"transfer_occurrences":true}'
     ```
-    Result: Week 2 Morning becomes `pending_review` (with `cross_week_series_companion` warning pointing at Week 1 Morning), Week 2 Afternoon is `deleted`.
+    Result: Week 2 Morning remains `pending_review` with `cross_week_series_companion` pointing at Week 1 Morning, Week 2 Afternoon is `deleted`, and the Week 1 review entry is refreshed so it also points at Week 2 Morning.
 
 **Approve-separately example (4 separate events):**
    ```bash
