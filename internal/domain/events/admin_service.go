@@ -1708,7 +1708,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		canonicalEvent = canon
 
 		if canonicalEvent.PrimaryVenueID != nil && len(canonicalEvent.Occurrences) > 0 {
-			dedupWarnings, _, dedupErr := s.ingestService.runDedupWarningChecks(
+			dedupWarnings, _, _, dedupErr := s.ingestService.runDedupWarningChecks(
 				ctx, txRepo,
 				canonicalEvent.Name,
 				*canonicalEvent.PrimaryVenueID,

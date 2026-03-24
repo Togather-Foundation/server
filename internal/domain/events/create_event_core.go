@@ -521,6 +521,7 @@ func (s *IngestService) createEventCore(
 
 	// ── 8. Dedup warning checks (near-dup + cross-week series) ─────────────────
 	var dedupWarnings []ValidationWarning
+	var seriesCompanion *CrossWeekCompanion
 	if params.PrimaryVenueID != nil && validated.StartDate != "" {
 		dbRepo := s.repo
 		if opts.TxRepo != nil {
@@ -528,7 +529,7 @@ func (s *IngestService) createEventCore(
 		}
 		startTime, parseErr := time.Parse(time.RFC3339, strings.TrimSpace(validated.StartDate))
 		if parseErr == nil {
-			dedupWarnings, nearDuplicateCandidates, _ = s.runDedupWarningChecks(
+			dedupWarnings, nearDuplicateCandidates, seriesCompanion, _ = s.runDedupWarningChecks(
 				ctx, dbRepo, validated.Name, *params.PrimaryVenueID, startTime,
 				ulidValue, opts.ExcludeFromNearDup, s.dedupConfig.NearDuplicateThreshold,
 			)
@@ -798,9 +799,9 @@ func (s *IngestService) createEventCore(
 		// Post-commit near-dup cross-linking (only when we own the transaction)
 		s.crossLinkNearDuplicates(ctx, event, validated, nearDuplicateCandidates)
 
-		// Post-commit series companion cross-linking: flag earlier events that are
-		// companions of the new event so both sides show the Weekly Series badge.
-		s.crossLinkSeriesCompanions(ctx, event, validated)
+		// Post-commit series companion cross-linking: flag the companion (Week 1)
+		// when the new event (Week 2) is ingested so both sides show the badge.
+		s.crossLinkSeriesCompanions(ctx, event, validated, seriesCompanion)
 
 		// Clear candidates — we already handled them
 		nearDuplicateCandidates = nil
@@ -844,9 +845,9 @@ func (s *IngestService) runDedupWarningChecks(
 	ulid string,
 	excludeULIDs []string,
 	nearDupThreshold float64,
-) (warnings []ValidationWarning, candidates []NearDuplicateCandidate, err error) {
+) (warnings []ValidationWarning, candidates []NearDuplicateCandidate, seriesCompanion *CrossWeekCompanion, err error) {
 	if venueID == "" || nearDupThreshold <= 0 {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	excludeSet := make(map[string]struct{}, len(excludeULIDs)+1)
@@ -860,7 +861,7 @@ func (s *IngestService) runDedupWarningChecks(
 		log.Warn().Err(err).
 			Str("event_name", name).
 			Msg("Near-duplicate check failed, continuing")
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	filtered := make([]NearDuplicateCandidate, 0, len(candidates))
@@ -918,7 +919,7 @@ func (s *IngestService) runDedupWarningChecks(
 		log.Warn().Err(err).
 			Str("event_name", name).
 			Msg("Cross-week series check failed, continuing")
-		return warnings, candidates, nil
+		return warnings, candidates, nil, nil
 	}
 	if companion != nil {
 		if _, retired := excludeSet[companion.ULID]; !retired {
@@ -934,30 +935,33 @@ func (s *IngestService) runDedupWarningChecks(
 					"venue_name":     companion.VenueName,
 				},
 			})
+		} else {
+			// Companion was excluded (e.g. being consolidated) — don't return it
+			companion = nil
 		}
 	}
 
-	return warnings, candidates, nil
+	return warnings, candidates, companion, nil
 }
 
-// crossLinkSeriesCompanions flags existing earlier events that are cross-week
-// companions of the newly committed event.  When Week 2 of a recurring series
-// is ingested, this adds a cross_week_series_companion warning to Week 1's
-// review queue entry so that both sides display the "Weekly Series" badge.
+// crossLinkSeriesCompanions adds a cross_week_series_companion warning to the
+// companion event's review queue entry when the new event (Week 2) is ingested.
+// The companion (Week 1) was already identified by FindSeriesCompanion during
+// the ingest transaction — we reuse that result rather than issuing another query.
 //
 // This is non-critical: errors are logged and skipped.
 func (s *IngestService) crossLinkSeriesCompanions(
 	ctx context.Context,
 	newEvent *Event,
 	validated EventInput,
+	companion *CrossWeekCompanion,
 ) {
-	if newEvent.PrimaryVenueID == nil || *newEvent.PrimaryVenueID == "" {
+	if companion == nil {
 		return
 	}
 
 	startTime, _ := parseEventTimesFromEvent(newEvent)
 	if startTime.IsZero() {
-		// Fall back to validated.StartDate if the event has no occurrence yet.
 		if validated.StartDate == "" {
 			return
 		}
@@ -970,95 +974,80 @@ func (s *IngestService) crossLinkSeriesCompanions(
 		}
 	}
 
-	companions, err := s.repo.FindForwardSeriesCompanions(ctx, SeriesCompanionQuery{
-		NormalizedName: validated.Name,
-		VenueID:        *newEvent.PrimaryVenueID,
-		StartTime:      startTime,
-		ExcludeULID:    newEvent.ULID,
-	})
-	if err != nil {
-		log.Warn().Err(err).
-			Str("event_ulid", newEvent.ULID).
-			Msg("Series companion cross-link: failed to find forward companions, skipping")
-		return
-	}
-
 	newStartDate := startTime.UTC().Format("2006-01-02")
 	newStartTimeStr := startTime.UTC().Format("15:04:05")
 
-	for _, companion := range companions {
-		companionWarning := ValidationWarning{
-			Field: "name",
-			Message: fmt.Sprintf("Event appears to be part of a recurring series with existing event %q at the same venue on %s",
-				newEvent.Name, newStartDate),
-			Code: "cross_week_series_companion",
-			Details: map[string]any{
-				"companion_ulid": newEvent.ULID,
-				"companion_name": newEvent.Name,
-				"companion_date": newStartDate,
-				"companion_time": newStartTimeStr,
-				"venue_name":     companion.VenueName,
-			},
-		}
-		companionWarningJSON, err := toJSON([]ValidationWarning{companionWarning})
-		if err != nil {
-			log.Warn().Err(err).Str("companion_ulid", companion.ULID).
-				Msg("Series companion cross-link: failed to marshal warning, skipping")
-			continue
-		}
+	companionWarning := ValidationWarning{
+		Field: "name",
+		Message: fmt.Sprintf("Event appears to be part of a recurring series with existing event %q at the same venue on %s",
+			newEvent.Name, newStartDate),
+		Code: "cross_week_series_companion",
+		Details: map[string]any{
+			"companion_ulid": newEvent.ULID,
+			"companion_name": newEvent.Name,
+			"companion_date": newStartDate,
+			"companion_time": newStartTimeStr,
+			"venue_name":     companion.VenueName,
+		},
+	}
+	companionWarningJSON, err := toJSON([]ValidationWarning{companionWarning})
+	if err != nil {
+		log.Warn().Err(err).Str("companion_ulid", companion.ULID).
+			Msg("Series companion cross-link: failed to marshal warning, skipping")
+		return
+	}
 
-		existingReview, lookupErr := s.repo.GetPendingReviewByEventUlid(ctx, companion.ULID)
-		if lookupErr != nil {
-			log.Warn().Err(lookupErr).Str("companion_ulid", companion.ULID).
-				Msg("Series companion cross-link: failed to look up existing review entry, skipping")
-			continue
-		}
+	existingReview, lookupErr := s.repo.GetPendingReviewByEventUlid(ctx, companion.ULID)
+	if lookupErr != nil {
+		log.Warn().Err(lookupErr).Str("companion_ulid", companion.ULID).
+			Msg("Series companion cross-link: failed to look up existing review entry, skipping")
+		return
+	}
 
-		if existingReview != nil {
-			// Merge into existing pending review entry.
-			mergedWarnings, mergeErr := appendWarnings(existingReview.Warnings, companionWarningJSON)
-			if mergeErr != nil {
-				log.Warn().Err(mergeErr).Str("companion_ulid", companion.ULID).
-					Msg("Series companion cross-link: failed to merge warnings, skipping")
-				continue
-			}
-			if _, updateErr := s.repo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
-				Warnings: &mergedWarnings,
-			}); updateErr != nil {
-				log.Warn().Err(updateErr).Str("companion_ulid", companion.ULID).
-					Msg("Series companion cross-link: failed to update existing review entry, skipping")
-			}
-			continue
+	if existingReview != nil {
+		// Merge into existing pending review entry.
+		mergedWarnings, mergeErr := appendWarnings(existingReview.Warnings, companionWarningJSON)
+		if mergeErr != nil {
+			log.Warn().Err(mergeErr).Str("companion_ulid", companion.ULID).
+				Msg("Series companion cross-link: failed to merge warnings, skipping")
+			return
 		}
+		if _, updateErr := s.repo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
+			Warnings: &mergedWarnings,
+		}); updateErr != nil {
+			log.Warn().Err(updateErr).Str("companion_ulid", companion.ULID).
+				Msg("Series companion cross-link: failed to update existing review entry, skipping")
+		}
+		return
+	}
 
-		// No existing pending entry — the companion event may be published. Fetch
-		// it to reconstruct a review queue payload.
-		companionEvent, fetchErr := s.repo.GetByULID(ctx, companion.ULID)
-		if fetchErr != nil {
-			log.Warn().Err(fetchErr).Str("companion_ulid", companion.ULID).
-				Msg("Series companion cross-link: failed to fetch companion event, skipping")
-			continue
-		}
+	// No existing pending entry — the companion may still be published. Fetch
+	// it to reconstruct a minimal review queue payload, then create an entry.
+	companionEvent, fetchErr := s.repo.GetByULID(ctx, companion.ULID)
+	if fetchErr != nil {
+		log.Warn().Err(fetchErr).Str("companion_ulid", companion.ULID).
+			Msg("Series companion cross-link: failed to fetch companion event, skipping")
+		return
+	}
 
-		companionStart, companionEnd := parseEventTimesFromEvent(companionEvent)
-		reconstructedPayload, payloadErr := reconstructPayloadFromEvent(companionEvent)
-		if payloadErr != nil {
-			log.Warn().Err(payloadErr).Str("companion_ulid", companion.ULID).
-				Msg("Series companion cross-link: failed to reconstruct payload, using empty")
-			reconstructedPayload = []byte("{}")
-		}
+	companionStart, companionEnd := parseEventTimesFromEvent(companionEvent)
+	reconstructedPayload, payloadErr := reconstructPayloadFromEvent(companionEvent)
+	if payloadErr != nil {
+		log.Warn().Err(payloadErr).Str("companion_ulid", companion.ULID).
+			Msg("Series companion cross-link: failed to reconstruct payload, using empty")
+		reconstructedPayload = []byte("{}")
+	}
 
-		if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-			EventID:           companionEvent.ID,
-			OriginalPayload:   reconstructedPayload,
-			NormalizedPayload: reconstructedPayload,
-			EventStartTime:    companionStart,
-			EventEndTime:      companionEnd,
-			Warnings:          companionWarningJSON,
-		}); createErr != nil {
-			log.Warn().Err(createErr).Str("companion_ulid", companion.ULID).
-				Msg("Series companion cross-link: failed to create review queue entry, skipping")
-		}
+	if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+		EventID:           companionEvent.ID,
+		OriginalPayload:   reconstructedPayload,
+		NormalizedPayload: reconstructedPayload,
+		EventStartTime:    companionStart,
+		EventEndTime:      companionEnd,
+		Warnings:          companionWarningJSON,
+	}); createErr != nil {
+		log.Warn().Err(createErr).Str("companion_ulid", companion.ULID).
+			Msg("Series companion cross-link: failed to create review queue entry, skipping")
 	}
 }
 

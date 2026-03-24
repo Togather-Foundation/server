@@ -69,7 +69,6 @@ type MockRepository struct {
 	shouldFailApproveReview          bool
 	shouldFailFindSeriesCompanion    bool
 	seriesCompanion                  *CrossWeekCompanion
-	forwardCompanions                []CrossWeekCompanion
 }
 
 // occurrenceDateUpdate stores occurrence date updates for verification
@@ -754,12 +753,6 @@ func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params SeriesC
 		return nil, errors.New("mock find series companion error")
 	}
 	return m.seriesCompanion, nil
-}
-
-func (m *MockRepository) FindForwardSeriesCompanions(_ context.Context, _ SeriesCompanionQuery) ([]CrossWeekCompanion, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.forwardCompanions, nil
 }
 
 func (m *MockRepository) Rollback(ctx context.Context) error {
@@ -2633,15 +2626,15 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 		repo.reviewQueue[42] = week1Review
 		repo.mu.Unlock()
 
-		// Configure the mock to return Week 1 as a forward companion.
-		repo.forwardCompanions = []CrossWeekCompanion{
-			{
-				ULID:      week1ULID,
-				Name:      "Weekly Pottery",
-				StartDate: "2026-03-08",
-				StartTime: "19:00:00",
-				VenueName: "Pottery Studio",
-			},
+		// Configure the mock so that FindSeriesCompanion (backward lookup) returns
+		// Week 1 when Week 2 is ingested.  runDedupWarningChecks captures this and
+		// passes it to crossLinkSeriesCompanions, which retroactively flags Week 1.
+		repo.seriesCompanion = &CrossWeekCompanion{
+			ULID:      week1ULID,
+			Name:      "Weekly Pottery",
+			StartDate: "2026-03-08",
+			StartTime: "19:00:00",
+			VenueName: "Pottery Studio",
 		}
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",

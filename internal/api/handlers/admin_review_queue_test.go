@@ -410,10 +410,6 @@ func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params events.
 	return args.Get(0).(*events.CrossWeekCompanion), args.Error(1)
 }
 
-func (m *MockRepository) FindForwardSeriesCompanions(_ context.Context, _ events.SeriesCompanionQuery) ([]events.CrossWeekCompanion, error) {
-	return nil, nil
-}
-
 func (m *MockRepository) Rollback(ctx context.Context) error {
 	return nil
 }

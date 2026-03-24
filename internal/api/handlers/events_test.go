@@ -256,10 +256,6 @@ func (s stubEventsRepo) FindSeriesCompanion(_ context.Context, _ events.SeriesCo
 	return nil, nil
 }
 
-func (s stubEventsRepo) FindForwardSeriesCompanions(_ context.Context, _ events.SeriesCompanionQuery) ([]events.CrossWeekCompanion, error) {
-	return nil, nil
-}
-
 func (s stubEventsRepo) Rollback(ctx context.Context) error {
 	return nil
 }

@@ -242,14 +242,6 @@ type Repository interface {
 	// away and the same time-of-day (±30 min).
 	FindSeriesCompanion(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
 
-	// FindForwardSeriesCompanions returns all published/pending events that will
-	// be companions of the given event — i.e. events at the same venue with a
-	// similar name and a start date 7–21 days AFTER the given start time and the
-	// same time-of-day (±30 min).  Used for post-commit cross-linking so that
-	// the earlier (Week 1) event is also flagged when the later (Week 2) event
-	// arrives.
-	FindForwardSeriesCompanions(ctx context.Context, params SeriesCompanionQuery) ([]CrossWeekCompanion, error)
-
 	// Rollback aborts the current transaction. Idempotent — safe to call even if
 	// no transaction is active. Used by callers that run read-only queries inside a
 	// transaction and need to recover from query errors without corrupting the
