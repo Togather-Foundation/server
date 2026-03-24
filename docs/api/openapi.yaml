@@ -3362,6 +3362,24 @@ components:
         venueUlid:
           type: [string, 'null']
           description: ULID of the primary venue (optional)
+        venueStreetAddress:
+          type: [string, 'null']
+          description: Street address of the venue (optional)
+        venueCity:
+          type: [string, 'null']
+          description: City of the venue (optional)
+        venueRegion:
+          type: [string, 'null']
+          description: Province/region of the venue (optional)
+        venuePostalCode:
+          type: [string, 'null']
+          description: Postal code of the venue (optional)
+        organizerName:
+          type: [string, 'null']
+          description: Name of the organizer (optional)
+        organizerUrl:
+          type: [string, 'null']
+          description: URL of the organizer (optional)
         occurrences:
           type: array
           items:
