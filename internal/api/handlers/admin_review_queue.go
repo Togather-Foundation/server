@@ -788,6 +788,7 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, review 
 //  1. review.DuplicateOfEventULID (companion review ULID, no similarity score)
 //  2. warning.details.matches[].ulid (from potential_duplicate, near_duplicate_of_new_event)
 //     with the associated similarity score when present.
+//  3. warning.details.companion_ulid (from cross_week_series_companion)
 //
 // Deduplicates by ULID before returning.
 func extractRelatedEventSummaries(warnings []events.ValidationWarning, duplicateOfEventULID *string) []relatedEventSummary {
@@ -802,6 +803,19 @@ func extractRelatedEventSummaries(warnings []events.ValidationWarning, duplicate
 
 	// Extract ULIDs and similarity from warning matches
 	for _, w := range warnings {
+		if w.Code == "cross_week_series_companion" {
+			if w.Details == nil {
+				continue
+			}
+			companionULID, ok := w.Details["companion_ulid"].(string)
+			if !ok || companionULID == "" || seen[companionULID] {
+				continue
+			}
+			seen[companionULID] = true
+			summaries = append(summaries, relatedEventSummary{ULID: companionULID})
+			continue
+		}
+
 		if w.Code != "potential_duplicate" && w.Code != "near_duplicate_of_new_event" {
 			continue
 		}

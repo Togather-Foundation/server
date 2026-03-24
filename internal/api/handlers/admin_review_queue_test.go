@@ -874,3 +874,73 @@ func TestReviewQueueDetail_DuplicateOfEventULID(t *testing.T) {
 
 	mockRepo.AssertExpectations(t)
 }
+
+// TestReviewQueueDetail_CrossWeekSeriesCompanionExpanded verifies that
+// cross_week_series_companion warnings populate relatedEvents so the UI can render
+// the side-by-side consolidation flow for weekly series survivors.
+func TestReviewQueueDetail_CrossWeekSeriesCompanionExpanded(t *testing.T) {
+	const primaryULID = "01HTEST0000000000000000101"
+	const companionULID = "01HTEST0000000000000000102"
+
+	warningsJSON := []byte(`[{"code":"cross_week_series_companion","message":"Weekly companion","details":{"companion_ulid":"` + companionULID + `","companion_name":"RS-11 Pottery Studio","companion_date":"2026-04-07"}}]`)
+	now := time.Now()
+	entry := &events.ReviewQueueEntry{
+		ID:                4,
+		EventID:           "primary-event-id",
+		EventULID:         primaryULID,
+		OriginalPayload:   []byte(`{"name":"RS-11 Pottery Studio"}`),
+		NormalizedPayload: []byte(`{"name":"RS-11 Pottery Studio"}`),
+		Warnings:          warningsJSON,
+		Status:            "pending",
+		EventStartTime:    now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+
+	primaryEvent := &events.Event{ULID: primaryULID, Name: "RS-11 Pottery Studio"}
+	companionEvent := &events.Event{
+		ULID:        companionULID,
+		Name:        "RS-11 Pottery Studio",
+		Description: "Week 2 survivor",
+		PublicURL:   "https://example.com/week2",
+		Occurrences: []events.Occurrence{{ID: "occ-2", StartTime: now.Add(7 * 24 * time.Hour), Timezone: "America/Toronto"}},
+	}
+
+	mockRepo := new(MockRepository)
+	mockRepo.On("GetReviewQueueEntry", mock.Anything, 4).Return(entry, nil)
+	mockRepo.On("GetByULID", mock.Anything, primaryULID).Return(primaryEvent, nil)
+	mockRepo.On("GetByULID", mock.Anything, companionULID).Return(companionEvent, nil)
+
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	handler := &AdminReviewQueueHandler{
+		Repository:   mockRepo,
+		AdminService: adminService,
+		AuditLogger:  audit.NewLogger(),
+		Env:          "test",
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/review-queue/4", nil)
+	req.SetPathValue("id", "4")
+	req = withAdminUser(req, "admin")
+	rec := httptest.NewRecorder()
+
+	handler.GetReviewQueueEntry(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]any
+	assert.NoError(t, json.NewDecoder(rec.Body).Decode(&body))
+
+	relatedEvents, ok := body["relatedEvents"].([]any)
+	assert.True(t, ok)
+	assert.Len(t, relatedEvents, 1)
+
+	re := relatedEvents[0].(map[string]any)
+	assert.Equal(t, companionULID, re["ulid"])
+	assert.Equal(t, "RS-11 Pottery Studio", re["name"])
+	assert.Equal(t, "https://example.com/week2", re["url"])
+	_, hasSim := re["similarity"]
+	assert.False(t, hasSim, "cross-week companion should not carry similarity")
+
+	mockRepo.AssertExpectations(t)
+}

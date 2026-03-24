@@ -188,11 +188,11 @@ The canonical radio applies to all duplicate-resolution actions. Default: "This 
 
 No Add as Occurrence / Merge buttons — there is no other event to pair with.
 
-**Case 2 — With a companion** (e.g. RS-01 two Weekly Yoga events): Two events are both flagged `multi_session_likely`, and one has a companion ULID set (`DuplicateOfEventULID`), or both a `potential_duplicate` / `near_duplicate_of_new_event` warning co-exists. Treat identically to a `potential_duplicate` pair. Show both events side by side, offer Add as Occurrence / Merge / Not a Duplicate. The `multi_session_likely` is additional signal that they are the same series.
+**Case 2 — With a companion** (e.g. RS-01 two Weekly Yoga events, or RS-11 weekly survivors linked by `cross_week_series_companion`): Two events are both flagged as part of the same series, and one has a companion ULID set (`DuplicateOfEventULID`) or a warning that names the companion (`cross_week_series_companion`), or both a `potential_duplicate` / `near_duplicate_of_new_event` warning co-exists. Treat identically to a duplicate pair. Show both events side by side, offer Consolidate / Not a Duplicate / Reject. The series warning is additional signal that they should likely be merged into one recurring event.
 
 **Case 3 — Both**: `multi_session_likely` + `near_duplicate_of_new_event` on the same entry. Treat as Case 2.
 
-The UI determines which case applies by checking whether a companion ULID exists in the `relatedEvents` array returned by the detail endpoint. If `relatedEvents` is empty → Case 1. If non-empty → Case 2/3.
+The UI determines which case applies by checking whether a companion ULID exists in the `relatedEvents` array returned by the detail endpoint. `relatedEvents` may be sourced from duplicate warnings, `DuplicateOfEventULID`, or `cross_week_series_companion.details.companion_ulid`. If `relatedEvents` is empty → Case 1. If non-empty → Case 2/3.
 
 ### Overlap conflict (RS-05)
 
@@ -203,7 +203,7 @@ When a related occurrence overlaps a canonical occurrence:
 
 ### Multi-event clusters (RS-11)
 
-When a review entry's related event is itself paired with a third event (e.g. Pottery Studio same-day cluster), the UI shows only the directly linked pair — it does not recurse into secondary links. The admin resolves pairs one at a time, which is sufficient. The consolidate API handles N-to-1 retirement if needed via the standalone page.
+When a review entry's related event is itself paired with a third event (e.g. Pottery Studio same-day cluster), the UI shows only the directly linked pair — it does not recurse into secondary links. The admin resolves pairs one at a time, which is sufficient. After the same-day consolidations are done, surviving weekly companions linked by `cross_week_series_companion` must still be shown as a related pair so the admin can do the final consolidate into one recurring event. The consolidate API handles N-to-1 retirement if needed via the standalone page.
 
 ---
 
