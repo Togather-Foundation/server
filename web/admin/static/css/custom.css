@@ -119,6 +119,11 @@
     color: #ffffff !important;
 }
 
+.badge.bg-info {
+    background-color: #0c7b8c !important; /* Darker teal for white-text readability */
+    color: #ffffff !important;
+}
+
 /* Dark mode adjustments - slightly lighter for contrast */
 [data-bs-theme="dark"] .badge.bg-success {
     background-color: #37a349 !important; /* Slightly lighter green in dark mode */
@@ -138,6 +143,10 @@
 
 [data-bs-theme="dark"] .badge.bg-purple {
     background-color: #be4bdb !important; /* Slightly lighter purple in dark mode */
+}
+
+[data-bs-theme="dark"] .badge.bg-info {
+    background-color: #1098ad !important; /* Slightly lighter teal in dark mode */
 }
 
 /* Loading skeleton for tables */

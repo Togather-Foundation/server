@@ -69,6 +69,7 @@ type MockRepository struct {
 	shouldFailApproveReview          bool
 	shouldFailFindSeriesCompanion    bool
 	seriesCompanion                  *CrossWeekCompanion
+	forwardCompanions                []CrossWeekCompanion
 }
 
 // occurrenceDateUpdate stores occurrence date updates for verification
@@ -754,6 +755,13 @@ func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params SeriesC
 	}
 	return m.seriesCompanion, nil
 }
+
+func (m *MockRepository) FindForwardSeriesCompanions(_ context.Context, _ SeriesCompanionQuery) ([]CrossWeekCompanion, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.forwardCompanions, nil
+}
+
 func (m *MockRepository) Rollback(ctx context.Context) error {
 	return nil
 }
@@ -2590,6 +2598,100 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 			if w.Code == "cross_week_series_companion" {
 				t.Error("cross_week_series_companion warning should not appear when no venue")
 			}
+		}
+	})
+
+	t.Run("forward_cross_link_flags_week1_when_week2_ingested", func(t *testing.T) {
+		// When Week 2 is ingested, crossLinkSeriesCompanions should retroactively
+		// flag Week 1's review queue entry with cross_week_series_companion so that
+		// both weeks display the "Weekly Series" badge.
+		repo := NewMockRepository()
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "f6a7b8c9-d0e1-2345-f012-456789012345"
+		const week1ULID = "01ARZ3NDEKTSV4RRFFQ69G5FCW"
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "Pottery Studio")
+
+		// Seed Week 1 event so GetByULID succeeds in crossLinkSeriesCompanions.
+		week1Event := &Event{
+			ID:             "id-week1",
+			ULID:           week1ULID,
+			Name:           "Weekly Pottery",
+			LifecycleState: "pending_review",
+			PrimaryVenueID: func() *string { s := placeUUID; return &s }(),
+		}
+		repo.mu.Lock()
+		repo.events[week1ULID] = week1Event
+
+		// Pre-seed a pending review entry for Week 1 so the merge path is exercised.
+		week1Review := &ReviewQueueEntry{
+			ID:        42,
+			EventID:   "id-week1",
+			EventULID: week1ULID,
+			Warnings:  []byte(`[{"field":"name","code":"potential_duplicate","message":"dup"}]`),
+			Status:    "pending_review",
+		}
+		repo.reviewQueue[42] = week1Review
+		repo.mu.Unlock()
+
+		// Configure the mock to return Week 1 as a forward companion.
+		repo.forwardCompanions = []CrossWeekCompanion{
+			{
+				ULID:      week1ULID,
+				Name:      "Weekly Pottery",
+				StartDate: "2026-03-08",
+				StartTime: "19:00:00",
+				VenueName: "Pottery Studio",
+			},
+		}
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true}).
+			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
+
+		// Ingest Week 2.
+		input := EventInput{
+			Name:        "Weekly Pottery",
+			Description: "Test event",
+			License:     "CC0-1.0",
+			StartDate:   "2026-03-15T19:00:00Z",
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/" + placeULID,
+			},
+			Occurrences: []OccurrenceInput{
+				{StartDate: "2026-03-15T19:00:00Z"},
+			},
+		}
+
+		_, err := svc.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+
+		// Week 1's review queue entry should now have cross_week_series_companion merged in.
+		repo.mu.Lock()
+		updatedReview := repo.reviewQueue[42]
+		repo.mu.Unlock()
+
+		if updatedReview == nil {
+			t.Fatal("Week 1 review entry missing after forward cross-link")
+		}
+
+		var mergedWarnings []ValidationWarning
+		if err := json.Unmarshal(updatedReview.Warnings, &mergedWarnings); err != nil {
+			t.Fatalf("unmarshal Week 1 warnings: %v", err)
+		}
+
+		var found bool
+		for _, w := range mergedWarnings {
+			if w.Code == "cross_week_series_companion" {
+				found = true
+				if w.Details["companion_ulid"] == nil {
+					t.Error("companion_ulid missing from cross_week_series_companion details")
+				}
+			}
+		}
+		if !found {
+			t.Error("cross_week_series_companion warning not merged into Week 1 review entry")
 		}
 	})
 }

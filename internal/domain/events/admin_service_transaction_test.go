@@ -360,6 +360,10 @@ func (m *mockTransactionalRepo) FindSeriesCompanion(ctx context.Context, params 
 	}
 	return nil, nil
 }
+
+func (m *mockTransactionalRepo) FindForwardSeriesCompanions(_ context.Context, _ SeriesCompanionQuery) ([]CrossWeekCompanion, error) {
+	return nil, nil
+}
 func (m *mockTransactionalRepo) Rollback(ctx context.Context) error {
 	return nil
 }

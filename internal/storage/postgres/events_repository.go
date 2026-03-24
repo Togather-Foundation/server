@@ -1380,6 +1380,63 @@ func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events
 	}, nil
 }
 
+// FindForwardSeriesCompanions finds all published/pending events at the same venue
+// with similar name and start date 7–21 days AFTER params.StartTime and the same
+// time-of-day (±30 min).  This is the mirror of FindSeriesCompanion and is used
+// post-commit to retroactively flag earlier (Week 1) events when a later (Week 2)
+// event is ingested.
+func (r *EventRepository) FindForwardSeriesCompanions(ctx context.Context, params events.SeriesCompanionQuery) ([]events.CrossWeekCompanion, error) {
+	queryer := r.queryer()
+
+	var excludeULID *string
+	if params.ExcludeULID != "" {
+		excludeULID = &params.ExcludeULID
+	}
+
+	rows, err := queryer.Query(ctx, `
+	SELECT e.ulid,
+	       e.name,
+	       o.start_time,
+	       COALESCE(p.name, '') AS venue_name
+	  FROM events e
+	  JOIN event_occurrences o ON o.event_id = e.id
+	  LEFT JOIN places p ON p.id = e.primary_venue_id
+	 WHERE e.deleted_at IS NULL
+	   AND e.lifecycle_state IN ('published', 'pending_review')
+	   AND e.primary_venue_id = $1
+	   AND normalize_name(e.name) % normalize_name($2)
+	   AND similarity(normalize_name(e.name), normalize_name($2)) >= 0.8
+	   AND o.start_time >= $3::timestamptz + INTERVAL '7 days'
+	   AND o.start_time <= $3::timestamptz + INTERVAL '21 days'
+	   AND ABS(EXTRACT(EPOCH FROM (o.start_time::time - $3::timestamptz::time))) < 1800
+	   AND ($4::text IS NULL OR e.ulid != $4)
+	`, params.VenueID, params.NormalizedName, params.StartTime, excludeULID)
+	if err != nil {
+		return nil, fmt.Errorf("find forward series companions: %w", err)
+	}
+	defer rows.Close()
+
+	var companions []events.CrossWeekCompanion
+	for rows.Next() {
+		var ulid, name, venueName string
+		var startTime time.Time
+		if err := rows.Scan(&ulid, &name, &startTime, &venueName); err != nil {
+			return nil, fmt.Errorf("scan forward series companion: %w", err)
+		}
+		companions = append(companions, events.CrossWeekCompanion{
+			ULID:      ulid,
+			Name:      name,
+			StartDate: startTime.UTC().Format("2006-01-02"),
+			StartTime: startTime.UTC().Format("15:04:05"),
+			VenueName: venueName,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate forward series companions: %w", err)
+	}
+	return companions, nil
+}
+
 // DismissPendingReviewsByEventULIDs batch-dismisses all pending review queue entries
 // for the given event ULIDs, setting their status to 'dismissed' and reviewer to reviewedBy.
 // Returns the IDs of dismissed entries (may be empty if none were pending).
