@@ -26,8 +26,6 @@
      */
     const TOP_LEVEL_FIELDS = [
         { label: 'Event Name',   key: 'name' },
-        { label: 'Start Date',   key: 'startDate' },
-        { label: 'End Date',     key: 'endDate' },
         { label: 'Description',  key: 'description' },
         { label: 'URL',          key: 'url' },
         { label: 'Image URL',    key: 'image' },

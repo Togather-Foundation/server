@@ -256,6 +256,21 @@ This section tracks what has been built vs. what remains. The "What Needs to Cha
 
 **api.js:** `API.events.occurrences.delete` available; no other changes needed.
 
+**review-queue.js (Case 1 — single-event fold-down):**
+- `Edit & Approve` button added to Case 1 action bar (between Approve and Fix Dates). Opens an inline form pre-populated from `currentEntryDetail.normalized`: name, description, public_url (via `normalized.url`), image_url (via `normalized.image`). On submit: builds patch from changed fields only → `PUT /admin/events/{ulid}` → `API.reviewQueue.approve(id, {})` directly (not via `approve()`, since the approve button is hidden). Inline error display on failure.
+- `Fix Dates` button demoted to `btn-outline-secondary` (Edit & Approve covers general editing).
+
+**ingest.go:**
+- `endDate` in normalized payload snapshot now uses last occurrence `EndTime` (with fallback to first occurrence `EndTime`), not first occurrence `EndTime`. Fixes stale `endDate` on multi-occurrence events.
+
+**review-queue.js — date display:**
+- `startDate`/`endDate` are derived entirely from `event_occurrences`; the `events` table has no date columns. They appear in the normalized JSONB snapshot (ingest-time) and in `event_review_queue.event_start_time`/`event_end_time` (for sorting/filtering only). They are **not patchable** via `PUT /admin/events/{ulid}`.
+- `startDate`/`endDate` removed from `field-picker.js` `TOP_LEVEL_FIELDS` — they are display-only.
+- Three `normalizedWithDates` overlays added: (1) initial HTML render block (line ~706), (2) post-render DOM init block for field picker (line ~937), (3) `rebuildPickers()` (line ~1538). Each overlay computes `startDate`/`endDate` from live occurrences fetched from the server, ensuring the field picker always shows the correct series span even for old payload snapshots.
+- `relatedAsNormalized` (side-by-side card) now uses last occurrence for `endDate` (not first).
+- `relatedForPicker` in both the initial render post-DOM block and `rebuildPickers()` now uses last occurrence for `endDate`.
+- `extractMergeFields` fallback (for old payload snapshots without top-level dates) now uses last occurrence for `endDate`.
+
 ### Deferred
 
 - *(Nothing currently deferred — inline chip editing is implemented.)*
@@ -349,4 +364,4 @@ This section tracks what has been built vs. what remains. The "What Needs to Cha
 
 ---
 
-*Last updated: 2026-03-23. Inline chip editing implemented: pencil icon on blue/green chips; blue pencil atomically selects+opens editor; textarea for description field; edited flag threaded through onPick and consolidate patch logic. See srv-7roii.*
+*Last updated: 2026-03-23. Inline chip editing implemented: pencil icon on blue/green chips; blue pencil atomically selects+opens editor; textarea for description field; edited flag threaded through onPick and consolidate patch logic. Edit & Approve added to Case 1 fold-down. Date display fixed: startDate/endDate now derived from live occurrences (last occurrence for endDate); removed from field picker chip rows. ingest.go endDate bug fixed. See srv-7roii.*

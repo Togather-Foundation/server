@@ -134,6 +134,18 @@
                     e.preventDefault();
                     showRejectModal(id);
                     break;
+                case 'show-edit-form':
+                    e.preventDefault();
+                    showEditForm(id);
+                    break;
+                case 'cancel-edit':
+                    e.preventDefault();
+                    hideEditForm();
+                    break;
+                case 'apply-edit':
+                    e.preventDefault();
+                    applyEdit(id);
+                    break;
                 case 'show-fix-form':
                     e.preventDefault();
                     showFixForm(id);
@@ -688,6 +700,16 @@
         const safeId = escapeHtml(String(id));
         if (isCase2or3 && relatedEvents.length > 0) {
             const relatedEvent = relatedEvents[0];
+
+            // Overlay startDate/endDate on the normalized snapshot with live occurrence data
+            // so the diff card always shows the correct series span (first start → last end).
+            const normalizedWithDates = Object.assign({}, normalized, {
+                startDate: thisOccurrences.length > 0 ? thisOccurrences[0].startTime : normalized.startDate,
+                endDate: thisOccurrences.length > 0
+                    ? (thisOccurrences[thisOccurrences.length - 1].endTime || thisOccurrences[0].endTime || normalized.endDate)
+                    : normalized.endDate,
+            });
+
             const similarity = relatedEvent.similarity != null ? Math.round(relatedEvent.similarity * 100) : null;
             const similarityBadge = similarity != null
                 ? `<span class="badge bg-purple-lt ms-2">${similarity}%</span>`
@@ -706,6 +728,9 @@
                 startDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
                     ? relatedEvent.occurrences[0].startTime
                     : null,
+                endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
+                    ? (relatedEvent.occurrences[relatedEvent.occurrences.length - 1].endTime || relatedEvent.occurrences[0].endTime)
+                    : null,
                 location: relatedEvent.venueName ? { name: relatedEvent.venueName } : null,
             };
 
@@ -717,7 +742,7 @@
                                 <strong>This event</strong>
                             </div>
                             <div class="card-body">
-                                ${renderMergeEventSummary(normalized, relatedAsNormalized)}
+                                ${renderMergeEventSummary(normalizedWithDates, relatedAsNormalized)}
                                 ${OccurrenceRendering.renderList(thisOccurrences, detail.eventId, id, false)}
                             </div>
                         </div>
@@ -797,7 +822,7 @@
                     </div>
                 `;
             } else {
-                // Case 1: standalone — approve, fix dates, reject only
+                // Case 1: standalone — approve, edit & approve, fix dates, reject only
                 return `
                     <div class="btn-list" id="action-buttons-${id}">
                         <button class="btn btn-success" data-action="approve" data-id="${id}">
@@ -807,8 +832,16 @@
                             </svg>
                             Approve
                         </button>
+                        <button class="btn btn-primary" data-action="show-edit-form" data-id="${id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M4 20h4l10.5 -10.5a2.828 2.828 0 1 0 -4 -4l-10.5 10.5v4"/>
+                                <path d="M13.5 6.5l4 4"/>
+                            </svg>
+                            Edit &amp; Approve
+                        </button>
                         ${hasDateWarnings ? `
-                            <button class="btn btn-primary" data-action="show-fix-form" data-id="${id}">
+                            <button class="btn btn-outline-secondary" data-action="show-fix-form" data-id="${id}">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
                                     <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
                                     <rect x="4" y="5" width="16" height="16" rx="2"/>
@@ -827,6 +860,9 @@
                             </svg>
                             Delete Event
                         </button>
+                    </div>
+                    <div id="edit-form-${id}" style="display: none;">
+                        <!-- Edit & Approve form will be inserted here -->
                     </div>
                     <div id="fix-form-${id}" style="display: none;">
                         <!-- Fix form will be inserted here -->
@@ -877,15 +913,15 @@
                     startDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
                         ? relatedEvent.occurrences[0].startTime
                         : null,
+                    endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
+                        ? (relatedEvent.occurrences[relatedEvent.occurrences.length - 1].endTime || relatedEvent.occurrences[0].endTime)
+                        : null,
                     location: relatedEvent.venueName
                         ? { name: relatedEvent.venueName }
                         : (relatedEvent.location || null),
                     organizer: relatedEvent.organizer || null,
                     url: relatedEvent.url || null,
                     image: relatedEvent.imageUrl || null,
-                    endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
-                        ? relatedEvent.occurrences[0].endTime
-                        : null,
                 };
 
                 // Determine canonical based on radio selection (default to 'this' which is index 0)
@@ -898,7 +934,13 @@
                 // canonicalIndex just determines which side is locked/auto-selected
                 occurrencePicker[id] = buildOccurrencePicker(thisOccurrences, relatedEvent.occurrences || [], canonicalIndex);
 
-                window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalized, relatedForPicker], {
+                const normalizedWithDates = Object.assign({}, normalized, {
+                    startDate: thisOccurrences.length > 0 ? thisOccurrences[0].startTime : normalized.startDate,
+                    endDate: thisOccurrences.length > 0
+                        ? (thisOccurrences[thisOccurrences.length - 1].endTime || thisOccurrences[0].endTime || normalized.endDate)
+                        : normalized.endDate,
+                });
+                window.FieldPicker.renderFieldPickerTable(pickerContainer, [normalizedWithDates, relatedForPicker], {
                     canonicalIndex: canonicalIndex,
                     readOnlyFields: new Set(['location.name', 'organizer.name']),
                      onPick: (fieldKey, subfieldKey, value, source, edited) => handleFieldPick(id, fieldKey, subfieldKey, value, source, edited)
@@ -1491,6 +1533,15 @@
         const normalized = detail.normalized || {};
         const thisOccurrences = detail.occurrences || [];
 
+        // Overlay startDate/endDate from live occurrences so the diff card shows the
+        // correct series span (first start → last end) even on older payload snapshots.
+        const normalizedWithDates = Object.assign({}, normalized, {
+            startDate: thisOccurrences.length > 0 ? thisOccurrences[0].startTime : normalized.startDate,
+            endDate: thisOccurrences.length > 0
+                ? (thisOccurrences[thisOccurrences.length - 1].endTime || thisOccurrences[0].endTime || normalized.endDate)
+                : normalized.endDate,
+        });
+
         // Build the related event object for field picker
         const relatedForPicker = {
             name: relatedEvent.name,
@@ -1498,15 +1549,15 @@
             startDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
                 ? relatedEvent.occurrences[0].startTime
                 : null,
+            endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
+                ? (relatedEvent.occurrences[relatedEvent.occurrences.length - 1].endTime || relatedEvent.occurrences[0].endTime)
+                : null,
             location: relatedEvent.venueName
                 ? { name: relatedEvent.venueName }
                 : (relatedEvent.location || null),
             organizer: relatedEvent.organizer || null,
             url: relatedEvent.url || null,
             image: relatedEvent.imageUrl || null,
-            endDate: relatedEvent.occurrences && relatedEvent.occurrences.length > 0
-                ? relatedEvent.occurrences[0].endTime
-                : null,
         };
 
         // Preserve all user-selected field overrides across canonical radio changes.
@@ -1526,7 +1577,7 @@
         // Rebuild field picker (field-picker.js handles canonical highlighting automatically)
         const fieldPickerContainer = document.getElementById('field-picker-table-' + safeId);
         if (fieldPickerContainer && typeof window.FieldPicker !== 'undefined') {
-            window.FieldPicker.renderFieldPickerTable(fieldPickerContainer, [normalized, relatedForPicker], {
+            window.FieldPicker.renderFieldPickerTable(fieldPickerContainer, [normalizedWithDates, relatedForPicker], {
                 canonicalIndex: canonicalIndex,
                 readOnlyFields: new Set(['location.name', 'organizer.name']),
                 selectedOverrides: selectedOverrides,
@@ -2130,13 +2181,14 @@
         if (!data) return {};
         
         // Prefer top-level camelCase startDate/endDate (original submission or enriched
-        // reconstructed payload). Fall back to occurrences[0].start_date (snake_case) for
-        // older reconstructed payloads that predate the camelCase enrichment.
+        // reconstructed payload). Fall back to occurrences array for older payloads.
+        // startDate = first occurrence start; endDate = last occurrence end (series span).
         let startDate = data.startDate || null;
         let endDate = data.endDate || null;
         if (!startDate && Array.isArray(data.occurrences) && data.occurrences.length > 0) {
             startDate = data.occurrences[0].start_date || null;
-            endDate = data.occurrences[0].end_date || null;
+            const lastOcc = data.occurrences[data.occurrences.length - 1];
+            endDate = lastOcc.end_date || data.occurrences[0].end_date || null;
         }
 
         return {
@@ -2422,6 +2474,151 @@
         }
     }
     
+    /**
+     * Show inline Edit & Approve form for Case 1 (single-event) fold-down.
+     * Pre-populates name, description, public_url, and image_url from the normalized payload.
+     * Hides the action buttons while the form is open.
+     * @param {string} id - Review queue entry ID
+     */
+    function showEditForm(id) {
+        const detail = currentEntryDetail;
+        if (!detail) return;
+
+        const actionButtons = document.getElementById(`action-buttons-${id}`);
+        const editFormContainer = document.getElementById(`edit-form-${id}`);
+        if (!actionButtons || !editFormContainer) return;
+
+        const normalized = detail.normalized || {};
+        const nameVal = escapeHtml(normalized.name || '');
+        const descVal = escapeHtml(normalized.description || '');
+        const urlVal = escapeHtml(normalized.url || normalized.public_url || '');
+        const imageVal = escapeHtml(normalized.image || normalized.image_url || '');
+
+        actionButtons.style.display = 'none';
+
+        editFormContainer.style.display = 'block';
+        editFormContainer.innerHTML = `
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h4 class="card-title">Edit before approving</h4>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Name</label>
+                        <input type="text" class="form-control" id="edit-name-${id}" value="${nameVal}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Description</label>
+                        <textarea class="form-control" id="edit-description-${id}" rows="4">${descVal}</textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Public URL</label>
+                        <input type="url" class="form-control" id="edit-url-${id}" value="${urlVal}" placeholder="https://...">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Image URL</label>
+                        <input type="url" class="form-control" id="edit-image-${id}" value="${imageVal}" placeholder="https://...">
+                    </div>
+                    <div id="edit-error-${id}" class="alert alert-danger" style="display:none;"></div>
+                    <div class="btn-list">
+                        <button class="btn" data-action="cancel-edit" data-id="${id}">Cancel</button>
+                        <button class="btn btn-success" data-action="apply-edit" data-id="${id}">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">
+                                <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+                                <path d="M5 12l5 5l10 -10"/>
+                            </svg>
+                            Save &amp; Approve
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Hide Edit & Approve form and restore action buttons.
+     */
+    function hideEditForm() {
+        if (!expandedId) return;
+
+        const actionButtons = document.getElementById(`action-buttons-${expandedId}`);
+        const editFormContainer = document.getElementById(`edit-form-${expandedId}`);
+
+        if (actionButtons) actionButtons.style.display = '';
+        if (editFormContainer) {
+            editFormContainer.style.display = 'none';
+            editFormContainer.innerHTML = '';
+        }
+    }
+
+    /**
+     * Save edits and approve the review entry.
+     * Builds a patch from changed fields only, calls PUT /admin/events/{ulid},
+     * then calls approve(id).
+     * @async
+     * @param {string} id - Review queue entry ID
+     */
+    async function applyEdit(id) {
+        const detail = currentEntryDetail;
+        if (!detail) return;
+
+        const nameInput = document.getElementById(`edit-name-${id}`);
+        const descInput = document.getElementById(`edit-description-${id}`);
+        const urlInput = document.getElementById(`edit-url-${id}`);
+        const imageInput = document.getElementById(`edit-image-${id}`);
+        const applyBtn = document.querySelector(`[data-action="apply-edit"][data-id="${id}"]`);
+        const errorEl = document.getElementById(`edit-error-${id}`);
+
+        if (!nameInput || !applyBtn) return;
+
+        const normalized = detail.normalized || {};
+        const patch = {};
+
+        const newName = nameInput.value.trim();
+        if (newName && newName !== (normalized.name || '')) patch.name = newName;
+
+        const newDesc = descInput ? descInput.value.trim() : '';
+        if (newDesc !== (normalized.description || '')) patch.description = newDesc;
+
+        const newUrl = urlInput ? urlInput.value.trim() : '';
+        const origUrl = normalized.url || normalized.public_url || '';
+        if (newUrl !== origUrl) patch.public_url = newUrl;
+
+        const newImage = imageInput ? imageInput.value.trim() : '';
+        const origImage = normalized.image || normalized.image_url || '';
+        if (newImage !== origImage) patch.image_url = newImage;
+
+        if (errorEl) errorEl.style.display = 'none';
+        setLoading(applyBtn, true);
+
+        try {
+            if (Object.keys(patch).length > 0) {
+                await API.events.update(detail.eventId, patch);
+            }
+            // Approve after successful patch (or if no patch needed)
+            await API.reviewQueue.approve(id, {});
+            showToast('Entry approved successfully', 'success');
+            if (currentFilter === 'pending') {
+                removeEntryFromList(id);
+                const approvedBadge = document.querySelector(`[data-action="filter-status"][data-status="approved"] .badge`);
+                if (approvedBadge) {
+                    const currentCount = parseInt(approvedBadge.textContent) || 0;
+                    approvedBadge.textContent = currentCount + 1;
+                }
+            } else {
+                loadEntries();
+            }
+        } catch (err) {
+            const msg = (err && err.detail) || (err && err.message) || 'Failed to save changes';
+            if (errorEl) {
+                errorEl.textContent = msg;
+                errorEl.style.display = 'block';
+            } else {
+                showToast(msg, 'error');
+            }
+        } finally {
+            setLoading(applyBtn, false);
+        }
+    }
+
     /**
      * Show fix dates form
      * Displays inline form for correcting event start/end dates with current values pre-filled
