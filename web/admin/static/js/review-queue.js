@@ -1739,6 +1739,9 @@
                 if (occData.endTime) {
                     body.end_time = occData.endTime;
                 }
+                if (occData.venueUlid) {
+                    body.venue_ulid = occData.venueUlid;
+                }
                 await API.events.occurrences.create(canonicalUlid, body);
             } catch (err) {
                 // On 409 overlap, show inline error but continue with other occurrences
