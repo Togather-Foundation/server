@@ -1981,8 +1981,11 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 			referencesRetired = true
 		}
 
-		// Also check DuplicateOfEventULID on the entry itself.
-		if !referencesRetired && entry.DuplicateOfEventULID != nil {
+		// Also check DuplicateOfEventULID on the entry itself — but only for
+		// near-dup/potential-dup warnings, not cross_week_series_companion, which
+		// has its own companion_ulid field and should only be stripped when that
+		// companion_ulid is retired (handled above).
+		if !referencesRetired && w.Code != "cross_week_series_companion" && entry.DuplicateOfEventULID != nil {
 			if _, retired := retireSet[*entry.DuplicateOfEventULID]; retired {
 				referencesRetired = true
 			}

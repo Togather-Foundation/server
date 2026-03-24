@@ -1200,6 +1200,132 @@ func TestConsolidate_StripRetiredDupWarnings_NoEntryNoop(t *testing.T) {
 	}
 }
 
+// TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivestWhenDupOfRetired
+// is a regression test for a bug where the secondary DuplicateOfEventULID check on the
+// review queue entry incorrectly stripped cross_week_series_companion warnings even when
+// the companion_ulid was NOT the retired event. The scenario:
+//
+//   - Canonical has a pending review entry with TWO warnings:
+//     1. cross_week_series_companion → companion_ulid = Week1 (NOT retired)
+//     2. near_duplicate_of_new_event → no matches field (bare companion warning)
+//   - entry.duplicate_of_event_id → RetiredEvent
+//   - RetireSet = {RetiredEvent}
+//
+// Expected: near_duplicate_of_new_event is stripped; cross_week_series_companion
+// survives. The entry stays pending and is NOT dismissed.
+func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOfRetired(t *testing.T) {
+	ctx := context.Background()
+
+	retiredULID := consolidateRetireULID
+	canonULID := consolidateCanonULID
+	week1ULID := "01TEST00000WEEK1COMPANION0"
+
+	initialWarnings, _ := json.Marshal([]ValidationWarning{
+		{
+			Field:   "name",
+			Code:    "cross_week_series_companion",
+			Message: "part of a recurring series",
+			Details: map[string]any{
+				"companion_ulid": week1ULID, // NOT retired
+				"companion_name": "Week 1 Morning Session",
+				"companion_date": "2026-03-31",
+				"venue_name":     "The Tranzac",
+			},
+		},
+		{
+			Field:   "near_duplicate",
+			Code:    "near_duplicate_of_new_event",
+			Message: "may be near-duplicate of retired event",
+			// no "matches" field — bare companion warning
+		},
+	})
+
+	dupULID := retiredULID
+	canonReview := &ReviewQueueEntry{
+		ID:        99,
+		Status:    "pending",
+		EventULID: canonULID,
+		// duplicate_of_event_id points to the retired event.
+		DuplicateOfEventULID: &dupULID,
+		Warnings:             initialWarnings,
+	}
+
+	known := map[string]*Event{
+		canonULID:   makePublishedEvent("uuid-canon", canonULID, "Week 2 Morning"),
+		retiredULID: makePublishedEvent("uuid-retire", retiredULID, "Week 2 Afternoon"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == canonULID {
+			return canonReview, nil
+		}
+		return nil, nil
+	}
+
+	// Capture the update call — must be called (strip the near_dup warning).
+	var updatedWarningsJSON []byte
+	var capturedClearDup bool
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id != 99 {
+			t.Errorf("UpdateReviewQueueEntry called with unexpected id=%d, want 99", id)
+		}
+		if params.Warnings != nil {
+			updatedWarningsJSON = *params.Warnings
+		}
+		capturedClearDup = params.ClearDuplicateOf
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	// MergeReview must NOT be called — the cross_week warning survives, so the entry
+	// is not fully dismissed.
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		t.Errorf("MergeReview must not be called: cross_week_series_companion warning should survive; id=%d", id)
+		return nil, nil
+	}
+
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: canonULID,
+		Retire:    []string{retiredULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	// UpdateReviewQueueEntry must have been called (near_dup stripped, warnings updated).
+	if updatedWarningsJSON == nil {
+		t.Fatal("expected UpdateReviewQueueEntry to be called with updated warnings")
+	}
+
+	// ClearDuplicateOf must be true — duplicate_of_event_id pointed to the retired event.
+	if !capturedClearDup {
+		t.Error("expected ClearDuplicateOf=true when duplicate_of_event_id points to retired event")
+	}
+
+	// Remaining warnings must contain cross_week_series_companion.
+	var remaining []ValidationWarning
+	if err := json.Unmarshal(updatedWarningsJSON, &remaining); err != nil {
+		t.Fatalf("updated warnings JSON is invalid: %v", err)
+	}
+	foundCrossWeek := false
+	for _, w := range remaining {
+		if w.Code == "cross_week_series_companion" {
+			foundCrossWeek = true
+		}
+		if w.Code == "near_duplicate_of_new_event" {
+			t.Errorf("near_duplicate_of_new_event must be stripped but is still present: %+v", w)
+		}
+	}
+	if !foundCrossWeek {
+		t.Errorf("cross_week_series_companion must survive when its companion_ulid is not retired; remaining: %+v", remaining)
+	}
+}
+
 // ── TransferOccurrences ───────────────────────────────────────────────────────
 
 // TestConsolidate_TransferOccurrences_CopiesOccurrenceToCanonical verifies that
