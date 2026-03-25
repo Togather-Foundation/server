@@ -372,7 +372,9 @@ func extractDateSelectorPartsPerRow(h *colly.HTMLElement, dateSelectors []string
 	for i, sel := range dateSelectors {
 		var matches []string
 		h.DOM.Find(sel).Each(func(_ int, s *goquery.Selection) {
-			text := strings.TrimSpace(s.Text())
+			// Use br-aware text extraction so date+time strings like
+			// "March 13, 2026<br/>8 PM" don't concatenate without a space.
+			text := selectionTextBR(s)
 			matches = append(matches, text)
 		})
 		selectorMatches[i] = matches
@@ -488,11 +490,45 @@ func elementMatches(h *colly.HTMLElement, selector string) bool {
 
 // extractDateFromElement finds a child element matching selector and returns
 // the value of its datetime attribute, falling back to its text content.
+// When extracting text, <br> elements are replaced with a space so that
+// date+time strings like "Friday, March 13, 2026<br/>8 PM" parse correctly.
 func extractDateFromElement(h *colly.HTMLElement, selector string) string {
 	// Prefer datetime attribute (standard HTML5 time element).
 	dt := h.ChildAttr(selector, "datetime")
 	if dt != "" {
 		return strings.TrimSpace(dt)
 	}
-	return strings.TrimSpace(h.ChildText(selector))
+	return childTextBR(h, selector)
+}
+
+// childTextBR extracts the combined text content of child elements matching
+// selector, replacing <br> elements with a single space before concatenating
+// text nodes. This prevents date+time text from merging without a separator
+// (e.g. "Friday, March 13, 20268 PM" instead of "Friday, March 13, 2026 8 PM").
+func childTextBR(h *colly.HTMLElement, selector string) string {
+	return selectionTextBR(h.DOM.Find(selector).First())
+}
+
+// selectionTextBR extracts text from a goquery Selection, replacing <br>
+// elements with spaces so adjacent text nodes don't merge without a separator.
+func selectionTextBR(s *goquery.Selection) string {
+	if s.Length() == 0 {
+		return ""
+	}
+	var b strings.Builder
+	var walk func(*goquery.Selection)
+	walk = func(sel *goquery.Selection) {
+		sel.Contents().Each(func(_ int, child *goquery.Selection) {
+			if goquery.NodeName(child) == "br" {
+				b.WriteByte(' ')
+			} else if child.Children().Length() == 0 {
+				b.WriteString(child.Text())
+			} else {
+				walk(child)
+			}
+		})
+	}
+	walk(s)
+	// Collapse runs of whitespace.
+	return strings.Join(strings.Fields(b.String()), " ")
 }

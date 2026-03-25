@@ -1,9 +1,13 @@
 name: "toronto-reference-library"
 # Tier 1 (Colly CSS selectors). Uses tpl.bibliocommons.com/v2/events — full static
 # HTML listing with 7,800+ events across all TPL branches.
-# Selectors validated 2026-02-21 with `server scrape test`.
-# Note: cp-screen-reader-message spans add duplicate text to name/location fields;
-# normalization will strip the duplicated suffix at ingest time.
+# FIXED 2026-03-24: Updated start_date selector from ".cp-event-date-time" (which
+# matched no text) to ".cp-event-date-time span[class~='cp-screen-reader-message']"
+# (extracts first SR span with date). Using date_selectors with this selector.
+# Note: Times are not extracted (quality warning: all_midnight), as event times are
+# in separate hidden spans; dates alone are sufficient for listing purposes.
+# Note: cp-screen-reader-message spans add text suffixes (e.g. "Event location: X");
+# normalization at ingest time will strip the duplicated suffix.
 url: "https://tpl.bibliocommons.com/v2/events"
 tier: 1
 schedule: "daily"
@@ -14,9 +18,10 @@ max_pages: 10
 selectors:
   event_list: ".cp-events-search-item"
   name: "h3.cp-heading a"
-  start_date: ".cp-event-date-time"
   location: ".cp-event-location-name a"
   description: ".cp-event-description"
   url: "h3.cp-heading a"
   image: ".cp-event-featured-image img"
   pagination: "a.cp-pagination-btn--next"
+  date_selectors:
+    - ".cp-event-date-time span[class~='cp-screen-reader-message']"

@@ -745,6 +745,92 @@ func TestScrapeWithSelectors_SingleRowDateTable(t *testing.T) {
 	assert.Equal(t, "6:00 PM", probes[1].Text)
 }
 
+// TestScrapeWithSelectors_BrInDateText verifies that <br> elements inside a
+// date container are replaced with spaces rather than being concatenated without
+// a separator. This was the root cause of music-gallery events being skipped:
+// "Friday, March 13, 2026<br/>8 PM" was extracted as "Friday, March 13, 20268 PM"
+// (not a valid year), causing the normalizer to drop the event.
+func TestScrapeWithSelectors_BrInDateText(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<article class="event">
+  <h3><a href="/events/concert">Jazz Concert</a></h3>
+  <div class="date-block">Friday, March 13, 2026<br/>8 PM</div>
+</article>
+<article class="event">
+  <h3><a href="/events/talk">Artist Talk</a></h3>
+  <div class="date-block">Saturday, April 5, 2026<br />2:00 PM</div>
+</article>
+</body></html>`)
+	}))
+	defer ts.Close()
+
+	cfg := SourceConfig{
+		Name:     "test-br-date",
+		URL:      ts.URL,
+		Tier:     1,
+		MaxPages: 1,
+		Selectors: SelectorConfig{
+			EventList: "article.event",
+			Name:      "h3 a",
+			StartDate: "div.date-block",
+			URL:       "h3 a",
+		},
+	}
+
+	extractor := newTestExtractor()
+	events, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+
+	// The extracted StartDate should have a space where the <br> was.
+	// Before the fix: "Friday, March 13, 20268 PM" (unparseable year 20268).
+	// After the fix:  "Friday, March 13, 2026 8 PM".
+	assert.Equal(t, "Friday, March 13, 2026 8 PM", events[0].StartDate,
+		"<br> inside date text should be replaced with a space")
+	assert.Equal(t, "Saturday, April 5, 2026 2:00 PM", events[1].StartDate,
+		"self-closing <br /> should also be replaced with a space")
+}
+
+// TestScrapeWithSelectors_BrInDateSelectors verifies that date_selectors also
+// benefit from <br>-aware extraction via extractDateSelectorPartsPerRow.
+func TestScrapeWithSelectors_BrInDateSelectors(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><body>
+<div class="event-card">
+  <h2 class="title">Workshop</h2>
+  <span class="date-block">March 20<br/>2026</span>
+  <span class="time">7:30 PM</span>
+</div>
+</body></html>`)
+	}))
+	defer ts.Close()
+
+	cfg := SourceConfig{
+		Name:     "test-br-date-selectors",
+		URL:      ts.URL,
+		Tier:     1,
+		MaxPages: 1,
+		Selectors: SelectorConfig{
+			EventList: "div.event-card",
+			Name:      "h2.title",
+			DateSelectors: []string{
+				"span.date-block",
+				"span.time",
+			},
+		},
+	}
+
+	extractor := newTestExtractor()
+	events, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Len(t, events[0].DateParts, 2)
+	assert.Equal(t, "March 20 2026", events[0].DateParts[0],
+		"<br> in date_selectors text should also be replaced with a space")
+	assert.Equal(t, "7:30 PM", events[0].DateParts[1])
+}
+
 // TestScrapeWithSelectors_MultiRowConsolidation tests the full tier 1 pipeline
 // with multi-row extraction and consolidation into EventInput with Occurrences.
 //
