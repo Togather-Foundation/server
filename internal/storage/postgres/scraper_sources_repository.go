@@ -34,10 +34,15 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		lastScraped = pgtype.Timestamptz{Time: *params.LastScrapedAt, Valid: true}
 	}
 
+	urls := params.URLs
+	if urls == nil {
+		urls = []string{}
+	}
+
 	row, err := r.queries().UpsertScraperSource(ctx, UpsertScraperSourceParams{
 		Name:                          params.Name,
 		Url:                           params.URL,
-		Urls:                          params.URLs,
+		Urls:                          urls,
 		Tier:                          int32(params.Tier),
 		Schedule:                      params.Schedule,
 		TrustLevel:                    int32(params.TrustLevel),
