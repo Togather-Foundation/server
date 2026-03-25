@@ -226,6 +226,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
+                    <input type="hidden" id="occurrence-default-timezone" value="{{ .DefaultTimezone }}">
                     <input type="hidden" id="occurrence-index">
                     <input type="hidden" id="occurrence-venue-id">
                     <div class="mb-3">
@@ -238,7 +239,7 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Timezone</label>
-                        <input type="text" class="form-control" id="occurrence-timezone" placeholder="America/Toronto" value="America/Toronto">
+                        <input type="text" class="form-control" id="occurrence-timezone" placeholder="America/Toronto" value="{{ .DefaultTimezone }}">
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Door Time</label>
