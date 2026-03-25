@@ -1,10 +1,10 @@
 name: "theatre-passe-muraille"
-# WordPress + Elementor site. Listing page unscrapeable, but individual show detail
-# pages (in page-sitemap.xml) have clean structure: h1.page-title for show name,
-# freeform date text in <p> tags after h5 "Show Dates" heading.
-# Sitemap filter: match only main show URLs (butch-femme, what-brings-you-in, etc.),
-# exclude program/digital variants. date_selectors extracts date-only text (times default midnight).
-# Extracted 2025-26 season: BUTCH/FEMME, What Brings You In, Through the Eyes of God (Wayqeycuna no dates).
+# WordPress + Elementor site. Scrapes individual show detail pages via sitemap.
+# Each show page has: h1.page-title (name), canonical link (url), and date text in a specific
+# Elementor widget (.elementor-element-468762ea p:first-of-type). This widget ID is consistent
+# across pages and contains dates like "Sep. 20th – 27th, 2025".
+# Filter includes only 25-26 season shows with structured date widgets (butch-femme, what-brings-you-in,
+# through-the-eyes-of-god). Excludes past/archived shows and shows without standard date widget.
 url: "https://passemuraille.ca/25-26-season/"
 tier: 1
 schedule: "weekly"
@@ -13,12 +13,11 @@ license: "CC0-1.0"
 enabled: true
 sitemap:
   url: "https://passemuraille.ca/sitemap_index.xml"
-  filter_pattern: "/(?:butch-femme|what-brings-you-in|wayqeycuna|eachother|unscripted|through-the-eyes-of-god)/$"
+  filter_pattern: "/(?:butch-femme|what-brings-you-in|through-the-eyes-of-god)/$"
   max_urls: 50
   rate_limit_ms: 500
 selectors:
   event_list: "article"
   name: "h1.page-title"
   url: "link[rel='canonical']"
-  date_selectors:
-    - "p"  # matches any p tag (first one is date text)
+  start_date: ".elementor-element-468762ea p:first-of-type"

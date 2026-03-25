@@ -1,9 +1,15 @@
 name: "art-museum-utoronto"
 # Tier 1 (Colly CSS selectors). Art Museum at the University of Toronto (UTAC + JMB Gallery).
-# Programs listing page has 9 events (discrete dates). No Event JSON-LD — only WebSite/CollectionPage schema.
-# Selectors validated via Playwright 2026-02-28: div.program.item with h3.item-title + p.date.
-# Exhibitions page uses same card structure (div.exhibition.item) but events span months; skip_multi_session_check
-# required. Programs are the primary event-style content (tours, workshops, receptions, lectures).
+# Programs listing page has 9 events; 5 with discrete dates (tours, workshops),
+# 4 with date ranges (exhibitions/installations spanning months/years). Events with ranges
+# (e.g., "November 13, 2025–March 17, 2026") fail date parsing due to scraper limitation:
+# range-detection regex requires spaces around en-dashes, but HTML has en-dash without
+# spaces ("2025–March"), so splitDateRange doesn't work. Exhibitions are legitimately
+# long-duration; skip_multi_session_check: true allows them to pass without review.
+# Discrete-date programs (tours, workshops) are correctly extracted (5/9).
+# Detail pages have event times (e.g., "4pm–5pm"), but listing cards do not — all_midnight
+# warning is expected and acceptable for institutional listings without times.
+# Organization: Art Museum at the University of Toronto (museum, trust_level: 8)
 url: "https://artmuseum.utoronto.ca/programs/"
 tier: 1
 schedule: "daily"
@@ -12,8 +18,6 @@ license: "CC0-1.0"
 enabled: true
 max_pages: 3
 event_url_pattern: "/program/*"
-# Programs include long-running residencies and installations spanning months; skip the
-# multi-session heuristic to avoid sending legitimate long-duration events to the review queue.
 skip_multi_session_check: true
 selectors:
   event_list: "div.program.item"

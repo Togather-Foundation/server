@@ -176,6 +176,26 @@ func TestSplitDateRange(t *testing.T) {
 			input: "March 5th-7th",
 			want:  []string{"March 5", "March 7"},
 		},
+		{
+			// Institutional listings (AGA Khan Museum, Art Museum U of T) use
+			// en-dash WITHOUT surrounding spaces: "May 6, 2025–May 25, 2026".
+			// The regular hyphen with no spaces is NOT matched (it appears in ISO
+			// date strings like 2026-03-05), but en-dash is safe to match bare.
+			name:  "en-dash range without spaces",
+			input: "May 6, 2025–May 25, 2026",
+			want:  []string{"May 6, 2025", "May 25, 2026"},
+		},
+		{
+			name:  "en-dash range without spaces, abbreviated months",
+			input: "Nov. 13, 2025–Mar. 17, 2026",
+			want:  []string{"Nov. 13, 2025", "Mar. 17, 2026"},
+		},
+		{
+			// ISO dates must NOT be split on the hyphen.
+			name:  "ISO date is not a range",
+			input: "2026-03-05",
+			want:  nil,
+		},
 	}
 
 	for _, tc := range tests {
