@@ -20,8 +20,52 @@
 }(typeof globalThis !== 'undefined' ? globalThis : this, function () {
 
     /**
+     * getTimezoneOffset — returns the RFC3339 timezone offset string for a specific date.
+     * Uses Intl.DateTimeFormat to properly handle Daylight Saving Time.
+     *
+     * @param {string} timezone - IANA timezone string
+     * @param {number} year - Year for which to get the offset
+     * @param {number} month - Month (1-12) for which to get the offset
+     * @param {number} day - Day for which to get the offset
+     * @returns {string} Offset string like "+00:00" or "-04:00"
+     */
+    function getTimezoneOffset(timezone, year, month, day) {
+        try {
+            const formatter = new Intl.DateTimeFormat('en-US', {
+                timeZone: timezone,
+                timeZoneName: 'shortOffset',
+            });
+            const parts = formatter.formatToParts(new Date(year, month - 1, day, 12, 0, 0));
+            const offsetPart = parts.find(function(p) { return p.type === 'timeZoneName'; });
+            if (offsetPart) {
+                const offsetStr = offsetPart.value;
+                if (offsetStr === 'GMT' || offsetStr === 'UTC') {
+                    return '+00:00';
+                }
+                var sign = offsetStr.charAt(0);
+                var offsetHM = offsetStr.slice(1);
+                if (offsetHM.indexOf(':') === -1) {
+                    var hours = parseInt(offsetHM, 10);
+                    var minutes = 0;
+                    if (!isNaN(hours)) {
+                        var isHalfHour = Math.abs(hours) * 10 % 10 === 5;
+                        minutes = isHalfHour ? 30 : 0;
+                        hours = Math.floor(hours);
+                    }
+                    offsetHM = (hours < 0 ? '-' : '') + String(Math.abs(hours)).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+                }
+                return (sign === '-' ? '-' : '+') + offsetHM;
+            }
+        } catch (e) {}
+        return '+00:00';
+    }
+
+    /**
      * convertToRFC3339 — converts HTML datetime-local format (YYYY-MM-DDTHH:mm)
      * to RFC3339 format (YYYY-MM-DDTHH:mm:ss+HH:MM) using the provided timezone.
+     *
+     * The datetime-local input is treated as local time in the specified timezone,
+     * then converted to UTC for the RFC3339 output while preserving the timezone offset.
      *
      * @param {string} datetimeLocal - Input in format "YYYY-MM-DDTHH:mm"
      * @param {string} timezone - IANA timezone string (e.g., "America/Toronto")
@@ -29,39 +73,37 @@
      */
     function convertToRFC3339(datetimeLocal, timezone) {
         if (!datetimeLocal) return null;
-        // Parse YYYY-MM-DDTHH:mm
-        const match = datetimeLocal.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+        var match = datetimeLocal.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
         if (!match) return null;
-        const [, year, month, day, hour, minute] = match;
-        // Create date in UTC, then format with timezone offset
-        // Using a simple approach: append :00 seconds and add timezone offset
-        // For now, use UTC offset for simplicity; could be enhanced with Intl API
-        const dateStr = `${year}-${month}-${day}T${hour}:${minute}:00`;
-        // Simple timezone handling: assume offset for known timezones
-        // For America/Toronto, it's either -05:00 (EST) or -04:00 (EDT)
-        // For simplicity, use -05:00 as default fallback
-        const tzOffset = getTimezoneOffset(timezone);
-        return dateStr + tzOffset;
-    }
+        var year = parseInt(match[1], 10);
+        var month = parseInt(match[2], 10);
+        var day = parseInt(match[3], 10);
+        var hour = parseInt(match[4], 10);
+        var minute = parseInt(match[5], 10);
 
-    /**
-     * getTimezoneOffset — returns the RFC3339 timezone offset string.
-     * Simplified implementation; could use Intl.DateTimeFormat for production.
-     *
-     * @param {string} timezone - IANA timezone string
-     * @returns {string} Offset string like "+00:00" or "-05:00"
-     */
-    function getTimezoneOffset(timezone) {
-        // Common North American timezones (simplified)
-        const offsets = {
-            'America/Toronto': '-05:00',
-            'America/New_York': '-05:00',
-            'America/Chicago': '-06:00',
-            'America/Denver': '-07:00',
-            'America/Los_Angeles': '-08:00',
-            'America/Vancouver': '-08:00',
-        };
-        return offsets[timezone] || '+00:00';
+        var offset = getTimezoneOffset(timezone, year, month, day);
+        var offsetSign = offset.charAt(0);
+        var offsetHM = offset.slice(1);
+        var offsetParts = offsetHM.split(':');
+        var offsetHours = parseInt(offsetParts[0], 10);
+        var offsetMinutes = parseInt(offsetParts[1], 10);
+        var totalOffsetMinutes = offsetHours * 60 + offsetMinutes;
+        if (offsetSign === '-') {
+            totalOffsetMinutes = -totalOffsetMinutes;
+        }
+
+        var localDate = new Date(year, month - 1, day, hour, minute);
+        var utcTime = localDate.getTime() - totalOffsetMinutes * 60 * 1000;
+        var utcDate = new Date(utcTime);
+
+        var utcYear = utcDate.getUTCFullYear();
+        var utcMonth = String(utcDate.getUTCMonth() + 1).padStart(2, '0');
+        var utcDay = String(utcDate.getUTCDate()).padStart(2, '0');
+        var utcHour = String(utcDate.getUTCHours()).padStart(2, '0');
+        var utcMinute = String(utcDate.getUTCMinutes()).padStart(2, '0');
+        var utcSecond = String(utcDate.getUTCSeconds()).padStart(2, '0');
+
+        return utcYear + '-' + utcMonth + '-' + utcDay + 'T' + utcHour + ':' + utcMinute + ':' + utcSecond + offset;
     }
 
     /**
