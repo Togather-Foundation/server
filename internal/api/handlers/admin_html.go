@@ -8,19 +8,21 @@ import (
 
 // AdminHTMLHandler handles admin HTML page rendering
 type AdminHTMLHandler struct {
-	Templates    *template.Template
-	Env          string
-	Logger       *slog.Logger
-	EmailEnabled bool
+	Templates       *template.Template
+	Env             string
+	Logger          *slog.Logger
+	EmailEnabled    bool
+	DefaultTimezone string
 }
 
 // NewAdminHTMLHandler creates a new admin HTML handler
-func NewAdminHTMLHandler(templates *template.Template, env string, logger *slog.Logger, emailEnabled bool) *AdminHTMLHandler {
+func NewAdminHTMLHandler(templates *template.Template, env string, logger *slog.Logger, emailEnabled bool, defaultTimezone string) *AdminHTMLHandler {
 	return &AdminHTMLHandler{
-		Templates:    templates,
-		Env:          env,
-		Logger:       logger,
-		EmailEnabled: emailEnabled,
+		Templates:       templates,
+		Env:             env,
+		Logger:          logger,
+		EmailEnabled:    emailEnabled,
+		DefaultTimezone: defaultTimezone,
 	}
 }
 
@@ -94,8 +96,9 @@ func (h *AdminHTMLHandler) ServeEventEdit(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	data := map[string]interface{}{
-		"Title":   "Edit Event - SEL Admin",
-		"EventID": eventID,
+		"Title":           "Edit Event - SEL Admin",
+		"EventID":         eventID,
+		"DefaultTimezone": h.DefaultTimezone,
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "event_edit.html", data); err != nil {

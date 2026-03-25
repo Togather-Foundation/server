@@ -402,12 +402,30 @@
 
     // Occurrence Management Functions
     window.addOccurrence = function() {
+        // Get default timezone from server (passed via hidden input)
+        const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
+
+        // Smart defaults: use last occurrence's times if available
+        let defaultStartTime = '';
+        let defaultEndTime = '';
+        if (occurrences && occurrences.length > 0) {
+            const lastOcc = occurrences[occurrences.length - 1];
+            defaultStartTime = formatForDatetimeLocal(lastOcc.start_time);
+            defaultEndTime = formatForDatetimeLocal(lastOcc.end_time);
+            // If no end time, default to 2 hours after start
+            if (!lastOcc.end_time && lastOcc.start_time) {
+                const startDate = new Date(lastOcc.start_time);
+                const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+                defaultEndTime = formatForDatetimeLocal(endDate.toISOString());
+            }
+        }
+
         // Clear modal fields
         document.getElementById('occurrence-index').value = '';
         document.getElementById('occurrence-venue-id').value = '';
-        document.getElementById('occurrence-start-time').value = '';
-        document.getElementById('occurrence-end-time').value = '';
-        document.getElementById('occurrence-timezone').value = 'America/Toronto';
+        document.getElementById('occurrence-start-time').value = defaultStartTime;
+        document.getElementById('occurrence-end-time').value = defaultEndTime;
+        document.getElementById('occurrence-timezone').value = defaultTz;
         document.getElementById('occurrence-door-time').value = '';
         document.getElementById('occurrence-virtual-url').value = '';
         document.getElementById('occurrence-modal-title').textContent = 'Add Occurrence';
