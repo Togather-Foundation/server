@@ -39,11 +39,19 @@
             const offsetPart = parts.find(function(p) { return p.type === 'timeZoneName'; });
             if (offsetPart) {
                 const offsetStr = offsetPart.value;
-                if (offsetStr === 'GMT' || offsetStr === 'UTC') {
+                if (offsetStr === 'GMT' || offsetStr === 'UTC' || offsetStr === 'Z') {
                     return '+00:00';
                 }
-                var sign = offsetStr.charAt(0);
-                var offsetHM = offsetStr.slice(1);
+                var sign = '+';
+                var offsetHM = offsetStr;
+                // Handle formats like "GMT-4", "GMT+5", "EST", "PST" etc.
+                if (offsetStr.indexOf('GMT') === 0 || offsetStr.indexOf('UT') === 0) {
+                    sign = offsetStr.charAt(3);
+                    offsetHM = offsetStr.slice(4);
+                } else if (offsetStr.charAt(0) === '+' || offsetStr.charAt(0) === '-') {
+                    sign = offsetStr.charAt(0);
+                    offsetHM = offsetStr.slice(1);
+                }
                 if (offsetHM.indexOf(':') === -1) {
                     var hours = parseInt(offsetHM, 10);
                     var minutes = 0;
@@ -52,7 +60,7 @@
                         minutes = isHalfHour ? 30 : 0;
                         hours = Math.floor(hours);
                     }
-                    offsetHM = (hours < 0 ? '-' : '') + String(Math.abs(hours)).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
+                    offsetHM = String(Math.abs(hours)).padStart(2, '0') + ':' + String(minutes).padStart(2, '0');
                 }
                 return (sign === '-' ? '-' : '+') + offsetHM;
             }
