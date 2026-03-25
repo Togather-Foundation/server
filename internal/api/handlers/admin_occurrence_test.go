@@ -106,7 +106,8 @@ func TestCreateOccurrence(t *testing.T) {
 				var resp map[string]any
 				assert.NoError(t, json.Unmarshal(body, &resp))
 				assert.Equal(t, occTestOccID, resp["id"])
-				assert.Equal(t, "2026-06-01T19:00:00Z", resp["start_time"])
+				// Response times are formatted in the occurrence's timezone
+				assert.Equal(t, "2026-06-01T15:00:00-04:00", resp["start_time"])
 			},
 		},
 		{

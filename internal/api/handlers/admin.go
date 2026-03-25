@@ -1371,7 +1371,6 @@ type occurrenceResponse struct {
 func occurrenceToResponse(occ *events.Occurrence) occurrenceResponse {
 	resp := occurrenceResponse{
 		ID:            occ.ID,
-		StartTime:     occ.StartTime.Format(time.RFC3339),
 		Timezone:      occ.Timezone,
 		VenueID:       occ.VenueID,
 		VenueULID:     occ.VenueULID,
@@ -1382,11 +1381,25 @@ func occurrenceToResponse(occ *events.Occurrence) occurrenceResponse {
 		PriceCurrency: occ.PriceCurrency,
 		Availability:  occ.Availability,
 	}
-	if occ.EndTime != nil {
-		resp.EndTime = occ.EndTime.Format(time.RFC3339)
-	}
-	if occ.DoorTime != nil {
-		resp.DoorTime = occ.DoorTime.Format(time.RFC3339)
+	// Format times in the occurrence's timezone for display
+	loc, err := time.LoadLocation(occ.Timezone)
+	if err == nil {
+		resp.StartTime = occ.StartTime.In(loc).Format(time.RFC3339)
+		if occ.EndTime != nil {
+			resp.EndTime = occ.EndTime.In(loc).Format(time.RFC3339)
+		}
+		if occ.DoorTime != nil {
+			resp.DoorTime = occ.DoorTime.In(loc).Format(time.RFC3339)
+		}
+	} else {
+		// Fallback to UTC if timezone is invalid
+		resp.StartTime = occ.StartTime.Format(time.RFC3339)
+		if occ.EndTime != nil {
+			resp.EndTime = occ.EndTime.Format(time.RFC3339)
+		}
+		if occ.DoorTime != nil {
+			resp.DoorTime = occ.DoorTime.Format(time.RFC3339)
+		}
 	}
 	return resp
 }
@@ -1431,14 +1444,20 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	startTime, err := time.Parse(time.RFC3339, req.StartTime)
+	// Parse times in the provided timezone, then convert to UTC for storage
+	loc, err := time.LoadLocation(req.Timezone)
+	if err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "invalid timezone: "+req.Timezone, err, h.Env)
+		return
+	}
+	startTime, err := time.ParseInLocation(time.RFC3339, req.StartTime, loc)
 	if err != nil {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "start_time must be RFC3339", err, h.Env)
 		return
 	}
 	var endTime *time.Time
 	if req.EndTime != nil {
-		t, err := time.Parse(time.RFC3339, *req.EndTime)
+		t, err := time.ParseInLocation(time.RFC3339, *req.EndTime, loc)
 		if err != nil {
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "end_time must be RFC3339", err, h.Env)
 			return
@@ -1447,7 +1466,7 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 	}
 	var doorTime *time.Time
 	if req.DoorTime != nil {
-		t, err := time.Parse(time.RFC3339, *req.DoorTime)
+		t, err := time.ParseInLocation(time.RFC3339, *req.DoorTime, loc)
 		if err != nil {
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "door_time must be RFC3339", err, h.Env)
 			return

@@ -90,28 +90,13 @@
         var minute = parseInt(match[5], 10);
 
         var offset = getTimezoneOffset(timezone, year, month, day);
-        var offsetSign = offset.charAt(0);
-        var offsetHM = offset.slice(1);
-        var offsetParts = offsetHM.split(':');
-        var offsetHours = parseInt(offsetParts[0], 10);
-        var offsetMinutes = parseInt(offsetParts[1], 10);
-        var totalOffsetMinutes = offsetHours * 60 + offsetMinutes;
-        if (offsetSign === '-') {
-            totalOffsetMinutes = -totalOffsetMinutes;
-        }
-
-        var localDate = new Date(year, month - 1, day, hour, minute);
-        var utcTime = localDate.getTime() - totalOffsetMinutes * 60 * 1000;
-        var utcDate = new Date(utcTime);
-
-        var utcYear = utcDate.getUTCFullYear();
-        var utcMonth = String(utcDate.getUTCMonth() + 1).padStart(2, '0');
-        var utcDay = String(utcDate.getUTCDate()).padStart(2, '0');
-        var utcHour = String(utcDate.getUTCHours()).padStart(2, '0');
-        var utcMinute = String(utcDate.getUTCMinutes()).padStart(2, '0');
-        var utcSecond = String(utcDate.getUTCSeconds()).padStart(2, '0');
-
-        return utcYear + '-' + utcMonth + '-' + utcDay + 'T' + utcHour + ':' + utcMinute + ':' + utcSecond + offset;
+        // Format: preserve wall-clock time in the timezone with offset appended
+        // This is the RFC3339 "with-timezone" form, not UTC
+        var monthStr = String(month).padStart(2, '0');
+        var dayStr = String(day).padStart(2, '0');
+        var hourStr = String(hour).padStart(2, '0');
+        var minuteStr = String(minute).padStart(2, '0');
+        return year + '-' + monthStr + '-' + dayStr + 'T' + hourStr + ':' + minuteStr + ':00' + offset;
     }
 
     /**
