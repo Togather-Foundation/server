@@ -1,6 +1,6 @@
 # Disabled Scraper Sources — Status and Fix Paths
 
-**Last reviewed:** 2026-03-09  
+**Last reviewed:** 2026-03-24  
 **Audit bead:** `srv-mo1xw` (review all disabled sources) — re-inspected all 14 disabled sources, deep-dived REST APIs, discovered new viable paths  
 **Previous audits:** 2026-03-05 (`srv-2oipr`, `srv-n8qi1`, `srv-mwy3y`)  
 **Rod stealth/network-idle flags added:** 2026-03-05 (`srv-n8qi1`, closed)  
@@ -30,13 +30,15 @@ Scraper tiers: T0 = JSON-LD/microdata, T1 = static HTML CSS selectors, T2 = JS-r
 | T3 REST API — unblocked by `srv-hi014` | burdock-brewery, workman-arts | Low (config only once `srv-hi014` lands) |
 | T2 widget never renders (third-party embed) | rcmusic | Low–Medium (find underlying API endpoint) |
 | Freeform layout — no repeating container | orpheus-choir-toronto | Low (contact venue for minor markup edit) |
-| Need depth-2 / multi-URL scraping | obsidian-theatre, theatre-passe-muraille, luminato | Medium (new feature) |
+| Need depth-2 / multi-URL scraping | obsidian-theatre, luminato | Medium (new feature) |
 | Cross-origin iframe — config written, pending verification | lula-lounge | Low (verify selectors, flip enabled) |
-| ~~Cross-origin iframe~~ — **now Tier 1 static** | reel-asian | **Done** (enabled) |
-| Blocked by third-party widget / no listing page | church-wellesley-village-bia | Low–Medium (contact/API) |
-| Blocked by bot protection | ago, glad-day-bookshop | Medium–High |
-| Site URL changed / content pending | hot-docs | Low (re-check after March 24 lineup announcement) |
+| Narrative date text (no parseable dates) | reel-asian | Blocked by `srv-054rj` (P3) |
+| Dates only on detail pages | tafelmusik | Blocked by `srv-qxj09` (P3) |
+| Content model mismatch (news posts, not events) | bloor-yorkville-bia, moca | Blocked |
+| Bot protection | ago, glad-day-bookshop | Medium–High |
+| Site URL changed / content pending | hot-docs | Low (re-check after festival announcement) |
 | No events listing page | mammalian-diving-reflex | Blocked |
+| **Documented limitation (no_startDate)** | aga-khan-museum, charles-street-video, gardiner-museum, harbourfront-centre, koffler-arts, music-gallery | P3 engine work needed |
 
 ---
 
@@ -203,18 +205,13 @@ config would unlock these sources.
   `/wp-json/wp/v2/posts?per_page=10` returns structured RFC 3339 dates.
 - **Status:** `enabled: true` as of 2026-03-09.
 
-### theatre-passe-muraille
+### theatre-passe-muraille ✅ RESOLVED
 - **URL:** `https://passemuraille.ca/25-26-season/`
-- **Platform:** Custom CMS (not Elementor — corrected from earlier reports)
-- **Status (2026-03-09):** Site is **UP and working** (previously reported unreachable).
-  Full 25.26 season with 11+ productions. Dates in freeform `<p>` text (e.g.
-  "Playing Feb. 1-21, 2026") with no CSS class. No repeating container per show.
-  Individual show pages (`/butch-femme/`, `/through-the-eyes-of-god/`) have cleaner
-  "Show Dates" sections. Nav submenu lists all show URLs.
-- **Viable paths:**
-  1. Depth-2 scraping: follow show URLs from nav submenu, extract dates from detail pages.
-  2. NLP date parsing of freeform `<p>` text from season page (fragile).
-  3. Contact venue to add `<time>` elements or JSON-LD Event markup.
+- **Platform:** Custom CMS
+- **Resolution (2026-03-24):** Upgraded to **Tier 1 sitemap-based**. Uses sitemap
+  `https://passemuraille.ca/sitemap.xml` for URL discovery, filters to season pages,
+  then extracts from Elementor widget sections. 3/3 events submit successfully.
+- **Status:** `enabled: true` as of 2026-03-24.
 
 ---
 
@@ -339,6 +336,65 @@ events page no longer exists.
 
 ---
 
+## 7a. Content model mismatch (not events)
+
+These sites have event-adjacent content but the scraper cannot extract usable events
+because the content model differs from what the scraper expects.
+
+### bloor-yorkville-bia
+- **URL:** `https://www.blooryorkville.com/events`
+- **Platform:** Wix
+- **Blocked by:** The "events" page contains news articles and blog posts about the
+  neighbourhood, not dated event listings. Content model is "What's New" / "News" not
+  "Calendar of Events".
+- **Action:** None — this source is fundamentally incompatible with event scraping.
+
+### moca
+- **URL:** `https://moca.ca/exhibitions/`
+- **Platform:** Elementor / Jet Engine
+- **Blocked by:** Elementor widgets use ambiguous CSS class naming (`.elementor-element`,
+  `.jet-engine-equal-height`) that cannot be reliably distinguished from other pages on
+  the same site. Multiple widget types (exhibitions, events, blog posts) share the same
+  DOM structure.
+- **Action:** Contact venue for a dedicated events page or data feed.
+
+---
+
+## 7b. Narrative date text (no parseable dates)
+
+These sources embed dates in freeform narrative text that cannot be parsed with
+standard date extraction logic. Blocked by `srv-054rj` (P3 — regex date extraction
+for narrative text).
+
+### reel-asian
+- **URL:** `https://www.reelasian.com/year-round/current-events/`
+- **Platform:** WordPress Visual Composer
+- **Blocked by:** Dates appear in narrative prose (e.g., "On Sunday, March 15, 2026,
+  Reel Asian will host...") rather than in discrete date elements. CSS selectors
+  cannot extract partial text from within a paragraph.
+- **Status:** `enabled: false`
+- **Related bead:** `srv-054rj` — Engine: regex date extraction for narrative text
+
+---
+
+## 7c. Dates only on detail pages
+
+These sources have listing pages but dates only appear on individual event detail
+pages. The current scraper architecture does not support following URLs from listing
+to detail pages for date extraction (Tier 1 only). Blocked by `srv-qxj09` (P3).
+
+### tafelmusik
+- **URL:** `https://www.tafelmusik.org/calendar`
+- **Platform:** WordPress + custom theme
+- **Blocked by:** Calendar/listings page shows event names and venues but NO dates.
+  Dates appear only on individual event detail pages (`/event/...`). The current
+  `follow_event_urls` feature only applies to Tier 0 JSON-LD sources, not Tier 1
+  CSS selectors.
+- **Status:** `enabled: false`
+- **Related bead:** `srv-qxj09` — Engine: Tier 1 follow_event_urls with detail-page selectors
+
+---
+
 ## 7. No events listing page
 
 ### mammalian-diving-reflex
@@ -364,6 +420,29 @@ matching `<time>` elements. Falls back to text content if the attribute is not p
 **Impact:** Enables extraction of structured date values from `<time datetime="...">` elements,
 `data-*` attributes from widget containers, and `href` values from links. Used by XTSC
 config to extract performer names from heading attributes.
+
+---
+
+## 9. Documented limitation — no_startDate (P3 engine work)
+
+These 6 sources have parseable date fields in the DOM but the scraper cannot extract
+valid start dates for some events. This is NOT a selector issue — the scraper runs
+successfully, finds events, but some events lack parseable dates. These require
+engine-level fixes (P3):
+
+| Source | Found | Submit | Skipped | Reason |
+|--------|-------|--------|---------|--------|
+| aga-khan-museum | 22 | 13 | 6 | Day-of-week-only events (e.g. "BMO Free Wednesdays") with no specific date |
+| charles-street-video | 144 | 47 | 97 | Archive events from 2023–2024 with no date span in the listing |
+| gardiner-museum | 7 | 5 | 2 | Recurring programs with no specific date (e.g. "Every Thursday") |
+| harbourfront-centre | 250 | 4 | 1 | Edge case: single event with unparseable date format |
+| koffler-arts | 14 | 6 | 3 | Natural-language dates without year (e.g. "March 15th") |
+| music-gallery | 20 | 19 | 1 | Past event using "From...until..." format with month-year only |
+
+All 48 other sources submit successfully. These 6 are documented limitations that
+require P3 engine work to resolve:
+- `srv-054rj` — regex date extraction for narrative text (would help koffler-arts)
+- `srv-qxj09` — Tier 1 follow_event_urls (would help tafelmusik)
 
 ---
 
