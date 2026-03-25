@@ -3,6 +3,7 @@ package scraper
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"time"
 )
@@ -13,26 +14,36 @@ var ErrNotFound = errors.New("scraper source not found")
 // Source is the domain type for a scraper source configuration stored in the DB.
 // It mirrors the scraper_sources table and maps to/from SourceConfig YAML files.
 type Source struct {
-	ID            int64
-	Name          string
-	URL           string
-	Tier          int
-	Schedule      string
-	TrustLevel    int
-	License       string
-	Enabled       bool
-	MaxPages      int
-	Selectors     []byte // JSONB: encoded SelectorConfig; nil for Tier 0
-	Notes         string
-	LastScrapedAt *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID                            int64
+	Name                          string
+	URL                           string
+	URLs                          []string
+	Tier                          int
+	Schedule                      string
+	TrustLevel                    int
+	License                       string
+	Enabled                       bool
+	MaxPages                      int
+	Selectors                     []byte // JSONB: encoded SelectorConfig; nil for Tier 0
+	Notes                         string
+	EventURLPattern               string
+	SkipMultiSessionCheck         bool
+	MultiSessionDurationThreshold string
+	FollowEventURLs               bool
+	Timezone                      string
+	LastScrapedAt                 *time.Time
+	CreatedAt                     time.Time
+	UpdatedAt                     time.Time
 	// Headless fields (Tier 2)
-	HeadlessWaitSelector  string
-	HeadlessWaitTimeoutMs int
-	HeadlessPaginationBtn string
-	HeadlessHeaders       []byte // JSONB; nil when empty
-	HeadlessRateLimitMs   int
+	HeadlessWaitSelector    string
+	HeadlessWaitTimeoutMs   int
+	HeadlessPaginationBtn   string
+	HeadlessHeaders         []byte // JSONB; nil when empty
+	HeadlessRateLimitMs     int
+	HeadlessWaitNetworkIdle bool
+	HeadlessUndetected      bool
+	HeadlessIframe          json.RawMessage
+	HeadlessIntercept       json.RawMessage
 	// GraphQL fields (Tier 3)
 	GraphQLConfig []byte // JSONB-encoded GraphQLConfig; nil for non-Tier-3 sources
 	// REST fields (Tier 3)
@@ -43,23 +54,33 @@ type Source struct {
 
 // UpsertParams contains the fields used to create or update a scraper source.
 type UpsertParams struct {
-	Name          string
-	URL           string
-	Tier          int
-	Schedule      string
-	TrustLevel    int
-	License       string
-	Enabled       bool
-	MaxPages      int
-	Selectors     []byte
-	Notes         string
-	LastScrapedAt *time.Time
+	Name                          string
+	URL                           string
+	URLs                          []string
+	Tier                          int
+	Schedule                      string
+	TrustLevel                    int
+	License                       string
+	Enabled                       bool
+	MaxPages                      int
+	Selectors                     []byte
+	Notes                         string
+	EventURLPattern               string
+	SkipMultiSessionCheck         bool
+	MultiSessionDurationThreshold string
+	FollowEventURLs               bool
+	Timezone                      string
+	LastScrapedAt                 *time.Time
 	// Headless fields (Tier 2)
-	HeadlessWaitSelector  string
-	HeadlessWaitTimeoutMs int
-	HeadlessPaginationBtn string
-	HeadlessHeaders       []byte // JSONB; nil when empty
-	HeadlessRateLimitMs   int
+	HeadlessWaitSelector    string
+	HeadlessWaitTimeoutMs   int
+	HeadlessPaginationBtn   string
+	HeadlessHeaders         []byte // JSONB; nil when empty
+	HeadlessRateLimitMs     int
+	HeadlessWaitNetworkIdle bool
+	HeadlessUndetected      bool
+	HeadlessIframe          json.RawMessage
+	HeadlessIntercept       json.RawMessage
 	// GraphQL fields (Tier 3)
 	GraphQLConfig []byte // JSONB-encoded GraphQLConfig; nil for non-Tier-3 sources
 	// REST fields (Tier 3)

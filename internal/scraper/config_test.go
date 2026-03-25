@@ -2234,3 +2234,90 @@ func TestValidate_SitemapWarnings(t *testing.T) {
 		}
 	})
 }
+
+// --------------------------------------------------------------------------
+// SourceConfig DB round-trip test
+// --------------------------------------------------------------------------
+
+// findRepoRoot walks up from the package directory until it finds go.mod,
+// which marks the repo root. Tests run with the working directory set to
+// the package directory, so real YAML configs are not directly accessible
+// via a relative path.
+func findRepoRoot(t *testing.T) string {
+	t.Helper()
+	dir, err := os.Getwd()
+	require.NoError(t, err)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("could not find repo root (no go.mod found)")
+		}
+		dir = parent
+	}
+}
+
+func TestSourceConfig_DBRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// Find the repo root by walking up from this file's location.
+	// Tests run with the working directory set to the package directory.
+	repoRoot := findRepoRoot(t)
+	configsDir := filepath.Join(repoRoot, "configs", "sources")
+
+	configs, err := LoadSourceConfigs(configsDir)
+	require.NoError(t, err, "LoadSourceConfigs must succeed")
+	require.NotEmpty(t, configs, "should have at least one config")
+
+	for _, cfg := range configs {
+		cfg := cfg
+		t.Run(cfg.Name, func(t *testing.T) {
+			t.Parallel()
+
+			params, err := SourceConfigToUpsertParams(cfg)
+			require.NoError(t, err, "SourceConfigToUpsertParams must succeed")
+
+			src := domainScraper.Source{
+				Name:                          params.Name,
+				URL:                           params.URL,
+				URLs:                          params.URLs,
+				Tier:                          params.Tier,
+				Schedule:                      params.Schedule,
+				TrustLevel:                    params.TrustLevel,
+				License:                       params.License,
+				Enabled:                       params.Enabled,
+				MaxPages:                      params.MaxPages,
+				Selectors:                     params.Selectors,
+				Notes:                         params.Notes,
+				EventURLPattern:               params.EventURLPattern,
+				SkipMultiSessionCheck:         params.SkipMultiSessionCheck,
+				MultiSessionDurationThreshold: params.MultiSessionDurationThreshold,
+				FollowEventURLs:               params.FollowEventURLs,
+				Timezone:                      params.Timezone,
+				HeadlessWaitSelector:          params.HeadlessWaitSelector,
+				HeadlessWaitTimeoutMs:         params.HeadlessWaitTimeoutMs,
+				HeadlessPaginationBtn:         params.HeadlessPaginationBtn,
+				HeadlessHeaders:               params.HeadlessHeaders,
+				HeadlessRateLimitMs:           params.HeadlessRateLimitMs,
+				HeadlessWaitNetworkIdle:       params.HeadlessWaitNetworkIdle,
+				HeadlessUndetected:            params.HeadlessUndetected,
+				HeadlessIframe:                params.HeadlessIframe,
+				HeadlessIntercept:             params.HeadlessIntercept,
+				GraphQLConfig:                 params.GraphQLConfig,
+				RestConfig:                    params.RestConfig,
+				SitemapConfig:                 params.SitemapConfig,
+			}
+
+			// Exclude LastScrapedAt from comparison - it's set by the scraper at runtime.
+			src.LastScrapedAt = nil
+			cfg.LastScrapedAt = nil
+
+			got, err := SourceConfigFromDomain(src)
+			require.NoError(t, err, "SourceConfigFromDomain must succeed")
+
+			assert.Equal(t, cfg, got, "SourceConfig should survive DB round-trip without data loss")
+		})
+	}
+}

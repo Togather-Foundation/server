@@ -23,8 +23,8 @@ import (
 type scraperQueriesIface interface {
 	ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]postgres.ListScraperSourcesWithLatestRunRow, error)
 	ListScraperRunsBySource(ctx context.Context, arg postgres.ListScraperRunsBySourceParams) ([]postgres.ScraperRun, error)
-	GetScraperSourceByName(ctx context.Context, name string) (postgres.ScraperSource, error)
-	UpsertScraperSource(ctx context.Context, arg postgres.UpsertScraperSourceParams) (postgres.ScraperSource, error)
+	GetScraperSourceByName(ctx context.Context, name string) (postgres.GetScraperSourceByNameRow, error)
+	UpsertScraperSource(ctx context.Context, arg postgres.UpsertScraperSourceParams) (postgres.UpsertScraperSourceRow, error)
 	GetScraperConfig(ctx context.Context) (postgres.ScraperConfig, error)
 	SetScraperConfig(ctx context.Context, arg postgres.SetScraperConfigParams) error
 }
@@ -107,8 +107,8 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 	return resp
 }
 
-// scraperSourceFromDB converts a postgres.ScraperSource to a scraperSourceResponse.
-func scraperSourceFromDB(s postgres.ScraperSource) scraperSourceResponse {
+// scraperSourceFromDB converts a postgres.UpsertScraperSourceRow to a scraperSourceResponse.
+func scraperSourceFromDB(s postgres.UpsertScraperSourceRow) scraperSourceResponse {
 	return scraperSourceResponse{
 		ID:       s.ID,
 		Name:     s.Name,

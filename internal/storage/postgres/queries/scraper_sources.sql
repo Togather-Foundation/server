@@ -3,10 +3,13 @@
 -- name: UpsertScraperSource :one
 -- Insert or update a scraper source by name (used by 'server scrape sync').
 INSERT INTO scraper_sources (
-  name, url, tier, schedule, trust_level, license, enabled,
-  max_pages, selectors, notes, last_scraped_at,
+  name, url, urls, tier, schedule, trust_level, license, enabled,
+  max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+  multi_session_duration_threshold, follow_event_urls, timezone,
+  last_scraped_at,
   headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
   headless_headers, headless_rate_limit_ms,
+  headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
   graphql_config,
   rest_config,
   sitemap_config,
@@ -14,6 +17,7 @@ INSERT INTO scraper_sources (
 ) VALUES (
   sqlc.arg('name'),
   sqlc.arg('url'),
+  sqlc.arg('urls'),
   sqlc.arg('tier'),
   sqlc.arg('schedule'),
   sqlc.arg('trust_level'),
@@ -22,12 +26,21 @@ INSERT INTO scraper_sources (
   sqlc.arg('max_pages'),
   sqlc.arg('selectors'),
   sqlc.arg('notes'),
+  sqlc.arg('event_url_pattern'),
+  sqlc.arg('skip_multi_session_check'),
+  sqlc.arg('multi_session_duration_threshold'),
+  sqlc.arg('follow_event_urls'),
+  sqlc.arg('timezone'),
   sqlc.arg('last_scraped_at'),
   sqlc.arg('headless_wait_selector'),
   sqlc.arg('headless_wait_timeout_ms'),
   sqlc.arg('headless_pagination_btn'),
   sqlc.arg('headless_headers'),
   sqlc.arg('headless_rate_limit_ms'),
+  sqlc.arg('headless_wait_network_idle'),
+  sqlc.arg('headless_undetected'),
+  sqlc.arg('headless_iframe'),
+  sqlc.arg('headless_intercept'),
   sqlc.arg('graphql_config'),
   sqlc.arg('rest_config'),
   sqlc.arg('sitemap_config'),
@@ -35,6 +48,7 @@ INSERT INTO scraper_sources (
 )
 ON CONFLICT (name) DO UPDATE SET
   url                      = EXCLUDED.url,
+  urls                     = EXCLUDED.urls,
   tier                     = EXCLUDED.tier,
   schedule                 = EXCLUDED.schedule,
   trust_level              = EXCLUDED.trust_level,
@@ -43,49 +57,70 @@ ON CONFLICT (name) DO UPDATE SET
   max_pages                = EXCLUDED.max_pages,
   selectors                = EXCLUDED.selectors,
   notes                    = EXCLUDED.notes,
+  event_url_pattern        = EXCLUDED.event_url_pattern,
+  skip_multi_session_check = EXCLUDED.skip_multi_session_check,
+  multi_session_duration_threshold = EXCLUDED.multi_session_duration_threshold,
+  follow_event_urls        = EXCLUDED.follow_event_urls,
+  timezone                 = EXCLUDED.timezone,
   last_scraped_at          = COALESCE(EXCLUDED.last_scraped_at, scraper_sources.last_scraped_at),
   headless_wait_selector   = EXCLUDED.headless_wait_selector,
   headless_wait_timeout_ms = EXCLUDED.headless_wait_timeout_ms,
   headless_pagination_btn  = EXCLUDED.headless_pagination_btn,
   headless_headers         = EXCLUDED.headless_headers,
   headless_rate_limit_ms   = EXCLUDED.headless_rate_limit_ms,
+  headless_wait_network_idle = EXCLUDED.headless_wait_network_idle,
+  headless_undetected      = EXCLUDED.headless_undetected,
+  headless_iframe          = EXCLUDED.headless_iframe,
+  headless_intercept       = EXCLUDED.headless_intercept,
   graphql_config           = EXCLUDED.graphql_config,
   rest_config              = EXCLUDED.rest_config,
   sitemap_config           = EXCLUDED.sitemap_config,
   updated_at               = NOW()
-RETURNING id, name, url, tier, schedule, trust_level, license, enabled,
-          max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
+RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
+          max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+          multi_session_duration_threshold, follow_event_urls, timezone,
+          last_scraped_at, created_at, updated_at,
           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-          headless_headers, headless_rate_limit_ms, graphql_config, rest_config,
-          sitemap_config;
+          headless_headers, headless_rate_limit_ms,
+          headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+          graphql_config, rest_config, sitemap_config;
 
 -- name: GetScraperSourceByName :one
 -- Get a single scraper source by unique name.
-SELECT id, name, url, tier, schedule, trust_level, license, enabled,
-       max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+       max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+       multi_session_duration_threshold, follow_event_urls, timezone,
+       last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms, graphql_config, rest_config,
-       sitemap_config
+       headless_headers, headless_rate_limit_ms,
+       headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+       graphql_config, rest_config, sitemap_config
   FROM scraper_sources
  WHERE name = sqlc.arg('name');
 
 -- name: GetScraperSourceByID :one
 -- Get a single scraper source by primary key.
-SELECT id, name, url, tier, schedule, trust_level, license, enabled,
-       max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+       max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+       multi_session_duration_threshold, follow_event_urls, timezone,
+       last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms, graphql_config, rest_config,
-       sitemap_config
+       headless_headers, headless_rate_limit_ms,
+       headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+       graphql_config, rest_config, sitemap_config
   FROM scraper_sources
  WHERE id = sqlc.arg('id');
 
 -- name: ListScraperSources :many
 -- List all scraper sources, optionally filtered by enabled flag.
-SELECT id, name, url, tier, schedule, trust_level, license, enabled,
-       max_pages, selectors, notes, last_scraped_at, created_at, updated_at,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+       max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+       multi_session_duration_threshold, follow_event_urls, timezone,
+       last_scraped_at, created_at, updated_at,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms, graphql_config, rest_config,
-       sitemap_config
+       headless_headers, headless_rate_limit_ms,
+       headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+       graphql_config, rest_config, sitemap_config
   FROM scraper_sources
  WHERE (sqlc.narg('enabled')::boolean IS NULL OR enabled = sqlc.narg('enabled'))
  ORDER BY name ASC;
@@ -115,11 +150,14 @@ DELETE FROM org_scraper_sources
 
 -- name: ListScraperSourcesByOrg :many
 -- List all scraper sources linked to a given organization.
-SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
-       s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
+SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+       s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
+       s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
+       s.last_scraped_at, s.created_at, s.updated_at,
        s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config,
-       s.sitemap_config
+       s.headless_headers, s.headless_rate_limit_ms,
+       s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
+       s.graphql_config, s.rest_config, s.sitemap_config
   FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = sqlc.arg('organization_id')
@@ -139,11 +177,14 @@ DELETE FROM place_scraper_sources
 
 -- name: ListScraperSourcesByPlace :many
 -- List all scraper sources linked to a given place.
-SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
-       s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
+SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+       s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
+       s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
+       s.last_scraped_at, s.created_at, s.updated_at,
        s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-       s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config,
-       s.sitemap_config
+       s.headless_headers, s.headless_rate_limit_ms,
+       s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
+       s.graphql_config, s.rest_config, s.sitemap_config
   FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = sqlc.arg('place_id')
@@ -155,18 +196,21 @@ SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enab
 -- has never been run). status and event counts use COALESCE to return non-nullable
 -- defaults so SQLc generates simple string/int32 types for those columns.
 SELECT
-  s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
-  s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at,
+  s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+  s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
+  s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
+  s.last_scraped_at, s.created_at, s.updated_at,
   s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-  s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config,
-  s.sitemap_config,
+  s.headless_headers, s.headless_rate_limit_ms,
+  s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
+  s.graphql_config, s.rest_config, s.sitemap_config,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,
   COALESCE(r.events_found, 0)         AS last_run_events_found,
   COALESCE(r.events_new, 0)           AS last_run_events_new,
-  COALESCE(r.events_dup, 0)           AS last_run_events_dup,
-  COALESCE(r.events_failed, 0)        AS last_run_events_failed,
+  COALESCE(r.events_dup, 0)          AS last_run_events_dup,
+  COALESCE(r.events_failed, 0)       AS last_run_events_failed,
   r.error_message                     AS last_run_error_message
 FROM scraper_sources s
 LEFT JOIN LATERAL (
