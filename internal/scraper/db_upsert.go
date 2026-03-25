@@ -7,16 +7,17 @@ import (
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 )
 
-// marshalJSON returns the JSON encoding of v, or nil if v is nil or marshal fails.
-func marshalJSON(v interface{}) json.RawMessage {
+// marshalJSON returns the JSON encoding of v, or nil if v is nil.
+// Returns an error if marshalling fails.
+func marshalJSON(v any) (json.RawMessage, error) {
 	if v == nil {
-		return nil
+		return nil, nil
 	}
 	data, err := json.Marshal(v)
 	if err != nil {
-		return nil
+		return nil, err
 	}
-	return data
+	return data, nil
 }
 
 // SourceConfigToUpsertParams converts a scraper.SourceConfig (from YAML) to
@@ -68,6 +69,15 @@ func SourceConfigToUpsertParams(cfg SourceConfig) (domainScraper.UpsertParams, e
 		}
 	}
 
+	iframeJSON, err := marshalJSON(cfg.Headless.Iframe)
+	if err != nil {
+		return domainScraper.UpsertParams{}, fmt.Errorf("encode headless iframe: %w", err)
+	}
+	interceptJSON, err := marshalJSON(cfg.Headless.Intercept)
+	if err != nil {
+		return domainScraper.UpsertParams{}, fmt.Errorf("encode headless intercept: %w", err)
+	}
+
 	return domainScraper.UpsertParams{
 		Name:                          cfg.Name,
 		URL:                           cfg.URL,
@@ -92,8 +102,8 @@ func SourceConfigToUpsertParams(cfg SourceConfig) (domainScraper.UpsertParams, e
 		HeadlessRateLimitMs:           cfg.Headless.RateLimitMs,
 		HeadlessWaitNetworkIdle:       cfg.Headless.WaitNetworkIdle,
 		HeadlessUndetected:            cfg.Headless.Undetected,
-		HeadlessIframe:                marshalJSON(cfg.Headless.Iframe),
-		HeadlessIntercept:             marshalJSON(cfg.Headless.Intercept),
+		HeadlessIframe:                iframeJSON,
+		HeadlessIntercept:             interceptJSON,
 		GraphQLConfig:                 graphqlConfigJSON,
 		RestConfig:                    restConfigJSON,
 		SitemapConfig:                 sitemapConfigJSON,
