@@ -27,6 +27,7 @@ New to deployment? Start here:
 ### Essential Guides
 
 - **[Quickstart Guide](quickstart.md)** - Complete deployment setup from scratch
+- **[Remote Deployment](remote-deployment.md)** - Zero-downtime SSH-based deploys from local machine to staging/production
 - **[Deployment Testing](deployment-testing.md)** - Post-deploy checklist and agent steps
 - **[Caddy Guide](caddy.md)** - Caddy reverse proxy — configuration, TLS, routing, and security
 - **[Linode Deployment](linode-deployment.md)** - Deploy to Linode cloud platform
@@ -34,11 +35,18 @@ New to deployment? Start here:
 - **[Migrations Guide](migrations.md)** - Manage database schema changes safely
 - **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
 
+### Configuration & Access
+
+- **[Environment Management](env-management.md)** - Adding and changing environment variables across environments
+- **[API Keys](api-keys.md)** - Creating and managing API keys for ingest and admin access
+- **[GitHub OAuth Setup](github-oauth-setup.md)** - Configuring GitHub OAuth for admin login
+
 ### Operations & Maintenance
 
 - **[Monitoring](monitoring.md)** - Observability setup (Prometheus, Grafana)
 - **[Log Management](log-management.md)** - Structured logging and analysis
 - **[Lock Management](lock-management.md)** - Deployment lock handling
+- **[Restart Guide](restart-guide.md)** - Safe service restart procedures
 - **[Performance Testing](performance-testing.md)** - Load testing and benchmarking
 - **[Best Practices](best-practices.md)** - Production deployment recommendations
 
@@ -49,6 +57,10 @@ New to deployment? Start here:
 ### Grafana
 
 - **[Grafana](grafana.md)** - Configuration, Docker setup, subpath proxy, embedding, security, dashboard guidelines, and troubleshooting
+
+### Testing & Verification
+
+- **[Webfiles Testing](webfiles-testing.md)** - Verifying robots.txt and sitemap.xml generation
 
 ## Deployment Architecture
 
@@ -121,5 +133,5 @@ See individual guides for detailed usage.
 
 ---
 
-**Last Updated**: 2026-02-01  
+**Last Updated**: 2026-03-25  
 **Maintained By**: Togather Infrastructure Team

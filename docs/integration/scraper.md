@@ -25,7 +25,7 @@ see [building-scrapers.md](building-scrapers.md).
 8. [Scraper Global Config](#scraper-global-config)
 9. [Database Run Tracking](#database-run-tracking)
 10. [Environment Variables](#environment-variables)
-11. [Staging Scrape Workflow](#staging-scrape-workflow)
+11. [Staging Scrape Workflow](#staging-scrape-workflow) — sync configs, reset DB, populate events
 12. [Adding New Sources](#adding-new-sources)
 13. [Agentic Scraping Workflow](#agentic-scraping-workflow)
 14. [Security Design](#security-design)
@@ -1076,6 +1076,78 @@ PERF_ADMIN_API_KEY=<ulid-key-for-admin>
 The scrape targets use `PERF_AGENT_API_KEY`. Use `PERF_ADMIN_API_KEY` only
 when calling admin API endpoints directly.
 
+### Syncing Source Configs on Staging
+
+The source configs on staging live in the Docker container's database. After deploying
+a new binary or editing YAML configs, you must sync them into the `scraper_sources` table
+on the remote database.
+
+The deployed server binary runs inside a Docker container — the YAML files in
+`/opt/togather/src/configs/sources/` on the host are not mounted into the container.
+To sync them, spin up a one-off container with the host config directory mounted:
+
+```bash
+# Determine the active container name and image
+ssh togather "docker ps --format '{{.Names}}\t{{.Image}}' | grep togather-server"
+# Example output: togather-server-green   togather-server:8c2b3c2
+
+# Run sync via a one-off container (adjust image tag from above)
+ssh togather "docker run --rm \
+  --network togather-network \
+  --entrypoint /app/server \
+  -v /opt/togather/src/configs/sources:/configs/sources \
+  -e DATABASE_URL='\$(grep DATABASE_URL /opt/togather/.env | cut -d= -f2-)' \
+  togather-server:<tag> \
+  scrape sync --sources /configs/sources"
+```
+
+Or, sourcing the env file directly on the host:
+
+```bash
+ssh togather "
+  source /opt/togather/.env
+  IMAGE=\$(docker inspect \$(docker ps -qf name=togather-server) --format '{{.Config.Image}}')
+  docker run --rm \
+    --network togather-network \
+    --entrypoint /app/server \
+    -v /opt/togather/src/configs/sources:/configs/sources \
+    -e DATABASE_URL=\"\$DATABASE_URL\" \
+    \$IMAGE \
+    scrape sync --sources /configs/sources
+"
+```
+
+Expected output: `Sync complete: N created, M updated (total X sources)`
+
+**When to sync on staging:**
+- After deploying a new binary (the deploy does not auto-sync)
+- After a staging DB reset (see `scripts/staging-reset.sh`)
+- After adding or modifying YAML configs in `configs/sources/`
+
+### Staging Database Reset
+
+`scripts/staging-reset.sh` wipes all event data from staging while preserving users,
+API keys, and sources. Run it before re-populating staging from scratch:
+
+```bash
+# Default: preserve sources, API keys, and users
+./scripts/staging-reset.sh
+
+# Full wipe: also clears sources and API keys (only users remain)
+./scripts/staging-reset.sh --wipe-all
+
+# Skip the confirmation prompt (for scripted use)
+./scripts/staging-reset.sh --yes
+```
+
+After a reset, re-sync sources (sources table is preserved by default, but if you ran
+`--wipe-all` you will need to sync again):
+
+```bash
+# Re-sync YAML configs into DB after a full wipe
+ssh togather "..."  # see Syncing Source Configs on Staging above
+```
+
 ### Makefile Targets
 
 | Target | Description |
@@ -1122,6 +1194,67 @@ go run ./cmd/server scrape all \
   --key "$PERF_AGENT_API_KEY" \
   --limit 20
 ```
+
+### Auditing a Full Dry-Run with `parse-scrape-log.py`
+
+After running `scrape all --dry-run` across all sources, use `scripts/parse-scrape-log.py`
+to categorize results into BROKEN / WARNINGS / OK. This is the primary tool for
+identifying which sources need config fixes before a live scrape.
+
+**When to use it:**
+- Before a staging scrape to know which sources are healthy
+- After modifying multiple configs to verify regressions haven't been introduced
+- When triaging broken sources to create beads or fix-source batches
+
+```bash
+# Capture both stdout (table) and stderr (JSON logs) into separate files
+scripts/agent-run.sh ./server scrape all --dry-run --verbose \
+  > /tmp/scrape-out.txt 2> /tmp/scrape-err.txt
+
+# Parse and categorize
+python3 scripts/parse-scrape-log.py /tmp/scrape-out.txt /tmp/scrape-err.txt
+```
+
+Or pipe directly (merges stdout+stderr into one stream):
+
+```bash
+./server scrape all --dry-run 2>&1 | python3 scripts/parse-scrape-log.py
+```
+
+**Output sections:**
+
+| Section | Meaning |
+|---------|---------|
+| `BROKEN` | Sources with `no_startDate`, HTTP errors, or all URLs failed — need config fixes |
+| `WARNINGS` | Sources with `all_midnight` times or `headless_required` locally (Tier 2 not running) — lower priority |
+| `OK` | Sources producing submittable events |
+
+**Example output:**
+```
+=== BROKEN — need config fixes (3 sources) ===
+  SOURCE                               FOUND  SUBMIT  ISSUES
+  ------------------------------------------------------------------------------------------
+  charles-street-video                   144       0  no_startDate  (skipped=144)
+  some-venue                               0       0  http_404: https://example.com/events
+
+=== WARNINGS — all-midnight or headless-only (12 sources) ===
+  SOURCE                               FOUND  SUBMIT  ISSUES
+  ----------------------------------------------------------------------
+  comedy-bar                             634     634  headless_required
+  mercer-union                             9       9  headless_required
+
+=== OK — 43 sources ===
+  ...
+
+Summary: 58 total | 3 broken | 12 warnings | 43 ok
+```
+
+**Interpretation notes:**
+- `headless_required` in WARNINGS is expected locally — Tier 2 sources require
+  `SCRAPER_HEADLESS_ENABLED=true` and work fine on staging. Not a bug.
+- `all_midnight` means dates were extracted but all times are `T00:00:00` — either
+  the site doesn't publish times (acceptable) or the time selector is missing/broken.
+- Any source in BROKEN needs a config fix before it will produce events.
 
 ### Verifying Results
 

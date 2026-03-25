@@ -12,6 +12,6 @@ enabled: true
 max_pages: 2
 selectors:
   event_list: "td.item_card"
-  name: "td.item_card a h3"
-  start_date: "td.item_card > span[style]"
-  url: "td.item_card > a"
+  name: "h3"
+  start_date: "span[style*='font-weight']"
+  url: "a"
