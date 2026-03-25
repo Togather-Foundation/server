@@ -1,7 +1,11 @@
 name: "koffler-arts"
-# Tier 1 (Colly CSS selectors). Koffler Arts Jewish cultural centre, 13 events confirmed 2026-02-21.
-# WordPress site with div.post event cards.
-# Selectors validated with `server scrape test`.
+# Tier 1 (Colly CSS selectors). Koffler Arts Jewish cultural centre.
+# WordPress site with div.post event cards. Dates appear in two formats:
+# (1) Exhibition/run dates: "Jan 20 - Mar 1, 2026" - WORKS, parses correctly
+# (2) Event times: "Sunday March 29 | 1 - 3:30 pm" - FAILS, date normalizer can't handle
+#     natural language without year (year omitted from display, relies on page context).
+#     See Issue: koffler-arts date normalization missing year inference.
+#     For now, 3 events with format (2) are skipped due to this limitation.
 url: "https://www.kofflerarts.org/calendar"
 tier: 1
 schedule: "daily"

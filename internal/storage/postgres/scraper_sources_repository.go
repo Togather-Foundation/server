@@ -34,18 +34,29 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		lastScraped = pgtype.Timestamptz{Time: *params.LastScrapedAt, Valid: true}
 	}
 
+	urls := params.URLs
+	if urls == nil {
+		urls = []string{}
+	}
+
 	row, err := r.queries().UpsertScraperSource(ctx, UpsertScraperSourceParams{
-		Name:          params.Name,
-		Url:           params.URL,
-		Tier:          int32(params.Tier),
-		Schedule:      params.Schedule,
-		TrustLevel:    int32(params.TrustLevel),
-		License:       params.License,
-		Enabled:       params.Enabled,
-		MaxPages:      int32(params.MaxPages),
-		Selectors:     params.Selectors,
-		Notes:         pgtype.Text{String: params.Notes, Valid: params.Notes != ""},
-		LastScrapedAt: lastScraped,
+		Name:                          params.Name,
+		Url:                           params.URL,
+		Urls:                          urls,
+		Tier:                          int32(params.Tier),
+		Schedule:                      params.Schedule,
+		TrustLevel:                    int32(params.TrustLevel),
+		License:                       params.License,
+		Enabled:                       params.Enabled,
+		MaxPages:                      int32(params.MaxPages),
+		Selectors:                     params.Selectors,
+		Notes:                         pgtype.Text{String: params.Notes, Valid: params.Notes != ""},
+		EventUrlPattern:               params.EventURLPattern,
+		SkipMultiSessionCheck:         params.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: params.MultiSessionDurationThreshold,
+		FollowEventUrls:               params.FollowEventURLs,
+		Timezone:                      params.Timezone,
+		LastScrapedAt:                 lastScraped,
 		HeadlessWaitSelector: pgtype.Text{
 			String: params.HeadlessWaitSelector,
 			Valid:  params.HeadlessWaitSelector != "",
@@ -55,17 +66,21 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 			String: params.HeadlessPaginationBtn,
 			Valid:  params.HeadlessPaginationBtn != "",
 		},
-		HeadlessHeaders:     params.HeadlessHeaders,
-		HeadlessRateLimitMs: int32(params.HeadlessRateLimitMs),
-		GraphqlConfig:       params.GraphQLConfig,
-		RestConfig:          params.RestConfig,
-		SitemapConfig:       params.SitemapConfig,
+		HeadlessHeaders:         params.HeadlessHeaders,
+		HeadlessRateLimitMs:     int32(params.HeadlessRateLimitMs),
+		HeadlessWaitNetworkIdle: params.HeadlessWaitNetworkIdle,
+		HeadlessUndetected:      params.HeadlessUndetected,
+		HeadlessIframe:          params.HeadlessIframe,
+		HeadlessIntercept:       params.HeadlessIntercept,
+		GraphqlConfig:           params.GraphQLConfig,
+		RestConfig:              params.RestConfig,
+		SitemapConfig:           params.SitemapConfig,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert scraper source %q: %w", params.Name, err)
 	}
 
-	return rowToSource(row), nil
+	return rowToSource(upsertRowToScraperSource(row)), nil
 }
 
 // GetByName returns a scraper source by unique name.
@@ -77,7 +92,7 @@ func (r *ScraperSourceRepository) GetByName(ctx context.Context, name string) (*
 		}
 		return nil, fmt.Errorf("get scraper source %q: %w", name, err)
 	}
-	return rowToSource(row), nil
+	return rowToSource(getByNameRowToScraperSource(row)), nil
 }
 
 // List returns all scraper sources, optionally filtered by enabled status.
@@ -94,7 +109,7 @@ func (r *ScraperSourceRepository) List(ctx context.Context, enabled *bool) ([]sc
 
 	sources := make([]scraper.Source, 0, len(rows))
 	for _, row := range rows {
-		sources = append(sources, *rowToSource(row))
+		sources = append(sources, *rowToSource(listRowToScraperSource(row)))
 	}
 	return sources, nil
 }
@@ -157,7 +172,7 @@ func (r *ScraperSourceRepository) ListByOrg(ctx context.Context, orgID string) (
 	}
 	sources := make([]scraper.Source, 0, len(rows))
 	for _, row := range rows {
-		sources = append(sources, *rowToSource(row))
+		sources = append(sources, *rowToSource(listByOrgRowToScraperSource(row)))
 	}
 	return sources, nil
 }
@@ -204,7 +219,7 @@ func (r *ScraperSourceRepository) ListByPlace(ctx context.Context, placeID strin
 	}
 	sources := make([]scraper.Source, 0, len(rows))
 	for _, row := range rows {
-		sources = append(sources, *rowToSource(row))
+		sources = append(sources, *rowToSource(listByPlaceRowToScraperSource(row)))
 	}
 	return sources, nil
 }
@@ -215,6 +230,7 @@ func rowToSource(row ScraperSource) *scraper.Source {
 		ID:         row.ID,
 		Name:       row.Name,
 		URL:        row.Url,
+		URLs:       row.Urls,
 		Tier:       int(row.Tier),
 		Schedule:   row.Schedule,
 		TrustLevel: int(row.TrustLevel),
@@ -224,10 +240,20 @@ func rowToSource(row ScraperSource) *scraper.Source {
 		Selectors:  row.Selectors,
 		CreatedAt:  row.CreatedAt.Time,
 		UpdatedAt:  row.UpdatedAt.Time,
+		// New scalar fields
+		EventURLPattern:               row.EventUrlPattern,
+		SkipMultiSessionCheck:         row.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: row.MultiSessionDurationThreshold,
+		FollowEventURLs:               row.FollowEventUrls,
+		Timezone:                      row.Timezone,
 		// Headless fields
-		HeadlessWaitTimeoutMs: int(row.HeadlessWaitTimeoutMs),
-		HeadlessHeaders:       row.HeadlessHeaders,
-		HeadlessRateLimitMs:   int(row.HeadlessRateLimitMs),
+		HeadlessWaitTimeoutMs:   int(row.HeadlessWaitTimeoutMs),
+		HeadlessHeaders:         row.HeadlessHeaders,
+		HeadlessRateLimitMs:     int(row.HeadlessRateLimitMs),
+		HeadlessWaitNetworkIdle: row.HeadlessWaitNetworkIdle,
+		HeadlessUndetected:      row.HeadlessUndetected,
+		HeadlessIframe:          row.HeadlessIframe,
+		HeadlessIntercept:       row.HeadlessIntercept,
 		// GraphQL fields (Tier 3)
 		GraphQLConfig: row.GraphqlConfig,
 		// REST fields (Tier 3)
@@ -249,4 +275,103 @@ func rowToSource(row ScraperSource) *scraper.Source {
 		s.HeadlessPaginationBtn = row.HeadlessPaginationBtn.String
 	}
 	return s
+}
+
+// The following helpers convert SQLc-generated query-specific row types into the
+// canonical ScraperSource model so that rowToSource can remain a single function.
+// All row types have identical fields — SQLc generates distinct types per query.
+
+func upsertRowToScraperSource(r UpsertScraperSourceRow) ScraperSource {
+	return ScraperSource{
+		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
+		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
+		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
+		Selectors: r.Selectors, Notes: r.Notes,
+		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
+		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
+		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
+		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
+		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
+		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
+		HeadlessIntercept: r.HeadlessIntercept,
+		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
+	}
+}
+
+func getByNameRowToScraperSource(r GetScraperSourceByNameRow) ScraperSource {
+	return ScraperSource{
+		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
+		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
+		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
+		Selectors: r.Selectors, Notes: r.Notes,
+		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
+		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
+		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
+		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
+		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
+		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
+		HeadlessIntercept: r.HeadlessIntercept,
+		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
+	}
+}
+
+func listRowToScraperSource(r ListScraperSourcesRow) ScraperSource {
+	return ScraperSource{
+		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
+		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
+		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
+		Selectors: r.Selectors, Notes: r.Notes,
+		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
+		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
+		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
+		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
+		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
+		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
+		HeadlessIntercept: r.HeadlessIntercept,
+		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
+	}
+}
+
+func listByOrgRowToScraperSource(r ListScraperSourcesByOrgRow) ScraperSource {
+	return ScraperSource{
+		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
+		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
+		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
+		Selectors: r.Selectors, Notes: r.Notes,
+		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
+		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
+		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
+		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
+		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
+		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
+		HeadlessIntercept: r.HeadlessIntercept,
+		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
+	}
+}
+
+func listByPlaceRowToScraperSource(r ListScraperSourcesByPlaceRow) ScraperSource {
+	return ScraperSource{
+		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
+		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
+		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
+		Selectors: r.Selectors, Notes: r.Notes,
+		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
+		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
+		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
+		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
+		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
+		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
+		HeadlessIntercept: r.HeadlessIntercept,
+		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
+	}
 }

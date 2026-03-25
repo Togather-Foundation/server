@@ -1,23 +1,23 @@
 name: "reel-asian"
-# Reel Asian International Film Festival (Toronto). WordPress with Elementor + Visual Composer
+# Reel Asian International Film Festival (Toronto). WordPress with Visual Composer
 # Year-round events page (/year-round/current-events/) uses static HTML event cards.
-# Events are arranged in Visual Composer rows with individual event boxes (image + title + description).
-# This is Tier 1 static HTML scraping — no JavaScript rendering needed.
-#
-# NOTE: Elevent library is loaded for cart/account management but does NOT render
-# a dynamic events list on this page. The events shown are created with Visual Composer.
+# Events are arranged in Visual Composer columns with event boxes (image + title + description).
+# BLOCKER: Dates are embedded in narrative text (e.g., "On Sun, March 15, 2026, Reel Asian will host...").
+# CSS cannot extract just the date prefix, and go-dateparser fails on narrative paragraphs.
+# Events can be extracted (name, URL, image, description) but not dates.
+# Tier 1 static HTML scraping.
+# Organization match: no match found in database
 url: "https://www.reelasian.com/year-round/current-events/"
 tier: 1
 schedule: "daily"
 trust_level: 6
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 1
+timezone: "America/Toronto"
 selectors:
-  event_list: ".vc_row.wpb_row .wpb_column.vc_col-sm-4:has(.wpb_text_column)"
-  name: ".wpb_text_column p:first-child a strong"
-  url: ".wpb_text_column p:first-child a"
-  # Date is embedded in the description paragraph (no <time> elements).
-  # Extract "On <day>, <month> <date>, <year>..." pattern.
-  start_date: ".wpb_text_column p:last-child"
+  event_list: ".wpb_column.vc_col-sm-4"
+  name: ".wpb_text_column a strong, .wpb_text_column a b"
+  url: ".wpb_text_column a"
+  description: ".btn-wrapper p"
   image: ".wpb_single_image-img"

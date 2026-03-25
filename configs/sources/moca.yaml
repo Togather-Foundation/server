@@ -1,20 +1,30 @@
 name: "moca"
+# Tier 1/2 - CURRENTLY BLOCKED. Museum of Contemporary Art Toronto.
+# Platform: WordPress + Elementor + Jet Engine dynamic fields.
+# Issue: Date/time fields are fragmented across multiple .jet-listing-dynamic-field__content
+# elements on the listing page, making reliable CSS extraction ambiguous:
+#   - 1st .jet-listing-dynamic-field__content = cost/format (" | Drop-in | Free ")
+#   - 2nd .jet-listing-dynamic-field__content = event date ("Monday, May 11, 2026")
+#   - 3rd .jet-listing-dynamic-field__content = start time ("4:00 pm")
+#   - 4th .jet-listing-dynamic-field__content = end time (" – 7:00 pm")
+# CSS selectors can't reliably target the 2nd element when all siblings use the same class.
+# Tier 2 headless (rod) still yields the same ambiguity — the HTML structure is identical.
+# Workaround options (not yet implemented):
+#   - Enhanced selector syntax to skip elements (CSS4 :not-nth-child)
+#   - JSON extraction from Jet Engine's post meta (requires custom field mapping)
+#   - Detail page scraping with follow_event_urls (detail pages have better structure)
+# See Issue: moca-ambiguous-selectors for tracking.
 url: "https://moca.ca/events"
 tier: 1
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 3
-# Organization match: no match found in database
-# Note: event_list uses the Elementor template ID (20414) as a stable hook;
-# dates are concatenated from multiple jet-listing-dynamic-field__content spans
-# (cost info + date + time) — ingest normalization should parse the date portion.
-# Images are lazy-loaded SVG placeholders; real images are behind JS rendering.
-# Pagination: https://moca.ca/events/page/2/ via next page link.
 selectors:
-  event_list: "div.elementor-20414 section"
+  event_list: "section.moca-event-listing-item"
   name: "h1"
-  start_date: ".jet-listing-dynamic-field__content"
   url: "a.elementor-button"
   pagination: "a.next.page-numbers"
+  # start_date selector not viable; see note above
+  # date_selectors approach fails (ambiguous .jet-listing-dynamic-field__content matching)

@@ -179,9 +179,9 @@ type Querier interface {
 	GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQueueEntryRow, error)
 	GetScraperConfig(ctx context.Context) (ScraperConfig, error)
 	// Get a single scraper source by primary key.
-	GetScraperSourceByID(ctx context.Context, id int64) (ScraperSource, error)
+	GetScraperSourceByID(ctx context.Context, id int64) (GetScraperSourceByIDRow, error)
 	// Get a single scraper source by unique name.
-	GetScraperSourceByName(ctx context.Context, name string) (ScraperSource, error)
+	GetScraperSourceByName(ctx context.Context, name string) (GetScraperSourceByNameRow, error)
 	// Retrieves source metadata by ID
 	GetSourceByID(ctx context.Context, id pgtype.UUID) (GetSourceByIDRow, error)
 	// Gets all sources that contributed to an event (deduplicated)
@@ -250,11 +250,11 @@ type Querier interface {
 	// List recent scraper runs for a specific source, ordered newest first.
 	ListScraperRunsBySource(ctx context.Context, arg ListScraperRunsBySourceParams) ([]ScraperRun, error)
 	// List all scraper sources, optionally filtered by enabled flag.
-	ListScraperSources(ctx context.Context, enabled pgtype.Bool) ([]ScraperSource, error)
+	ListScraperSources(ctx context.Context, enabled pgtype.Bool) ([]ListScraperSourcesRow, error)
 	// List all scraper sources linked to a given organization.
-	ListScraperSourcesByOrg(ctx context.Context, organizationID pgtype.UUID) ([]ScraperSource, error)
+	ListScraperSourcesByOrg(ctx context.Context, organizationID pgtype.UUID) ([]ListScraperSourcesByOrgRow, error)
 	// List all scraper sources linked to a given place.
-	ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.UUID) ([]ScraperSource, error)
+	ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.UUID) ([]ListScraperSourcesByPlaceRow, error)
 	// List all scraper sources with their most recent run stats embedded.
 	// last_run_started_at/completed_at/error_message are nullable (NULL when a source
 	// has never been run). status and event counts use COALESCE to return non-nullable
@@ -340,7 +340,7 @@ type Querier interface {
 	UpsertReconciliationCache(ctx context.Context, arg UpsertReconciliationCacheParams) (ReconciliationCache, error)
 	// SQLc queries for scraper_sources and linkage tables.
 	// Insert or update a scraper source by name (used by 'server scrape sync').
-	UpsertScraperSource(ctx context.Context, arg UpsertScraperSourceParams) (ScraperSource, error)
+	UpsertScraperSource(ctx context.Context, arg UpsertScraperSourceParams) (UpsertScraperSourceRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

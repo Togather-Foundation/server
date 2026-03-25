@@ -1,12 +1,10 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -51,7 +49,7 @@ Examples:
 
 		var created, updated int
 		for _, cfg := range configs {
-			params, encErr := sourceConfigToUpsertParams(cfg)
+			params, encErr := scraper.SourceConfigToUpsertParams(cfg)
 			if encErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: skipping %q: %v\n", cfg.Name, encErr)
 				continue
@@ -141,75 +139,4 @@ Examples:
 		fmt.Printf("Export complete: %d sources written to %s\n", len(sources), dir)
 		return nil
 	},
-}
-
-// sourceConfigToUpsertParams converts a scraper.SourceConfig (from YAML) to
-// the domain UpsertParams. Selectors are JSON-encoded for the JSONB column.
-// Headless headers and GraphQL config are JSON-encoded when present.
-func sourceConfigToUpsertParams(cfg scraper.SourceConfig) (domainScraper.UpsertParams, error) {
-	var selectorsJSON []byte
-	if cfg.Tier == 1 || cfg.Tier == 2 {
-		var encErr error
-		selectorsJSON, encErr = json.Marshal(cfg.Selectors)
-		if encErr != nil {
-			return domainScraper.UpsertParams{}, fmt.Errorf("encode selectors: %w", encErr)
-		}
-	}
-
-	var headlessHeadersJSON []byte
-	if len(cfg.Headless.Headers) > 0 {
-		var encErr error
-		headlessHeadersJSON, encErr = json.Marshal(cfg.Headless.Headers)
-		if encErr != nil {
-			return domainScraper.UpsertParams{}, fmt.Errorf("encode headless headers: %w", encErr)
-		}
-	}
-
-	var graphqlConfigJSON []byte
-	if cfg.Tier == 3 && cfg.GraphQL != nil {
-		var encErr error
-		graphqlConfigJSON, encErr = json.Marshal(cfg.GraphQL)
-		if encErr != nil {
-			return domainScraper.UpsertParams{}, fmt.Errorf("encode graphql config: %w", encErr)
-		}
-	}
-
-	var restConfigJSON []byte
-	if cfg.Tier == 3 && cfg.REST != nil {
-		var encErr error
-		restConfigJSON, encErr = json.Marshal(cfg.REST)
-		if encErr != nil {
-			return domainScraper.UpsertParams{}, fmt.Errorf("encode rest config: %w", encErr)
-		}
-	}
-
-	var sitemapConfigJSON []byte
-	if cfg.Sitemap != nil {
-		var encErr error
-		sitemapConfigJSON, encErr = json.Marshal(cfg.Sitemap)
-		if encErr != nil {
-			return domainScraper.UpsertParams{}, fmt.Errorf("encode sitemap config: %w", encErr)
-		}
-	}
-
-	return domainScraper.UpsertParams{
-		Name:                  cfg.Name,
-		URL:                   cfg.URL,
-		Tier:                  cfg.Tier,
-		Schedule:              cfg.Schedule,
-		TrustLevel:            cfg.TrustLevel,
-		License:               cfg.License,
-		Enabled:               cfg.Enabled,
-		MaxPages:              cfg.MaxPages,
-		Selectors:             selectorsJSON,
-		Notes:                 cfg.Notes,
-		HeadlessWaitSelector:  cfg.Headless.WaitSelector,
-		HeadlessWaitTimeoutMs: cfg.Headless.WaitTimeoutMs,
-		HeadlessPaginationBtn: cfg.Headless.PaginationBtn,
-		HeadlessHeaders:       headlessHeadersJSON,
-		HeadlessRateLimitMs:   cfg.Headless.RateLimitMs,
-		GraphQLConfig:         graphqlConfigJSON,
-		RestConfig:            restConfigJSON,
-		SitemapConfig:         sitemapConfigJSON,
-	}, nil
 }

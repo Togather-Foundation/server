@@ -261,11 +261,16 @@ var dateDigitPattern = regexp.MustCompile(`\b([1-9]|[12]\d|3[01])\b`)
 
 // ── Date range splitting ──────────────────────────────────────────────
 
-// rangeSeparator matches " - ", " – ", " to ", or a bare dash between
-// date-like fragments. The negative lookbehind/lookahead prevents splitting
-// on dashes inside ISO dates (e.g. "2026-03-05").
+// rangeSeparator matches date range separators between two date fragments:
+//   - " - " or " – " (with surrounding spaces)
+//   - "–" (en-dash without spaces — common in institutional listings like AGA Khan Museum)
+//   - " to " (word separator)
+//
+// Regular hyphen without spaces is NOT matched because it appears inside ISO
+// dates (2026-03-05) and day-of-month abbreviations. En-dash (–, U+2013) is
+// safe to match without spaces since it never appears in ISO date strings.
 var rangeSeparator = regexp.MustCompile(
-	`\s+[-–]\s+|\s+to\s+`,
+	`\s+[-–]\s+|–|\s+to\s+`,
 )
 
 // shortRangePattern matches compact ranges like "March 5-7" or "March 5–7"

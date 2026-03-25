@@ -1,8 +1,9 @@
 name: "toronto-jazz"
-# Tier 1 (Colly CSS selectors). Festival homepage ticketed shows, 4 events confirmed 2026-02-21.
-# Off-season count is low; spikes during festival (June).
-# No startDate: partial dates ("June 23") present in HTML but lack year — normaliser rejects them.
-# Needs tier-2 detail-page scraping or a date-normalisation improvement for year-less strings.
+# Tier 1 static HTML. Listing page has artist names, URLs, dates, and times.
+# date_selectors extracts separate date ("June 24") and time ("7:00 pm") elements
+# from each event's HTML and combines them into RFC 3339 timestamps.
+# Example: ".each-show li.date" + ".each-show li.time" = "2026-06-24T19:00:00-04:00"
+# Organization match: no match found in database
 url: "https://torontojazz.com/ticketed-performances/"
 tier: 1
 schedule: "weekly"
@@ -12,5 +13,9 @@ enabled: true
 max_pages: 2
 selectors:
   event_list: "div.artist-items"
-  name: "a.artist_item"
+  name: "h1.artist-name"
   url: "a.artist_item"
+  location: ".each-show li.venue"
+  date_selectors:
+    - ".each-show li.date"
+    - ".each-show li.time"

@@ -1,6 +1,7 @@
 name: "music-gallery"
 # Tier 1 (Colly CSS selectors). WordPress custom theme.
-# Date is plain text "Friday, March 13, 2026" (no datetime attr).
+# Date is plain text "Friday, March 13, 2026<br/>8 PM" inside div.mb-4.
+# The scraper engine handles <br> → space automatically in date extraction.
 # Using /event-category/performance/ — persistent URL, same article.c-border structure.
 url: "https://musicgallery.org/event-category/performance/"
 tier: 1

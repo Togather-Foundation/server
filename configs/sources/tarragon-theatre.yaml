@@ -1,18 +1,20 @@
 name: "tarragon-theatre"
+# WordPress + Nectar theme. Events are listed on /whats-on/ but dates are only on detail pages.
+# Using sitemap-based scraping: discover event URLs from sitemap, then scrape each
+# detail page to extract dates from <h4> tag formatted as "Month Day – Day, Year".
+# Organization match: no match found in database
 url: "https://tarragontheatre.com/whats-on/"
 tier: 1
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
 enabled: true
-max_pages: 1
-# Organization match: no match found in database
-# Note: Images are lazy-loaded (data-src); the src attribute returns a placeholder SVG.
-# No per-item dates on the listing page — dates are on detail pages only.
-# Events will be skipped by the normaliser (startDate required); this config provides
-# URL/name discovery only. A Tier 2 follow-up scraper on detail pages could extract dates.
-# URLs point to /plays/ paths (season productions), not /events/.
+sitemap:
+  url: "https://tarragontheatre.com/wp-sitemap-posts-post-1.xml"
+  filter_pattern: "/plays/(2025-2026|tarragon-season-26-27|guest-presentations)/"
+  max_urls: 200
 selectors:
-  event_list: "div.nectar-post-grid-item[data-post-id]"
-  name: "h3.post-heading a span"
-  url: ".nectar-post-grid-link"
+  event_list: "article"
+  name: "h1.vc_custom_heading"
+  start_date: "article h4:first-of-type"
+  url: "link[rel=canonical]"

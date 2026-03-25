@@ -1,16 +1,14 @@
 name: "second-city-toronto"
-# Tier 1 (Colly CSS selectors). Chakra UI show listing, 51 shows confirmed 2026-02-21.
-# Selectors validated with `server scrape test`.
-# No startDate: dates are not present in static HTML listing; they exist on detail pages only.
-# Events normalised without startDate are dropped. Needs tier-2 detail-page scraping.
+# Tier 0 with sitemap-based URL discovery. Each show detail page contains JSON-LD Event
+# with startDate. Filtering to /shows/toronto/* URLs using regex.
+# Organization match: no match found in database
 url: "https://www.secondcity.com/shows/toronto"
-tier: 1
+tier: 0
 schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
 enabled: true
-max_pages: 3
-selectors:
-  event_list: "div.chakra-linkbox"
-  name: "h2.chakra-heading"
-  url: "a.chakra-linkbox__overlay"
+sitemap:
+  url: "https://www.secondcity.com/sitemap/shows.xml"
+  filter_pattern: "/shows/toronto/"
+  max_urls: 200

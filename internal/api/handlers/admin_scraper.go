@@ -23,8 +23,8 @@ import (
 type scraperQueriesIface interface {
 	ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]postgres.ListScraperSourcesWithLatestRunRow, error)
 	ListScraperRunsBySource(ctx context.Context, arg postgres.ListScraperRunsBySourceParams) ([]postgres.ScraperRun, error)
-	GetScraperSourceByName(ctx context.Context, name string) (postgres.ScraperSource, error)
-	UpsertScraperSource(ctx context.Context, arg postgres.UpsertScraperSourceParams) (postgres.ScraperSource, error)
+	GetScraperSourceByName(ctx context.Context, name string) (postgres.GetScraperSourceByNameRow, error)
+	UpsertScraperSource(ctx context.Context, arg postgres.UpsertScraperSourceParams) (postgres.UpsertScraperSourceRow, error)
 	GetScraperConfig(ctx context.Context) (postgres.ScraperConfig, error)
 	SetScraperConfig(ctx context.Context, arg postgres.SetScraperConfigParams) error
 }
@@ -107,8 +107,8 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 	return resp
 }
 
-// scraperSourceFromDB converts a postgres.ScraperSource to a scraperSourceResponse.
-func scraperSourceFromDB(s postgres.ScraperSource) scraperSourceResponse {
+// scraperSourceFromDB converts a postgres.UpsertScraperSourceRow to a scraperSourceResponse.
+func scraperSourceFromDB(s postgres.UpsertScraperSourceRow) scraperSourceResponse {
 	return scraperSourceResponse{
 		ID:       s.ID,
 		Name:     s.Name,
@@ -273,17 +273,35 @@ func (h *AdminScraperHandler) SetSourceEnabled(w http.ResponseWriter, r *http.Re
 	}
 
 	updated, err := h.Queries.UpsertScraperSource(r.Context(), postgres.UpsertScraperSourceParams{
-		Name:          existing.Name,
-		Url:           existing.Url,
-		Tier:          existing.Tier,
-		Schedule:      existing.Schedule,
-		TrustLevel:    existing.TrustLevel,
-		License:       existing.License,
-		Enabled:       body.Enabled,
-		MaxPages:      existing.MaxPages,
-		Selectors:     existing.Selectors,
-		Notes:         existing.Notes,
-		LastScrapedAt: existing.LastScrapedAt,
+		Name:                          existing.Name,
+		Url:                           existing.Url,
+		Urls:                          existing.Urls,
+		Tier:                          existing.Tier,
+		Schedule:                      existing.Schedule,
+		TrustLevel:                    existing.TrustLevel,
+		License:                       existing.License,
+		Enabled:                       body.Enabled,
+		MaxPages:                      existing.MaxPages,
+		Selectors:                     existing.Selectors,
+		Notes:                         existing.Notes,
+		EventUrlPattern:               existing.EventUrlPattern,
+		SkipMultiSessionCheck:         existing.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: existing.MultiSessionDurationThreshold,
+		FollowEventUrls:               existing.FollowEventUrls,
+		Timezone:                      existing.Timezone,
+		LastScrapedAt:                 existing.LastScrapedAt,
+		HeadlessWaitSelector:          existing.HeadlessWaitSelector,
+		HeadlessWaitTimeoutMs:         existing.HeadlessWaitTimeoutMs,
+		HeadlessPaginationBtn:         existing.HeadlessPaginationBtn,
+		HeadlessHeaders:               existing.HeadlessHeaders,
+		HeadlessRateLimitMs:           existing.HeadlessRateLimitMs,
+		HeadlessWaitNetworkIdle:       existing.HeadlessWaitNetworkIdle,
+		HeadlessUndetected:            existing.HeadlessUndetected,
+		HeadlessIframe:                existing.HeadlessIframe,
+		HeadlessIntercept:             existing.HeadlessIntercept,
+		GraphqlConfig:                 existing.GraphqlConfig,
+		RestConfig:                    existing.RestConfig,
+		SitemapConfig:                 existing.SitemapConfig,
 	})
 	if err != nil {
 		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: set source enabled")

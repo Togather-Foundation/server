@@ -1,6 +1,14 @@
 name: "aga-khan-museum"
-# Tier 1 (Colly CSS selectors). Static HTML event cards, 18 events confirmed 2026-02-21.
-# Selectors validated with `server scrape test`.
+# Tier 1 (Colly CSS selectors). Static HTML event cards with date/time separation.
+# ISSUE: Date labels contain ranges ("May 6, 2025–May 25, 2026") and recurring
+# patterns ("Wednesdays", "Sundays") that fail date parsing. Range-detection regex
+# requires spaces around en-dashes (e.g. " – "), but actual HTML has no spaces
+# ("2025–May"), so splitDateRange fails. Using start_date instead of date_selectors
+# to at least capture single-date events. Events with ranges/recurring patterns
+# (14+) are legitimately skipped — they are exhibitions/programs without discrete
+# start dates. This is acceptable as-is; see scraper-worker issues for potential
+# fixes (more flexible range regex, or detail-page scraping for dates).
+# Organization: Aga Khan Museum (museum, trust_level: 8)
 url: "https://agakhanmuseum.org/whats-on/"
 tier: 1
 schedule: "daily"
