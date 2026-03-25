@@ -2695,8 +2695,15 @@ func (s *AdminService) CreateOccurrenceOnEvent(ctx context.Context, eventULID st
 	params.EventID = event.ID
 
 	// Enforce the occurrence_location_required DB constraint before touching the DB.
+	// If occurrence has no venue and no virtual URL, inherit from the event's defaults.
 	if params.VenueID == nil && params.VirtualURL == nil {
-		return nil, ErrOccurrenceLocationRequired
+		if event.PrimaryVenueID != nil {
+			params.VenueID = event.PrimaryVenueID
+		} else if event.VirtualURL != "" {
+			params.VirtualURL = &event.VirtualURL
+		} else {
+			return nil, ErrOccurrenceLocationRequired
+		}
 	}
 
 	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, event.ID, params.StartTime, params.EndTime)
@@ -2789,6 +2796,7 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 
 	// Pre-check the occurrence_location_required DB constraint (venue_id OR virtual_url must be non-null).
 	// Simulate the result of the update to catch violations before hitting the DB.
+	// If occurrence has no venue and no virtual URL, inherit from the event's defaults.
 	var proposedVenueID *string
 	if params.VenueIDSet {
 		proposedVenueID = params.VenueID // may be nil (clearing)
@@ -2802,7 +2810,22 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 		proposedVirtualURL = current.VirtualURL
 	}
 	if proposedVenueID == nil && proposedVirtualURL == nil {
-		return nil, ErrOccurrenceLocationRequired
+		if event.PrimaryVenueID != nil {
+			proposedVenueID = event.PrimaryVenueID
+		} else if event.VirtualURL != "" {
+			proposedVirtualURL = &event.VirtualURL
+		} else {
+			return nil, ErrOccurrenceLocationRequired
+		}
+		// Update the params so the DB gets the inherited value
+		if !params.VenueIDSet {
+			params.VenueID = proposedVenueID
+			params.VenueIDSet = true
+		}
+		if !params.VirtualURLSet {
+			params.VirtualURL = proposedVirtualURL
+			params.VirtualURLSet = true
+		}
 	}
 
 	occ, err := txRepo.UpdateOccurrence(ctx, event.ID, occurrenceID, params)
