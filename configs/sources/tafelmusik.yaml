@@ -1,13 +1,27 @@
 name: "tafelmusik"
-# Tier 1 (Colly CSS selectors). Season listing page, 11 events confirmed 2026-02-21.
-# No startDate: dates are not present in static HTML listing; they exist on detail pages only.
-# Events normalised without startDate are dropped. Needs tier-2 detail-page scraping.
+# BLOCKER: Tier 1 cannot extract dates from detail pages.
+# Listing page (2025-26-season) shows 12 current concerts but NO dates in the preview cards.
+# All dates exist ONLY on individual concert detail pages (e.g. .performance > .date elements).
+#
+# Attempted solutions:
+# 1. Tier 1 + follow_event_urls: does NOT work — follow_event_urls is Tier 0-only (JSON-LD)
+# 2. Sitemap-based Tier 1: pulls 79 total concerts (includes old historical events without dates)
+# 3. Tier 2 headless: listing page still has no dates in rendered DOM
+#
+# To make this work, scraper needs one of:
+# - Tier 1/2 support for follow_event_urls + date_selectors on detail pages
+# - Reverse-proxy scraping (fetch listing, extract URLs, fetch each URL, extract dates)
+# - API endpoint discovery (none found for Tafelmusik)
+#
+# For now: config disabled, pointing to listing page only.
+# Events can be extracted manually via detail page links (e.g. /concerts-events/concerts/mozart-40-schubert-5/)
+#
 url: "https://tafelmusik.org/concerts-events/2025-26-season/"
 tier: 1
 schedule: "weekly"
 trust_level: 8
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 2
 selectors:
   event_list: "div.content-preview-item"
