@@ -1,14 +1,16 @@
 name: "bloor-yorkville-bia"
-# Tier 1 (Colly CSS). WordPress + Elementor. Events category archive.
-# NOTE: /by-events/ is a static nav page; use /category/events/ for actual listings.
-# Date not in listing markup; falls back to link follow or WP post date.
-# 10 event posts confirmed 2026-02-21.
+# Tier 1 (Colly CSS). WordPress + Elementor.
+# DISABLED: /category/events/ contains blog posts (news) tagged as "events", not actual events.
+# No event dates on listing page (posts have publish date, not event date).
+# Detail pages have event info in text descriptions but no machine-readable dates.
+# Bloor-Yorkville does NOT maintain a proper event calendar.
+# Status: Unscrapeable as of 2026-03-24.
 url: "https://www.bloor-yorkville.com/category/events/"
 tier: 1
 schedule: "weekly"
 trust_level: 5
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 3
 selectors:
   event_list: "article"
