@@ -137,8 +137,14 @@ update SQLc queries as needed.
 
 **Every subagent prompt must include (copy verbatim):**
 > **Do NOT commit or push any changes. The orchestrator owns all git commits.
-> Write the code, run the tests, fix failures — then stop. Return a summary of
-> what you changed and any remaining issues.**
+> Write the code, run the tests, fix failures — then stop and reflect.
+> 
+> (Reflect on what you would have done differently: awkward abstractions, 
+> package boundaries,tech debt, performance concerns, test coverage gaps, 
+> missing docs, confusing or missing instructions, etc, and evaluate your 
+> workflow for actionable improvements.)
+> 
+> Return a summary of what you changed, your reflections, and any remaining issues.**
 
 After each subagent returns:
 1. `scripts/agent-run.sh make test` -- verify tests pass
@@ -178,9 +184,10 @@ make run   # or make dev for live reload
 
 **Goal:** Capture design and workflow hindsight while context is fresh.
 
-Reflect on what you'd do differently now: awkward abstractions, package boundaries,
-tech debt, performance concerns, test coverage gaps, missing docs,
-confusing or missing instructions, and evaluate workflow for actionable improvements.
+Reflect on what you (and implementation agents) would do differently: 
+awkward abstractions, package boundaries, tech debt, performance concerns, 
+test coverage gaps, missing docs, confusing or missing instructions, etc, 
+and evaluate your workflow for actionable improvements.
 
 - Present a brief summary to the user (not a file).
 - Create follow-up beads for actionable items:
