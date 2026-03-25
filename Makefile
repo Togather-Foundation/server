@@ -1285,15 +1285,17 @@ scrape-staging-t0: ## Scrape only T0 sources to staging
 		--server "https://$$NODE_DOMAIN" \
 		--key "$$PERF_AGENT_API_KEY"
 
-# Reset staging DB (preserves users/keys/sources) then scrape T0 sources.
+# Reset staging DB (preserves users/keys/sources), sync YAML configs to DB, then scrape T0 sources.
 # Sources .deploy.conf.staging for NODE_DOMAIN and PERF_AGENT_API_KEY.
-staging-reset-scrape: ## Reset staging DB and scrape T0 sources
+staging-reset-scrape: ## Reset staging DB, sync configs, and scrape T0 sources
 	@if [ ! -f .deploy.conf.staging ]; then \
 		echo "ERROR: .deploy.conf.staging not found"; \
 		exit 1; \
 	fi
 	@echo "Resetting staging database..."; \
 	scripts/staging-reset.sh --yes
+	@echo "Syncing source configs to staging..."; \
+	scripts/agent-run.sh go run ./cmd/server scrape sync
 	@NODE_DOMAIN=$$(grep '^NODE_DOMAIN=' .deploy.conf.staging | cut -d= -f2); \
 	PERF_AGENT_API_KEY=$$(grep '^PERF_AGENT_API_KEY=' .deploy.conf.staging | cut -d= -f2); \
 	echo "Scraping T0 sources to https://$$NODE_DOMAIN ..."; \

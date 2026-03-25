@@ -211,10 +211,10 @@ curl -H "Authorization: Bearer ${PERF_AGENT_API_KEY}" \
 # Expected: 200 OK with events array
 ```
 
-### Using Ingestion Scripts
+### Using Scraper to Populate Staging
 ```bash
-# Toronto events ingestion (uses PERF_AGENT_API_KEY from .deploy.conf.staging)
-./scripts/ingest-toronto-events.sh staging 50 300
+# Reset staging DB, sync configs, and scrape T0 sources
+make staging-reset-scrape
 ```
 
 ### Using Performance Tests

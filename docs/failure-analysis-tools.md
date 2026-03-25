@@ -4,19 +4,25 @@ Tools for analyzing and reporting on failed events during batch ingestion.
 
 ## Quick Start
 
-### 1. Run Ingestion with Automatic Failure Detection
+### 1. Populate Staging with Scraper
 
 ```bash
-# Ingest events and automatically see failure summaries
-./scripts/ingest-toronto-events.sh staging 50 300
+# Reset staging DB, sync configs, and scrape T0 sources
+make staging-reset-scrape
 ```
 
-The script will automatically:
-- Submit events in batches
-- Wait for processing to complete
-- Show summary of created/failed/duplicate events
-- Display failure details inline
-- Provide commands for deeper analysis
+The scraper will automatically:
+- Fetch events from configured sources
+- Submit events in batches via the API
+- Track successes, failures, and duplicates
+- Log results for analysis
+
+### 2. Analyze Failures
+
+```bash
+# Query failed events from the database
+ssh togather "psql -c \"SELECT e.name, eo.error_message FROM event_occurrences eo JOIN events e ON eo.event_id = e.id WHERE eo.start_time > NOW() - INTERVAL '7 days' AND eo.error_message IS NOT NULL;\" -d 'postgres://togather:changeme@localhost:5433/togather?sslmode=disable'"
+```
 
 ### 2. Export Detailed Failure Reports
 
@@ -36,33 +42,28 @@ The script will automatically:
 
 ## Tools Overview
 
-### `ingest-toronto-events.sh`
+### `scraper` (integrated)
 
-**Purpose**: Ingest events from Toronto Open Data and track failures
-
-**Features**:
-- Batched ingestion with configurable batch size
-- Real-time progress tracking
-- Automatic failure collection and reporting
-- Shows event names and error messages for each failure
-- Provides commands for detailed analysis
+**Purpose**: Scrape events from web sources and ingest into the SEL
 
 **Usage**:
 ```bash
-./scripts/ingest-toronto-events.sh [staging|local] [batch_size] [max_events]
+# Reset staging and scrape all T0 sources
+make staging-reset-scrape
+
+# Scrape all sources to staging
+make scrape-staging
+
+# Scrape only T0 (JSON-LD) sources
+make scrape-staging-t0
+
+# Scrape a single source
+go run ./cmd/server scrape source harbourfront-centre \
+  --server "https://staging.toronto.togather.foundation" \
+  --key "01KH1K48K5881NZQM8XDQPK1HWsecret"
 ```
 
-**Examples**:
-```bash
-# Ingest 300 events in batches of 50
-./scripts/ingest-toronto-events.sh staging 50 300
-
-# Ingest all events locally
-./scripts/ingest-toronto-events.sh local 50 0
-
-# Test with just 10 events
-./scripts/ingest-toronto-events.sh staging 5 10
-```
+For full scraper documentation, see [scraper.md](../integration/scraper.md).
 
 **Output**:
 ```
@@ -218,19 +219,14 @@ Human-readable format for documentation:
 
 ## Analysis Workflows
 
-### Workflow 1: Post-Ingestion Analysis
+### Workflow 1: Post-Scrape Analysis
 
 ```bash
-# 1. Run ingestion
-./scripts/ingest-toronto-events.sh staging 50 300
+# 1. Run scraper
+make staging-reset-scrape
 
-# 2. Note any batch IDs with failures
-
-# 3. Export detailed reports
-./scripts/export-failures.sh staging <batch_ids...>
-
-# 4. Analyze patterns
-cat failure-reports/failures_*.json | jq '[.[] | .failures[] | .error] | group_by(.) | map({error: .[0], count: length})'
+# 2. Query failed events from DB
+ssh togather "psql -c \"SELECT e.name, eo.error_message FROM event_occurrences eo JOIN events e ON eo.event_id = e.id WHERE eo.start_time > NOW() - INTERVAL '7 days' AND eo.error_message IS NOT NULL;\" -d 'postgres://togather:changeme@localhost:5433/togather?sslmode=disable'"
 ```
 
 ### Workflow 2: Pattern Detection
@@ -253,23 +249,15 @@ jq -r '.[] | .failures[] | .event.url' \
 
 ```bash
 # Before fix
-./scripts/ingest-toronto-events.sh staging 50 300
-./scripts/export-failures.sh staging <batch_ids> 
-cp failure-reports/failures_staging_*.json before-fix.json
+make staging-reset-scrape
+# Note failure counts
 
 # Apply fix
 git checkout feature/my-fix
 
 # After fix
-./scripts/staging-reset.sh --yes
-./scripts/ingest-toronto-events.sh staging 50 300
-./scripts/export-failures.sh staging <batch_ids>
-cp failure-reports/failures_staging_*.json after-fix.json
-
-# Compare
-echo "Before: $(jq '[.[] | .failures | length] | add' before-fix.json) failures"
-echo "After: $(jq '[.[] | .failures | length] | add' after-fix.json) failures"
-```
+make staging-reset-scrape
+# Note failure counts
 
 ## Database Queries
 
