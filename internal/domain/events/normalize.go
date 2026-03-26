@@ -314,13 +314,14 @@ func normalizeOccurrences(values []OccurrenceInput) []OccurrenceInput {
 		result = append(result, occ)
 	}
 
-	// Deduplicate by (StartDate, EndDate) pair, keeping first occurrence of each unique pair
-	seen := make(map[string]bool)
+	// Deduplicate by (StartDate, EndDate) pair, keeping first occurrence of each unique pair.
+	// RFC3339 strings never contain '|', so this key is safe and unambiguous.
+	seen := make(map[string]struct{})
 	deduped := make([]OccurrenceInput, 0, len(result))
 	for _, occ := range result {
 		key := occ.StartDate + "|" + occ.EndDate
-		if !seen[key] {
-			seen[key] = true
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
 			deduped = append(deduped, occ)
 		}
 	}

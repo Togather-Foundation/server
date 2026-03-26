@@ -607,6 +607,7 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 }
 
 func TestValidateOccurrences_ZeroDuration(t *testing.T) {
+	t.Parallel()
 	nodeDomain := "example.com"
 
 	tests := []struct {
@@ -665,6 +666,7 @@ func TestValidateOccurrences_ZeroDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			cfg := config.ValidationConfig{AllowTestDomains: true}
 			result, err := ValidateEventInputWithWarnings(tt.input, nodeDomain, nil, cfg)
 			require.NoError(t, err)

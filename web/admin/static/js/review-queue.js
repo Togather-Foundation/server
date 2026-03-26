@@ -1096,14 +1096,13 @@
         if (addBtn) setLoading(addBtn, true);
 
         try {
-            const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'UTC';
             const body = {
-                start_time: OccurrenceLogic.convertToRFC3339(startVal, defaultTz),
+                start_time: OccurrenceLogic.convertToRFC3339(startVal, timezone),
                 timezone: timezone,
             };
             const endVal = endInput ? endInput.value : '';
             if (endVal) {
-                body.end_time = OccurrenceLogic.convertToRFC3339(endVal, defaultTz);
+                body.end_time = OccurrenceLogic.convertToRFC3339(endVal, timezone);
             }
 
             const created = await API.events.occurrences.create(eventUlid, body);
@@ -2621,6 +2620,7 @@
 
         try {
             await API.events.occurrences.delete(eventUlid, occurrenceId);
+            if (btn) setLoading(btn, false);
             if (currentEntryDetail) {
                 currentEntryDetail.occurrences = (currentEntryDetail.occurrences || []).filter(o => o.id !== occurrenceId);
                 const evtUlid = currentEntryDetail.eventId;
@@ -2630,7 +2630,6 @@
                     occContainer.innerHTML = renderEditOccurrencesSection(entryId, evtUlid, occurrences);
                 }
             }
-            if (btn) setLoading(btn, false);
         } catch (err) {
             console.error('Failed to remove occurrence:', err);
             const msg = (err && err.detail) || (err && err.message) || 'Failed to remove occurrence';
@@ -2678,14 +2677,13 @@
         if (addBtn) setLoading(addBtn, true);
 
         try {
-            const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'UTC';
             const body = {
-                start_time: OccurrenceLogic.convertToRFC3339(startVal, defaultTz),
+                start_time: OccurrenceLogic.convertToRFC3339(startVal, timezone),
                 timezone: timezone,
             };
             const endVal = endInput ? endInput.value : '';
             if (endVal) {
-                body.end_time = OccurrenceLogic.convertToRFC3339(endVal, defaultTz);
+                body.end_time = OccurrenceLogic.convertToRFC3339(endVal, timezone);
             }
 
             const created = await API.events.occurrences.create(eventUlid, body);
