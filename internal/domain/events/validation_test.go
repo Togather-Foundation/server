@@ -606,6 +606,90 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 	}
 }
 
+func TestValidateOccurrences_ZeroDuration(t *testing.T) {
+	nodeDomain := "example.com"
+
+	tests := []struct {
+		name            string
+		input           EventInput
+		wantZeroDurWarn bool
+		wantZeroDurCode string
+	}{
+		{
+			name: "zero-duration occurrence - warning generated",
+			input: EventInput{
+				Name:      "Zero Duration Event",
+				StartDate: "2026-03-31T23:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+				Occurrences: []OccurrenceInput{
+					{
+						StartDate: "2026-03-31T23:00:00Z",
+						EndDate:   "2026-03-31T23:00:00Z", // Zero duration
+					},
+				},
+			},
+			wantZeroDurWarn: true,
+			wantZeroDurCode: "zero_duration_occurrence",
+		},
+		{
+			name: "occurrence with normal duration - no zero-duration warning",
+			input: EventInput{
+				Name:      "Normal Duration Event",
+				StartDate: "2026-03-31T23:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+				Occurrences: []OccurrenceInput{
+					{
+						StartDate: "2026-03-31T23:00:00Z",
+						EndDate:   "2026-04-01T02:00:00Z", // Normal duration (3 hours)
+					},
+				},
+			},
+			wantZeroDurWarn: false,
+		},
+		{
+			name: "occurrence with no endDate - no zero-duration warning (open-ended)",
+			input: EventInput{
+				Name:      "Open-Ended Event",
+				StartDate: "2026-03-31T23:00:00Z",
+				Location:  &PlaceInput{Name: "Test Venue"},
+				Occurrences: []OccurrenceInput{
+					{
+						StartDate: "2026-03-31T23:00:00Z",
+						EndDate:   "", // Open-ended - no endDate
+					},
+				},
+			},
+			wantZeroDurWarn: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.ValidationConfig{AllowTestDomains: true}
+			result, err := ValidateEventInputWithWarnings(tt.input, nodeDomain, nil, cfg)
+			require.NoError(t, err)
+
+			foundZeroDur := false
+			for _, w := range result.Warnings {
+				if w.Code == "zero_duration_occurrence" {
+					foundZeroDur = true
+					if tt.wantZeroDurCode != "" {
+						assert.Equal(t, tt.wantZeroDurCode, w.Code)
+						assert.Contains(t, w.Message, "zero-duration")
+					}
+					break
+				}
+			}
+
+			if tt.wantZeroDurWarn {
+				assert.True(t, foundZeroDur, "expected zero_duration_occurrence warning")
+			} else {
+				assert.False(t, foundZeroDur, "should not have zero_duration_occurrence warning")
+			}
+		})
+	}
+}
+
 // TestValidateEventInput_SingleOccurrenceLocation covers the single-occurrence path
 // (no Occurrences array, just StartDate) where the parent location must be resolvable at
 // ingest time. A Location with only a canonical @id (empty Name) passes validatePlaceInput

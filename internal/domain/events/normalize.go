@@ -313,7 +313,18 @@ func normalizeOccurrences(values []OccurrenceInput) []OccurrenceInput {
 
 		result = append(result, occ)
 	}
-	return result
+
+	// Deduplicate by (StartDate, EndDate) pair, keeping first occurrence of each unique pair
+	seen := make(map[string]bool)
+	deduped := make([]OccurrenceInput, 0, len(result))
+	for _, occ := range result {
+		key := occ.StartDate + "|" + occ.EndDate
+		if !seen[key] {
+			seen[key] = true
+			deduped = append(deduped, occ)
+		}
+	}
+	return deduped
 }
 
 // correctOccurrenceEndDateTimezoneError applies the same timezone correction logic
