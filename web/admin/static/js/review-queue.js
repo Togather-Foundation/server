@@ -187,6 +187,21 @@
                         target.dataset.eventUlid
                     );
                     break;
+                case 'edit-remove-occurrence':
+                    e.preventDefault();
+                    editRemoveOccurrence(
+                        target.dataset.entryId,
+                        target.dataset.eventUlid,
+                        target.dataset.occurrenceId
+                    );
+                    break;
+                case 'edit-add-occurrence':
+                    e.preventDefault();
+                    editAddOccurrence(
+                        target.dataset.entryId,
+                        target.dataset.eventUlid
+                    );
+                    break;
                 case 'canonical-select':
                     // Rebuild both pickers when canonical selection changes
                     rebuildPickers(id);
@@ -2522,6 +2537,7 @@
                         <label class="form-label fw-semibold">Image URL</label>
                         <input type="url" class="form-control" id="edit-image-${id}" value="${imageVal}" placeholder="https://...">
                     </div>
+                    <div id="edit-occurrences-${id}"></div>
                     <div id="edit-error-${id}" class="alert alert-danger" style="display:none;"></div>
                     <div class="btn-list">
                         <button class="btn" data-action="cancel-edit" data-id="${id}">Cancel</button>
@@ -2536,6 +2552,178 @@
                 </div>
             </div>
         `;
+
+        const eventUlid = detail.eventId;
+        const occurrences = detail.occurrences || [];
+        const occContainer = document.getElementById(`edit-occurrences-${id}`);
+        if (occContainer) {
+            occContainer.innerHTML = renderEditOccurrencesSection(id, eventUlid, occurrences);
+        }
+    }
+
+    /**
+     * Render the occurrences section inside the Edit & Approve form.
+     * Lists existing occurrences with remove buttons and an add form.
+     * @param {string|number} entryId - Review queue entry ID
+     * @param {string} eventUlid - Event ULID
+     * @param {Array} occurrences - Array of occurrenceDetail objects
+     * @returns {string} HTML string
+     */
+    function renderEditOccurrencesSection(entryId, eventUlid, occurrences) {
+        const safeEntryId = String(entryId);
+        const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
+
+        const rowsHtml = (occurrences || []).map(occ => {
+            const start = occ.startTime ? formatDate(occ.startTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '(no date)';
+            const end = occ.endTime && occ.endTime.trim() ? formatDate(occ.endTime, { hour: 'numeric', minute: '2-digit' }) : '';
+            const timeStr = end ? `${start} \u2013 ${end}` : start;
+            const occId = escapeHtml(occ.id || '');
+
+            return `<div class="d-flex align-items-center py-1 border-bottom" id="edit-occ-row-${safeEntryId}-${occId}">
+                <span class="text-body-secondary small">${escapeHtml(timeStr)}</span>
+                <button type="button" class="btn btn-sm btn-ghost-danger ms-auto" data-action="edit-remove-occurrence" data-entry-id="${safeEntryId}" data-event-ulid="${escapeHtml(eventUlid)}" data-occurrence-id="${occId}" title="Remove occurrence">&#10005; Remove</button>
+            </div>`;
+        }).join('');
+
+        return `
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Occurrences</label>
+                <div class="border rounded p-2 mb-2">
+                    ${rowsHtml || '<span class="text-muted small">No occurrences</span>'}
+                </div>
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <input type="datetime-local" class="form-control form-control-sm" id="edit-occ-start-${safeEntryId}" style="max-width: 200px;" placeholder="Start (event local time)">
+                    <input type="datetime-local" class="form-control form-control-sm" id="edit-occ-end-${safeEntryId}" style="max-width: 200px;" placeholder="End (optional)">
+                    <input type="text" class="form-control form-control-sm" id="edit-occ-tz-${safeEntryId}" value="${escapeHtml(defaultTz)}" style="max-width: 160px;" placeholder="Timezone">
+                    <button type="button" class="btn btn-sm btn-primary" data-action="edit-add-occurrence" data-entry-id="${safeEntryId}" data-event-ulid="${escapeHtml(eventUlid)}">+ Add</button>
+                </div>
+                <div id="edit-occ-error-${safeEntryId}" class="text-danger small mt-1" style="display:none;"></div>
+            </div>
+        `;
+    }
+
+    /**
+     * Handle remove occurrence from edit form.
+     * @param {string} entryId - Review queue entry ID
+     * @param {string} eventUlid - Event ULID
+     * @param {string} occurrenceId - Occurrence ID to remove
+     */
+    async function editRemoveOccurrence(entryId, eventUlid, occurrenceId) {
+        if (String(occurrenceId).startsWith('_pending_')) {
+            showToast('Cannot remove occurrence that hasn\'t been saved yet', 'error');
+            return;
+        }
+
+        const btn = document.querySelector(
+            `[data-action="edit-remove-occurrence"][data-entry-id="${escapeHtml(String(entryId))}"][data-occurrence-id="${escapeHtml(String(occurrenceId))}"]`
+        );
+        if (btn) setLoading(btn, true);
+
+        try {
+            await API.events.occurrences.delete(eventUlid, occurrenceId);
+            if (currentEntryDetail) {
+                currentEntryDetail.occurrences = (currentEntryDetail.occurrences || []).filter(o => o.id !== occurrenceId);
+                const evtUlid = currentEntryDetail.eventId;
+                const occurrences = currentEntryDetail.occurrences || [];
+                const occContainer = document.getElementById(`edit-occurrences-${entryId}`);
+                if (occContainer) {
+                    occContainer.innerHTML = renderEditOccurrencesSection(entryId, evtUlid, occurrences);
+                }
+            }
+            if (btn) setLoading(btn, false);
+        } catch (err) {
+            console.error('Failed to remove occurrence:', err);
+            const msg = (err && err.detail) || (err && err.message) || 'Failed to remove occurrence';
+            showToast(msg, 'error');
+            if (btn) setLoading(btn, false);
+        }
+    }
+
+    /**
+     * Handle add occurrence from edit form.
+     * @param {string} entryId - Review queue entry ID
+     * @param {string} eventUlid - Event ULID
+     */
+    async function editAddOccurrence(entryId, eventUlid) {
+        const startInput = document.getElementById(`edit-occ-start-${entryId}`);
+        const endInput = document.getElementById(`edit-occ-end-${entryId}`);
+        const tzInput = document.getElementById(`edit-occ-tz-${entryId}`);
+        const errorDiv = document.getElementById(`edit-occ-error-${entryId}`);
+        const addBtn = document.querySelector(`[data-action="edit-add-occurrence"][data-entry-id="${entryId}"]`);
+
+        if (!startInput) return;
+
+        const hideError = () => { if (errorDiv) errorDiv.style.display = 'none'; };
+        const showError = (msg) => {
+            if (errorDiv) {
+                errorDiv.textContent = msg;
+                errorDiv.style.display = 'block';
+            }
+        };
+
+        hideError();
+
+        const startVal = startInput.value;
+        if (!startVal) {
+            showError('Start date/time is required');
+            return;
+        }
+
+        const timezone = tzInput ? tzInput.value.trim() : 'America/Toronto';
+        if (!timezone) {
+            showError('Timezone is required');
+            return;
+        }
+
+        if (addBtn) setLoading(addBtn, true);
+
+        try {
+            const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'UTC';
+            const body = {
+                start_time: OccurrenceLogic.convertToRFC3339(startVal, defaultTz),
+                timezone: timezone,
+            };
+            const endVal = endInput ? endInput.value : '';
+            if (endVal) {
+                body.end_time = OccurrenceLogic.convertToRFC3339(endVal, defaultTz);
+            }
+
+            const created = await API.events.occurrences.create(eventUlid, body);
+
+            if (currentEntryDetail) {
+                if (created && created.id) {
+                    currentEntryDetail.occurrences = [...(currentEntryDetail.occurrences || []), created];
+                } else {
+                    currentEntryDetail.occurrences = [...(currentEntryDetail.occurrences || []), {
+                        id: '_pending_' + Date.now(),
+                        startTime: body.start_time,
+                        endTime: body.end_time || null,
+                        timezone: body.timezone,
+                    }];
+                }
+            }
+
+            if (startInput) startInput.value = '';
+            if (endInput) endInput.value = '';
+
+            const occurrences = currentEntryDetail.occurrences || [];
+            const occContainer = document.getElementById(`edit-occurrences-${entryId}`);
+            if (occContainer) {
+                occContainer.innerHTML = renderEditOccurrencesSection(entryId, eventUlid, occurrences);
+            }
+
+        } catch (err) {
+            console.error('Failed to add occurrence:', err);
+            const status = err && err.status;
+            if (status === 409) {
+                showError('Overlap: an occurrence already exists at this time');
+            } else {
+                const msg = (err && err.detail) || (err && err.message) || 'Failed to add occurrence';
+                showError(msg);
+            }
+        } finally {
+            if (addBtn) setLoading(addBtn, false);
+        }
     }
 
     /**
