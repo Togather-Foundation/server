@@ -93,6 +93,7 @@ reports/
 # beads
 # beads JSONL backup (state lives in .beads/dolt/, not this file)
 .beads/issues.jsonl
+.beads/interactions.jsonl
 
 # Deployment files
 # Environment files (allow .env.example for documentation)
@@ -147,3 +148,6 @@ failure-reports/
 
 # Dolt database files (added by bd init)
 .dolt/
+
+# Beads / Dolt files (added by bd init)
+.beads-credential-key
