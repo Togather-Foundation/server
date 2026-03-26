@@ -102,6 +102,7 @@ debounce(fn, 300);
 Beyond `components.js`, these modules are loaded globally via `_footer.html`:
 
 - `field-picker.js` — `window.FieldPicker`: chip-based field comparison table for consolidation/review workflows
+- `occurrence-logic.js` — `window.OccurrenceLogic`: occurrence date parsing, conversion, and validation helpers
 - `occurrence-rendering.js` — `window.OccurrenceRendering`: occurrence list HTML rendering (used by review-queue fold-down)
 - `warning-badges.js` — `window.WarningBadges`: warning badge HTML generation (used by review-queue table + detail cards)
 
