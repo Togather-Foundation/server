@@ -257,8 +257,9 @@ func (h *AdminHTMLHandler) ServeReviewQueue(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	data := map[string]interface{}{
-		"Title":      "Review Queue - SEL Admin",
-		"ActivePage": "review-queue",
+		"Title":           "Review Queue - SEL Admin",
+		"ActivePage":      "review-queue",
+		"DefaultTimezone": h.DefaultTimezone,
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "review_queue.html", data); err != nil {

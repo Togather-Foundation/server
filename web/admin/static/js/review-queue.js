@@ -1081,17 +1081,14 @@
         if (addBtn) setLoading(addBtn, true);
 
         try {
-            // datetime-local inputs yield a timezone-free string like "2026-03-20T19:30".
-            // Treat the string as UTC by appending 'Z', avoiding browser local-TZ conversion.
-            // The timezone field carries the event's original timezone as metadata.
-            const toUTC = (localStr) => localStr ? localStr + 'Z' : '';
+            const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'UTC';
             const body = {
-                start_time: toUTC(startVal),
+                start_time: OccurrenceLogic.convertToRFC3339(startVal, defaultTz),
                 timezone: timezone,
             };
             const endVal = endInput ? endInput.value : '';
             if (endVal) {
-                body.end_time = toUTC(endVal);
+                body.end_time = OccurrenceLogic.convertToRFC3339(endVal, defaultTz);
             }
 
             const created = await API.events.occurrences.create(eventUlid, body);
@@ -2723,11 +2720,10 @@
         setLoading(applyBtn, true);
         
         try {
-            // datetime-local inputs are treated as UTC by appending 'Z'.
-            const toUTC = (localStr) => localStr ? localStr + 'Z' : '';
+            const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'UTC';
             const corrections = {
-                startDate: toUTC(startValue),
-                endDate: toUTC(endValue)
+                startDate: OccurrenceLogic.convertToRFC3339(startValue, defaultTz),
+                endDate: OccurrenceLogic.convertToRFC3339(endValue, defaultTz)
             };
             
             const payload = { corrections };
