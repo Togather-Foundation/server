@@ -486,6 +486,34 @@
         });
     }
 
+    /**
+     * Populate the venue display input placeholder with the event's default venue name.
+     * Fetches the name async from the API and sets it as placeholder text so the user
+     * can see what venue will be used if they leave the field blank.
+     * @param {string} entryId - Form entry id (e.g. 'event-edit' or occurrence ULID)
+     * @param {string|null} venueUri - The event's primary venue URI (eventData.location)
+     */
+    function fillEventVenuePlaceholder(entryId, venueUri) {
+        var displayInput = document.getElementById('occ-venue-display-' + entryId);
+        if (!displayInput) return;
+        // Only update placeholder when the field has no explicit value set (no override selected)
+        if (displayInput.value) return;
+        if (!venueUri || typeof venueUri !== 'string') return;
+        var ulid = venueUlidFromId(venueUri);
+        if (!ulid) return;
+        displayInput.placeholder = '(loading\u2026)';
+        API.request('/api/v1/places/' + ulid).then(function(place) {
+            // Re-check: user may have picked a venue while we were fetching
+            if (!displayInput.value) {
+                displayInput.placeholder = place.name || ulid;
+            }
+        }).catch(function() {
+            if (!displayInput.value) {
+                displayInput.placeholder = ulid;
+            }
+        });
+    }
+
     window.OccurrenceRendering = {
         renderList: renderList,
         refreshList: refreshList,
@@ -494,6 +522,7 @@
         occurrencesOverlap: occurrencesOverlap,
         hideAddForm: hideAddForm,
         showAddForm: showAddForm,
-        resolveVenueNames: resolveVenueNames
+        resolveVenueNames: resolveVenueNames,
+        fillEventVenuePlaceholder: fillEventVenuePlaceholder
     };
 })();

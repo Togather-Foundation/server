@@ -57,9 +57,12 @@
                 case 'reload':
                     window.location.reload();
                     break;
-                case 'show-add-form':
-                    OccurrenceRendering.showAddForm(target.dataset.entryId || 'event-edit');
+                case 'show-add-form': {
+                    const addEntryId = target.dataset.entryId || 'event-edit';
+                    OccurrenceRendering.showAddForm(addEntryId);
+                    OccurrenceRendering.fillEventVenuePlaceholder(addEntryId, eventData && eventData.location);
                     break;
+                }
                 case 'cancel-add-occurrence':
                     OccurrenceRendering.hideAddForm(target.dataset.entryId || 'event-edit');
                     break;
@@ -458,6 +461,7 @@
         }
 
         OccurrenceRendering.hideAddForm(entryId);
+        OccurrenceRendering.fillEventVenuePlaceholder(entryId, eventData && eventData.location);
         if (window._occBlurDestroy) window._occBlurDestroy();
         window._occBlurDestroy = OccurrenceLogic.wireStartBlur(entryId, function() {
             return { durationHours: 2 };

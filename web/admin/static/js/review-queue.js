@@ -358,6 +358,14 @@
                 case 'show-add-form':
                     e.preventDefault();
                     OccurrenceRendering.showAddForm(String(target.dataset.entryId));
+                    {
+                        // Pre-fill venue placeholder from first occurrence's venueUlid (event default)
+                        const occs = currentEntryDetail && currentEntryDetail.occurrences;
+                        const defaultVenueUlid = occs && occs.length > 0 ? occs[0].venueUlid : null;
+                        if (defaultVenueUlid) {
+                            OccurrenceRendering.fillEventVenuePlaceholder(String(target.dataset.entryId), defaultVenueUlid);
+                        }
+                    }
                     if (window._rqBlurDestroy) window._rqBlurDestroy();
                     {
                         const showEntryId = String(target.dataset.entryId);
