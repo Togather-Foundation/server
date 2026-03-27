@@ -167,3 +167,32 @@ Rebuild before running E2E if static assets changed.
 ## XSS
 
 Use `escapeHtml()` or `element.textContent` — never insert raw user input via `innerHTML`.
+
+## UI Quality Checklist (forms and inline editors)
+
+Every form or inline editor added to the admin UI must satisfy these before review:
+
+**Labels**
+- Every input has a `<label>` (or at minimum a visible text label above it), not just a `placeholder`. Placeholders disappear on focus and are not sufficient for usability.
+
+**Mutual exclusivity**
+- If a page can show both an "edit row" and an "add form" for the same entity type, they MUST NOT share input IDs. Either namespace by type (`occ-start-edit-{id}` vs `occ-start-add`), or hide the add form while an edit is open.
+- The add form must be hidden (`display:none` or removed from DOM) while any edit row is open. Re-show it on save or cancel.
+
+**Data display quality**
+- Never display raw ULIDs or internal IDs as primary content to the user. Async-resolve to a human-readable name; if resolution is unavailable, show the ULID as secondary text with a label (e.g. `Venue: (id: 01KKY...)`).
+- Date/time strings in read view must use a single consistent format within one string. If start and end are the same day, omit the date from the end time (show `Apr 7, 6:00 – 8:00 AM` not `Apr 7, 6:00 AM – 4/7/2026, 8:00 AM`).
+
+**Field grouping**
+- Group fields by semantic relationship, not by available column space. Temporal fields (start, end, door time, timezone) belong together. Timezone should appear before or alongside the time fields it affects, not after them.
+
+**Button placement and weight**
+- Destructive actions (Clear, Remove) must be visually lighter than primary actions (Save, Add). Use `btn-ghost-danger` or a small `btn-outline-danger`; never full-weight `btn-danger` next to a primary button.
+- Save/Cancel for an inline form should be right-aligned (or end-aligned) and visually grouped inside that form's container, not left-aligned in open space.
+
+**Visual anchoring**
+- An inline edit form must visually anchor to the row it is editing. Preferred: replace the row in-place (`outerHTML` swap) so the form appears at the same vertical position as the row. Do not float the form to the top of the list.
+
+**State transitions**
+- Define and document the three states: read, editing, adding. Only one state is active at a time per entry. Transitions: read → editing (Edit click), editing → read (Save or Cancel), read → adding (Add click), adding → read (Add or Cancel).
+- If an edit is in progress, the Edit and Add buttons on all other rows should be disabled or the edit row should visually indicate it is the active one.
