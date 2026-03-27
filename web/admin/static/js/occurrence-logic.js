@@ -253,6 +253,48 @@
     }
 
     /**
+     * guessNextStart — infer the next occurrence start from a list of existing occurrences.
+     * If the last two occurrences share the same wall-clock time-of-day but differ by a whole
+     * number of days, the next start is projected by the same day interval.
+     * Returns a datetime-local string (YYYY-MM-DDTHH:mm) or null if the pattern is not detected.
+     * @param {Array} occurrences - Array of occurrence objects ({ start_time|startTime, end_time|endTime })
+     * @returns {string|null}
+     */
+    function guessNextStart(occurrences) {
+        if (!occurrences || occurrences.length < 2) return null;
+
+        var last = occurrences[occurrences.length - 1];
+        var prev = occurrences[occurrences.length - 2];
+
+        var lastStart = last.start_time || last.startTime;
+        var prevStart = prev.start_time || prev.startTime;
+        if (!lastStart || !prevStart) return null;
+
+        // Use wall-clock representation to avoid UTC-date shifting
+        var lastLocal = formatForDatetimeLocal(lastStart); // "YYYY-MM-DDTHH:mm"
+        var prevLocal = formatForDatetimeLocal(prevStart);
+        if (!lastLocal || !prevLocal) return null;
+
+        // Compare time-of-day (HH:mm)
+        var lastTime = lastLocal.slice(11); // "HH:mm"
+        var prevTime = prevLocal.slice(11);
+        if (lastTime !== prevTime) return null;
+
+        // Compute whole-day delta using UTC midnight of the wall-clock dates
+        var lastDay = new Date(lastLocal.slice(0, 10) + 'T00:00:00Z');
+        var prevDay = new Date(prevLocal.slice(0, 10) + 'T00:00:00Z');
+        var deltaMs = lastDay.getTime() - prevDay.getTime();
+        var deltaDays = Math.round(deltaMs / 86400000);
+        if (deltaDays < 1) return null;
+
+        // Project next start: same time-of-day, +deltaDays from last
+        var nextDay = new Date(lastDay.getTime() + deltaDays * 86400000);
+        var pad = function(n) { return String(n).padStart(2, '0'); };
+        var nextDate = nextDay.getUTCFullYear() + '-' + pad(nextDay.getUTCMonth() + 1) + '-' + pad(nextDay.getUTCDate());
+        return nextDate + 'T' + lastTime;
+    }
+
+    /**
      * defaultEndTime — returns a suggested RFC3339 end time string based on start + hints.
      * @param {string|null} startRFC3339 - RFC3339 start datetime
      * @param {Object} hints - Hints for computing duration
@@ -310,7 +352,7 @@
      */
     function wireStartBlur(entryId, hintsProvider) {
         var startInput = document.getElementById('occ-start-' + entryId);
-        if (!startInput) return { destroy: function() {} };
+        if (!startInput) return function() {};
 
         function handler() {
             var endInput = document.getElementById('occ-end-' + entryId);
@@ -325,10 +367,8 @@
         }
 
         startInput.addEventListener('change', handler);
-        return {
-            destroy: function() { startInput.removeEventListener('change', handler); }
-        };
+        return function() { startInput.removeEventListener('change', handler); };
     }
 
-    return { buildOccurrenceFields, buildOccurrenceFromForm, convertToRFC3339, formatForDatetimeLocal, formatTimeRange, defaultEndTime, wireStartBlur };
+    return { buildOccurrenceFields, buildOccurrenceFromForm, convertToRFC3339, formatForDatetimeLocal, formatTimeRange, defaultEndTime, wireStartBlur, guessNextStart };
 }));

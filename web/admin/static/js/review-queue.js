@@ -331,16 +331,8 @@
                             });
                             const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
                             OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
-                            OccurrenceRendering.showAddForm(String(entryId));
-                            if (window._rqBlurDestroy) window._rqBlurDestroy();
-                            const occ = currentEntryDetail && currentEntryDetail.occurrences;
-                            const lastOcc2 = occ && occ.length > 0 ? occ[occ.length - 1] : null;
-                            window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(entryId), function() {
-                                if (lastOcc2 && lastOcc2.startTime && lastOcc2.endTime) {
-                                    return { copyDuration: { prevStart: lastOcc2.startTime, prevEnd: lastOcc2.endTime } };
-                                }
-                                return { durationHours: 2 };
-                            });
+                            // Add form stays hidden (default state after refreshList); toggle button is visible.
+                            if (window._rqBlurDestroy) { window._rqBlurDestroy(); window._rqBlurDestroy = null; }
                         }
                     } catch (err) {
                         console.error('Failed to save occurrence:', err);
@@ -358,19 +350,32 @@
                     const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
                     if (currentEntryDetail) {
                         OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
-                        OccurrenceRendering.showAddForm(String(entryId));
-                        if (window._rqBlurDestroy) window._rqBlurDestroy();
-                        const occ = currentEntryDetail && currentEntryDetail.occurrences;
-                        const lastOcc2 = occ && occ.length > 0 ? occ[occ.length - 1] : null;
-                        window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(entryId), function() {
-                            if (lastOcc2 && lastOcc2.startTime && lastOcc2.endTime) {
-                                return { copyDuration: { prevStart: lastOcc2.startTime, prevEnd: lastOcc2.endTime } };
+                        // Add form stays hidden (default state); toggle button is restored by refreshList.
+                        if (window._rqBlurDestroy) { window._rqBlurDestroy(); window._rqBlurDestroy = null; }
+                    }
+                    break;
+                }
+                case 'show-add-form':
+                    e.preventDefault();
+                    OccurrenceRendering.showAddForm(String(target.dataset.entryId));
+                    if (window._rqBlurDestroy) window._rqBlurDestroy();
+                    {
+                        const showEntryId = String(target.dataset.entryId);
+                        const occ2 = currentEntryDetail && currentEntryDetail.occurrences;
+                        const lastOccShow = occ2 && occ2.length > 0 ? occ2[occ2.length - 1] : null;
+                        window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(showEntryId, function() {
+                            if (lastOccShow && lastOccShow.startTime && lastOccShow.endTime) {
+                                return { copyDuration: { prevStart: lastOccShow.startTime, prevEnd: lastOccShow.endTime } };
                             }
                             return { durationHours: 2 };
                         });
                     }
                     break;
-                }
+                case 'cancel-add-occurrence':
+                    e.preventDefault();
+                    OccurrenceRendering.hideAddForm(String(target.dataset.entryId));
+                    if (window._rqBlurDestroy) { window._rqBlurDestroy(); window._rqBlurDestroy = null; }
+                    break;
                 case 'clear-occurrence-venue': {
                     e.preventDefault();
                     const entryId = target.dataset.entryId;

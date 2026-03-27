@@ -61,13 +61,15 @@
             if (venueId) {
                 const venueUlid = venueUlidFromId(venueId);
                 detailsHtml += '<span class="badge bg-blue-lt me-1" data-venue-label="' + escapeHtml(venueUlid) + '">Venue: <span class="venue-name-' + escapeHtml(venueUlid) + '">(loading…)</span></span>';
+            } else {
+                detailsHtml += '<span class="text-muted small me-1">(event default venue)</span>';
             }
 
             let actionBtns = '';
             if (editable) {
                 actionBtns =
-                    '<button class="btn btn-sm btn-outline-secondary ms-2" data-action="edit-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + escapeHtml(occId) + '" data-occurrence-index="' + index + '">Edit</button>' +
-                    '<button class="btn btn-sm btn-ghost-danger ms-1" data-action="remove-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + escapeHtml(occId) + '" data-occurrence-index="' + index + '" title="Remove occurrence">&#10005;</button>';
+                    '<button type="button" class="btn btn-sm btn-outline-secondary ms-2" data-action="edit-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + escapeHtml(occId) + '" data-occurrence-index="' + index + '">Edit</button>' +
+                    '<button type="button" class="btn btn-sm btn-ghost-danger ms-1" data-action="remove-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + escapeHtml(occId) + '" data-occurrence-index="' + index + '" title="Remove occurrence">&#10005;</button>';
             }
 
             // Row ID uses occurrence id when available, falls back to index for pending (unsaved) occurrences.
@@ -88,6 +90,9 @@
             '<div class="border rounded p-2 mt-1">' +
             (rowsHtml || '<span class="text-muted small">No occurrences yet</span>') +
             '</div>' +
+            '<div class="mt-2">' +
+            '<button type="button" class="btn btn-sm btn-outline-primary" data-action="show-add-form" data-entry-id="' + safeEntryId + '" id="add-occ-btn-' + safeEntryId + '">+ Add Occurrence</button>' +
+            '</div>' +
             addFormHtml +
             '</div>';
     }
@@ -104,18 +109,41 @@
         let smartStart = '';
         let smartEnd = '';
         if (occurrences && occurrences.length > 0) {
+            // Try to infer next start from recurrence pattern (last two occurrences, same time, N-day interval)
+            const guessed = OccurrenceLogic.guessNextStart(occurrences);
+            if (guessed) {
+                smartStart = ' value="' + escapeHtml(guessed) + '"';
+            } else {
+                // Fallback: copy last occurrence's start time
+                const lastOcc = occurrences[occurrences.length - 1];
+                const lastStart = lastOcc.start_time || lastOcc.startTime;
+                if (lastStart) {
+                    smartStart = ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(lastStart)) + '"';
+                }
+            }
+            // Pre-fill end using last occurrence's duration
             const lastOcc = occurrences[occurrences.length - 1];
             const lastStart = lastOcc.start_time || lastOcc.startTime;
-            if (lastStart) {
-                smartStart = ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(lastStart)) + '"';
-                const lastEnd = lastOcc.end_time || lastOcc.endTime;
-                if (lastEnd) {
-                    smartEnd = ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(lastEnd)) + '"';
+            const lastEnd = lastOcc.end_time || lastOcc.endTime;
+            if (lastStart && lastEnd && smartStart) {
+                const durationMs = new Date(lastEnd).getTime() - new Date(lastStart).getTime();
+                if (durationMs > 0) {
+                    const startVal = smartStart.match(/value="([^"]+)"/);
+                    if (startVal) {
+                        const tz = defaultTz || 'America/Toronto';
+                        const startRFC = OccurrenceLogic.convertToRFC3339(startVal[1], tz);
+                        if (startRFC) {
+                            const endRFC = OccurrenceLogic.defaultEndTime(startRFC, { durationMs: durationMs });
+                            if (endRFC) {
+                                smartEnd = ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(endRFC)) + '"';
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        return '<div class="mt-2 p-2 bg-light rounded" id="add-occ-form-' + safeEntryId + '" data-add-form="' + safeEntryId + '">' +
+        return '<div class="mt-2 p-2 bg-light rounded" id="add-occ-form-' + safeEntryId + '" data-add-form="' + safeEntryId + '" style="display:none;">' +
             '<div class="row g-2">' +
             '<div class="col-md-6">' +
             '<label class="form-label form-label-sm mb-1">Start *</label>' +
@@ -145,8 +173,9 @@
             '<button class="btn btn-outline-danger" type="button" data-action="clear-occurrence-venue" data-entry-id="' + safeEntryId + '" style="display:none;" title="Clear venue override">Clear</button>' +
             '</div>' +
             '</div>' +
-            '<div class="col-12">' +
-            '<button class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '">+ Add Occurrence</button>' +
+            '<div class="col-12 d-flex justify-content-end gap-2">' +
+            '<button type="button" class="btn btn-sm btn-secondary" data-action="cancel-add-occurrence" data-entry-id="' + safeEntryId + '">Cancel</button>' +
+            '<button type="button" class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '">Save</button>' +
             '</div>' +
             '</div>' +
             '<div id="occ-error-' + safeEntryId + '" class="text-danger small mt-1" style="display:none;"></div>' +
@@ -211,8 +240,8 @@
             '</div>' +
             '</div>' +
             '<div class="col-12 d-flex justify-content-end gap-2">' +
-            '<button class="btn btn-sm btn-secondary" data-action="cancel-edit-occurrence" data-entry-id="' + safeEntryId + '" data-occurrence-id="' + safeOccId + '">Cancel</button>' +
-            '<button class="btn btn-sm btn-primary" data-action="save-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + safeOccId + '"' + (occurrenceIndex !== undefined ? ' data-occurrence-index="' + occurrenceIndex + '"' : '') + '>Save</button>' +
+            '<button type="button" class="btn btn-sm btn-secondary" data-action="cancel-edit-occurrence" data-entry-id="' + safeEntryId + '" data-occurrence-id="' + safeOccId + '">Cancel</button>' +
+            '<button type="button" class="btn btn-sm btn-primary" data-action="save-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + safeOccId + '"' + (occurrenceIndex !== undefined ? ' data-occurrence-index="' + occurrenceIndex + '"' : '') + '>Save</button>' +
             '</div>' +
             '</div>' +
             '<div id="occ-error-' + safeEntryId + '" class="text-danger small mt-1" style="display:none;"></div>' +
@@ -351,7 +380,7 @@
                 ? 'Included — click to exclude'
                 : (hasActiveConflict ? 'Cannot include — overlapping occurrence is already included' : 'Excluded — click to include');
 
-            var chip = '<button class="btn btn-sm ' + chipClass + ' w-100 text-center"' +
+            var chip = '<button type="button" class="btn btn-sm ' + chipClass + ' w-100 text-center"' +
                 ' data-action="toggle-occurrence"' +
                 ' data-entry-id="' + safeEntryId + '"' +
                 ' data-occ-key="' + occKey + '"' +
@@ -397,19 +426,23 @@
     }
 
     /**
-     * Hide the add form for a given entry.
+     * Hide the add form for a given entry and restore the toggle button.
      * @param {string|number} entryId - Entry ID
      */
     function hideAddForm(entryId) {
         var el = document.getElementById('add-occ-form-' + entryId);
         if (el) el.style.display = 'none';
+        var btn = document.getElementById('add-occ-btn-' + entryId);
+        if (btn) btn.style.display = '';
     }
 
     /**
-     * Show the add form for a given entry.
+     * Show the add form for a given entry and hide the toggle button.
      * @param {string|number} entryId - Entry ID
      */
     function showAddForm(entryId) {
+        var btn = document.getElementById('add-occ-btn-' + entryId);
+        if (btn) btn.style.display = 'none';
         var el = document.getElementById('add-occ-form-' + entryId);
         if (el) el.style.display = '';
     }
@@ -435,23 +468,22 @@
         });
 
         ulids.forEach(function(ulid) {
-            var nameSpan = containerEl.querySelector('.venue-name-' + ulid);
-            if (nameSpan) {
-                nameSpan.textContent = '(loading…)';
-            }
+            containerEl.querySelectorAll('.venue-name-' + ulid).forEach(function(s) {
+                s.textContent = '(loading\u2026)';
+            });
         });
 
         ulids.forEach(function(ulid) {
             API.request('/api/v1/places/' + ulid).then(function(place) {
-                var nameSpan = containerEl.querySelector('.venue-name-' + ulid);
-                if (nameSpan) {
-                    nameSpan.textContent = place.name || '(unnamed)';
-                }
+                var name = place.name || '(unnamed)';
+                containerEl.querySelectorAll('.venue-name-' + ulid).forEach(function(s) {
+                    s.textContent = name;
+                });
             }).catch(function() {
-                var nameSpan = containerEl.querySelector('.venue-name-' + ulid);
-                if (nameSpan) {
-                    nameSpan.textContent = '(id: ' + ulid.slice(0, 8) + '…)';
-                }
+                var fallback = '(id: ' + ulid.slice(0, 8) + '…)';
+                containerEl.querySelectorAll('.venue-name-' + ulid).forEach(function(s) {
+                    s.textContent = fallback;
+                });
             });
         });
     }
