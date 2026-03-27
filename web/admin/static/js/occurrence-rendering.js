@@ -491,14 +491,24 @@
      * Fetches the name async from the API and sets it as placeholder text so the user
      * can see what venue will be used if they leave the field blank.
      * @param {string} entryId - Form entry id (e.g. 'event-edit' or occurrence ULID)
-     * @param {string|null} venueUri - The event's primary venue URI (eventData.location)
+     * @param {string|Object|null} venueRef - Venue URI string, Place object with @id, or bare ULID
      */
-    function fillEventVenuePlaceholder(entryId, venueUri) {
+    function fillEventVenuePlaceholder(entryId, venueRef) {
         var displayInput = document.getElementById('occ-venue-display-' + entryId);
         if (!displayInput) return;
         // Only update placeholder when the field has no explicit value set (no override selected)
         if (displayInput.value) return;
-        if (!venueUri || typeof venueUri !== 'string') return;
+
+        // Resolve venueRef to a URI/ULID string
+        var venueUri = null;
+        if (typeof venueRef === 'string') {
+            venueUri = venueRef;
+        } else if (venueRef && typeof venueRef === 'object') {
+            // JSON-LD Place object: { "@type": "Place", "@id": "https://.../places/<ULID>" }
+            venueUri = venueRef['@id'] || null;
+        }
+        if (!venueUri) return;
+
         var ulid = venueUlidFromId(venueUri);
         if (!ulid) return;
         displayInput.placeholder = '(loading\u2026)';
@@ -514,6 +524,26 @@
         });
     }
 
+    /**
+     * Resolve the venue display input value from a raw ULID to a human-readable name.
+     * Used by the edit form where the value is pre-set to a ULID string.
+     * The hidden venue-id input keeps the ULID; only the display input is updated.
+     * @param {string} entryId - Form entry id
+     */
+    function resolveVenueDisplayValue(entryId) {
+        var displayInput = document.getElementById('occ-venue-display-' + entryId);
+        if (!displayInput || !displayInput.value) return;
+        // Only attempt resolution if value looks like a bare ULID (26 uppercase alphanumeric chars)
+        if (!/^[A-Z0-9]{26}$/i.test(displayInput.value)) return;
+        var ulid = displayInput.value;
+        API.request('/api/v1/places/' + ulid).then(function(place) {
+            // Only update if user hasn't changed the field since
+            if (displayInput.value === ulid && place.name) {
+                displayInput.value = place.name;
+            }
+        }).catch(function() { /* leave ULID on error — still functional */ });
+    }
+
     window.OccurrenceRendering = {
         renderList: renderList,
         refreshList: refreshList,
@@ -523,6 +553,7 @@
         hideAddForm: hideAddForm,
         showAddForm: showAddForm,
         resolveVenueNames: resolveVenueNames,
-        fillEventVenuePlaceholder: fillEventVenuePlaceholder
+        fillEventVenuePlaceholder: fillEventVenuePlaceholder,
+        resolveVenueDisplayValue: resolveVenueDisplayValue
     };
 })();

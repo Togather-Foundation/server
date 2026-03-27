@@ -461,6 +461,7 @@
         }
 
         OccurrenceRendering.hideAddForm(entryId);
+        OccurrenceRendering.resolveVenueDisplayValue(entryId);   // replace raw ULID with venue name
         OccurrenceRendering.fillEventVenuePlaceholder(entryId, eventData && eventData.location);
         if (window._occBlurDestroy) window._occBlurDestroy();
         window._occBlurDestroy = OccurrenceLogic.wireStartBlur(entryId, function() {
