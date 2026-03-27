@@ -168,5 +168,21 @@
         return { ok: true, occurrence };
     }
 
-    return { buildOccurrenceFields, buildOccurrenceFromForm, convertToRFC3339 };
+    /**
+     * formatForDatetimeLocal — converts RFC3339 datetime string to HTML datetime-local format (YYYY-MM-DDTHH:mm).
+     * @param {string} dateString - RFC3339 formatted datetime string
+     * @returns {string} Formatted string in "YYYY-MM-DDTHH:mm" format, or empty string if invalid
+     */
+    function formatForDatetimeLocal(dateString) {
+        if (!dateString) return '';
+        var date = new Date(dateString);
+        var year = date.getFullYear();
+        var month = String(date.getMonth() + 1).padStart(2, '0');
+        var day = String(date.getDate()).padStart(2, '0');
+        var hours = String(date.getHours()).padStart(2, '0');
+        var minutes = String(date.getMinutes()).padStart(2, '0');
+        return year + '-' + month + '-' + day + 'T' + hours + ':' + minutes;
+    }
+
+    return { buildOccurrenceFields, buildOccurrenceFromForm, convertToRFC3339, formatForDatetimeLocal };
 }));
