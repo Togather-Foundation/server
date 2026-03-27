@@ -61,8 +61,6 @@
             if (venueId) {
                 const venueUlid = venueUlidFromId(venueId);
                 detailsHtml += '<span class="badge bg-blue-lt me-1" data-venue-label="' + escapeHtml(venueUlid) + '">Venue: <span class="venue-name-' + escapeHtml(venueUlid) + '">(loading…)</span></span>';
-            } else {
-                detailsHtml += '<span class="text-muted small me-1">(event default venue)</span>';
             }
 
             let actionBtns = '';

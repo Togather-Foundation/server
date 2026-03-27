@@ -418,7 +418,10 @@
         const timezone = document.getElementById('occ-tz-' + entryId)?.value || 'America/Toronto';
         const doorTimeRaw = document.getElementById('occ-door-' + entryId)?.value;
         const virtualUrl = document.getElementById('occ-virtual-url-' + entryId)?.value || null;
-        const venueId = document.getElementById('occ-venue-id-' + entryId)?.value || null;
+        const venueIdRaw = document.getElementById('occ-venue-id-' + entryId)?.value || null;
+        // Fall back to event's primary venue (same as ingest pipeline) so venue_id is always set.
+        const eventVenueId = (eventData && typeof eventData.location === 'string') ? eventData.location : null;
+        const venueId = venueIdRaw || eventVenueId;
 
         const occ = {
             id: null,
@@ -496,8 +499,6 @@
                 var m = venueId.match(/\/([A-Z0-9]{26})$/i);
                 var venueUlid = m ? m[1] : venueId;
                 detailsHtml += '<span class="badge bg-blue-lt me-1" data-venue-label="' + escapeHtml(venueUlid) + '">Venue: <span class="venue-name-' + escapeHtml(venueUlid) + '">(loading\u2026)</span></span>';
-            } else {
-                detailsHtml += '<span class="text-muted small me-1">(event default venue)</span>';
             }
 
             const timeStr = OccurrenceLogic.formatTimeRange(start, end);
@@ -545,7 +546,10 @@
         const timezone = document.getElementById('occ-tz-' + entryId)?.value || 'America/Toronto';
         const doorTimeRaw = document.getElementById('occ-door-' + entryId)?.value;
         const virtualUrl = document.getElementById('occ-virtual-url-' + entryId)?.value || null;
-        const venueId = document.getElementById('occ-venue-id-' + entryId)?.value || null;
+        const venueIdRaw = document.getElementById('occ-venue-id-' + entryId)?.value || null;
+        // Fall back to event's primary venue (same as ingest pipeline) so venue_id is always set.
+        const eventVenueId = (eventData && typeof eventData.location === 'string') ? eventData.location : null;
+        const venueId = venueIdRaw || eventVenueId;
 
         occurrences[index] = {
             id: occurrences[index].id,
