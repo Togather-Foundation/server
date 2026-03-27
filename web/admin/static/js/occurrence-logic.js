@@ -184,5 +184,151 @@
         return year + '-' + month + '-' + day + 'T' + hours + ':' + minutes;
     }
 
-    return { buildOccurrenceFields, buildOccurrenceFromForm, convertToRFC3339, formatForDatetimeLocal };
+    /**
+     * formatTimeRange — formats a start+end RFC3339 pair into a compact, human-readable string.
+     * @param {string|null} start - RFC3339 start datetime
+     * @param {string|null} end - RFC3339 end datetime
+     * @param {Object} options - Formatting options
+     * @param {string} [options.locale] - BCP 47 locale; default: window.ADMIN_LOCALE ?? 'en-CA'
+     * @param {boolean} [options.showYear] - Force year display; default: auto
+     * @param {string} [options.timezone] - IANA timezone (reserved, unused)
+     * @returns {string} Formatted time range string
+     */
+    function formatTimeRange(start, end, options) {
+        options = options || {};
+        var locale = options.locale || window.ADMIN_LOCALE || 'en-CA';
+        var showYear = options.showYear;
+
+        if (!start) return '(no date)';
+
+        var startDate = new Date(start);
+        if (isNaN(startDate.getTime())) return '(no date)';
+
+        var currentYear = new Date().getFullYear();
+        if (showYear === undefined) {
+            showYear = startDate.getFullYear() !== currentYear;
+        }
+
+        var dateOpts = { month: 'short', day: 'numeric' };
+        var timeOpts = { hour: 'numeric', minute: '2-digit', hour12: true };
+
+        var startDateStr = startDate.toLocaleDateString(locale, dateOpts);
+        if (showYear) {
+            startDateStr = startDate.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+        }
+
+        var startTimeStr = startDate.toLocaleTimeString(locale, timeOpts);
+
+        if (!end) {
+            return startDateStr + ', ' + startTimeStr;
+        }
+
+        var endDate = new Date(end);
+        if (isNaN(endDate.getTime())) {
+            return startDateStr + ', ' + startTimeStr;
+        }
+
+        var sameDay = startDate.getFullYear() === endDate.getFullYear() &&
+            startDate.getMonth() === endDate.getMonth() &&
+            startDate.getDate() === endDate.getDate();
+
+        var endDateStr = endDate.toLocaleDateString(locale, dateOpts);
+        var endTimeStr = endDate.toLocaleTimeString(locale, timeOpts);
+
+        if (sameDay) {
+            var startPeriod = startTimeStr.slice(-2);
+            var endPeriod = endTimeStr.slice(-2);
+            var startTimeNum = startTimeStr.slice(0, -3);
+            var endTimeNum = endTimeStr.slice(0, -3);
+            if (startPeriod === endPeriod) {
+                return startDateStr + ', ' + startTimeNum + ' \u2013 ' + endTimeStr;
+            } else {
+                return startDateStr + ', ' + startTimeStr + ' \u2013 ' + endTimeStr;
+            }
+        } else {
+            var fullStartStr = startDate.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+            var fullEndStr = endDate.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+            return fullStartStr + ', ' + startTimeStr + ' \u2013 ' + fullEndStr + ', ' + endTimeStr;
+        }
+    }
+
+    /**
+     * defaultEndTime — returns a suggested RFC3339 end time string based on start + hints.
+     * @param {string|null} startRFC3339 - RFC3339 start datetime
+     * @param {Object} hints - Hints for computing duration
+     * @param {number} [hints.durationMs] - Exact duration in milliseconds
+     * @param {number} [hints.durationHours] - Duration in hours (shorthand)
+     * @param {Object} [hints.copyDuration] - Copy duration from previous occurrence
+     * @param {string} [hints.copyDuration.prevStart] - Previous start RFC3339
+     * @param {string} [hints.copyDuration.prevEnd] - Previous end RFC3339
+     * @returns {string|null} Suggested end time as RFC3339, or null if start is invalid
+     */
+    function defaultEndTime(startRFC3339, hints) {
+        if (!startRFC3339) return null;
+        var startDate = new Date(startRFC3339);
+        if (isNaN(startDate.getTime())) return null;
+
+        var durationMs = 2 * 3600000;
+        if (hints) {
+            if (hints.durationMs != null) {
+                durationMs = hints.durationMs;
+            } else if (hints.durationHours != null) {
+                durationMs = hints.durationHours * 3600000;
+            } else if (hints.copyDuration) {
+                var ps = hints.copyDuration.prevStart;
+                var pe = hints.copyDuration.prevEnd;
+                if (ps && pe) {
+                    var dur = new Date(pe).getTime() - new Date(ps).getTime();
+                    if (dur > 0) durationMs = dur;
+                }
+            }
+        }
+
+        var endDate = new Date(startDate.getTime() + durationMs);
+        var offsetMatch = startRFC3339.match(/([+-]\d{2}:\d{2})$/);
+        var offset = offsetMatch ? offsetMatch[1] : null;
+
+        if (offset) {
+            var sign = offset[0] === '+' ? 1 : -1;
+            var oh = parseInt(offset.slice(1, 3), 10);
+            var om = parseInt(offset.slice(4, 6), 10);
+            var offsetMs = sign * (oh * 60 + om) * 60000;
+            var wallMs = endDate.getTime() + offsetMs;
+            var w = new Date(wallMs);
+            var pad = function(n) { return String(n).padStart(2, '0'); };
+            return w.getUTCFullYear() + '-' + pad(w.getUTCMonth() + 1) + '-' + pad(w.getUTCDate()) +
+                'T' + pad(w.getUTCHours()) + ':' + pad(w.getUTCMinutes()) + ':00' + offset;
+        }
+        return endDate.toISOString().slice(0, 19) + 'Z';
+    }
+
+    /**
+     * wireStartBlur — attaches a change event listener to auto-fill end time when start changes.
+     * @param {string} entryId - Entry ID for input element IDs
+     * @param {Function} hintsProvider - Function returning hints for defaultEndTime
+     * @returns {{ destroy: Function }} Object with destroy method to remove listener
+     */
+    function wireStartBlur(entryId, hintsProvider) {
+        var startInput = document.getElementById('occ-start-' + entryId);
+        if (!startInput) return { destroy: function() {} };
+
+        function handler() {
+            var endInput = document.getElementById('occ-end-' + entryId);
+            if (!endInput || endInput.value) return;
+            var tzInput = document.getElementById('occ-tz-' + entryId);
+            var tz = (tzInput && tzInput.value) || 'America/Toronto';
+            var startRFC = convertToRFC3339(startInput.value, tz);
+            if (!startRFC) return;
+            var hints = hintsProvider ? hintsProvider() : {};
+            var endRFC = defaultEndTime(startRFC, hints);
+            if (endRFC) endInput.value = formatForDatetimeLocal(endRFC);
+        }
+
+        startInput.addEventListener('change', handler);
+        return {
+            destroy: function() { startInput.removeEventListener('change', handler); }
+        };
+    }
+
+    return { buildOccurrenceFields, buildOccurrenceFromForm, convertToRFC3339, formatForDatetimeLocal, formatTimeRange, defaultEndTime, wireStartBlur };
 }));

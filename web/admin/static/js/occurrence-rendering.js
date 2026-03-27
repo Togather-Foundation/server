@@ -46,9 +46,7 @@
             const virtualUrl = occ.virtual_url || occ.virtualUrl;
             const occId = occ.id || occ['@id'] || '';
 
-            const startDisplay = start ? formatDate(start, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '(no date)';
-            const endDisplay = end ? formatDate(end, { hour: 'numeric', minute: '2-digit' }) : '';
-            const timeStr = endDisplay ? startDisplay + ' \u2013 ' + endDisplay : startDisplay;
+            const timeStr = OccurrenceLogic.formatTimeRange(start, end);
 
             let detailsHtml = '';
             if (timezone) {
@@ -62,7 +60,7 @@
             }
             if (venueId) {
                 const venueUlid = venueUlidFromId(venueId);
-                detailsHtml += '<span class="badge bg-blue-lt me-1">Venue: ' + escapeHtml(venueUlid) + '</span>';
+                detailsHtml += '<span class="badge bg-blue-lt me-1" data-venue-label="' + escapeHtml(venueUlid) + '">Venue: <span class="venue-name-' + escapeHtml(venueUlid) + '">(loading…)</span></span>';
             }
 
             let actionBtns = '';
@@ -117,24 +115,30 @@
             }
         }
 
-        return '<div class="mt-2 p-2 bg-light rounded" id="add-occ-form-' + safeEntryId + '">' +
+        return '<div class="mt-2 p-2 bg-light rounded" id="add-occ-form-' + safeEntryId + '" data-add-form="' + safeEntryId + '">' +
             '<div class="row g-2">' +
             '<div class="col-md-6">' +
-            '<input type="datetime-local" class="form-control form-control-sm"' + smartStart + ' id="occ-start-' + safeEntryId + '" placeholder="Start (event local time)">' +
+            '<label class="form-label form-label-sm mb-1">Start *</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + smartStart + ' id="occ-start-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
-            '<input type="datetime-local" class="form-control form-control-sm"' + smartEnd + ' id="occ-end-' + safeEntryId + '" placeholder="End (optional)">' +
+            '<label class="form-label form-label-sm mb-1">End</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + smartEnd + ' id="occ-end-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
-            '<input type="text" class="form-control form-control-sm" id="occ-tz-' + safeEntryId + '" value="' + escapeHtml(defaultTz) + '" placeholder="Timezone">' +
+            '<label class="form-label form-label-sm mb-1">Timezone *</label>' +
+            '<input type="text" class="form-control form-control-sm" id="occ-tz-' + safeEntryId + '" value="' + escapeHtml(defaultTz) + '">' +
             '</div>' +
             '<div class="col-md-6">' +
-            '<input type="datetime-local" class="form-control form-control-sm" id="occ-door-' + safeEntryId + '" placeholder="Door time (optional)">' +
+            '<label class="form-label form-label-sm mb-1">Door time</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm" id="occ-door-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
-            '<input type="url" class="form-control form-control-sm" id="occ-virtual-url-' + safeEntryId + '" placeholder="https://... (online only)">' +
+            '<label class="form-label form-label-sm mb-1">Virtual URL</label>' +
+            '<input type="url" class="form-control form-control-sm" id="occ-virtual-url-' + safeEntryId + '" placeholder="https://...">' +
             '</div>' +
             '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Venue override</label>' +
             '<div class="input-group input-group-sm">' +
             '<input type="hidden" id="occ-venue-id-' + safeEntryId + '" value="">' +
             '<input type="text" class="form-control" id="occ-venue-display-' + safeEntryId + '" readonly placeholder="(none \u2014 uses event default)">' +
@@ -176,33 +180,39 @@
         const venueUlid = venueUlidFromId(venueId);
         const hasVenue = !!venueId;
 
-        return '<div class="p-2 bg-light rounded" id="occ-edit-' + safeEntryId + '-' + safeOccId + '">' +
+        return '<div class="p-2 rounded border-start border-primary border-3 bg-blue-lt" id="occ-edit-' + safeEntryId + '-' + safeOccId + '">' +
             '<div class="row g-2">' +
             '<div class="col-md-6">' +
-            '<input type="datetime-local" class="form-control form-control-sm"' + startValue + ' id="occ-start-' + safeEntryId + '" placeholder="Start (event local time)">' +
+            '<label class="form-label form-label-sm mb-1">Start *</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + startValue + ' id="occ-start-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
-            '<input type="datetime-local" class="form-control form-control-sm"' + endValue + ' id="occ-end-' + safeEntryId + '" placeholder="End (optional)">' +
+            '<label class="form-label form-label-sm mb-1">End</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + endValue + ' id="occ-end-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
-            '<input type="text" class="form-control form-control-sm" id="occ-tz-' + safeEntryId + '" value="' + escapeHtml(timezone) + '" placeholder="Timezone">' +
+            '<label class="form-label form-label-sm mb-1">Timezone *</label>' +
+            '<input type="text" class="form-control form-control-sm" id="occ-tz-' + safeEntryId + '" value="' + escapeHtml(timezone) + '">' +
             '</div>' +
             '<div class="col-md-6">' +
-            '<input type="datetime-local" class="form-control form-control-sm"' + doorValue + ' id="occ-door-' + safeEntryId + '" placeholder="Door time (optional)">' +
+            '<label class="form-label form-label-sm mb-1">Door time</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + doorValue + ' id="occ-door-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
-            '<input type="url" class="form-control form-control-sm" id="occ-virtual-url-' + safeEntryId + '" value="' + escapeHtml(virtualUrl) + '" placeholder="https://... (online only)">' +
+            '<label class="form-label form-label-sm mb-1">Virtual URL</label>' +
+            '<input type="url" class="form-control form-control-sm" id="occ-virtual-url-' + safeEntryId + '" value="' + escapeHtml(virtualUrl) + '" placeholder="https://...">' +
             '</div>' +
             '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Venue override</label>' +
             '<div class="input-group input-group-sm">' +
             '<input type="hidden" id="occ-venue-id-' + safeEntryId + '" value="' + escapeHtml(venueId) + '">' +
             '<input type="text" class="form-control" id="occ-venue-display-' + safeEntryId + '" value="' + escapeHtml(venueUlid) + '" readonly placeholder="(none \u2014 uses event default)">' +
             '<button class="btn btn-outline-danger" type="button" data-action="clear-occurrence-venue" data-entry-id="' + safeEntryId + '"' + (hasVenue ? '' : ' style="display:none;"') + ' title="Clear venue override">Clear</button>' +
             '</div>' +
             '</div>' +
-            '<div class="col-12">' +
+            '<div class="col-12 d-flex justify-content-end gap-2">' +
+            '<button class="btn btn-sm btn-secondary" data-action="cancel-edit-occurrence" data-entry-id="' + safeEntryId + '" data-occurrence-id="' + safeOccId + '">Cancel</button>' +
             '<button class="btn btn-sm btn-primary" data-action="save-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + safeOccId + '"' + (occurrenceIndex !== undefined ? ' data-occurrence-index="' + occurrenceIndex + '"' : '') + '>Save</button>' +
-            '<button class="btn btn-sm btn-secondary ms-1" data-action="cancel-edit-occurrence" data-entry-id="' + safeEntryId + '" data-occurrence-id="' + safeOccId + '">Cancel</button>' +
             '</div>' +
             '</div>' +
             '<div id="occ-error-' + safeEntryId + '" class="text-danger small mt-1" style="display:none;"></div>' +
@@ -386,11 +396,74 @@
         return m ? m[1] : venueId;
     }
 
+    /**
+     * Hide the add form for a given entry.
+     * @param {string|number} entryId - Entry ID
+     */
+    function hideAddForm(entryId) {
+        var el = document.getElementById('add-occ-form-' + entryId);
+        if (el) el.style.display = 'none';
+    }
+
+    /**
+     * Show the add form for a given entry.
+     * @param {string|number} entryId - Entry ID
+     */
+    function showAddForm(entryId) {
+        var el = document.getElementById('add-occ-form-' + entryId);
+        if (el) el.style.display = '';
+    }
+
+    /**
+     * Resolve venue names asynchronously in a container.
+     * Finds all [data-venue-label] spans and fetches venue details.
+     * @param {HTMLElement} containerEl - Container element to search
+     */
+    function resolveVenueNames(containerEl) {
+        if (!containerEl) return;
+        var spans = containerEl.querySelectorAll('[data-venue-label]');
+        if (!spans.length) return;
+
+        var ulids = [];
+        var seen = {};
+        spans.forEach(function(span) {
+            var ulid = span.dataset.venueLabel;
+            if (ulid && !seen[ulid]) {
+                seen[ulid] = true;
+                ulids.push(ulid);
+            }
+        });
+
+        ulids.forEach(function(ulid) {
+            var nameSpan = containerEl.querySelector('.venue-name-' + ulid);
+            if (nameSpan) {
+                nameSpan.textContent = '(loading…)';
+            }
+        });
+
+        ulids.forEach(function(ulid) {
+            API.request('/api/v1/places/' + ulid).then(function(place) {
+                var nameSpan = containerEl.querySelector('.venue-name-' + ulid);
+                if (nameSpan) {
+                    nameSpan.textContent = place.name || '(unnamed)';
+                }
+            }).catch(function() {
+                var nameSpan = containerEl.querySelector('.venue-name-' + ulid);
+                if (nameSpan) {
+                    nameSpan.textContent = '(id: ' + ulid.slice(0, 8) + '…)';
+                }
+            });
+        });
+    }
+
     window.OccurrenceRendering = {
         renderList: renderList,
         refreshList: refreshList,
         renderEditRow: renderEditRow,
         renderMergedPickerList: renderMergedPickerList,
-        occurrencesOverlap: occurrencesOverlap
+        occurrencesOverlap: occurrencesOverlap,
+        hideAddForm: hideAddForm,
+        showAddForm: showAddForm,
+        resolveVenueNames: resolveVenueNames
     };
 })();

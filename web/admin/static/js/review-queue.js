@@ -240,6 +240,11 @@
                     if (rowEl) {
                         rowEl.innerHTML = OccurrenceRendering.renderEditRow(occ, eventUlid, entryId);
                     }
+                    OccurrenceRendering.hideAddForm(String(entryId));
+                    if (window._rqBlurDestroy) window._rqBlurDestroy();
+                    window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(entryId), function() {
+                        return { durationHours: 2 };
+                    });
                     break;
                 }
                 case 'save-occurrence': {
@@ -326,6 +331,16 @@
                             });
                             const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
                             OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
+                            OccurrenceRendering.showAddForm(String(entryId));
+                            if (window._rqBlurDestroy) window._rqBlurDestroy();
+                            const occ = currentEntryDetail && currentEntryDetail.occurrences;
+                            const lastOcc2 = occ && occ.length > 0 ? occ[occ.length - 1] : null;
+                            window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(entryId), function() {
+                                if (lastOcc2 && lastOcc2.startTime && lastOcc2.endTime) {
+                                    return { copyDuration: { prevStart: lastOcc2.startTime, prevEnd: lastOcc2.endTime } };
+                                }
+                                return { durationHours: 2 };
+                            });
                         }
                     } catch (err) {
                         console.error('Failed to save occurrence:', err);
@@ -343,6 +358,16 @@
                     const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
                     if (currentEntryDetail) {
                         OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
+                        OccurrenceRendering.showAddForm(String(entryId));
+                        if (window._rqBlurDestroy) window._rqBlurDestroy();
+                        const occ = currentEntryDetail && currentEntryDetail.occurrences;
+                        const lastOcc2 = occ && occ.length > 0 ? occ[occ.length - 1] : null;
+                        window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(entryId), function() {
+                            if (lastOcc2 && lastOcc2.startTime && lastOcc2.endTime) {
+                                return { copyDuration: { prevStart: lastOcc2.startTime, prevEnd: lastOcc2.endTime } };
+                            }
+                            return { durationHours: 2 };
+                        });
                     }
                     break;
                 }
@@ -1140,6 +1165,21 @@
                 fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData, matchDataByUlid[dupUlid] || null);
             });
         }
+
+        if (isCase1) {
+            const occContainer = document.getElementById('occurrence-list-' + id);
+            if (occContainer) {
+                const lastOcc = thisOccurrences.length > 0 ? thisOccurrences[thisOccurrences.length - 1] : null;
+                if (window._rqBlurDestroy) window._rqBlurDestroy();
+                window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(id), function() {
+                    if (lastOcc && lastOcc.startTime && lastOcc.endTime) {
+                        return { copyDuration: { prevStart: lastOcc.startTime, prevEnd: lastOcc.endTime } };
+                    }
+                    return { durationHours: 2 };
+                });
+                OccurrenceRendering.resolveVenueNames(occContainer);
+            }
+        }
     }
 
     /**
@@ -1249,6 +1289,15 @@
                 }
                 const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
                 OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
+                if (window._rqBlurDestroy) window._rqBlurDestroy();
+                const occ = currentEntryDetail && currentEntryDetail.occurrences;
+                const lastOcc2 = occ && occ.length > 0 ? occ[occ.length - 1] : null;
+                window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(entryId), function() {
+                    if (lastOcc2 && lastOcc2.startTime && lastOcc2.endTime) {
+                        return { copyDuration: { prevStart: lastOcc2.startTime, prevEnd: lastOcc2.endTime } };
+                    }
+                    return { durationHours: 2 };
+                });
             }
 
             // Clear form inputs
@@ -2686,6 +2735,15 @@
         const occListContainer = document.getElementById(`occurrence-list-${id}`);
         if (occListContainer) {
             occListContainer.innerHTML = OccurrenceRendering.renderList(occurrences, eventUlid, id, true, defaultTz);
+            const lastOcc = occurrences.length > 0 ? occurrences[occurrences.length - 1] : null;
+            if (window._rqBlurDestroy) window._rqBlurDestroy();
+            window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(id), function() {
+                if (lastOcc && lastOcc.startTime && lastOcc.endTime) {
+                    return { copyDuration: { prevStart: lastOcc.startTime, prevEnd: lastOcc.endTime } };
+                }
+                return { durationHours: 2 };
+            });
+            OccurrenceRendering.resolveVenueNames(occListContainer);
         }
     }
 

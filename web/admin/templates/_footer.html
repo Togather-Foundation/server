@@ -20,6 +20,9 @@
 
     {{ template "_user_modal.html" . }}
 
+    <!-- Admin UI globals (injected from server config) -->
+    <script>window.ADMIN_LOCALE = "{{ if .AdminLocale }}{{ .AdminLocale }}{{ else }}en-CA{{ end }}";</script>
+
     <!-- Common Scripts -->
     <script src="/admin/static/js/bootstrap.bundle.min.js?v={{ assetVersion }}"></script>
     <script src="/admin/static/js/tabler.min.js?v={{ assetVersion }}"></script>

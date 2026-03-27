@@ -67,6 +67,7 @@
                     handleSaveOccurrence(target);
                     break;
                 case 'cancel-edit-occurrence':
+                    if (window._occBlurDestroy) { window._occBlurDestroy(); window._occBlurDestroy = null; }
                     renderOccurrences();
                     break;
                 case 'remove-occurrence':
@@ -309,6 +310,16 @@
         const entryId = 'event-edit';
         
         container.innerHTML = OccurrenceRendering.renderList(occurrences, eventId, entryId, true, defaultTz);
+
+        if (window._occBlurDestroy) window._occBlurDestroy();
+        const lastOcc = occurrences.length > 0 ? occurrences[occurrences.length - 1] : null;
+        window._occBlurDestroy = OccurrenceLogic.wireStartBlur('event-edit', function() {
+            if (lastOcc && lastOcc.start_time && lastOcc.end_time) {
+                return { copyDuration: { prevStart: lastOcc.start_time, prevEnd: lastOcc.end_time } };
+            }
+            return { durationHours: 2 };
+        });
+        OccurrenceRendering.resolveVenueNames(container);
     }
     
     async function handleSubmit(e) {
@@ -434,6 +445,12 @@
         if (row) {
             row.outerHTML = editHtml;
         }
+
+        OccurrenceRendering.hideAddForm(entryId);
+        if (window._occBlurDestroy) window._occBlurDestroy();
+        window._occBlurDestroy = OccurrenceLogic.wireStartBlur(entryId, function() {
+            return { durationHours: 2 };
+        });
     }
 
     function handleSaveOccurrence(target) {
@@ -445,6 +462,8 @@
             showToast('Invalid occurrence', 'error');
             return;
         }
+
+        if (window._occBlurDestroy) { window._occBlurDestroy(); window._occBlurDestroy = null; }
 
         const startTimeRaw = document.getElementById('occ-start-' + entryId)?.value;
         if (!startTimeRaw) {

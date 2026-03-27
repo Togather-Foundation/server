@@ -13,16 +13,18 @@ type AdminHTMLHandler struct {
 	Logger          *slog.Logger
 	EmailEnabled    bool
 	DefaultTimezone string
+	AdminLocale     string
 }
 
 // NewAdminHTMLHandler creates a new admin HTML handler
-func NewAdminHTMLHandler(templates *template.Template, env string, logger *slog.Logger, emailEnabled bool, defaultTimezone string) *AdminHTMLHandler {
+func NewAdminHTMLHandler(templates *template.Template, env string, logger *slog.Logger, emailEnabled bool, defaultTimezone string, adminLocale string) *AdminHTMLHandler {
 	return &AdminHTMLHandler{
 		Templates:       templates,
 		Env:             env,
 		Logger:          logger,
 		EmailEnabled:    emailEnabled,
 		DefaultTimezone: defaultTimezone,
+		AdminLocale:     adminLocale,
 	}
 }
 
@@ -99,6 +101,7 @@ func (h *AdminHTMLHandler) ServeEventEdit(w http.ResponseWriter, r *http.Request
 		"Title":           "Edit Event - SEL Admin",
 		"EventID":         eventID,
 		"DefaultTimezone": h.DefaultTimezone,
+		"AdminLocale":     h.AdminLocale,
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "event_edit.html", data); err != nil {
@@ -260,6 +263,7 @@ func (h *AdminHTMLHandler) ServeReviewQueue(w http.ResponseWriter, r *http.Reque
 		"Title":           "Review Queue - SEL Admin",
 		"ActivePage":      "review-queue",
 		"DefaultTimezone": h.DefaultTimezone,
+		"AdminLocale":     h.AdminLocale,
 	}
 
 	if err := h.Templates.ExecuteTemplate(w, "review_queue.html", data); err != nil {
