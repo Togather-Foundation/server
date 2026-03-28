@@ -18,13 +18,9 @@
     /** Extract a ULID from a URI like https://.../things/01KKY... or return the value if already a bare ULID. */
     function extractUlid(uri) {
         if (!uri) return null;
-        // Match the LAST ULID segment in the URI (occurrence URIs contain two: event + occurrence)
-        const all = String(uri).match(/\/([A-Z0-9]{26})(?:\/|$)/gi);
-        if (all && all.length > 0) {
-            const last = all[all.length - 1].match(/([A-Z0-9]{26})/i);
-            return last ? last[1] : null;
-        }
-        return /^[A-Z0-9]{26}$/i.test(uri) ? uri : null;
+        // Match the LAST ULID/UUID-like segment in the URI path
+        const parts = String(uri).split('/').filter(Boolean);
+        return parts[parts.length - 1] || null;
     }
 
     // Initialize on page load
@@ -216,6 +212,7 @@
                 }
                 return {
                     id: occ['@id'] || null,
+                    occurrenceId: extractUlid(occ['@id']),  // bare UUID for API calls
                     start_time: occ.startDate || '',
                     end_time: occ.endDate || null,
                     timezone: occ.timezone || 'America/Toronto',
@@ -441,6 +438,7 @@
             // Normalise response to local shape
             occurrences.push({
                 id: created.id || null,
+                occurrenceId: created.id || null,  // bare UUID returned directly from admin API
                 start_time: created.start_time || body.start_time,
                 end_time: created.end_time || null,
                 timezone: created.timezone || timezone,
@@ -577,11 +575,12 @@
         if (venueUlid) body.venue_ulid = venueUlid;
         else if (virtualUrl) body.virtual_url = virtualUrl;
 
-        const occUlid = extractUlid(occurrences[index].id);
+        const occUlid = occurrences[index].occurrenceId;
         try {
             await API.events.occurrences.update(eventId, occUlid, body);
             occurrences[index] = {
                 id: occurrences[index].id,
+                occurrenceId: occurrences[index].occurrenceId,
                 start_time: body.start_time,
                 end_time: body.end_time || null,
                 timezone: timezone,
@@ -605,7 +604,7 @@
 
         if (!confirm('Are you sure you want to remove this occurrence?')) return;
 
-        const occUlid = extractUlid(occurrences[index].id);
+        const occUlid = occurrences[index].occurrenceId;
         try {
             await API.events.occurrences.delete(eventId, occUlid);
             occurrences.splice(index, 1);
