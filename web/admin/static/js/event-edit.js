@@ -15,6 +15,13 @@
         return null;
     }
 
+    /** Extract a ULID from a URI like https://.../things/01KKY... or return the value if already a bare ULID. */
+    function extractUlid(uri) {
+        if (!uri) return null;
+        const m = String(uri).match(/\/([A-Z0-9]{26})(?:\/|$)/i);
+        return m ? m[1] : (/^[A-Z0-9]{26}$/i.test(uri) ? uri : null);
+    }
+
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
 
@@ -377,26 +384,7 @@
                 payload.quality_score = parseInt(qualityScore, 10);
             }
 
-            // Add occurrences to payload
-            if (occurrences && occurrences.length > 0) {
-                payload.occurrences = occurrences.map(function(occ) {
-                    const item = {
-                        start_time: occ.start_time,
-                        timezone: occ.timezone || 'America/Toronto',
-                    };
-                    if (occ.end_time) item.end_time = occ.end_time;
-                    if (occ.door_time) item.door_time = occ.door_time;
-                    if (occ.virtual_url) item.virtual_url = occ.virtual_url;
-                    // venue_id is a URI; extract the ULID for the API.
-                    if (occ.venue_id) {
-                        var m = occ.venue_id.match(/\/([A-Z0-9]{26})$/i);
-                        if (m) item.venue_ulid = m[1];
-                    }
-                    return item;
-                });
-            }
-
-            // Send PUT request using centralized API client
+            // Send PUT request using centralized API client (metadata only — occurrences use their own endpoints)
             const result = await API.events.update(eventId, payload);
             showToast('Event updated successfully', 'success');
             
@@ -416,10 +404,10 @@
     }
 
     // Occurrence Management Functions
-    
-    function handleAddOccurrence(target) {
+
+    async function handleAddOccurrence(target) {
         const entryId = target.dataset.entryId || 'event-edit';
-        
+
         const startTimeRaw = document.getElementById('occ-start-' + entryId)?.value;
         if (!startTimeRaw) {
             showToast('Start time is required', 'error');
@@ -431,22 +419,36 @@
         const doorTimeRaw = document.getElementById('occ-door-' + entryId)?.value;
         const virtualUrl = document.getElementById('occ-virtual-url-' + entryId)?.value || null;
         const venueIdRaw = document.getElementById('occ-venue-id-' + entryId)?.value || null;
-        // Fall back to event's primary venue (same as ingest pipeline) so venue_id is always set.
         const venueId = venueIdRaw || eventVenueUri();
+        const venueUlid = extractUlid(venueId);
 
-        const occ = {
-            id: null,
+        const body = {
             start_time: OccurrenceLogic.convertToRFC3339(startTimeRaw, timezone),
-            end_time: endTimeRaw ? OccurrenceLogic.convertToRFC3339(endTimeRaw, timezone) : null,
             timezone: timezone,
-            door_time: doorTimeRaw ? OccurrenceLogic.convertToRFC3339(doorTimeRaw, timezone) : null,
-            virtual_url: venueId ? null : (virtualUrl || null),
-            venue_id: venueId || null,
         };
+        if (endTimeRaw) body.end_time = OccurrenceLogic.convertToRFC3339(endTimeRaw, timezone);
+        if (doorTimeRaw) body.door_time = OccurrenceLogic.convertToRFC3339(doorTimeRaw, timezone);
+        if (venueUlid) body.venue_ulid = venueUlid;
+        else if (virtualUrl) body.virtual_url = virtualUrl;
 
-        occurrences.push(occ);
-        renderOccurrences();
-        showToast('Occurrence added', 'success');
+        try {
+            const created = await API.events.occurrences.create(eventId, body);
+            // Normalise response to local shape
+            occurrences.push({
+                id: created.id || null,
+                start_time: created.start_time || body.start_time,
+                end_time: created.end_time || null,
+                timezone: created.timezone || timezone,
+                door_time: created.door_time || null,
+                virtual_url: created.virtual_url || null,
+                venue_id: venueId || null,
+            });
+            OccurrenceRendering.hideAddForm(entryId);
+            renderOccurrences();
+            showToast('Occurrence added', 'success');
+        } catch (err) {
+            showToast(err.message || 'Failed to add occurrence', 'error');
+        }
     }
 
     function handleEditOccurrence(target) {
@@ -537,10 +539,8 @@
         OccurrenceRendering.hideAddForm(entryId);
     }
 
-    function handleSaveOccurrence(target) {
+    async function handleSaveOccurrence(target) {
         const entryId = target.dataset.entryId || 'event-edit';
-        const occId = target.dataset.occurrenceId || '';
-        
         const index = parseInt(target.dataset.occurrenceIndex, 10);
         if (isNaN(index) || index < 0 || index >= occurrences.length) {
             showToast('Invalid occurrence', 'error');
@@ -560,27 +560,39 @@
         const doorTimeRaw = document.getElementById('occ-door-' + entryId)?.value;
         const virtualUrl = document.getElementById('occ-virtual-url-' + entryId)?.value || null;
         const venueIdRaw = document.getElementById('occ-venue-id-' + entryId)?.value || null;
-        // Fall back to event's primary venue (same as ingest pipeline) so venue_id is always set.
-        const eventVenueId = eventVenueUri();
-        const venueId = venueIdRaw || eventVenueId;
+        const venueId = venueIdRaw || eventVenueUri();
+        const venueUlid = extractUlid(venueId);
 
-        occurrences[index] = {
-            id: occurrences[index].id,
+        const body = {
             start_time: OccurrenceLogic.convertToRFC3339(startTimeRaw, timezone),
-            end_time: endTimeRaw ? OccurrenceLogic.convertToRFC3339(endTimeRaw, timezone) : null,
             timezone: timezone,
-            door_time: doorTimeRaw ? OccurrenceLogic.convertToRFC3339(doorTimeRaw, timezone) : null,
-            virtual_url: venueId ? null : (virtualUrl || null),
-            venue_id: venueId || null,
         };
+        if (endTimeRaw) body.end_time = OccurrenceLogic.convertToRFC3339(endTimeRaw, timezone);
+        if (doorTimeRaw) body.door_time = OccurrenceLogic.convertToRFC3339(doorTimeRaw, timezone);
+        if (venueUlid) body.venue_ulid = venueUlid;
+        else if (virtualUrl) body.virtual_url = virtualUrl;
 
-        renderOccurrences();
-        showToast('Occurrence updated', 'success');
+        const occUlid = extractUlid(occurrences[index].id);
+        try {
+            await API.events.occurrences.update(eventId, occUlid, body);
+            occurrences[index] = {
+                id: occurrences[index].id,
+                start_time: body.start_time,
+                end_time: body.end_time || null,
+                timezone: timezone,
+                door_time: body.door_time || null,
+                virtual_url: body.virtual_url || null,
+                venue_id: venueId || null,
+            };
+            renderOccurrences();
+            showToast('Occurrence updated', 'success');
+        } catch (err) {
+            showToast(err.message || 'Failed to update occurrence', 'error');
+        }
     }
 
-    function handleRemoveOccurrence(target) {
+    async function handleRemoveOccurrence(target) {
         const index = parseInt(target.dataset.occurrenceIndex, 10);
-        
         if (isNaN(index) || index < 0 || index >= occurrences.length) {
             showToast('Invalid occurrence', 'error');
             return;
@@ -588,9 +600,15 @@
 
         if (!confirm('Are you sure you want to remove this occurrence?')) return;
 
-        occurrences.splice(index, 1);
-        renderOccurrences();
-        showToast('Occurrence removed', 'success');
+        const occUlid = extractUlid(occurrences[index].id);
+        try {
+            await API.events.occurrences.delete(eventId, occUlid);
+            occurrences.splice(index, 1);
+            renderOccurrences();
+            showToast('Occurrence removed', 'success');
+        } catch (err) {
+            showToast(err.message || 'Failed to remove occurrence', 'error');
+        }
     }
 
     function handleClearOccurrenceVenue(target) {
