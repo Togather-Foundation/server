@@ -119,3 +119,8 @@ main {
     font-size: 2rem;
     font-weight: bold;
 }
+
+/* Occurrence list rows: border between items, not after the last one */
+.occ-row:not(:last-child) {
+    border-bottom: 1px solid var(--tblr-border-color, #e6e7e9);
+}

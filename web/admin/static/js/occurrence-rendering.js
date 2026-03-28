@@ -72,7 +72,7 @@
 
             // Row ID uses occurrence id when available, falls back to index for pending (unsaved) occurrences.
             const rowSuffix = occId ? escapeHtml(occId) : 'idx-' + index;
-            return '<div class="d-flex align-items-start py-2 border-bottom" id="occ-row-' + safeEntryId + '-' + rowSuffix + '">' +
+            return '<div class="d-flex align-items-start py-2 occ-row" id="occ-row-' + safeEntryId + '-' + rowSuffix + '">' +
                 '<div class="flex-grow-1">' +
                 '<div class="text-body-secondary">' + escapeHtml(timeStr) + '</div>' +
                 (detailsHtml ? '<div class="mt-1">' + detailsHtml + '</div>' : '') +
