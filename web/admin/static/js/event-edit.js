@@ -6,6 +6,15 @@
     let eventData = null;
     let occurrences = [];
 
+    /** Extract the venue URI from eventData.location — handles plain string or JSON-LD Place object. */
+    function eventVenueUri() {
+        const loc = eventData && eventData.location;
+        if (!loc) return null;
+        if (typeof loc === 'string') return loc;
+        if (typeof loc === 'object' && loc['@id']) return loc['@id'];
+        return null;
+    }
+
     // Initialize on page load
     document.addEventListener('DOMContentLoaded', init);
 
@@ -60,7 +69,7 @@
                 case 'show-add-form': {
                     const addEntryId = target.dataset.entryId || 'event-edit';
                     OccurrenceRendering.showAddForm(addEntryId);
-                    OccurrenceRendering.fillEventVenuePlaceholder(addEntryId, eventData && eventData.location);
+                    OccurrenceRendering.fillEventVenuePlaceholder(addEntryId, eventVenueUri());
                     break;
                 }
                 case 'cancel-add-occurrence':
@@ -423,8 +432,7 @@
         const virtualUrl = document.getElementById('occ-virtual-url-' + entryId)?.value || null;
         const venueIdRaw = document.getElementById('occ-venue-id-' + entryId)?.value || null;
         // Fall back to event's primary venue (same as ingest pipeline) so venue_id is always set.
-        const eventVenueId = (eventData && typeof eventData.location === 'string') ? eventData.location : null;
-        const venueId = venueIdRaw || eventVenueId;
+        const venueId = venueIdRaw || eventVenueUri();
 
         const occ = {
             id: null,
@@ -462,7 +470,7 @@
 
         OccurrenceRendering.hideAddForm(entryId);
         OccurrenceRendering.resolveVenueDisplayValue(entryId);   // replace raw ULID with venue name
-        OccurrenceRendering.fillEventVenuePlaceholder(entryId, eventData && eventData.location);
+        OccurrenceRendering.fillEventVenuePlaceholder(entryId, eventVenueUri());
         if (window._occBlurDestroy) window._occBlurDestroy();
         window._occBlurDestroy = OccurrenceLogic.wireStartBlur(entryId, function() {
             return { durationHours: 2 };
@@ -553,7 +561,7 @@
         const virtualUrl = document.getElementById('occ-virtual-url-' + entryId)?.value || null;
         const venueIdRaw = document.getElementById('occ-venue-id-' + entryId)?.value || null;
         // Fall back to event's primary venue (same as ingest pipeline) so venue_id is always set.
-        const eventVenueId = (eventData && typeof eventData.location === 'string') ? eventData.location : null;
+        const eventVenueId = eventVenueUri();
         const venueId = venueIdRaw || eventVenueId;
 
         occurrences[index] = {
