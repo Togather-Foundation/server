@@ -18,8 +18,13 @@
     /** Extract a ULID from a URI like https://.../things/01KKY... or return the value if already a bare ULID. */
     function extractUlid(uri) {
         if (!uri) return null;
-        const m = String(uri).match(/\/([A-Z0-9]{26})(?:\/|$)/i);
-        return m ? m[1] : (/^[A-Z0-9]{26}$/i.test(uri) ? uri : null);
+        // Match the LAST ULID segment in the URI (occurrence URIs contain two: event + occurrence)
+        const all = String(uri).match(/\/([A-Z0-9]{26})(?:\/|$)/gi);
+        if (all && all.length > 0) {
+            const last = all[all.length - 1].match(/([A-Z0-9]{26})/i);
+            return last ? last[1] : null;
+        }
+        return /^[A-Z0-9]{26}$/i.test(uri) ? uri : null;
     }
 
     // Initialize on page load
