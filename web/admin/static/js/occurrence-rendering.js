@@ -15,6 +15,11 @@
 (function() {
     'use strict';
 
+    // Set to true to show the timezone badge on each occurrence row.
+    // Defaults to false — all occurrences within a deployment node share
+    // the same timezone so displaying it is usually redundant clutter.
+    var SHOW_TIMEZONE_BADGE = false;
+
     /**
      * Render a single occurrence row.
      * @param {object} occ - Occurrence object
@@ -37,8 +42,7 @@
         const timeStr = OccurrenceLogic.formatTimeRange(start, end);
 
         let detailsHtml = '';
-        if (timezone) {
-            detailsHtml += '<span class="badge bg-secondary-lt me-1">' + escapeHtml(timezone) + '</span>';
+        if (timezone && SHOW_TIMEZONE_BADGE) {
         }
         if (doorTime) {
             detailsHtml += '<span class="text-muted small me-1">Doors: ' + formatDate(doorTime, { hour: 'numeric', minute: '2-digit' }) + '</span>';
