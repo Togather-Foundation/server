@@ -450,6 +450,15 @@ func validateOccurrences(input EventInput, nodeDomain string, original *EventInp
 			}
 		}
 
+		// Check for zero-duration occurrence (endDate equals startDate)
+		if endTime != nil && endTime.Equal(*startTime) {
+			warnings = append(warnings, ValidationWarning{
+				Field:   fieldPrefix + ".endDate",
+				Message: "endDate equals startDate — zero-duration occurrence",
+				Code:    "zero_duration_occurrence",
+			})
+		}
+
 		if _, err := parseRFC3339Optional(fieldPrefix+".doorTime", occ.DoorTime); err != nil {
 			return nil, fmt.Errorf("parse occurrence door time: %w", err)
 		}

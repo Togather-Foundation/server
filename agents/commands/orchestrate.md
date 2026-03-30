@@ -16,6 +16,8 @@ MUST map 1:1 to these phases -- do not collapse multiple phases into one todo.
 Phase 1: UNDERSTAND     -- Gather context (delegate to @explore)
 Phase 2: PLAN           -- Create implementation plan, present to user
   >>> GATE: Stop and wait for user to approve the plan <<<
+Phase 2b: UI DESIGN     -- (UI features only) Write visual spec; present to user
+  >>> GATE: Stop and wait for user to approve the UI design <<<
 Phase 3: BEAD & BRANCH  -- Create feature branch, create/claim bead
 Phase 4: IMPLEMENT      -- TDD in subagents (delegate to @general)
 Phase 5: REVIEW         -- CI + code review (delegate to @beads-code-reviewer)
@@ -107,6 +109,36 @@ Use TodoWrite to create trackable items for the plan.
 
 Present the plan to the user. **STOP HERE.** See GATE Rules above.
 Do not proceed to Phase 3 until the user explicitly approves.
+
+---
+
+## Phase 2b: UI DESIGN (UI features only)
+
+**Trigger:** Any feature or bugfix that adds or modifies user-facing HTML/JS UI.
+Skip this phase for pure backend work, API-only changes, or trivial copy edits.
+
+**Goal:** Produce a written visual spec that the user approves *before* any HTML is written.
+This prevents the most common class of frontend rework: functional code that looks wrong.
+
+1. **List every UI state** the component can be in (e.g. read / editing / adding / loading / error).
+2. **Sketch the field layout** for each state in plain text or ASCII, e.g.:
+   ```
+   [Start *] ──── [End]
+   [Timezone *] ── [Door time]
+   [Virtual URL] ── [Venue  ▸ name  ✕]
+                    [Save]  [Cancel]
+   ```
+3. **State transition table** — what triggers each transition and what changes in the DOM.
+4. **Data display rules** — how each field value is formatted for read view (dates, IDs, nulls).
+5. **Checklist** — confirm the design satisfies every item in the `web/AGENTS.md` UI Quality Checklist
+   before presenting it. If any item cannot be satisfied, call it out explicitly.
+
+Present the spec to the user. **STOP HERE.** Do not write HTML or JS until the user approves.
+The implementation prompt to `@general` in Phase 4 must include this approved spec verbatim.
+
+### >>> GATE: UI Design Review <<<
+
+Present the spec. **STOP.** See GATE Rules above.
 
 ---
 

@@ -1,90 +1,295 @@
 /**
  * Shared occurrence rendering utilities.
- * Exposes window.OccurrenceRendering = { renderList, refreshList, renderMergedPickerList }.
+ * Exposes window.OccurrenceRendering = { renderList, refreshList, renderEditRow, renderMergedPickerList, occurrencesOverlap }.
  *
  * Dependencies (must load before this file):
  *   - components.js  (escapeHtml, formatDate)
+ *   - occurrence-logic.js (OccurrenceLogic.formatForDatetimeLocal)
  *
  * Design (docs/design/review-queue-ui.md):
- *   - renderList: single-event occurrence list with optional edit controls
+ *   - renderList: single-event occurrence list with optional inline edit controls
+ *   - renderEditRow: inline edit form for a single occurrence
  *   - renderMergedPickerList: dual-column occurrence picker for Case 2/3 (two-event duplicates)
  *     showing canonical occurrences (locked, primary) and related occurrences (toggleable or greyed on overlap)
  */
 (function() {
     'use strict';
 
+    // Set to true to show the timezone badge on each occurrence row.
+    // Defaults to false — all occurrences within a deployment node share
+    // the same timezone so displaying it is usually redundant clutter.
+    var SHOW_TIMEZONE_BADGE = false;
+
     /**
-     * Render a compact list of occurrences.
-     * When editable=true, each row includes a Remove button and an Add Occurrence form follows.
-     * @param {Array} occurrences - Array of occurrenceDetail objects from the API
+     * Render a single occurrence row.
+     * @param {object} occ - Occurrence object
+     * @param {string} eventUlid - ULID of the event
+     * @param {string|number} entryId - Entry ID for namespacing
+     * @param {number} index - Zero-based index in the occurrences array
+     * @param {boolean} editable - Whether to include Edit/Remove buttons
+     * @returns {string} HTML string for one occ-row div
+     */
+    function renderRow(occ, eventUlid, entryId, index, editable) {
+        const safeEntryId = escapeHtml(String(entryId));
+        const start = occ.start_time || occ.startTime;
+        const end = occ.end_time || occ.endTime;
+        const timezone = occ.timezone;
+        const doorTime = occ.door_time || occ.doorTime;
+        const venueId = occ.venue_id || occ.venueId;
+        const virtualUrl = occ.virtual_url || occ.virtualUrl;
+        const occId = occBareId(occ);
+
+        const timeStr = OccurrenceLogic.formatTimeRange(start, end);
+
+        let detailsHtml = '';
+        if (timezone && SHOW_TIMEZONE_BADGE) {
+            detailsHtml += '<span class="badge bg-secondary-lt me-1">' + escapeHtml(timezone) + '</span>';
+        }
+        if (doorTime) {
+            detailsHtml += '<span class="text-muted small me-1">Doors: ' + formatDate(doorTime, { hour: 'numeric', minute: '2-digit' }) + '</span>';
+        }
+        if (virtualUrl) {
+            detailsHtml += '<span class="text-muted small d-block">' + escapeHtml(virtualUrl) + '</span>';
+        }
+        if (venueId) {
+            const venueUlid = venueUlidFromId(venueId);
+            detailsHtml += '<span class="badge bg-blue-lt me-1" data-venue-label="' + escapeHtml(venueUlid) + '">Venue: <span class="venue-name-' + escapeHtml(venueUlid) + '">(loading\u2026)</span></span>';
+        }
+
+        const actionBtns = editable
+            ? '<button type="button" class="btn btn-sm btn-outline-secondary ms-2" data-action="edit-occurrence">Edit</button>' +
+              (occId && !String(occId).startsWith('_pending_') ? '<button type="button" class="btn btn-sm btn-ghost-danger ms-1" data-action="remove-occurrence" title="Remove occurrence">&#10005;</button>' : '')
+            : '';
+
+        // Row ID uses occurrence id when available, falls back to index for pending (unsaved) occurrences.
+        const rowSuffix = occId ? escapeHtml(occId) : 'idx-' + index;
+        return '<div class="d-flex align-items-start py-2 occ-row"' +
+            ' id="occ-row-' + safeEntryId + '-' + rowSuffix + '"' +
+            ' data-entry-id="' + safeEntryId + '"' +
+            ' data-event-ulid="' + escapeHtml(eventUlid) + '"' +
+            ' data-occurrence-id="' + escapeHtml(occId) + '"' +
+            ' data-occurrence-index="' + index + '">' +
+            '<div class="flex-grow-1">' +
+            '<div class="text-body-secondary">' + escapeHtml(timeStr) + '</div>' +
+            (detailsHtml ? '<div class="mt-1">' + detailsHtml + '</div>' : '') +
+            '</div>' +
+            actionBtns +
+            '</div>';
+    }
+
+    /**
+     * Render a list of occurrences with optional inline editing.
+     * When editable=true, each row includes an Edit button and an Add Occurrence form follows.
+     * @param {Array} occurrences - Array of occurrence objects from the API
      * @param {string} eventUlid - ULID of the event that owns these occurrences
      * @param {string|number} entryId - Review queue entry ID (used for input IDs and data attributes)
-     * @param {boolean} editable - Whether to show Remove and Add controls
+     * @param {boolean} editable - Whether to show Edit and Add controls
+     * @param {string} defaultTz - Default timezone string (fallback to 'America/Toronto' if falsy)
      * @returns {string} HTML string
      */
-    function renderList(occurrences, eventUlid, entryId, editable) {
+    function renderList(occurrences, eventUlid, entryId, editable, defaultTz) {
+        if (!defaultTz) {
+            defaultTz = 'America/Toronto';
+        }
+
         const count = occurrences ? occurrences.length : 0;
         if (count === 0 && !editable) {
             return '<p class="text-muted small mb-2">No occurrences</p>';
         }
 
-        // Escape entryId once — it appears in id= and data-* attributes throughout this function.
-        // entryId is sourced from the DOM (dataset) or API (integer), but escape defensively
-        // since it flows into innerHTML attribute positions.
         const safeEntryId = escapeHtml(String(entryId));
 
-        const rowsHtml = (occurrences || []).map(occ => {
-            const start = occ.startTime ? formatDate(occ.startTime, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '(no date)';
-            const end = occ.endTime && occ.endTime.trim() ? formatDate(occ.endTime, { hour: 'numeric', minute: '2-digit' }) : '';
-            const timeStr = end ? `${start} \u2013 ${end}` : start;
-
-            const removeBtn = editable && !String(occ.id).startsWith('_pending_')
-                ? `<button class="btn btn-sm btn-ghost-danger ms-auto" data-action="remove-occurrence" data-entry-id="${safeEntryId}" data-event-ulid="${escapeHtml(eventUlid)}" data-occurrence-id="${escapeHtml(occ.id)}" title="Remove occurrence">&#10005; Remove</button>`
-                : '';
-
-            return `<div class="d-flex align-items-center py-1 border-bottom">
-                <span class="text-body-secondary small">${escapeHtml(timeStr)}</span>
-                ${removeBtn}
-            </div>`;
+        const rowsHtml = (occurrences || []).map(function(occ, index) {
+            return renderRow(occ, eventUlid, entryId, index, editable);
         }).join('');
 
-        const addFormHtml = editable ? (() => {
-            const defaultTz = (occurrences && occurrences.length > 0 && occurrences[0].timezone)
-                ? occurrences[0].timezone
-                : 'America/Toronto';
-            return `
-                <div class="d-flex gap-2 align-items-center flex-wrap mt-2" id="add-occ-form-${safeEntryId}">
-                    <input type="datetime-local" class="form-control form-control-sm" id="occ-start-${safeEntryId}" style="max-width: 200px;" placeholder="Start (event local time)">
-                    <input type="datetime-local" class="form-control form-control-sm" id="occ-end-${safeEntryId}" style="max-width: 200px;" placeholder="End (optional)">
-                    <input type="text" class="form-control form-control-sm" id="occ-tz-${safeEntryId}" value="${escapeHtml(defaultTz)}" style="max-width: 160px;" placeholder="Timezone">
-                    <button class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="${safeEntryId}" data-event-ulid="${escapeHtml(eventUlid)}">+ Add</button>
-                </div>
-                <div id="occ-error-${safeEntryId}" class="text-danger small mt-1" style="display:none;"></div>
-            `;
-        })() : '';
+        const addFormHtml = editable ? renderAddForm(safeEntryId, eventUlid, defaultTz, occurrences) : '';
 
-        return `
-            <div class="mb-2">
-                <small class="fw-semibold text-muted">OCCURRENCES (${count})</small>
-                <div class="border rounded p-2 mt-1">
-                    ${rowsHtml || '<span class="text-muted small">No occurrences yet</span>'}
-                </div>
-                ${addFormHtml}
-            </div>
-        `;
+        return '<div class="mb-2" id="occurrence-list-' + safeEntryId + '">' +
+            '<small class="fw-semibold text-muted">OCCURRENCES (' + count + ')</small>' +
+            '<div class="border rounded p-2 mt-1">' +
+            (rowsHtml || '<span class="text-muted small">No occurrences yet</span>') +
+            '</div>' +
+            (editable
+                ? '<div class="mt-2">' +
+                  '<button type="button" class="btn btn-sm btn-outline-primary" data-action="show-add-form" data-entry-id="' + safeEntryId + '" id="add-occ-btn-' + safeEntryId + '">+ Add Occurrence</button>' +
+                  '</div>' +
+                  addFormHtml
+                : '') +
+            '</div>';
+    }
+
+    /**
+     * Render the add occurrence form.
+     * @param {string} safeEntryId - Escaped entry ID for namespacing
+     * @param {string} eventUlid - Event ULID
+     * @param {string} defaultTz - Default timezone
+     * @param {Array} occurrences - Current occurrences (for smart defaults)
+     * @returns {string} HTML string
+     */
+    function renderAddForm(safeEntryId, eventUlid, defaultTz, occurrences) {
+        let smartStart = '';
+        let smartEnd = '';
+        if (occurrences && occurrences.length > 0) {
+            // Try to infer next start from recurrence pattern (last two occurrences, same time, N-day interval)
+            const guessed = OccurrenceLogic.guessNextStart(occurrences);
+            if (guessed) {
+                smartStart = ' value="' + escapeHtml(guessed) + '"';
+            } else {
+                // Fallback: copy last occurrence's start time
+                const lastOcc = occurrences[occurrences.length - 1];
+                const lastStart = lastOcc.start_time || lastOcc.startTime;
+                if (lastStart) {
+                    smartStart = ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(lastStart)) + '"';
+                }
+            }
+            // Pre-fill end using last occurrence's duration
+            const lastOcc = occurrences[occurrences.length - 1];
+            const lastStart = lastOcc.start_time || lastOcc.startTime;
+            const lastEnd = lastOcc.end_time || lastOcc.endTime;
+            if (lastStart && lastEnd && smartStart) {
+                const durationMs = new Date(lastEnd).getTime() - new Date(lastStart).getTime();
+                if (durationMs > 0) {
+                    const startVal = smartStart.match(/value="([^"]+)"/);
+                    if (startVal) {
+                        const tz = defaultTz || 'America/Toronto';
+                        const startRFC = OccurrenceLogic.convertToRFC3339(startVal[1], tz);
+                        if (startRFC) {
+                            const endRFC = OccurrenceLogic.defaultEndTime(startRFC, { durationMs: durationMs });
+                            if (endRFC) {
+                                smartEnd = ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(endRFC)) + '"';
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return '<div class="mt-2 p-2 bg-light rounded" id="add-occ-form-' + safeEntryId + '" data-add-form="' + safeEntryId + '" style="display:none;">' +
+            '<div class="row g-2">' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Start *</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + smartStart + ' id="occ-add-start-' + safeEntryId + '">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">End</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + smartEnd + ' id="occ-add-end-' + safeEntryId + '">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Timezone *</label>' +
+            '<input type="text" class="form-control form-control-sm" id="occ-add-tz-' + safeEntryId + '" value="' + escapeHtml(defaultTz) + '">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Door time</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm" id="occ-add-door-' + safeEntryId + '">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Virtual URL</label>' +
+            '<input type="url" class="form-control form-control-sm" id="occ-add-virtual-url-' + safeEntryId + '" placeholder="https://...">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Venue override</label>' +
+            '<div class="input-group input-group-sm">' +
+            '<input type="hidden" id="occ-add-venue-id-' + safeEntryId + '" value="">' +
+            '<input type="text" class="form-control" id="occ-add-venue-display-' + safeEntryId + '" readonly placeholder="(none \u2014 uses event default)">' +
+            '<button class="btn btn-outline-danger" type="button" data-action="clear-occurrence-venue" data-entry-id="' + safeEntryId + '" data-form-type="add" style="display:none;" title="Clear venue override">Clear</button>' +
+            '</div>' +
+            '</div>' +
+            '<div class="col-12 d-flex justify-content-end gap-2">' +
+            '<button type="button" class="btn btn-sm btn-secondary" data-action="cancel-add-occurrence" data-entry-id="' + safeEntryId + '">Cancel</button>' +
+            '<button type="button" class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '">Save</button>' +
+            '</div>' +
+            '</div>' +
+            '<div id="occ-add-error-' + safeEntryId + '" class="text-danger small mt-1" style="display:none;"></div>' +
+            '</div>';
+    }
+
+    /**
+     * Render an inline edit row for a single occurrence.
+     * @param {Object} occ - Occurrence object with current values
+     * @param {string} eventUlid - Event ULID
+     * @param {string|number} entryId - Entry ID for namespacing
+     * @param {number} [occurrenceIndex] - Index of the occurrence in the list (for local-array callers)
+     * @returns {string} HTML string
+     */
+    function renderEditRow(occ, eventUlid, entryId, occurrenceIndex) {
+        const safeEntryId = escapeHtml(String(entryId));
+        const occId = occBareId(occ);
+        const safeOccId = escapeHtml(occId);
+
+        const startTime = occ.start_time || occ.startTime || '';
+        const endTime = occ.end_time || occ.endTime || '';
+        const timezone = occ.timezone || 'America/Toronto';
+        const doorTime = occ.door_time || occ.doorTime || '';
+        const venueId = occ.venue_id || occ.venueId || '';
+        const virtualUrl = occ.virtual_url || occ.virtualUrl || '';
+
+        const startValue = startTime ? ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(startTime)) + '"' : '';
+        const endValue = endTime ? ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(endTime)) + '"' : '';
+        const doorValue = doorTime ? ' value="' + escapeHtml(OccurrenceLogic.formatForDatetimeLocal(doorTime)) + '"' : '';
+
+        const venueUlid = venueUlidFromId(venueId);
+        const hasVenue = !!venueId;
+
+        return '<div class="p-2 rounded border-start border-primary border-3 bg-blue-lt occ-edit-row"' +
+            ' id="occ-edit-' + safeEntryId + '-' + safeOccId + '"' +
+            ' data-entry-id="' + safeEntryId + '"' +
+            ' data-event-ulid="' + escapeHtml(eventUlid) + '"' +
+            ' data-occurrence-id="' + safeOccId + '"' +
+            (occurrenceIndex !== undefined ? ' data-occurrence-index="' + occurrenceIndex + '"' : '') + '>' +
+            '<div class="row g-2">' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Start *</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + startValue + ' id="occ-start-' + safeEntryId + '">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">End</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + endValue + ' id="occ-end-' + safeEntryId + '">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Timezone *</label>' +
+            '<input type="text" class="form-control form-control-sm" id="occ-tz-' + safeEntryId + '" value="' + escapeHtml(timezone) + '">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Door time</label>' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + doorValue + ' id="occ-door-' + safeEntryId + '">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Virtual URL</label>' +
+            '<input type="url" class="form-control form-control-sm" id="occ-virtual-url-' + safeEntryId + '" value="' + escapeHtml(virtualUrl) + '" placeholder="https://...">' +
+            '</div>' +
+            '<div class="col-md-6">' +
+            '<label class="form-label form-label-sm mb-1">Venue override</label>' +
+            '<div class="input-group input-group-sm">' +
+            '<input type="hidden" id="occ-venue-id-' + safeEntryId + '" value="' + escapeHtml(venueId) + '">' +
+            '<input type="text" class="form-control" id="occ-venue-display-' + safeEntryId + '" value="' + escapeHtml(venueUlid) + '" readonly placeholder="(none \u2014 uses event default)">' +
+            '<button class="btn btn-outline-danger" type="button" data-action="clear-occurrence-venue" data-entry-id="' + safeEntryId + '"' + (hasVenue ? '' : ' style="display:none;"') + ' title="Clear venue override">Clear</button>' +
+            '</div>' +
+            '</div>' +
+            '<div class="col-12 d-flex justify-content-end gap-2">' +
+            '<button type="button" class="btn btn-sm btn-secondary" data-action="cancel-edit-occurrence">Cancel</button>' +
+            '<button type="button" class="btn btn-sm btn-primary" data-action="save-occurrence">Save</button>' +
+            '</div>' +
+            '</div>' +
+            '<div id="occ-error-' + safeEntryId + '" class="text-danger small mt-1" style="display:none;"></div>' +
+            '</div>';
     }
 
     /**
      * Re-render the occurrence list in-place after an add or remove operation.
      * @param {string|number} entryId - Review queue entry ID
      * @param {string} eventUlid - ULID of the event
-     * @param {Array} occurrences - Updated array of occurrenceDetail objects
-     * @param {boolean} editable - Whether to show Remove and Add controls
+     * @param {Array} occurrences - Updated array of occurrence objects
+     * @param {boolean} editable - Whether to show Edit and Add controls
+     * @param {string} defaultTz - Default timezone string (fallback to 'America/Toronto' if falsy)
      */
-    function refreshList(entryId, eventUlid, occurrences, editable) {
-        const container = document.getElementById(`occurrence-list-${entryId}`);
+    function refreshList(entryId, eventUlid, occurrences, editable, defaultTz) {
+        // This function cannot be param-first because it manipulates DOM directly.
+        // It wraps renderList by injecting the result into the appropriate container.
+        const containerId = 'occurrence-list-' + String(entryId);
+        var container = document.getElementById(containerId);
         if (container) {
-            container.innerHTML = renderList(occurrences, eventUlid, entryId, editable);
+            container.outerHTML = renderList(occurrences, eventUlid, entryId, editable, defaultTz);
         }
     }
 
@@ -102,36 +307,9 @@
         const start2 = new Date(occ2.startTime).getTime();
         const end2 = occ2.endTime ? new Date(occ2.endTime).getTime() : start2;
 
-        // Intervals [start1, end1] and [start2, end2] overlap if:
-        // start1 < end2 AND start2 < end1
         return start1 < end2 && start2 < end1;
     }
 
-    /**
-     * Format a datetime for display in the occurrence picker.
-     * @param {string} dateTime - ISO datetime string
-     * @returns {string} Formatted date+time, e.g. "Apr 8, 7:00–9:00 PM"
-     */
-    function formatOccurrenceTime(occ) {
-        if (!occ.startTime) return '(no date)';
-
-        const start = formatDate(occ.startTime, {
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit'
-        });
-
-        if (occ.endTime && occ.endTime.trim()) {
-            const end = formatDate(occ.endTime, {
-                hour: 'numeric',
-                minute: '2-digit'
-            });
-            return `${start} – ${end}`;
-        }
-
-        return start;
-    }
 
     /**
      * Render a two-column occurrence picker for multi-event consolidation.
@@ -157,96 +335,246 @@
      */
     function renderMergedPickerList(pickerEntries, entryId) {
         if (!pickerEntries || pickerEntries.length === 0) {
-            return `
-                <div class="mb-2">
-                    <small class="fw-semibold text-muted">OCCURRENCES</small>
-                    <div class="border rounded p-2 mt-1">
-                        <span class="text-muted small">No occurrences to display</span>
-                    </div>
-                </div>
-            `;
+            return '<div class="mb-2">' +
+                '<small class="fw-semibold text-muted">OCCURRENCES</small>' +
+                '<div class="border rounded p-2 mt-1">' +
+                '<span class="text-muted small">No occurrences to display</span>' +
+                '</div>' +
+                '</div>';
         }
 
         const safeEntryId = escapeHtml(String(entryId));
 
         // Build a quick lookup so we can check peer states at render time
-        const entryByKey = {};
-        pickerEntries.forEach(e => { entryByKey[e.key] = e; });
+        var entryByKey = {};
+        pickerEntries.forEach(function(e) { entryByKey[e.key] = e; });
 
-        const rowsHtml = pickerEntries.map(entry => {
-            const occ = entry.occurrence;
-            const timeStr = formatOccurrenceTime(occ);
-            const occKey = escapeHtml(String(entry.key));
+        var rowsHtml = pickerEntries.map(function(entry) {
+            var occ = entry.occurrence;
+            var timeStr = OccurrenceLogic.formatTimeRange(occ.startTime, occ.endTime);
+            var occKey = escapeHtml(String(entry.key));
 
             // Determine chip state
-            let chipClass;
+            var chipClass;
             if (entry.included && !entry.userToggled) {
-                chipClass = 'btn-primary';          // Auto-included (blue)
+                chipClass = 'btn-primary';
             } else if (entry.included && entry.userToggled) {
-                chipClass = 'btn-success';          // User-locked-in (green)
+                chipClass = 'btn-success';
             } else {
-                chipClass = 'btn-outline-secondary'; // Excluded (outline)
+                chipClass = 'btn-outline-secondary';
             }
 
             // Check whether any overlapping peer is currently included (conflict warning)
-            const hasActiveConflict = entry.overlapsWith.some(peerKey => {
-                const peer = entryByKey[peerKey];
+            var hasActiveConflict = entry.overlapsWith.some(function(peerKey) {
+                var peer = entryByKey[peerKey];
                 return peer && peer.included;
             });
 
-            // Warning icon: sits in a fixed-width slot on the inner edge of each column so the
-            // chip text stays visually centred regardless of whether a warning is shown.
-            // Active conflict = yellow; potential-only = muted. Slot is always reserved (visibility:hidden
-            // when no overlap) so the chip width is stable.
-            const hasAnyOverlap = entry.overlapsWith.length > 0;
-            const warnVisible = hasAnyOverlap ? '' : 'visibility:hidden;';
-            const warnColor = hasActiveConflict ? 'text-warning' : 'text-muted';
-            const warnTitle = hasActiveConflict
+            var hasAnyOverlap = entry.overlapsWith.length > 0;
+            var warnVisible = hasAnyOverlap ? '' : 'visibility:hidden;';
+            var warnColor = hasActiveConflict ? 'text-warning' : 'text-muted';
+            var warnTitle = hasActiveConflict
                 ? 'Conflict: overlapping occurrence is included'
                 : 'This occurrence overlaps with another';
-            const warnSlot = `<span class="${warnColor}" style="font-size:1.25rem;line-height:1;flex:0 0 1.5rem;text-align:center;${warnVisible}" title="${escapeHtml(warnTitle)}">&#9888;&#xFE0F;</span>`;
+            var warnSlot = '<span class="' + warnColor + '" style="font-size:1.25rem;line-height:1;flex:0 0 1.5rem;text-align:center;' + warnVisible + '" title="' + escapeHtml(warnTitle) + '">⚠️</span>';
 
-            const chipTitle = entry.included
+            var chipTitle = entry.included
                 ? 'Included — click to exclude'
                 : (hasActiveConflict ? 'Cannot include — overlapping occurrence is already included' : 'Excluded — click to include');
 
-            const chip = `<button class="btn btn-sm ${chipClass} w-100 text-center"
-                data-action="toggle-occurrence"
-                data-entry-id="${safeEntryId}"
-                data-occ-key="${occKey}"
-                title="${escapeHtml(chipTitle)}">${escapeHtml(timeStr)}</button>`;
+            var chip = '<button type="button" class="btn btn-sm ' + chipClass + ' w-100 text-center"' +
+                ' data-action="toggle-occurrence"' +
+                ' data-entry-id="' + safeEntryId + '"' +
+                ' data-occ-key="' + occKey + '"' +
+                ' title="' + escapeHtml(chipTitle) + '">' + escapeHtml(timeStr) + '</button>';
 
             // Left column:  [chip — fills remaining width] [warn slot on inner/right edge]
             // Right column: [warn slot on inner/left edge] [chip — fills remaining width]
-            const isLeft = entry.eventIndex === 0;
-            const leftCell = isLeft
-                ? `<div class="d-flex align-items-center gap-1">${chip}${warnSlot}</div>`
+            var isLeft = entry.eventIndex === 0;
+            var leftCell = isLeft
+                ? '<div class="d-flex align-items-center gap-1">' + chip + warnSlot + '</div>'
                 : '<span class="text-muted small">—</span>';
-            const rightCell = !isLeft
-                ? `<div class="d-flex align-items-center gap-1">${warnSlot}${chip}</div>`
+            var rightCell = !isLeft
+                ? '<div class="d-flex align-items-center gap-1">' + warnSlot + chip + '</div>'
                 : '<span class="text-muted small">—</span>';
 
-            return `
-                <div class="row g-2 align-items-center py-2 border-bottom">
-                    <div class="col-6">${leftCell}</div>
-                    <div class="col-6">${rightCell}</div>
-                </div>
-            `;
+            return '<div class="row g-2 align-items-center py-2 border-bottom">' +
+                '<div class="col-6">' + leftCell + '</div>' +
+                '<div class="col-6">' + rightCell + '</div>' +
+                '</div>';
         }).join('');
 
-        return `
-            <div class="mb-2">
-                <div class="border rounded p-2 mt-1">
-                    <div class="row g-2 fw-semibold text-muted small mb-2 border-bottom pb-1">
-                        <div class="col-6">THIS EVENT</div>
-                        <div class="col-6">RELATED EVENT</div>
-                    </div>
-                    ${rowsHtml}
-                </div>
-                <small class="text-muted mt-1 d-block">Blue = auto-included &nbsp; Green = selected &nbsp; Outline = excluded &nbsp; <span style="font-size:1rem;">&#9888;&#xFE0F;</span> = overlap conflict</small>
-            </div>
-        `;
+        return '<div class="mb-2">' +
+            '<div class="border rounded p-2 mt-1">' +
+            '<div class="row g-2 fw-semibold text-muted small mb-2 border-bottom pb-1">' +
+            '<div class="col-6">THIS EVENT</div>' +
+            '<div class="col-6">RELATED EVENT</div>' +
+            '</div>' +
+            rowsHtml +
+            '</div>' +
+            '<small class="text-muted mt-1 d-block">Blue = auto-included &nbsp; Green = selected &nbsp; Outline = excluded &nbsp; ⚠️ = overlap conflict</small>' +
+            '</div>';
     }
 
-    window.OccurrenceRendering = { renderList, refreshList, renderMergedPickerList, occurrencesOverlap };
+    /**
+     * Extract the trailing ULID from a venue URI, or return the raw value.
+     * @param {string} venueId - Venue URI string
+     * @returns {string} ULID or raw value
+     */
+    function venueUlidFromId(venueId) {
+        if (!venueId) return '';
+        var m = venueId.match(/\/([A-Z0-9]{26})$/i);
+        return m ? m[1] : venueId;
+    }
+
+    /**
+     * Extract a bare occurrence ID (UUID or ULID) from whatever form is stored on the
+     * occurrence object.  Callers may store:
+     *   - occ.occurrenceId  — bare UUID set explicitly by event-edit.js / review-queue.js
+     *   - occ.id            — bare UUID (admin API) OR full JSON-LD URI
+     *   - occ['@id']        — full JSON-LD URI (.../occurrences/<uuid>)
+     * Returns the last path segment of a URI, or the value as-is when it is already bare.
+     */
+    function occBareId(occ) {
+        var raw = occ.occurrenceId || occ.id || occ['@id'] || '';
+        if (!raw) return '';
+        // Strip any URI prefix — take the last non-empty path segment.
+        var m = raw.match(/\/([^/]+)\/?$/);
+        return m ? m[1] : raw;
+    }
+
+    /**
+     * Hide the add form for a given entry and restore the toggle button.
+     * @param {string|number} entryId - Entry ID
+     */
+    function hideAddForm(entryId) {
+        var el = document.getElementById('add-occ-form-' + entryId);
+        if (el) el.style.display = 'none';
+        var btn = document.getElementById('add-occ-btn-' + entryId);
+        if (btn) btn.style.display = '';
+    }
+
+    /**
+     * Show the add form for a given entry and hide the toggle button.
+     * @param {string|number} entryId - Entry ID
+     */
+    function showAddForm(entryId) {
+        var btn = document.getElementById('add-occ-btn-' + entryId);
+        if (btn) btn.style.display = 'none';
+        var el = document.getElementById('add-occ-form-' + entryId);
+        if (el) el.style.display = '';
+    }
+
+    /**
+     * Resolve venue names asynchronously in a container.
+     * Finds all [data-venue-label] spans and fetches venue details.
+     * @param {HTMLElement} containerEl - Container element to search
+     */
+    function resolveVenueNames(containerEl) {
+        if (!containerEl) return;
+        var spans = containerEl.querySelectorAll('[data-venue-label]');
+        if (!spans.length) return;
+
+        var ulids = [];
+        var seen = {};
+        spans.forEach(function(span) {
+            var ulid = span.dataset.venueLabel;
+            if (ulid && !seen[ulid]) {
+                seen[ulid] = true;
+                ulids.push(ulid);
+            }
+        });
+
+        ulids.forEach(function(ulid) {
+            containerEl.querySelectorAll('.venue-name-' + ulid).forEach(function(s) {
+                s.textContent = '(loading\u2026)';
+            });
+        });
+
+        ulids.forEach(function(ulid) {
+            API.request('/api/v1/places/' + ulid).then(function(place) {
+                var name = place.name || '(unnamed)';
+                containerEl.querySelectorAll('.venue-name-' + ulid).forEach(function(s) {
+                    s.textContent = name;
+                });
+            }).catch(function() {
+                var fallback = '(id: ' + ulid.slice(0, 8) + '…)';
+                containerEl.querySelectorAll('.venue-name-' + ulid).forEach(function(s) {
+                    s.textContent = fallback;
+                });
+            });
+        });
+    }
+
+    /**
+     * Populate the venue display input placeholder with the event's default venue name.
+     * Fetches the name async from the API and sets it as placeholder text so the user
+     * can see what venue will be used if they leave the field blank.
+     * @param {string} entryId - Form entry id (e.g. 'event-edit' or occurrence ULID)
+     * @param {string|Object|null} venueRef - Venue URI string, Place object with @id, or bare ULID
+     */
+    function fillEventVenuePlaceholder(entryId, venueRef) {
+        var displayInput = document.getElementById('occ-add-venue-display-' + entryId);
+        if (!displayInput) return;
+        // Only update placeholder when the field has no explicit value set (no override selected)
+        if (displayInput.value) return;
+
+        // Resolve venueRef to a URI/ULID string
+        var venueUri = null;
+        if (typeof venueRef === 'string') {
+            venueUri = venueRef;
+        } else if (venueRef && typeof venueRef === 'object') {
+            // JSON-LD Place object: { "@type": "Place", "@id": "https://.../places/<ULID>" }
+            venueUri = venueRef['@id'] || null;
+        }
+        if (!venueUri) return;
+
+        var ulid = venueUlidFromId(venueUri);
+        if (!ulid) return;
+        displayInput.placeholder = '(loading\u2026)';
+        API.request('/api/v1/places/' + ulid).then(function(place) {
+            // Re-check: user may have picked a venue while we were fetching
+            if (!displayInput.value) {
+                displayInput.placeholder = place.name || ulid;
+            }
+        }).catch(function() {
+            if (!displayInput.value) {
+                displayInput.placeholder = ulid;
+            }
+        });
+    }
+
+    /**
+     * Resolve the venue display input value from a raw ULID to a human-readable name.
+     * Used by the edit form where the value is pre-set to a ULID string.
+     * The hidden venue-id input keeps the ULID; only the display input is updated.
+     * @param {string} entryId - Form entry id
+     */
+    function resolveVenueDisplayValue(entryId) {
+        var displayInput = document.getElementById('occ-venue-display-' + entryId);
+        if (!displayInput || !displayInput.value) return;
+        // Only attempt resolution if value looks like a bare ULID (26 uppercase alphanumeric chars)
+        if (!/^[A-Z0-9]{26}$/i.test(displayInput.value)) return;
+        var ulid = displayInput.value;
+        API.request('/api/v1/places/' + ulid).then(function(place) {
+            // Only update if user hasn't changed the field since
+            if (displayInput.value === ulid && place.name) {
+                displayInput.value = place.name;
+            }
+        }).catch(function() { /* leave ULID on error — still functional */ });
+    }
+
+    window.OccurrenceRendering = {
+        renderRow: renderRow,
+        renderList: renderList,
+        refreshList: refreshList,
+        renderEditRow: renderEditRow,
+        renderMergedPickerList: renderMergedPickerList,
+        occurrencesOverlap: occurrencesOverlap,
+        hideAddForm: hideAddForm,
+        showAddForm: showAddForm,
+        resolveVenueNames: resolveVenueNames,
+        fillEventVenuePlaceholder: fillEventVenuePlaceholder,
+        resolveVenueDisplayValue: resolveVenueDisplayValue
+    };
 })();

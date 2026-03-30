@@ -92,7 +92,7 @@
      */
     function setupEventListeners() {
         // Event delegation for data-action buttons
-        document.addEventListener('click', (e) => {
+        document.addEventListener('click', async (e) => {
             const target = e.target.closest('[data-action]');
             if (!target) return;
             
@@ -175,16 +175,25 @@
                 case 'remove-occurrence':
                     e.preventDefault();
                     removeOccurrence(
-                        target.dataset.entryId,
-                        target.dataset.eventUlid,
-                        target.dataset.occurrenceId
+                        target.closest('.occ-row')?.dataset.entryId,
+                        target.closest('.occ-row')?.dataset.eventUlid,
+                        target.closest('.occ-row')?.dataset.occurrenceId
                     );
                     break;
+                case 'edit-remove-occurrence':
+                    e.preventDefault();
+                    removeOccurrence(
+                        target.closest('.occ-row')?.dataset.entryId,
+                        target.closest('.occ-row')?.dataset.eventUlid,
+                        target.closest('.occ-row')?.dataset.occurrenceId
+                    );
+                    break;
+                case 'edit-add-occurrence':
                 case 'add-occurrence':
                     e.preventDefault();
                     addOccurrence(
-                        target.dataset.entryId,
-                        target.dataset.eventUlid
+                        target.closest('[data-entry-id]')?.dataset.entryId,
+                        target.closest('[data-entry-id]')?.dataset.eventUlid
                     );
                     break;
                 case 'canonical-select':
@@ -219,6 +228,181 @@
                     e.preventDefault();
                     toggleOccurrence(target.dataset.entryId, target.dataset.occKey);
                     break;
+                case 'edit-occurrence': {
+                    e.preventDefault();
+                    const row = target.closest('.occ-row');
+                    const occId = row?.dataset.occurrenceId;
+                    const entryId = row?.dataset.entryId;
+                    const eventUlid = row?.dataset.eventUlid;
+                    const occ = (currentEntryDetail.occurrences || []).find(o => (o.id || o['@id']) === occId);
+                    if (!occ) break;
+                    const rowEl = document.getElementById(`occ-row-${entryId}-${occId}`);
+                    if (rowEl) {
+                        rowEl.innerHTML = OccurrenceRendering.renderEditRow(occ, eventUlid, entryId);
+                        OccurrenceRendering.resolveVenueDisplayValue(String(entryId));
+                    }
+                    OccurrenceRendering.hideAddForm(String(entryId));
+                    if (window._rqBlurDestroy) window._rqBlurDestroy();
+                    window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(entryId), function() {
+                        return { durationHours: 2 };
+                    });
+                    break;
+                }
+                case 'save-occurrence': {
+                    e.preventDefault();
+                    const editRow = target.closest('.occ-edit-row');
+                    const occId = editRow?.dataset.occurrenceId;
+                    const entryId = editRow?.dataset.entryId;
+                    const eventUlid = editRow?.dataset.eventUlid;
+                    const errorDiv = document.getElementById(`occ-error-${entryId}`);
+                    const saveBtn = target;
+
+                    const hideError = () => { if (errorDiv) errorDiv.style.display = 'none'; };
+                    const showError = (msg) => {
+                        if (errorDiv) {
+                            errorDiv.textContent = msg;
+                            errorDiv.style.display = 'block';
+                        }
+                    };
+                    hideError();
+
+                    const startInput = document.getElementById(`occ-start-${entryId}`);
+                    const endInput = document.getElementById(`occ-end-${entryId}`);
+                    const tzInput = document.getElementById(`occ-tz-${entryId}`);
+                    const doorInput = document.getElementById(`occ-door-${entryId}`);
+                    const virtualUrlInput = document.getElementById(`occ-virtual-url-${entryId}`);
+                    const venueIdInput = document.getElementById(`occ-venue-id-${entryId}`);
+
+                    if (!startInput) return;
+                    const startVal = startInput.value;
+                    if (!startVal) {
+                        showError('Start date/time is required');
+                        return;
+                    }
+
+                    const timezone = tzInput ? tzInput.value.trim() : 'America/Toronto';
+                    if (!timezone) {
+                        showError('Timezone is required');
+                        return;
+                    }
+
+                    const body = {
+                        start_time: OccurrenceLogic.convertToRFC3339(startVal, timezone),
+                        timezone: timezone,
+                    };
+
+                    const endVal = endInput ? endInput.value : '';
+                    if (endVal) {
+                        body.end_time = OccurrenceLogic.convertToRFC3339(endVal, timezone);
+                    }
+
+                    const doorVal = doorInput ? doorInput.value : '';
+                    if (doorVal) {
+                        body.door_time = OccurrenceLogic.convertToRFC3339(doorVal, timezone);
+                    }
+
+                    const virtualUrl = virtualUrlInput ? virtualUrlInput.value.trim() : '';
+                    if (virtualUrl) {
+                        body.virtual_url = virtualUrl;
+                    }
+
+                    const venueId = venueIdInput ? venueIdInput.value : '';
+                    if (venueId) {
+                        body.venue_id = venueId;
+                    }
+
+                    setLoading(saveBtn, true);
+
+                    try {
+                        await API.events.occurrences.update(eventUlid, occId, body);
+
+                        if (currentEntryDetail) {
+                            currentEntryDetail.occurrences = (currentEntryDetail.occurrences || []).map(o => {
+                                if ((o.id || o['@id']) === occId) {
+                                    return {
+                                        ...o,
+                                        startTime: body.start_time,
+                                        endTime: body.end_time || null,
+                                        doorTime: body.door_time || null,
+                                        timezone: body.timezone,
+                                        virtualUrl: body.virtual_url || null,
+                                        venueId: body.venue_id || null,
+                                    };
+                                }
+                                return o;
+                            });
+                            const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
+                            OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
+                            // Add form stays hidden (default state after refreshList); toggle button is visible.
+                            if (window._rqBlurDestroy) { window._rqBlurDestroy(); window._rqBlurDestroy = null; }
+                        }
+                    } catch (err) {
+                        console.error('Failed to save occurrence:', err);
+                        const msg = (err && err.detail) || (err && err.message) || 'Failed to save occurrence';
+                        showError(msg);
+                    } finally {
+                        setLoading(saveBtn, false);
+                    }
+                    break;
+                }
+                case 'cancel-edit-occurrence': {
+                    e.preventDefault();
+                    const editRow = target.closest('.occ-edit-row');
+                    const entryId = editRow?.dataset.entryId;
+                    const eventUlid = editRow?.dataset.eventUlid;
+                    const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
+                    if (currentEntryDetail) {
+                        OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
+                        // Add form stays hidden (default state); toggle button is restored by refreshList.
+                        if (window._rqBlurDestroy) { window._rqBlurDestroy(); window._rqBlurDestroy = null; }
+                    }
+                    break;
+                }
+                case 'show-add-form':
+                    e.preventDefault();
+                    OccurrenceRendering.showAddForm(String(target.dataset.entryId));
+                    {
+                        // Pre-fill venue placeholder from first occurrence's venueUlid (event default)
+                        const occs = currentEntryDetail && currentEntryDetail.occurrences;
+                        const defaultVenueUlid = occs && occs.length > 0 ? occs[0].venueUlid : null;
+                        if (defaultVenueUlid) {
+                            OccurrenceRendering.fillEventVenuePlaceholder(String(target.dataset.entryId), defaultVenueUlid);
+                        }
+                    }
+                    if (window._rqBlurDestroy) window._rqBlurDestroy();
+                    {
+                        const showEntryId = String(target.dataset.entryId);
+                        const occ2 = currentEntryDetail && currentEntryDetail.occurrences;
+                        const lastOccShow = occ2 && occ2.length > 0 ? occ2[occ2.length - 1] : null;
+                        window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(showEntryId, function() {
+                            if (lastOccShow && lastOccShow.startTime && lastOccShow.endTime) {
+                                return { copyDuration: { prevStart: lastOccShow.startTime, prevEnd: lastOccShow.endTime } };
+                            }
+                            return { durationHours: 2 };
+                        }, 'occ-add-');
+                    }
+                    break;
+                case 'cancel-add-occurrence':
+                    e.preventDefault();
+                    OccurrenceRendering.hideAddForm(String(target.dataset.entryId));
+                    if (window._rqBlurDestroy) { window._rqBlurDestroy(); window._rqBlurDestroy = null; }
+                    break;
+                case 'clear-occurrence-venue': {
+                    e.preventDefault();
+                    const entryId = target.dataset.entryId;
+                    const isAddForm = !!target.closest('[data-add-form]');
+                    const prefix = isAddForm ? 'occ-add-' : 'occ-';
+                    const venueIdInput = document.getElementById(`${prefix}venue-id-${entryId}`);
+                    const venueDisplay = document.getElementById(`${prefix}venue-display-${entryId}`);
+                    const clearBtn = target;
+                    if (venueIdInput) venueIdInput.value = '';
+                    if (venueDisplay) {
+                        venueDisplay.value = '';
+                        venueDisplay.placeholder = '(none \u2014 uses event default)';
+                    }
+                    if (clearBtn) clearBtn.style.display = 'none';
+                    break;
+                }
             }
         });
         
@@ -999,6 +1183,21 @@
                 fetchAndRenderInlineDuplicate(container, dupUlid, thisEventData, matchDataByUlid[dupUlid] || null);
             });
         }
+
+        if (isCase1) {
+            const occContainer = document.getElementById('occurrence-list-' + id);
+            if (occContainer) {
+                const lastOcc = thisOccurrences.length > 0 ? thisOccurrences[thisOccurrences.length - 1] : null;
+                if (window._rqBlurDestroy) window._rqBlurDestroy();
+                window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(id), function() {
+                    if (lastOcc && lastOcc.startTime && lastOcc.endTime) {
+                        return { copyDuration: { prevStart: lastOcc.startTime, prevEnd: lastOcc.endTime } };
+                    }
+                    return { durationHours: 2 };
+                }, 'occ-add-');
+                OccurrenceRendering.resolveVenueNames(occContainer);
+            }
+        }
     }
 
     /**
@@ -1015,16 +1214,18 @@
             return;
         }
 
-        const btn = document.querySelector(
-            `[data-action="remove-occurrence"][data-entry-id="${escapeHtml(String(entryId))}"][data-occurrence-id="${escapeHtml(String(occurrenceId))}"]`
+        const occRow = document.querySelector(
+            `.occ-row[data-entry-id="${escapeHtml(String(entryId))}"][data-occurrence-id="${escapeHtml(String(occurrenceId))}"]`
         );
+        const btn = occRow?.querySelector('[data-action="remove-occurrence"]');
         if (btn) setLoading(btn, true);
 
         try {
             await API.events.occurrences.delete(eventUlid, occurrenceId);
             if (currentEntryDetail) {
                 currentEntryDetail.occurrences = (currentEntryDetail.occurrences || []).filter(o => o.id !== occurrenceId);
-                OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true);
+                const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
+                OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
             } else {
                 const detail = await API.reviewQueue.get(entryId);
                 currentEntryDetail = detail;
@@ -1048,10 +1249,14 @@
      * @param {string} eventUlid - ULID of the event
      */
     async function addOccurrence(entryId, eventUlid) {
-        const startInput = document.getElementById(`occ-start-${entryId}`);
-        const endInput = document.getElementById(`occ-end-${entryId}`);
-        const tzInput = document.getElementById(`occ-tz-${entryId}`);
-        const errorDiv = document.getElementById(`occ-error-${entryId}`);
+        const startInput = document.getElementById(`occ-add-start-${entryId}`);
+        const endInput = document.getElementById(`occ-add-end-${entryId}`);
+        const tzInput = document.getElementById(`occ-add-tz-${entryId}`);
+        const doorInput = document.getElementById(`occ-add-door-${entryId}`);
+        const virtualUrlInput = document.getElementById(`occ-add-virtual-url-${entryId}`);
+        const venueIdInput = document.getElementById(`occ-add-venue-id-${entryId}`);
+        const venueDisplayInput = document.getElementById(`occ-add-venue-display-${entryId}`);
+        const errorDiv = document.getElementById(`occ-add-error-${entryId}`);
         const addBtn = document.querySelector(`[data-action="add-occurrence"][data-entry-id="${entryId}"]`);
 
         if (!startInput) return;
@@ -1081,22 +1286,31 @@
         if (addBtn) setLoading(addBtn, true);
 
         try {
-            // datetime-local inputs yield a timezone-free string like "2026-03-20T19:30".
-            // Treat the string as UTC by appending 'Z', avoiding browser local-TZ conversion.
-            // The timezone field carries the event's original timezone as metadata.
-            const toUTC = (localStr) => localStr ? localStr + 'Z' : '';
             const body = {
-                start_time: toUTC(startVal),
+                start_time: OccurrenceLogic.convertToRFC3339(startVal, timezone),
                 timezone: timezone,
             };
             const endVal = endInput ? endInput.value : '';
             if (endVal) {
-                body.end_time = toUTC(endVal);
+                body.end_time = OccurrenceLogic.convertToRFC3339(endVal, timezone);
+            }
+            const doorVal = doorInput ? doorInput.value : '';
+            if (doorVal) {
+                body.door_time = OccurrenceLogic.convertToRFC3339(doorVal, timezone);
+            }
+            const virtualUrl = virtualUrlInput ? virtualUrlInput.value.trim() : '';
+            if (virtualUrl) {
+                body.virtual_url = virtualUrl;
+            }
+            const venueId = venueIdInput ? venueIdInput.value.trim() : '';
+            if (venueId) {
+                const venueUlid = venueId.match(/([A-Z0-9]{26})$/i);
+                if (venueUlid) body.venue_ulid = venueUlid[1];
             }
 
             const created = await API.events.occurrences.create(eventUlid, body);
 
-            // Update cached detail — append the returned occurrence (or refetch)
+                    // Update cached detail — append the returned occurrence (or refetch)
             if (currentEntryDetail) {
                 if (created && created.id) {
                     currentEntryDetail.occurrences = [...(currentEntryDetail.occurrences || []), created];
@@ -1109,12 +1323,28 @@
                         timezone: body.timezone,
                     }];
                 }
-                OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true);
+                const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
+                OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
+                if (window._rqBlurDestroy) window._rqBlurDestroy();
+                const occ = currentEntryDetail && currentEntryDetail.occurrences;
+                const lastOcc2 = occ && occ.length > 0 ? occ[occ.length - 1] : null;
+                window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(entryId), function() {
+                    if (lastOcc2 && lastOcc2.startTime && lastOcc2.endTime) {
+                        return { copyDuration: { prevStart: lastOcc2.startTime, prevEnd: lastOcc2.endTime } };
+                    }
+                    return { durationHours: 2 };
+                }, 'occ-add-');
+            } else {
+                // refreshList was not called (no cached detail); clear inputs manually
+                if (startInput) startInput.value = '';
+                if (endInput) endInput.value = '';
+                if (doorInput) doorInput.value = '';
+                if (virtualUrlInput) virtualUrlInput.value = '';
+                if (venueIdInput) venueIdInput.value = '';
+                if (venueDisplayInput) { venueDisplayInput.value = ''; }
+                const clearVenueBtn = document.querySelector(`[data-action="clear-occurrence-venue"][data-entry-id="${entryId}"][data-form-type="add"]`);
+                if (clearVenueBtn) clearVenueBtn.style.display = 'none';
             }
-
-            // Clear form inputs
-            if (startInput) startInput.value = '';
-            if (endInput) endInput.value = '';
 
         } catch (err) {
             console.error('Failed to add occurrence:', err);
@@ -2525,6 +2755,7 @@
                         <label class="form-label fw-semibold">Image URL</label>
                         <input type="url" class="form-control" id="edit-image-${id}" value="${imageVal}" placeholder="https://...">
                     </div>
+                    <div id="occurrence-list-${id}"></div>
                     <div id="edit-error-${id}" class="alert alert-danger" style="display:none;"></div>
                     <div class="btn-list">
                         <button class="btn" data-action="cancel-edit" data-id="${id}">Cancel</button>
@@ -2539,6 +2770,23 @@
                 </div>
             </div>
         `;
+
+        const eventUlid = detail.eventId;
+        const occurrences = detail.occurrences || [];
+        const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
+        const occListContainer = document.getElementById(`occurrence-list-${id}`);
+        if (occListContainer) {
+            occListContainer.innerHTML = OccurrenceRendering.renderList(occurrences, eventUlid, id, true, defaultTz);
+            const lastOcc = occurrences.length > 0 ? occurrences[occurrences.length - 1] : null;
+            if (window._rqBlurDestroy) window._rqBlurDestroy();
+            window._rqBlurDestroy = OccurrenceLogic.wireStartBlur(String(id), function() {
+                if (lastOcc && lastOcc.startTime && lastOcc.endTime) {
+                    return { copyDuration: { prevStart: lastOcc.startTime, prevEnd: lastOcc.endTime } };
+                }
+                return { durationHours: 2 };
+            }, 'occ-add-');
+            OccurrenceRendering.resolveVenueNames(occListContainer);
+        }
     }
 
     /**
@@ -2723,11 +2971,10 @@
         setLoading(applyBtn, true);
         
         try {
-            // datetime-local inputs are treated as UTC by appending 'Z'.
-            const toUTC = (localStr) => localStr ? localStr + 'Z' : '';
+            const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'UTC';
             const corrections = {
-                startDate: toUTC(startValue),
-                endDate: toUTC(endValue)
+                startDate: OccurrenceLogic.convertToRFC3339(startValue, defaultTz),
+                endDate: OccurrenceLogic.convertToRFC3339(endValue, defaultTz)
             };
             
             const payload = { corrections };

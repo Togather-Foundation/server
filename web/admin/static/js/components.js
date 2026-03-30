@@ -172,7 +172,7 @@ function formatDate(dateString, options = null) {
         hour: 'numeric',
         minute: '2-digit'
     };
-    return date.toLocaleDateString('en-US', options || defaultOptions);
+    return date.toLocaleDateString(window.ADMIN_LOCALE || 'en-CA', options || defaultOptions);
 }
 
 // Copy to clipboard

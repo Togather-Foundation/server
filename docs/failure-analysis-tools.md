@@ -63,7 +63,7 @@ go run ./cmd/server scrape source harbourfront-centre \
   --key "01KH1K48K5881NZQM8XDQPK1HWsecret"
 ```
 
-For full scraper documentation, see [scraper.md](../integration/scraper.md).
+For full scraper documentation, see [scraper.md](integration/scraper.md).
 
 **Output**:
 ```

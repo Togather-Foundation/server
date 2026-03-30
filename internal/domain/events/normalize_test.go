@@ -440,6 +440,82 @@ func TestNormalizeOccurrences(t *testing.T) {
 	assert.Equal(t, "https://zoom.us/j/123", result[0].VirtualURL)
 }
 
+func TestNormalizeOccurrences_Deduplication(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		input    []OccurrenceInput
+		wantLen  int
+		wantJSON []OccurrenceInput // expected deduplicated output
+	}{
+		{
+			name: "two identical occurrences - deduplicated to one",
+			input: []OccurrenceInput{
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-03-31T23:00:00Z"},
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-03-31T23:00:00Z"},
+			},
+			wantLen: 1,
+			wantJSON: []OccurrenceInput{
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-03-31T23:00:00Z"},
+			},
+		},
+		{
+			name: "three occurrences where two are identical - deduplicated to two",
+			input: []OccurrenceInput{
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-03-31T23:00:00Z"},
+				{StartDate: "2026-04-07T23:00:00Z", EndDate: "2026-04-07T23:00:00Z"},
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-03-31T23:00:00Z"},
+			},
+			wantLen: 2,
+			wantJSON: []OccurrenceInput{
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-03-31T23:00:00Z"},
+				{StartDate: "2026-04-07T23:00:00Z", EndDate: "2026-04-07T23:00:00Z"},
+			},
+		},
+		{
+			name: "no duplicates - unchanged",
+			input: []OccurrenceInput{
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-04-01T02:00:00Z"},
+				{StartDate: "2026-04-07T23:00:00Z", EndDate: "2026-04-08T02:00:00Z"},
+			},
+			wantLen: 2,
+			wantJSON: []OccurrenceInput{
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-04-01T02:00:00Z"},
+				{StartDate: "2026-04-07T23:00:00Z", EndDate: "2026-04-08T02:00:00Z"},
+			},
+		},
+		{
+			name: "duplicate with different end dates - not deduplicated",
+			input: []OccurrenceInput{
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-03-31T23:00:00Z"},
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-04-01T02:00:00Z"},
+			},
+			wantLen: 2,
+			wantJSON: []OccurrenceInput{
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-03-31T23:00:00Z"},
+				{StartDate: "2026-03-31T23:00:00Z", EndDate: "2026-04-01T02:00:00Z"},
+			},
+		},
+		{
+			name:    "empty occurrences - returns empty",
+			input:   []OccurrenceInput{},
+			wantLen: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			result := normalizeOccurrences(tt.input)
+			assert.Len(t, result, tt.wantLen)
+
+			if tt.wantJSON != nil {
+				assert.Equal(t, tt.wantJSON, result)
+			}
+		})
+	}
+}
+
 func TestCorrectEndDateTimezoneError(t *testing.T) {
 	tests := []struct {
 		name          string

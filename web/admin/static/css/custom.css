@@ -298,6 +298,11 @@
     border-bottom: none;
 }
 
+/* occ-row: border between consecutive rows only (adjacent sibling, never after last) */
+.occ-row + .occ-row {
+    border-top: 1px solid var(--tblr-border-color, #e6e7e9);
+}
+
 /* Date range filter styling */
 .date-range-filter {
     display: flex;

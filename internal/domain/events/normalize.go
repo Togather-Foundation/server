@@ -313,7 +313,19 @@ func normalizeOccurrences(values []OccurrenceInput) []OccurrenceInput {
 
 		result = append(result, occ)
 	}
-	return result
+
+	// Deduplicate by (StartDate, EndDate) pair, keeping first occurrence of each unique pair.
+	// RFC3339 strings never contain '|', so this key is safe and unambiguous.
+	seen := make(map[string]struct{})
+	deduped := make([]OccurrenceInput, 0, len(result))
+	for _, occ := range result {
+		key := occ.StartDate + "|" + occ.EndDate
+		if _, ok := seen[key]; !ok {
+			seen[key] = struct{}{}
+			deduped = append(deduped, occ)
+		}
+	}
+	return deduped
 }
 
 // correctOccurrenceEndDateTimezoneError applies the same timezone correction logic
