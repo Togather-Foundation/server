@@ -721,7 +721,11 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 			raw.Location = extractTextOrAttrFromSelection(s, config.Selectors.Location)
 		}
 
-		if config.Selectors.Description != "" {
+		// Description extraction: prefer DescriptionSelectors (multi-element) over
+		// single Description (legacy path).
+		if len(config.Selectors.DescriptionSelectors) > 0 {
+			raw.Description = extractDescriptionFromSelection(s, config.Selectors.DescriptionSelectors)
+		} else if config.Selectors.Description != "" {
 			raw.Description = extractTextOrAttrFromSelection(s, config.Selectors.Description)
 		}
 
@@ -1427,4 +1431,23 @@ func extractTextOrAttrFromSelection(s *goquery.Selection, selector string) strin
 		return ""
 	}
 	return strings.TrimSpace(el.Text())
+}
+
+// extractDescriptionFromSelection extracts text from multiple CSS selectors and
+// concatenates them with spaces. This handles cases where event descriptions are
+// split across multiple elements (e.g., summary + full description + more info).
+// Empty selector matches are skipped; if all are empty, returns empty string.
+func extractDescriptionFromSelection(s *goquery.Selection, selectors []string) string {
+	if len(selectors) == 0 {
+		return ""
+	}
+
+	var parts []string
+	for _, sel := range selectors {
+		text := extractTextOrAttrFromSelection(s, sel)
+		if text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, " ")
 }

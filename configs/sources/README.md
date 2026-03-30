@@ -116,6 +116,26 @@ The syntax is especially useful for:
 - **Calendar widgets** that store dates/times in data attributes and render them via JavaScript
 - **Data-driven sites** that embed JSON or structured data in element attributes
 
+### Multi-Element Description Selectors
+
+When event descriptions are split across multiple HTML elements (e.g., a summary paragraph
+plus expanded content), use `description_selectors` to extract and concatenate all fragments:
+
+```yaml
+selectors:
+  event_list: "div.event-card"
+  name: "h2.title"
+  description_selectors:
+    - ".summary"           # Lead paragraph
+    - ".full-description"  # Expanded content
+    - ".more-info"         # Additional details
+```
+
+This concatenates matched text with spaces. Non-matching selectors are skipped.
+The single `description` field still works for backward compatibility — it's normalized
+to `description_selectors` internally. This feature solves truncated description issues
+(srv-nojwn).
+
 ## Individual Source Notes
 
 ### harbourfront-centre.yaml (Tier 1, enabled)

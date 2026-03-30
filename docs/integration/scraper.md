@@ -543,6 +543,57 @@ discovery). No special configuration is needed beyond a correctly-scoped
 - Within a group, rows with unparseable dates are silently skipped from the
   occurrence list; the group succeeds as long as at least one row has a valid date.
 
+#### Multi-Element Description Selectors (`description_selectors`)
+
+When a site's event description is split across multiple elements (e.g., a summary
+paragraph + full description + "more info" section), use `description_selectors` to
+extract and concatenate text from all selectors. This solves the truncated description
+problem where only preview text is captured (srv-nojwn).
+
+```yaml
+selectors:
+  event_list: "div.event-card"
+  name: "h2.event-title"
+  # Extract description from multiple elements, concatenated in order:
+  description_selectors:
+    - ".summary"              # Lead paragraph
+    - ".full-description"     # Expanded content
+    - ".more-info"           # Additional details
+```
+
+**How it works:**
+
+1. Each selector in `description_selectors` extracts text from within the event card
+2. Non-matching selectors are skipped (no empty placeholders)
+3. All matched text fragments are concatenated with spaces in selector order
+4. If no selectors match, the description is empty (no crash)
+
+**Precedence:**
+
+- `description` (single selector) takes priority over `description_selectors` for
+  backward compatibility with existing configs
+- When `description` is set, it becomes the single element in `DescriptionSelectors`
+- When `description` is empty but `description_selectors` is set, use `description_selectors`
+- This ensures a single extraction code path in Tier 1 and Tier 2
+
+**Example:**
+
+For HTML:
+```html
+<div class="event">
+  <h2 class="title">Art Exhibition</h2>
+  <p class="summary">Join us for an amazing exhibition.</p>
+  <div class="full-description">This event features works from local artists.</div>
+  <p class="more-info">Free admission.</p>
+</div>
+```
+
+With `description_selectors: [".summary", ".full-description", ".more-info"]`:
+→ Description = "Join us for an amazing exhibition. This event features works from local artists. Free admission."
+
+Existing configs using single `description: "p.summary"` continue to work unchanged —
+the single value is normalized to `DescriptionSelectors` internally.
+
 ### Quality Warnings
 
 The scraper performs automatic quality checks during extraction and reports warnings

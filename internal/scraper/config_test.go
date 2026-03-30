@@ -2321,3 +2321,128 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// --------------------------------------------------------------------------
+// DescriptionSelectors — srv-nojwn
+// --------------------------------------------------------------------------
+
+// TestLoadFile_DescriptionSelectors verifies that description_selectors is parsed
+// correctly from YAML and available for both Tier 1 and Tier 2 extraction.
+func TestLoadFile_DescriptionSelectors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single description selector parses as single-element slice in DescriptionSelectors", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Single Desc Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: "p.summary"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "single_desc.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		// Single description should also populate DescriptionSelectors for the unified path
+		assert.Equal(t, []string{"p.summary"}, cfg.Selectors.DescriptionSelectors,
+			"single description should be normalized to DescriptionSelectors")
+	})
+
+	t.Run("multiple description selectors parse correctly via description_selectors field", func(t *testing.T) {
+		t.Parallel()
+		// Multiple selectors should be specified via the explicit description_selectors field
+		yamlContent := `
+name: "Multi Desc Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description_selectors:
+    - "p.summary"
+    - "div.full-description"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "multi_desc.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"p.summary", "div.full-description"}, cfg.Selectors.DescriptionSelectors,
+			"multiple description selectors should be parsed as DescriptionSelectors")
+	})
+
+	t.Run("description_selectors field parses correctly", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Desc Selectors Field Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description_selectors:
+    - ".lead"
+    - ".full"
+    - ".more"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "desc_selectors.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{".lead", ".full", ".more"}, cfg.Selectors.DescriptionSelectors,
+			"description_selectors field should be parsed correctly")
+	})
+
+	t.Run("both description and description_selectors - description takes precedence", func(t *testing.T) {
+		t.Parallel()
+		// When both are set, description (single) takes precedence for backward compat
+		yamlContent := `
+name: "Both Desc Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: "p.summary"
+  description_selectors:
+    - ".lead"
+    - ".full"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "both_desc.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		// description (single) takes precedence for backward compatibility
+		assert.Equal(t, []string{"p.summary"}, cfg.Selectors.DescriptionSelectors,
+			"description should take precedence over description_selectors")
+	})
+
+	t.Run("empty description with description_selectors uses description_selectors", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Desc Selectors Only"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: ""
+  description_selectors:
+    - ".lead"
+    - ".full"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "desc_selectors_only.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{".lead", ".full"}, cfg.Selectors.DescriptionSelectors,
+			"empty description with description_selectors should use description_selectors")
+	})
+}

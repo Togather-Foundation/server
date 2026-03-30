@@ -128,6 +128,22 @@ type SelectorConfig struct {
 	//     - ".first [class^='time-container-']"     # "Thu 5th March"
 	//     - "[style*='display: flex'] [class^='time-container-']"  # "9:30 PM"
 	DateSelectors []string `yaml:"date_selectors,omitempty" json:"date_selectors,omitempty"`
+	// DescriptionSelectors is a list of CSS selectors that each extract a
+	// fragment of the event description. The scraper concatenates all matched
+	// text fragments in order, separated by a space, to produce the full
+	// description. This is useful when a site's description is split across
+	// multiple elements (e.g., a summary paragraph + expanded content).
+	//
+	// When set, DescriptionSelectors takes priority over Description for
+	// description extraction. Description is still used as fallback if
+	// DescriptionSelectors produces no result.
+	//
+	// Example:
+	//   description_selectors:
+	//     - ".summary"           # Lead paragraph
+	//     - ".full-description"  # Expanded content
+	//     - ".more-info"         # Additional details
+	DescriptionSelectors []string `yaml:"description_selectors,omitempty" json:"description_selectors,omitempty"`
 }
 
 // HeadlessConfig holds Tier 2 headless-browser-specific options.
@@ -675,6 +691,21 @@ func loadFile(path string) (SourceConfig, error) {
 	}
 	if cfg.Headless.Iframe != nil && cfg.Headless.Iframe.WaitTimeoutMs == 0 {
 		cfg.Headless.Iframe.WaitTimeoutMs = 10000
+	}
+
+	// Normalize DescriptionSelectors: single description field takes precedence
+	// over description_selectors for backward compatibility. When description
+	// is set (non-empty), it becomes the first (and only) element in
+	// DescriptionSelectors. When description is empty but description_selectors
+	// is set, use description_selectors as-is. This ensures a single code path
+	// in Tier 1/Tier 2 extraction.
+	if cfg.Selectors.Description != "" {
+		cfg.Selectors.DescriptionSelectors = []string{cfg.Selectors.Description}
+	} else if len(cfg.Selectors.DescriptionSelectors) > 0 {
+		// Already populated from YAML, keep as-is
+	} else {
+		// Neither set — leave empty (no description extraction)
+		cfg.Selectors.DescriptionSelectors = nil
 	}
 
 	return cfg, nil
