@@ -43,6 +43,7 @@
 
         let detailsHtml = '';
         if (timezone && SHOW_TIMEZONE_BADGE) {
+            detailsHtml += '<span class="badge bg-secondary-lt me-1">' + escapeHtml(timezone) + '</span>';
         }
         if (doorTime) {
             detailsHtml += '<span class="text-muted small me-1">Doors: ' + formatDate(doorTime, { hour: 'numeric', minute: '2-digit' }) + '</span>';
