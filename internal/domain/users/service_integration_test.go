@@ -108,13 +108,15 @@ func initShared(t *testing.T) {
 	}
 }
 
-// cleanupShared closes the shared pool (container reuse handles cleanup)
+// cleanupShared closes the shared pool and terminates the test container.
+// Called from TestMain after m.Run() completes, so all tests are done.
 func cleanupShared() {
 	if sharedPool != nil {
 		sharedPool.Close()
 	}
-	// Note: Do NOT terminate the shared container - testcontainers will clean it up
-	// Terminating it here causes connection errors in tests that haven't run yet
+	if sharedContainer != nil {
+		_ = sharedContainer.Terminate(context.Background())
+	}
 }
 
 // resetDatabase truncates all tables except migrations to provide test isolation

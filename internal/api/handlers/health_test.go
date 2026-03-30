@@ -101,7 +101,9 @@ func cleanupShared() {
 	if sharedPool != nil {
 		sharedPool.Close()
 	}
-	// Note: Do NOT terminate the shared container - testcontainers will clean it up
+	if sharedContainer != nil {
+		_ = sharedContainer.Terminate(context.Background())
+	}
 }
 
 func resetDatabase(t *testing.T, pool *pgxpool.Pool) {

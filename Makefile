@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
+.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -100,6 +100,7 @@ help:
 	@echo "  make docker-logs   - View Docker container logs"
 	@echo "  make docker-rebuild - Rebuild and restart containers"
 	@echo "  make docker-clean  - Stop containers and remove volumes"
+	@echo "  make test-clean    - Remove reusable test containers (free disk space)"
 	@echo ""
 	@echo "Local PostgreSQL Setup:"
 	@echo "  make db-check      - Check if local PostgreSQL has required extensions"
@@ -894,10 +895,28 @@ docker-clean:
 	if [[ $$REPLY =~ ^[Yy]$$ ]]; then \
 		echo "Stopping containers and removing volumes..."; \
 		cd $(DOCKER_COMPOSE_DIR) && docker compose --env-file ../../.env down -v; \
-		echo "✓ Containers and volumes removed"; \
+		docker image prune -f; \
+		echo "✓ Containers, volumes, and dangling images removed"; \
 	else \
 		echo "Cancelled"; \
 	fi
+
+# Remove reusable test containers created by testcontainers (WithReuseByName + Ryuk disabled).
+# These are intentionally kept alive between runs for speed, but can accumulate disk space.
+# Safe to run at any time — tests will recreate containers on the next run.
+.PHONY: test-clean
+test-clean:
+	@echo "Removing reusable test containers..."
+	@docker rm -f \
+		togather-integration-db \
+		togather-integration-batch-db \
+		togather-contracts-db \
+		togather-handlers-health-db \
+		togather-storage-db \
+		togather-users-db \
+		2>/dev/null || true
+	@docker image prune -f
+	@echo "✓ Test containers and dangling images removed"
 
 # =============================================================================
 # Local PostgreSQL Setup Targets
