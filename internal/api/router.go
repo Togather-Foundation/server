@@ -200,23 +200,25 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Load source configs for periodic job registration.
 	// Try DB first (sources added/removed via admin API are picked up without restart).
-	// Fall back to YAML if DB fails or returns empty.
+	// YAML fallback only happens on DB error (not on empty result - empty is authoritative).
 	var sourceCfgs []scraper.SourceConfig
 	var loadErr error
 	if scraperSvc != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		sourceCfgs, loadErr = jobs.LoadSourcesForPeriodicJobs(ctx, scraperSourceRepo, logger)
 		cancel()
-		if loadErr != nil || len(sourceCfgs) == 0 {
-			if loadErr != nil {
-				logger.Warn().Err(loadErr).Msg("router: DB sources unavailable for periodic jobs, falling back to YAML")
-			} else if len(sourceCfgs) == 0 {
-				logger.Warn().Msg("router: no enabled daily/weekly sources in DB, falling back to YAML")
-			}
+		if loadErr != nil {
+			// DB error - fall back to YAML
+			logger.Warn().Err(loadErr).Msg("router: DB sources unavailable for periodic jobs, falling back to YAML")
 			sourceCfgs, loadErr = scraper.LoadSourceConfigs("configs/sources")
 			if loadErr != nil {
 				logger.Warn().Err(loadErr).Msg("router: YAML fallback also failed for periodic jobs (non-fatal)")
 			}
+		} else if len(sourceCfgs) == 0 {
+			// DB succeeded but returned no eligible sources - this is authoritative, no YAML fallback
+			logger.Info().Msg("router: no enabled daily/weekly sources in DB (empty result is authoritative)")
+		} else {
+			logger.Info().Int("count", len(sourceCfgs)).Msg("router: loaded periodic sources from DB")
 		}
 	}
 
