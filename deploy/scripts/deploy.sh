@@ -1741,10 +1741,18 @@ sync_sources() {
     
     # Verify sync actually processed sources (not just "no sources found")
     if echo "${sync_output}" | grep -q "No source configs found"; then
-        log "WARN" "No source configs found in container"
-        log "WARN" "This may indicate configs/sources is missing from the Docker image"
-        log "WARN" "Scraper will fall back to database configs (if any exist)"
-        # This is a warning, not a failure - don't return 1
+        # For staging/production, missing configs is a failure (not just a warning)
+        if [[ "$env" == "staging" || "$env" == "production" ]]; then
+            log "ERROR" "No source configs found in container"
+            log "ERROR" "This indicates configs/sources is missing from the Docker image"
+            log "ERROR" "Deployment aborted: scraper configs must be present in container"
+            return 1
+        else
+            # For local/development, just warn
+            log "WARN" "No source configs found in container"
+            log "WARN" "This may indicate configs/sources is missing from the Docker image"
+            log "WARN" "Scraper will fall back to database configs (if any exist)"
+        fi
     else
         log "SUCCESS" "Scraper source configs synced successfully"
     fi
