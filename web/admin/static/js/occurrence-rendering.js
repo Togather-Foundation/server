@@ -309,15 +309,6 @@
         return start1 < end2 && start2 < end1;
     }
 
-    /**
-     * Format a datetime for display in the occurrence picker.
-     * Delegates to OccurrenceLogic.formatTimeRange for consistency with the rest of the UI.
-     * @param {object} occ - Occurrence object with startTime / endTime
-     * @returns {string} Formatted time range, e.g. "Apr 8, 7:00 – 9:00 a.m."
-     */
-    function formatOccurrenceTime(occ) {
-        return OccurrenceLogic.formatTimeRange(occ.startTime, occ.endTime);
-    }
 
     /**
      * Render a two-column occurrence picker for multi-event consolidation.
@@ -359,7 +350,7 @@
 
         var rowsHtml = pickerEntries.map(function(entry) {
             var occ = entry.occurrence;
-            var timeStr = formatOccurrenceTime(occ);
+            var timeStr = OccurrenceLogic.formatTimeRange(occ.startTime, occ.endTime);
             var occKey = escapeHtml(String(entry.key));
 
             // Determine chip state
