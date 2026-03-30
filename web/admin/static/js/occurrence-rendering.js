@@ -311,28 +311,12 @@
 
     /**
      * Format a datetime for display in the occurrence picker.
-     * @param {string} dateTime - ISO datetime string
-     * @returns {string} Formatted date+time, e.g. "Apr 8, 7:00–9:00 PM"
+     * Delegates to OccurrenceLogic.formatTimeRange for consistency with the rest of the UI.
+     * @param {object} occ - Occurrence object with startTime / endTime
+     * @returns {string} Formatted time range, e.g. "Apr 8, 7:00 – 9:00 a.m."
      */
     function formatOccurrenceTime(occ) {
-        if (!occ.startTime) return '(no date)';
-
-        const start = formatDate(occ.startTime, {
-            month: 'short',
-            day: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit'
-        });
-
-        if (occ.endTime && occ.endTime.trim()) {
-            const end = formatDate(occ.endTime, {
-                hour: 'numeric',
-                minute: '2-digit'
-            });
-            return start + ' – ' + end;
-        }
-
-        return start;
+        return OccurrenceLogic.formatTimeRange(occ.startTime, occ.endTime);
     }
 
     /**
