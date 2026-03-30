@@ -16,6 +16,63 @@
     'use strict';
 
     /**
+     * Render a single occurrence row.
+     * @param {object} occ - Occurrence object
+     * @param {string} eventUlid - ULID of the event
+     * @param {string|number} entryId - Entry ID for namespacing
+     * @param {number} index - Zero-based index in the occurrences array
+     * @param {boolean} editable - Whether to include Edit/Remove buttons
+     * @returns {string} HTML string for one occ-row div
+     */
+    function renderRow(occ, eventUlid, entryId, index, editable) {
+        const safeEntryId = escapeHtml(String(entryId));
+        const start = occ.start_time || occ.startTime;
+        const end = occ.end_time || occ.endTime;
+        const timezone = occ.timezone;
+        const doorTime = occ.door_time || occ.doorTime;
+        const venueId = occ.venue_id || occ.venueId;
+        const virtualUrl = occ.virtual_url || occ.virtualUrl;
+        const occId = occBareId(occ);
+
+        const timeStr = OccurrenceLogic.formatTimeRange(start, end);
+
+        let detailsHtml = '';
+        if (timezone) {
+            detailsHtml += '<span class="badge bg-secondary-lt me-1">' + escapeHtml(timezone) + '</span>';
+        }
+        if (doorTime) {
+            detailsHtml += '<span class="text-muted small me-1">Doors: ' + formatDate(doorTime, { hour: 'numeric', minute: '2-digit' }) + '</span>';
+        }
+        if (virtualUrl) {
+            detailsHtml += '<span class="text-muted small d-block">' + escapeHtml(virtualUrl) + '</span>';
+        }
+        if (venueId) {
+            const venueUlid = venueUlidFromId(venueId);
+            detailsHtml += '<span class="badge bg-blue-lt me-1" data-venue-label="' + escapeHtml(venueUlid) + '">Venue: <span class="venue-name-' + escapeHtml(venueUlid) + '">(loading\u2026)</span></span>';
+        }
+
+        const actionBtns = editable
+            ? '<button type="button" class="btn btn-sm btn-outline-secondary ms-2" data-action="edit-occurrence">Edit</button>' +
+              '<button type="button" class="btn btn-sm btn-ghost-danger ms-1" data-action="remove-occurrence" title="Remove occurrence">&#10005;</button>'
+            : '';
+
+        // Row ID uses occurrence id when available, falls back to index for pending (unsaved) occurrences.
+        const rowSuffix = occId ? escapeHtml(occId) : 'idx-' + index;
+        return '<div class="d-flex align-items-start py-2 occ-row"' +
+            ' id="occ-row-' + safeEntryId + '-' + rowSuffix + '"' +
+            ' data-entry-id="' + safeEntryId + '"' +
+            ' data-event-ulid="' + escapeHtml(eventUlid) + '"' +
+            ' data-occurrence-id="' + escapeHtml(occId) + '"' +
+            ' data-occurrence-index="' + index + '">' +
+            '<div class="flex-grow-1">' +
+            '<div class="text-body-secondary">' + escapeHtml(timeStr) + '</div>' +
+            (detailsHtml ? '<div class="mt-1">' + detailsHtml + '</div>' : '') +
+            '</div>' +
+            actionBtns +
+            '</div>';
+    }
+
+    /**
      * Render a list of occurrences with optional inline editing.
      * When editable=true, each row includes an Edit button and an Add Occurrence form follows.
      * @param {Array} occurrences - Array of occurrence objects from the API
@@ -38,47 +95,7 @@
         const safeEntryId = escapeHtml(String(entryId));
 
         const rowsHtml = (occurrences || []).map(function(occ, index) {
-            const start = occ.start_time || occ.startTime;
-            const end = occ.end_time || occ.endTime;
-            const timezone = occ.timezone;
-            const doorTime = occ.door_time || occ.doorTime;
-            const venueId = occ.venue_id || occ.venueId;
-            const virtualUrl = occ.virtual_url || occ.virtualUrl;
-            const occId = occ.id || occ['@id'] || '';
-
-            const timeStr = OccurrenceLogic.formatTimeRange(start, end);
-
-            let detailsHtml = '';
-            if (timezone) {
-                detailsHtml += '<span class="badge bg-secondary-lt me-1">' + escapeHtml(timezone) + '</span>';
-            }
-            if (doorTime) {
-                detailsHtml += '<span class="text-muted small me-1">Doors: ' + formatDate(doorTime, { hour: 'numeric', minute: '2-digit' }) + '</span>';
-            }
-            if (virtualUrl) {
-                detailsHtml += '<span class="text-muted small d-block">' + escapeHtml(virtualUrl) + '</span>';
-            }
-            if (venueId) {
-                const venueUlid = venueUlidFromId(venueId);
-                detailsHtml += '<span class="badge bg-blue-lt me-1" data-venue-label="' + escapeHtml(venueUlid) + '">Venue: <span class="venue-name-' + escapeHtml(venueUlid) + '">(loading…)</span></span>';
-            }
-
-            let actionBtns = '';
-            if (editable) {
-                actionBtns =
-                    '<button type="button" class="btn btn-sm btn-outline-secondary ms-2" data-action="edit-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + escapeHtml(occId) + '" data-occurrence-index="' + index + '">Edit</button>' +
-                    '<button type="button" class="btn btn-sm btn-ghost-danger ms-1" data-action="remove-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + escapeHtml(occId) + '" data-occurrence-index="' + index + '" title="Remove occurrence">&#10005;</button>';
-            }
-
-            // Row ID uses occurrence id when available, falls back to index for pending (unsaved) occurrences.
-            const rowSuffix = occId ? escapeHtml(occId) : 'idx-' + index;
-            return '<div class="d-flex align-items-start py-2 occ-row" id="occ-row-' + safeEntryId + '-' + rowSuffix + '">' +
-                '<div class="flex-grow-1">' +
-                '<div class="text-body-secondary">' + escapeHtml(timeStr) + '</div>' +
-                (detailsHtml ? '<div class="mt-1">' + detailsHtml + '</div>' : '') +
-                '</div>' +
-                actionBtns +
-                '</div>';
+            return renderRow(occ, eventUlid, entryId, index, editable);
         }).join('');
 
         const addFormHtml = editable ? renderAddForm(safeEntryId, eventUlid, defaultTz, occurrences) : '';
@@ -190,7 +207,7 @@
      */
     function renderEditRow(occ, eventUlid, entryId, occurrenceIndex) {
         const safeEntryId = escapeHtml(String(entryId));
-        const occId = occ.id || occ['@id'] || '';
+        const occId = occBareId(occ);
         const safeOccId = escapeHtml(occId);
 
         const startTime = occ.start_time || occ.startTime || '';
@@ -207,7 +224,12 @@
         const venueUlid = venueUlidFromId(venueId);
         const hasVenue = !!venueId;
 
-        return '<div class="p-2 rounded border-start border-primary border-3 bg-blue-lt" id="occ-edit-' + safeEntryId + '-' + safeOccId + '">' +
+        return '<div class="p-2 rounded border-start border-primary border-3 bg-blue-lt occ-edit-row"' +
+            ' id="occ-edit-' + safeEntryId + '-' + safeOccId + '"' +
+            ' data-entry-id="' + safeEntryId + '"' +
+            ' data-event-ulid="' + escapeHtml(eventUlid) + '"' +
+            ' data-occurrence-id="' + safeOccId + '"' +
+            (occurrenceIndex !== undefined ? ' data-occurrence-index="' + occurrenceIndex + '"' : '') + '>' +
             '<div class="row g-2">' +
             '<div class="col-md-6">' +
             '<label class="form-label form-label-sm mb-1">Start *</label>' +
@@ -238,8 +260,8 @@
             '</div>' +
             '</div>' +
             '<div class="col-12 d-flex justify-content-end gap-2">' +
-            '<button type="button" class="btn btn-sm btn-secondary" data-action="cancel-edit-occurrence" data-entry-id="' + safeEntryId + '" data-occurrence-id="' + safeOccId + '">Cancel</button>' +
-            '<button type="button" class="btn btn-sm btn-primary" data-action="save-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '" data-occurrence-id="' + safeOccId + '"' + (occurrenceIndex !== undefined ? ' data-occurrence-index="' + occurrenceIndex + '"' : '') + '>Save</button>' +
+            '<button type="button" class="btn btn-sm btn-secondary" data-action="cancel-edit-occurrence">Cancel</button>' +
+            '<button type="button" class="btn btn-sm btn-primary" data-action="save-occurrence">Save</button>' +
             '</div>' +
             '</div>' +
             '<div id="occ-error-' + safeEntryId + '" class="text-danger small mt-1" style="display:none;"></div>' +
@@ -424,6 +446,22 @@
     }
 
     /**
+     * Extract a bare occurrence ID (UUID or ULID) from whatever form is stored on the
+     * occurrence object.  Callers may store:
+     *   - occ.occurrenceId  — bare UUID set explicitly by event-edit.js / review-queue.js
+     *   - occ.id            — bare UUID (admin API) OR full JSON-LD URI
+     *   - occ['@id']        — full JSON-LD URI (.../occurrences/<uuid>)
+     * Returns the last path segment of a URI, or the value as-is when it is already bare.
+     */
+    function occBareId(occ) {
+        var raw = occ.occurrenceId || occ.id || occ['@id'] || '';
+        if (!raw) return '';
+        // Strip any URI prefix — take the last non-empty path segment.
+        var m = raw.match(/\/([^/]+)\/?$/);
+        return m ? m[1] : raw;
+    }
+
+    /**
      * Hide the add form for a given entry and restore the toggle button.
      * @param {string|number} entryId - Entry ID
      */
@@ -545,6 +583,7 @@
     }
 
     window.OccurrenceRendering = {
+        renderRow: renderRow,
         renderList: renderList,
         refreshList: refreshList,
         renderEditRow: renderEditRow,

@@ -236,12 +236,13 @@
         var endTimeStr = endDate.toLocaleTimeString(locale, timeOpts);
 
         if (sameDay) {
-            var startPeriod = startTimeStr.slice(-2);
-            var endPeriod = endTimeStr.slice(-2);
-            var startTimeNum = startTimeStr.slice(0, -3);
-            var endTimeNum = endTimeStr.slice(0, -3);
-            if (startPeriod === endPeriod) {
-                return startDateStr + ', ' + startTimeNum + ' \u2013 ' + endTimeStr;
+            // Split period (handles "AM"/"PM" and "a.m."/"p.m." depending on locale)
+            var periodRe = /(a\.m\.|p\.m\.|am|pm)$/i;
+            var startPeriod = (startTimeStr.match(periodRe) || [''])[0].toLowerCase().replace(/\./g, '');
+            var endPeriod   = (endTimeStr.match(periodRe)   || [''])[0].toLowerCase().replace(/\./g, '');
+            var startTimeNoperiod = startTimeStr.replace(/\s*(a\.m\.|p\.m\.|am|pm)\s*$/i, '').trim();
+            if (startPeriod && startPeriod === endPeriod) {
+                return startDateStr + ', ' + startTimeNoperiod + ' \u2013 ' + endTimeStr;
             } else {
                 return startDateStr + ', ' + startTimeStr + ' \u2013 ' + endTimeStr;
             }

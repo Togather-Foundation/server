@@ -119,8 +119,3 @@ main {
     font-size: 2rem;
     font-weight: bold;
 }
-
-/* Occurrence list rows: border between consecutive rows (adjacent sibling, not after last) */
-.occ-row + .occ-row {
-    border-top: 1px solid var(--tblr-border-color, #e6e7e9);
-}

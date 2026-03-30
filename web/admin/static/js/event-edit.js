@@ -455,8 +455,9 @@
     }
 
     function handleEditOccurrence(target) {
-        const entryId = target.dataset.entryId || 'event-edit';
-        const index = parseInt(target.dataset.occurrenceIndex, 10);
+        const row = target.closest('.occ-row');
+        const entryId = row?.dataset.entryId || 'event-edit';
+        const index = parseInt(row?.dataset.occurrenceIndex, 10);
         
         if (isNaN(index) || index < 0 || index >= occurrences.length) {
             showToast('Invalid occurrence', 'error');
@@ -465,10 +466,6 @@
 
         const occ = occurrences[index];
         const editHtml = OccurrenceRendering.renderEditRow(occ, eventId, entryId, index);
-        
-        // Row ID uses occurrence id when available, falls back to index for pending occurrences.
-        const rowSuffix = (occ.id || occ['@id']) ? (occ.id || occ['@id']) : 'idx-' + index;
-        const row = document.getElementById('occ-row-' + entryId + '-' + rowSuffix);
         if (row) {
             row.outerHTML = editHtml;
         }
@@ -483,53 +480,17 @@
     }
 
     function handleCancelEditOccurrence(target) {
-        const entryId = target.dataset.entryId || 'event-edit';
-        const occId = target.dataset.occurrenceId || '';
-
-        // Find the occurrence by id or by the edit container's data-occurrence-index attribute
-        const saveBtn = document.querySelector('[data-action="save-occurrence"][data-entry-id="' + entryId + '"]');
-        const index = saveBtn ? parseInt(saveBtn.dataset.occurrenceIndex, 10) : NaN;
+        const editRow = target.closest('.occ-edit-row');
+        const entryId = editRow?.dataset.entryId || 'event-edit';
+        const occId = editRow?.dataset.occurrenceId || '';
+        const index = editRow ? parseInt(editRow.dataset.occurrenceIndex, 10) : NaN;
 
         // Swap the edit container back to a read row without a full re-render (avoids venue re-fetch)
         const editContainer = document.getElementById('occ-edit-' + entryId + '-' + occId);
         if (editContainer && !isNaN(index) && index >= 0 && index < occurrences.length) {
             const occ = occurrences[index];
-            const rowSuffix = (occ.id || occ['@id']) ? (occ.id || occ['@id']) : 'idx-' + index;
-            const start = occ.start_time || occ.startTime;
-            const end = occ.end_time || occ.endTime;
-            const timezone = occ.timezone;
-            const doorTime = occ.door_time || occ.doorTime;
+            editContainer.outerHTML = OccurrenceRendering.renderRow(occ, eventId, entryId, index, true);
             const venueId = occ.venue_id || occ.venueId;
-            const virtualUrl = occ.virtual_url || occ.virtualUrl;
-            const safeEntryId = escapeHtml(String(entryId));
-
-            let detailsHtml = '';
-            if (timezone) {
-                detailsHtml += '<span class="badge bg-secondary-lt me-1">' + escapeHtml(timezone) + '</span>';
-            }
-            if (doorTime) {
-                detailsHtml += '<span class="text-muted small me-1">Doors: ' + formatDate(doorTime, { hour: 'numeric', minute: '2-digit' }) + '</span>';
-            }
-            if (virtualUrl) {
-                detailsHtml += '<span class="text-muted small d-block">' + escapeHtml(virtualUrl) + '</span>';
-            }
-            if (venueId) {
-                var m = venueId.match(/\/([A-Z0-9]{26})$/i);
-                var venueUlid = m ? m[1] : venueId;
-                detailsHtml += '<span class="badge bg-blue-lt me-1" data-venue-label="' + escapeHtml(venueUlid) + '">Venue: <span class="venue-name-' + escapeHtml(venueUlid) + '">(loading\u2026)</span></span>';
-            }
-
-            const timeStr = OccurrenceLogic.formatTimeRange(start, end);
-            const rowHtml = '<div class="d-flex align-items-start py-2 border-bottom" id="occ-row-' + safeEntryId + '-' + escapeHtml(rowSuffix) + '">' +
-                '<div class="flex-grow-1">' +
-                '<div class="text-body-secondary">' + escapeHtml(timeStr) + '</div>' +
-                (detailsHtml ? '<div class="mt-1">' + detailsHtml + '</div>' : '') +
-                '</div>' +
-               '<button type="button" class="btn btn-sm btn-outline-secondary ms-2" data-action="edit-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventId) + '" data-occurrence-id="' + escapeHtml(occ.id || '') + '" data-occurrence-index="' + index + '">Edit</button>' +
-               '<button type="button" class="btn btn-sm btn-ghost-danger ms-1" data-action="remove-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventId) + '" data-occurrence-id="' + escapeHtml(occ.id || '') + '" data-occurrence-index="' + index + '" title="Remove occurrence">&#10005;</button>' +
-                '</div>';
-            editContainer.outerHTML = rowHtml;
-            // Re-resolve venue names for this row only (only fires if venueId present)
             if (venueId) {
                 OccurrenceRendering.resolveVenueNames(document.getElementById('occurrences-list'));
             }
@@ -543,8 +504,9 @@
     }
 
     async function handleSaveOccurrence(target) {
-        const entryId = target.dataset.entryId || 'event-edit';
-        const index = parseInt(target.dataset.occurrenceIndex, 10);
+        const editRow = target.closest('.occ-edit-row');
+        const entryId = editRow?.dataset.entryId || 'event-edit';
+        const index = parseInt(editRow?.dataset.occurrenceIndex, 10);
         if (isNaN(index) || index < 0 || index >= occurrences.length) {
             showToast('Invalid occurrence', 'error');
             return;
@@ -596,7 +558,8 @@
     }
 
     async function handleRemoveOccurrence(target) {
-        const index = parseInt(target.dataset.occurrenceIndex, 10);
+        const row = target.closest('.occ-row');
+        const index = parseInt(row?.dataset.occurrenceIndex, 10);
         if (isNaN(index) || index < 0 || index >= occurrences.length) {
             showToast('Invalid occurrence', 'error');
             return;

@@ -175,26 +175,25 @@
                 case 'remove-occurrence':
                     e.preventDefault();
                     removeOccurrence(
-                        target.dataset.entryId,
-                        target.dataset.eventUlid,
-                        target.dataset.occurrenceId
+                        target.closest('.occ-row')?.dataset.entryId,
+                        target.closest('.occ-row')?.dataset.eventUlid,
+                        target.closest('.occ-row')?.dataset.occurrenceId
                     );
                     break;
                 case 'edit-remove-occurrence':
-                case 'remove-occurrence':
                     e.preventDefault();
                     removeOccurrence(
-                        target.dataset.entryId,
-                        target.dataset.eventUlid,
-                        target.dataset.occurrenceId
+                        target.closest('.occ-row')?.dataset.entryId,
+                        target.closest('.occ-row')?.dataset.eventUlid,
+                        target.closest('.occ-row')?.dataset.occurrenceId
                     );
                     break;
                 case 'edit-add-occurrence':
                 case 'add-occurrence':
                     e.preventDefault();
                     addOccurrence(
-                        target.dataset.entryId,
-                        target.dataset.eventUlid
+                        target.closest('[data-entry-id]')?.dataset.entryId,
+                        target.closest('[data-entry-id]')?.dataset.eventUlid
                     );
                     break;
                 case 'canonical-select':
@@ -231,9 +230,10 @@
                     break;
                 case 'edit-occurrence': {
                     e.preventDefault();
-                    const occId = target.dataset.occurrenceId;
-                    const entryId = target.dataset.entryId;
-                    const eventUlid = target.dataset.eventUlid;
+                    const row = target.closest('.occ-row');
+                    const occId = row?.dataset.occurrenceId;
+                    const entryId = row?.dataset.entryId;
+                    const eventUlid = row?.dataset.eventUlid;
                     const occ = (currentEntryDetail.occurrences || []).find(o => (o.id || o['@id']) === occId);
                     if (!occ) break;
                     const rowEl = document.getElementById(`occ-row-${entryId}-${occId}`);
@@ -249,9 +249,10 @@
                 }
                 case 'save-occurrence': {
                     e.preventDefault();
-                    const occId = target.dataset.occurrenceId;
-                    const entryId = target.dataset.entryId;
-                    const eventUlid = target.dataset.eventUlid;
+                    const editRow = target.closest('.occ-edit-row');
+                    const occId = editRow?.dataset.occurrenceId;
+                    const entryId = editRow?.dataset.entryId;
+                    const eventUlid = editRow?.dataset.eventUlid;
                     const errorDiv = document.getElementById(`occ-error-${entryId}`);
                     const saveBtn = target;
 
@@ -345,8 +346,9 @@
                 }
                 case 'cancel-edit-occurrence': {
                     e.preventDefault();
-                    const entryId = target.dataset.entryId;
-                    const eventUlid = target.dataset.eventUlid;
+                    const editRow = target.closest('.occ-edit-row');
+                    const entryId = editRow?.dataset.entryId;
+                    const eventUlid = editRow?.dataset.eventUlid;
                     const defaultTz = document.getElementById('occurrence-default-timezone')?.value || 'America/Toronto';
                     if (currentEntryDetail) {
                         OccurrenceRendering.refreshList(entryId, eventUlid, currentEntryDetail.occurrences, true, defaultTz);
@@ -1209,9 +1211,10 @@
             return;
         }
 
-        const btn = document.querySelector(
-            `[data-action="remove-occurrence"][data-entry-id="${escapeHtml(String(entryId))}"][data-occurrence-id="${escapeHtml(String(occurrenceId))}"]`
+        const occRow = document.querySelector(
+            `.occ-row[data-entry-id="${escapeHtml(String(entryId))}"][data-occurrence-id="${escapeHtml(String(occurrenceId))}"]`
         );
+        const btn = occRow?.querySelector('[data-action="remove-occurrence"]');
         if (btn) setLoading(btn, true);
 
         try {
