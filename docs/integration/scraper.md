@@ -1137,13 +1137,19 @@ when calling admin API endpoints directly.
 
 ### Syncing Source Configs on Staging
 
-The source configs on staging live in the Docker container's database. After deploying
-a new binary or editing YAML configs, you must sync them into the `scraper_sources` table
-on the remote database.
+The source configs on staging live in the Docker container's database. The deployment
+pipeline automatically syncs YAML configs to the database **before** switching traffic
+to the new container. This ensures the new container serves requests with updated configs.
 
+**Automatic sync during deployment:**
+- Deployment flow: `deploy_to_slot` → `validate_health` → `sync_sources` → `switch_traffic`
+- If sync fails, deployment aborts before traffic switches, preventing stale config issues
+- Logs show sync output for debugging
+
+**Manual sync** (rarely needed):
 The deployed server binary runs inside a Docker container — the YAML files in
 `/opt/togather/src/configs/sources/` on the host are not mounted into the container.
-To sync them, spin up a one-off container with the host config directory mounted:
+To sync manually, spin up a one-off container with the host config directory mounted:
 
 ```bash
 # Determine the active container name and image
@@ -1178,10 +1184,9 @@ ssh togather "
 
 Expected output: `Sync complete: N created, M updated (total X sources)`
 
-**When to sync on staging:**
-- After deploying a new binary (the deploy does not auto-sync)
+**When manual sync is needed:**
 - After a staging DB reset (see `scripts/staging-reset.sh`)
-- After adding or modifying YAML configs in `configs/sources/`
+- After adding or modifying YAML configs in `configs/sources/` without redeploying
 
 ### Staging Database Reset
 

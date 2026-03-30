@@ -1933,11 +1933,13 @@ deploy() {
     # T020: Validate health checks
     validate_health "$env" "$target_slot" || return 1
     
+    # T021a: Sync scraper source configs to database BEFORE traffic switch
+    # This ensures the new container has updated configs before serving traffic.
+    # If sync fails, we can safely rollback without affecting user traffic.
+    sync_sources "$env" "$target_slot" || return 1
+    
     # T021: Switch traffic to new slot
     switch_traffic "$env" "$target_slot" || return 1
-    
-    # T021a: Sync scraper source configs to database
-    sync_sources "$env" "$target_slot" || return 1
     
     # T022: Update deployment state
     update_deployment_state "$env" "active" || return 1

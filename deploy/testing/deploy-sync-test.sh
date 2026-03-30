@@ -118,7 +118,6 @@ test_deploy_script_exists() {
 }
 
 test_deploy_script_is_executable() {
-    [[ -x "$DEPLOY_SCRIPT" ]] || chmod +x "$DEPLOY_SCRIPT"
     [[ -x "$DEPLOY_SCRIPT" ]]
 }
 
@@ -130,17 +129,18 @@ test_sync_sources_is_called_in_deploy() {
     grep -q 'sync_sources' "$DEPLOY_SCRIPT"
 }
 
-test_sync_sources_called_after_switch_traffic() {
-    # Verify the order: switch_traffic -> sync_sources -> update_deployment_state
+test_sync_sources_called_before_switch_traffic() {
+    # Verify the order: sync_sources -> switch_traffic -> update_deployment_state
+    # This ensures configs are synced before traffic switches to the new container
     local deploy_func
     deploy_func=$(sed -n '/^deploy()/,/^}/p' "$DEPLOY_SCRIPT")
     
-    local switch_line=$(echo "$deploy_func" | grep -n 'switch_traffic' | head -1 | cut -d: -f1)
     local sync_line=$(echo "$deploy_func" | grep -n 'sync_sources' | head -1 | cut -d: -f1)
+    local switch_line=$(echo "$deploy_func" | grep -n 'switch_traffic' | head -1 | cut -d: -f1)
     local update_line=$(echo "$deploy_func" | grep -n 'update_deployment_state' | head -1 | cut -d: -f1)
     
-    [[ -n "$switch_line" ]] && [[ -n "$sync_line" ]] && [[ -n "$update_line" ]] && \
-        [[ "$switch_line" -lt "$sync_line" ]] && [[ "$sync_line" -lt "$update_line" ]]
+    [[ -n "$sync_line" ]] && [[ -n "$switch_line" ]] && [[ -n "$update_line" ]] && \
+        [[ "$sync_line" -lt "$switch_line" ]] && [[ "$switch_line" -lt "$update_line" ]]
 }
 
 test_sync_sources_fails_on_container_not_running() {
@@ -230,7 +230,7 @@ main() {
     run_test "Deploy script is executable" test_deploy_script_is_executable
     run_test "sync_sources function exists" test_sync_sources_function_exists
     run_test "sync_sources is called in deploy flow" test_sync_sources_is_called_in_deploy
-    run_test "sync_sources called after switch_traffic" test_sync_sources_called_after_switch_traffic
+    run_test "sync_sources called before switch_traffic" test_sync_sources_called_before_switch_traffic
     run_test "sync_sources fails if container not running" test_sync_sources_fails_on_container_not_running
     run_test "sync_sources calls scrape sync" test_sync_sources_calls_scrape_sync
     run_test "sync_sources handles failure" test_sync_sources_handles_failure
