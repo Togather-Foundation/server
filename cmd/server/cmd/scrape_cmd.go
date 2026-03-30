@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/scraper"
@@ -131,6 +132,19 @@ func loadScrapeConfig() (serverURL, apiKey string, err error) {
 // must be called when done.
 func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper.Scraper, func(), error) {
 	client := scraper.NewIngestClient(serverURL, apiKey)
+	cfg, err := config.Load()
+	if err != nil {
+		logger.Warn().Err(err).Msg("scraper: failed to load config, using ingest client defaults")
+	} else {
+		client = scraper.NewIngestClient(
+			serverURL,
+			apiKey,
+			scraper.WithPollBackoffStart(time.Duration(cfg.Scraper.PollBackoffStart)*time.Millisecond),
+			scraper.WithPollBackoffMax(time.Duration(cfg.Scraper.PollBackoffMax)*time.Millisecond),
+			scraper.WithPollTimeout(time.Duration(cfg.Scraper.PollTimeout)*time.Millisecond),
+			scraper.WithHTTPClientTimeout(time.Duration(cfg.Scraper.HTTPClientTimeout)*time.Millisecond),
+		)
+	}
 
 	dbURL := getDatabaseURL()
 	var s *scraper.Scraper

@@ -46,6 +46,22 @@ type ScraperConfig struct {
 	// HeadlessMaxConc is the maximum number of concurrent browser sessions.
 	// Environment variable: SCRAPER_HEADLESS_MAX_CONC (default: 2)
 	HeadlessMaxConc int
+
+	// PollBackoffStart is the initial delay before the first batch-status poll.
+	// Environment variable: SCRAPER_POLL_BACKOFF_START_MS (default: 200)
+	PollBackoffStart int
+
+	// PollBackoffMax is the maximum delay between batch-status polls.
+	// Environment variable: SCRAPER_POLL_BACKOFF_MAX_MS (default: 2000)
+	PollBackoffMax int
+
+	// PollTimeout is the maximum total time spent polling for a batch result.
+	// Environment variable: SCRAPER_POLL_TIMEOUT_MS (default: 30000)
+	PollTimeout int
+
+	// HTTPClientTimeout is the HTTP client timeout for scraper requests.
+	// Environment variable: SCRAPER_HTTP_CLIENT_TIMEOUT_MS (default: 30000)
+	HTTPClientTimeout int
 }
 
 type ServerConfig struct {
@@ -457,9 +473,13 @@ func Load() (Config, error) {
 			FailureTTLDays:  getEnvInt("ARTSDATA_FAILURE_TTL_DAYS", 7),
 		},
 		Scraper: ScraperConfig{
-			HeadlessEnabled: getEnvBool("SCRAPER_HEADLESS_ENABLED", false),
-			ChromePath:      getEnv("SCRAPER_CHROME_PATH", ""),
-			HeadlessMaxConc: getEnvInt("SCRAPER_HEADLESS_MAX_CONC", 2),
+			HeadlessEnabled:   getEnvBool("SCRAPER_HEADLESS_ENABLED", false),
+			ChromePath:        getEnv("SCRAPER_CHROME_PATH", ""),
+			HeadlessMaxConc:   getEnvInt("SCRAPER_HEADLESS_MAX_CONC", 2),
+			PollBackoffStart:  getEnvInt("SCRAPER_POLL_BACKOFF_START_MS", 200),
+			PollBackoffMax:    getEnvInt("SCRAPER_POLL_BACKOFF_MAX_MS", 2000),
+			PollTimeout:       getEnvInt("SCRAPER_POLL_TIMEOUT_MS", 30000),
+			HTTPClientTimeout: getEnvInt("SCRAPER_HTTP_CLIENT_TIMEOUT_MS", 30000),
 		},
 		Developer: DeveloperConfig{
 			PasswordMinLength:        getEnvInt("DEVELOPER_PASSWORD_MIN_LENGTH", 8),

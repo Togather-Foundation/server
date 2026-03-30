@@ -171,7 +171,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 	if ingestAPIKey != "" {
 		scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
-		ingestClient := scraper.NewIngestClient(cfg.Server.BaseURL, ingestAPIKey)
+		ingestClient := scraper.NewIngestClient(
+			cfg.Server.BaseURL,
+			ingestAPIKey,
+			scraper.WithPollBackoffStart(time.Duration(cfg.Scraper.PollBackoffStart)*time.Millisecond),
+			scraper.WithPollBackoffMax(time.Duration(cfg.Scraper.PollBackoffMax)*time.Millisecond),
+			scraper.WithPollTimeout(time.Duration(cfg.Scraper.PollTimeout)*time.Millisecond),
+			scraper.WithHTTPClientTimeout(time.Duration(cfg.Scraper.HTTPClientTimeout)*time.Millisecond),
+		)
 		scraperSvc = scraper.NewScraperWithSourceRepoAndSlot(ingestClient, queries, scraperSourceRepo, logger, slot)
 		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
 
