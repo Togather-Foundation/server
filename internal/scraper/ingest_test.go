@@ -504,3 +504,56 @@ func TestSubmitBatch_PollBackoffExponential(t *testing.T) {
 		t.Errorf("first poll interval = %v, expected >= 40ms", pollIntervals[0])
 	}
 }
+
+// TestSubmitBatch_CallerDeadlineDuringInFlightPoll verifies that when the caller's
+// context deadline expires while an HTTP request is in-flight (during fetchBatchStatus),
+// the error is propagated as a context deadline error, not treated as a soft timeout.
+func TestSubmitBatch_CallerDeadlineDuringInFlightPoll(t *testing.T) {
+	var callCount int32
+	var srvURL string
+
+	// Handler that blocks for a while on the status endpoint to simulate slow response
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/events:batch":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id":   "batch-inflight",
+				"status_url": srvURL + "/api/v1/batch-status/batch-inflight",
+			})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/batch-status/batch-inflight":
+			atomic.AddInt32(&callCount, 1)
+			// Block for longer than the caller's deadline
+			time.Sleep(200 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status":  "completed",
+				"created": 1,
+			})
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+
+	// Create a context with a short deadline that will expire during the in-flight HTTP request
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	result, err := client.SubmitBatch(ctx, sampleEvts(1))
+
+	// Caller deadline expiry during in-flight request must be propagated as error.
+	if err == nil {
+		t.Fatalf("expected caller deadline error, got nil (result=%+v)", result)
+	}
+	if !containsString(err.Error(), "deadline") && !containsString(err.Error(), "cancelled") {
+		t.Errorf("Expected context deadline/cancelled error, got: %v", err)
+	}
+}

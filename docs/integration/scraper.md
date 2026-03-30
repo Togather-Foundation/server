@@ -1108,6 +1108,17 @@ LIMIT 20;
 | `SEL_INGEST_KEY` | Alternative API key env var (checked after `SEL_API_KEY`) |
 | `DATABASE_URL` | PostgreSQL connection string for scraper run tracking |
 
+### Polling Configuration
+
+These variables control the batch status polling behavior during scrape ingestion:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCRAPER_POLL_BACKOFF_START_MS` | 200 | Initial delay (ms) before the first status poll after receiving HTTP 202 |
+| `SCRAPER_POLL_BACKOFF_MAX_MS` | 2000 | Maximum delay (ms) between status polls |
+| `SCRAPER_POLL_TIMEOUT_MS` | 30000 | Total time (ms) spent polling for a single batch result |
+| `SCRAPER_HTTP_CLIENT_TIMEOUT_MS` | 30000 | HTTP client timeout (ms) for scraper requests |
+
 ---
 
 ## Staging Scrape Workflow

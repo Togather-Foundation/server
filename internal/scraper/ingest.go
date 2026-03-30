@@ -114,6 +114,29 @@ func NewIngestClient(baseURL, apiKey string, opts ...IngestClientOption) *Ingest
 		opt(&cfg)
 	}
 
+	// Defensive clamping: ensure durations are positive and bounded.
+	// Zero or negative values would cause issues; clamp to safe minimums.
+	if cfg.PollBackoffStart <= 0 {
+		cfg.PollBackoffStart = 200 * time.Millisecond
+	}
+	if cfg.PollBackoffMax <= 0 {
+		cfg.PollBackoffMax = 2 * time.Second
+	}
+	if cfg.PollTimeout <= 0 {
+		cfg.PollTimeout = 30 * time.Second
+	}
+	if cfg.HTTPClientTimeout <= 0 {
+		cfg.HTTPClientTimeout = 30 * time.Second
+	}
+	// Ensure PollBackoffMax >= PollBackoffStart
+	if cfg.PollBackoffMax < cfg.PollBackoffStart {
+		cfg.PollBackoffMax = cfg.PollBackoffStart
+	}
+	// Ensure PollTimeout >= PollBackoffMax (sanity bound)
+	if cfg.PollTimeout < cfg.PollBackoffMax {
+		cfg.PollTimeout = cfg.PollBackoffMax
+	}
+
 	return &IngestClient{
 		baseURL: baseURL,
 		apiKey:  apiKey,
@@ -249,6 +272,9 @@ func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL s
 		cancel()
 
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return IngestResult{BatchID: batchID}, fmt.Errorf("caller context cancelled while polling batch %s: %w", batchID, ctxErr)
+			}
 			// If the error is due to our internal poll deadline exceeded, treat it
 			// as a soft timeout rather than a hard error - return partial result.
 			if isDeadlineExceeded(err) {
