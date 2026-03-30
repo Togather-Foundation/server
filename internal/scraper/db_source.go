@@ -3,6 +3,7 @@ package scraper
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 )
@@ -24,6 +25,9 @@ func unmarshalJSON[T any](data json.RawMessage) T {
 // into a SourceConfig suitable for scraping. Selectors are JSON-decoded from
 // the JSONB column; an empty/nil Selectors field is valid for Tier 0 sources.
 // GraphQLConfig is JSON-decoded for Tier 3 sources; nil for all other tiers.
+//
+// Emits deprecation warnings for deprecated selector fields (e.g. Description)
+// via slog at the Warning level, consistent with YAML config loading.
 func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 	cfg := SourceConfig{
 		Name:       src.Name,
@@ -44,7 +48,22 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		}
 	}
 
+	// Track original Description presence before normalization for accurate warning.
+	hadDescription := cfg.Selectors.Description != ""
+	hadDescriptionSelectors := len(cfg.Selectors.DescriptionSelectors) > 0
 	normalizeDescriptionSelectors(&cfg)
+	cfg.normalized = true
+
+	// Emit deprecation warnings consistent with ValidateConfigWithWarnings.
+	if hadDescription {
+		if hadDescriptionSelectors {
+			slog.Warn("source config warning", "source", src.Name,
+				"warning", "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
+		} else {
+			slog.Warn("source config warning", "source", src.Name,
+				"warning", "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version.")
+		}
+	}
 
 	cfg.EventURLPattern = src.EventURLPattern
 	cfg.SkipMultiSessionCheck = src.SkipMultiSessionCheck

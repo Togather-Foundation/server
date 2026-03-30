@@ -70,6 +70,11 @@ type SourceConfig struct {
 	// source repository. It is NOT read from YAML. Used by sitemap scraping
 	// to filter URLs by lastmod date.
 	LastScrapedAt *time.Time `yaml:"-" json:"-"`
+
+	// normalized is true after normalizeDescriptionSelectors has been applied.
+	// Used to avoid emitting inaccurate deprecation warnings in ValidateConfigWithWarnings
+	// when the config has already been normalized (warning already emitted accurately in loadFile).
+	normalized bool `yaml:"-" json:"-"`
 }
 
 // SitemapConfig holds sitemap-based URL discovery options. When set on a
@@ -134,9 +139,11 @@ type SelectorConfig struct {
 	// description. This is useful when a site's description is split across
 	// multiple elements (e.g., a summary paragraph + expanded content).
 	//
-	// When set, DescriptionSelectors takes priority over Description for
-	// description extraction. Description is still used as fallback if
-	// DescriptionSelectors produces no result.
+	// Note: the legacy single Description field takes precedence — during config
+	// loading, normalizeDescriptionSelectors promotes Description to
+	// DescriptionSelectors when Description is set. This ensures a single
+	// extraction code path in Tier 1/Tier 2. Use DescriptionSelectors for new
+	// configs; Description is deprecated.
 	//
 	// Example:
 	//   description_selectors:
@@ -570,7 +577,9 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	}
 
 	// Warn about deprecated selectors.description usage.
-	if cfg.Selectors.Description != "" {
+	// Skip this warning if the config has already been normalized (loadFile/SourceConfigFromDomain
+	// already emitted accurate warnings based on the original input state).
+	if !cfg.normalized && cfg.Selectors.Description != "" {
 		if len(cfg.Selectors.DescriptionSelectors) > 0 {
 			warnings = append(warnings, "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
 		} else {
@@ -674,7 +683,12 @@ func LoadSourceConfig(path string) (SourceConfig, error) {
 // (single selector) is set, it takes precedence over DescriptionSelectors.
 // The Description value becomes the single element in DescriptionSelectors.
 // This ensures a single extraction code path in Tier 1/Tier 2.
-func normalizeDescriptionSelectors(cfg *SourceConfig) {
+//
+// Returns true if the original Description field was non-empty (before
+// normalization), allowing callers to emit accurate deprecation warnings
+// that reflect the actual input rather than the post-normalization state.
+func normalizeDescriptionSelectors(cfg *SourceConfig) bool {
+	hadDescription := cfg.Selectors.Description != ""
 	if cfg.Selectors.Description != "" {
 		cfg.Selectors.DescriptionSelectors = []string{cfg.Selectors.Description}
 	} else if len(cfg.Selectors.DescriptionSelectors) > 0 {
@@ -683,6 +697,7 @@ func normalizeDescriptionSelectors(cfg *SourceConfig) {
 		// Neither set — leave empty (no description extraction)
 		cfg.Selectors.DescriptionSelectors = nil
 	}
+	return hadDescription
 }
 
 // loadFile reads a single YAML source config file and applies defaults.
@@ -717,7 +732,21 @@ func loadFile(path string) (SourceConfig, error) {
 		cfg.Headless.Iframe.WaitTimeoutMs = 10000
 	}
 
-	normalizeDescriptionSelectors(&cfg)
+	// Track original DescriptionSelectors presence before normalization for accurate warning.
+	hadDescriptionSelectors := len(cfg.Selectors.DescriptionSelectors) > 0
+	hadDescription := normalizeDescriptionSelectors(&cfg)
+	cfg.normalized = true
+
+	// Emit accurate deprecation warnings based on original input (before normalization).
+	if hadDescription {
+		if hadDescriptionSelectors {
+			slog.Warn("source config warning", "file", path,
+				"warning", "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
+		} else {
+			slog.Warn("source config warning", "file", path,
+				"warning", "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version.")
+		}
+	}
 
 	return cfg, nil
 }

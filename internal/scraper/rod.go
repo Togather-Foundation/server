@@ -721,11 +721,15 @@ func extractEventsFromHTML(html string, config SourceConfig, pageURL string) ([]
 			raw.Location = extractTextOrAttrFromSelection(s, config.Selectors.Location)
 		}
 
-		// Description extraction: prefer DescriptionSelectors (multi-element) over
-		// single Description (legacy path).
+		// Description extraction: use DescriptionSelectors (array) if set; fallback
+		// to legacy single Description if not. Note: during config loading,
+		// normalizeDescriptionSelectors promotes Description to DescriptionSelectors
+		// when Description is set, so the DescriptionSelectors path will be taken
+		// for configs using either field — this ensures a single extraction code path.
 		if len(config.Selectors.DescriptionSelectors) > 0 {
 			raw.Description = extractDescriptionFromSelection(s, config.Selectors.DescriptionSelectors)
 		} else if config.Selectors.Description != "" {
+			// Fallback to legacy single Description selector (rare; prefer DescriptionSelectors).
 			raw.Description = extractTextOrAttrFromSelection(s, config.Selectors.Description)
 		}
 

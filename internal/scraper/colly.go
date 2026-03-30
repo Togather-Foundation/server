@@ -123,13 +123,16 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 			staticLocation = extractTextOrAttr(h, config.Selectors.Location)
 		}
 
-		// Description extraction: prefer DescriptionSelectors (multi-element) over
-		// single Description (legacy path).
+		// Description extraction: use DescriptionSelectors (array) if set; fallback
+		// to legacy single Description if not. Note: during config loading,
+		// normalizeDescriptionSelectors promotes Description to DescriptionSelectors
+		// when Description is set, so the DescriptionSelectors path will be taken
+		// for configs using either field — this ensures a single extraction code path.
 		staticDescription := ""
 		if len(config.Selectors.DescriptionSelectors) > 0 {
 			staticDescription = extractDescriptionFromSelectors(h, config.Selectors.DescriptionSelectors)
 		} else if config.Selectors.Description != "" {
-			// Fallback to legacy single Description selector.
+			// Fallback to legacy single Description selector (rare; prefer DescriptionSelectors).
 			staticDescription = extractTextOrAttr(h, config.Selectors.Description)
 		}
 
