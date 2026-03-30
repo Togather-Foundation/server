@@ -92,6 +92,7 @@ func init() {
 	scrapeTestCmd.Flags().StringVar(&scrapeTestEndDate, "end-date", "", "CSS selector for the event end date")
 	scrapeTestCmd.Flags().StringVar(&scrapeTestLocation, "location", "", "CSS selector for the event location")
 	scrapeTestCmd.Flags().StringVar(&scrapeTestDescription, "description", "", "CSS selector for the event description")
+	scrapeTestCmd.Flags().StringSliceVar(&scrapeTestDescriptionSels, "description-selectors", nil, "CSS selectors for description_selectors (comma-separated or repeated, takes precedence over --description)")
 	scrapeTestCmd.Flags().StringVar(&scrapeTestURL, "url", "", "CSS selector for the event URL link element")
 	scrapeTestCmd.Flags().StringVar(&scrapeTestImage, "image", "", "CSS selector for the event image element")
 	scrapeTestCmd.Flags().StringVar(&scrapeTestPagination, "pagination", "", "CSS selector for the pagination next-page link")

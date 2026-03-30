@@ -47,7 +47,7 @@ func TestScrapeTestOutputJSON(t *testing.T) {
 			wantContains: []string{
 				"[]",
 			},
-			wantValidJSON: false,
+			wantValidJSON: true,
 		},
 		{
 			name: "text mode truncates description at 120 chars",
@@ -125,10 +125,7 @@ func TestScrapeTestOutputJSON(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			scrapeTestJSON = tt.jsonFlag
-
-			output, err := captureScrapeTestOutput(tt.events)
-			scrapeTestJSON = false
+			output, err := captureScrapeTestOutput(tt.events, tt.jsonFlag)
 
 			if err != nil {
 				t.Fatalf("printScrapeTestOutput error: %v", err)
@@ -162,9 +159,9 @@ func TestScrapeTestOutputJSON(t *testing.T) {
 	}
 }
 
-func captureScrapeTestOutput(events []scraper.RawEvent) (string, error) {
+func captureScrapeTestOutput(events []scraper.RawEvent, asJSON bool) (string, error) {
 	var buf bytes.Buffer
-	err := formatScrapeTestOutput(&buf, events, scrapeTestJSON)
+	err := formatScrapeTestOutput(&buf, events, asJSON)
 	return buf.String(), err
 }
 
@@ -179,7 +176,7 @@ func TestScrapeTestOutputTruncation(t *testing.T) {
 		},
 	}
 
-	output, err := captureScrapeTestOutput(events)
+	output, err := captureScrapeTestOutput(events, false)
 	if err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -210,9 +207,7 @@ func TestScrapeTestOutputJSONFullDescription(t *testing.T) {
 		},
 	}
 
-	scrapeTestJSON = true
-	output, err := captureScrapeTestOutput(events)
-	scrapeTestJSON = false
+	output, err := captureScrapeTestOutput(events, true)
 
 	if err != nil {
 		t.Fatalf("error: %v", err)

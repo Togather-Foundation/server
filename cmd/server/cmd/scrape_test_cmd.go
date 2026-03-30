@@ -16,18 +16,19 @@ import (
 
 var (
 	// flags for scrape test
-	scrapeTestSelectorFile string
-	scrapeTestEventList    string
-	scrapeTestName         string
-	scrapeTestStartDate    string
-	scrapeTestEndDate      string
-	scrapeTestLocation     string
-	scrapeTestDescription  string
-	scrapeTestURL          string
-	scrapeTestImage        string
-	scrapeTestPagination   string
-	scrapeTestDateSels     []string
-	scrapeTestJSON         bool
+	scrapeTestSelectorFile    string
+	scrapeTestEventList       string
+	scrapeTestName            string
+	scrapeTestStartDate       string
+	scrapeTestEndDate         string
+	scrapeTestLocation        string
+	scrapeTestDescription     string
+	scrapeTestDescriptionSels []string
+	scrapeTestURL             string
+	scrapeTestImage           string
+	scrapeTestPagination      string
+	scrapeTestDateSels        []string
+	scrapeTestJSON            bool
 )
 
 const maxDescriptionLength = 120
@@ -205,6 +206,9 @@ Examples:
 		}
 		if scrapeTestDescription != "" {
 			cfg.Selectors.Description = scrapeTestDescription
+		}
+		if len(scrapeTestDescriptionSels) > 0 {
+			cfg.Selectors.DescriptionSelectors = scrapeTestDescriptionSels
 		}
 		if scrapeTestURL != "" {
 			cfg.Selectors.URL = scrapeTestURL
