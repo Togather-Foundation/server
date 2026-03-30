@@ -206,6 +206,41 @@ func TestSubmitBatch_ContextCancelDuringPoll(t *testing.T) {
 	_ = err
 }
 
+// TestSubmitBatch_ContextCancelBeforePoll verifies that caller context cancellation
+// (not internal poll timeout) is propagated as an error.
+func TestSubmitBatch_ContextCancelBeforePoll(t *testing.T) {
+	handler := &batchHandlerPair{
+		batchID: "batch-cancel-before",
+		// Return "still processing" - would timeout if we let it run
+		statusFn: func(_ int32) (int, any) {
+			return http.StatusNotFound, map[string]string{"title": "still processing"}
+		},
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	handler.srvURL = srv.URL
+
+	// Use very short backoff so we can test the pre-poll context check
+	client := NewIngestClient(srv.URL, "test-api-key",
+		WithPollBackoffStart(500*time.Millisecond),
+		WithPollBackoffMax(500*time.Millisecond),
+		WithPollTimeout(10*time.Second),
+	)
+
+	// Create context that's already cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := client.SubmitBatch(ctx, sampleEvts(1))
+	// Should get a context cancelled error, not a silent partial result
+	if err == nil {
+		t.Fatal("Expected error for cancelled caller context, got nil")
+	}
+	if !containsString(err.Error(), "cancelled") && !containsString(err.Error(), "context") {
+		t.Errorf("Expected error message to mention context cancellation, got: %v", err)
+	}
+}
+
 // TestSubmitBatch_ErrorOnNon2xx verifies that non-2xx responses from the
 // initial POST are returned as errors.
 func TestSubmitBatch_ErrorOnNon2xx(t *testing.T) {

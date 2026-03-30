@@ -221,8 +221,9 @@ func (c *IngestClient) submitChunk(ctx context.Context, evts []events.EventInput
 
 // pollBatchStatus polls statusURL with exponential backoff (start 200 ms, max
 // 2 s) for up to pollTimeout. When the server returns status == "completed"
-// the counts are mapped into an IngestResult. On timeout a partial result is
-// returned with a warning logged so the caller can continue.
+// the counts are mapped into an IngestResult. On internal poll timeout, a partial
+// result is returned with a warning logged so the caller can continue.
+// If the caller's context is cancelled or deadline exceeded, the error is propagated.
 func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL string) (IngestResult, error) {
 	if statusURL == "" {
 		return IngestResult{BatchID: batchID}, fmt.Errorf("no status_url in 202 response for batch %s", batchID)
@@ -232,13 +233,23 @@ func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL s
 	delay := c.pollBackoffStart
 
 	for {
-		// Respect both the polling timeout and the caller's context.
+		// Check caller's context before starting a new poll - propagate cancellation
+		// immediately rather than treating it as a soft timeout.
+		select {
+		case <-ctx.Done():
+			return IngestResult{BatchID: batchID}, fmt.Errorf("caller context cancelled while polling batch %s: %w", batchID, ctx.Err())
+		default:
+		}
+
+		// Create a derived context with our internal poll deadline.
+		// This is separate from the caller's context - we want soft timeout behavior
+		// for our internal deadline, but hard error for caller cancellation.
 		pollCtx, cancel := context.WithDeadline(ctx, deadline)
 		result, done, err := c.fetchBatchStatus(pollCtx, batchID, statusURL)
 		cancel()
 
 		if err != nil {
-			// If the error is due to context deadline exceeded (timeout), treat it
+			// If the error is due to our internal poll deadline exceeded, treat it
 			// as a soft timeout rather than a hard error - return partial result.
 			if isDeadlineExceeded(err) {
 				log.Warn().
@@ -271,7 +282,7 @@ func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL s
 
 		select {
 		case <-ctx.Done():
-			return IngestResult{BatchID: batchID}, fmt.Errorf("context cancelled while polling batch %s: %w", batchID, ctx.Err())
+			return IngestResult{BatchID: batchID}, fmt.Errorf("caller context cancelled while polling batch %s: %w", batchID, ctx.Err())
 		case <-time.After(wait):
 		}
 

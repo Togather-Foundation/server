@@ -494,6 +494,11 @@ func Load() (Config, error) {
 		Environment:     getEnv("ENVIRONMENT", "development"),
 	}
 
+	// Validate scraper polling configuration
+	if err := validateScraperPollingConfig(cfg.Scraper); err != nil {
+		return Config{}, err
+	}
+
 	// CORS configuration
 	env := cfg.Environment
 	if env == "development" || env == "test" {
@@ -646,4 +651,26 @@ func LoadEnvFile(path string) {
 			_ = os.Setenv(key, value)
 		}
 	}
+}
+
+func validateScraperPollingConfig(scraper ScraperConfig) error {
+	if scraper.PollBackoffStart <= 0 {
+		return fmt.Errorf("SCRAPER_POLL_BACKOFF_START_MS must be positive, got %d", scraper.PollBackoffStart)
+	}
+	if scraper.PollBackoffMax <= 0 {
+		return fmt.Errorf("SCRAPER_POLL_BACKOFF_MAX_MS must be positive, got %d", scraper.PollBackoffMax)
+	}
+	if scraper.PollTimeout <= 0 {
+		return fmt.Errorf("SCRAPER_POLL_TIMEOUT_MS must be positive, got %d", scraper.PollTimeout)
+	}
+	if scraper.HTTPClientTimeout <= 0 {
+		return fmt.Errorf("SCRAPER_HTTP_CLIENT_TIMEOUT_MS must be positive, got %d", scraper.HTTPClientTimeout)
+	}
+	if scraper.PollBackoffMax < scraper.PollBackoffStart {
+		return fmt.Errorf("SCRAPER_POLL_BACKOFF_MAX_MS (%d) must be >= SCRAPER_POLL_BACKOFF_START_MS (%d)", scraper.PollBackoffMax, scraper.PollBackoffStart)
+	}
+	if scraper.PollTimeout < scraper.PollBackoffMax {
+		return fmt.Errorf("SCRAPER_POLL_TIMEOUT_MS (%d) must be >= SCRAPER_POLL_BACKOFF_MAX_MS (%d)", scraper.PollTimeout, scraper.PollBackoffMax)
+	}
+	return nil
 }

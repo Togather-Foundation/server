@@ -212,3 +212,169 @@ func TestLoad_StagingCORS_WildcardAllowsAll(t *testing.T) {
 		t.Error("Expected AllowedOrigins to be nil in staging with wildcard '*'")
 	}
 }
+
+func TestLoad_ScraperPolling_InvalidBackoffStart(t *testing.T) {
+	originalEnv := map[string]string{
+		"ENVIRONMENT":                   os.Getenv("ENVIRONMENT"),
+		"DATABASE_URL":                  os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":                    os.Getenv("JWT_SECRET"),
+		"SCRAPER_POLL_BACKOFF_START_MS": os.Getenv("SCRAPER_POLL_BACKOFF_START_MS"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("SCRAPER_POLL_BACKOFF_START_MS", "0")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Expected error for invalid SCRAPER_POLL_BACKOFF_START_MS, got nil")
+	}
+	if !strings.Contains(err.Error(), "SCRAPER_POLL_BACKOFF_START_MS") {
+		t.Errorf("Expected error to mention SCRAPER_POLL_BACKOFF_START_MS, got: %v", err)
+	}
+}
+
+func TestLoad_ScraperPolling_InvalidBackoffMax(t *testing.T) {
+	originalEnv := map[string]string{
+		"ENVIRONMENT":                 os.Getenv("ENVIRONMENT"),
+		"DATABASE_URL":                os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":                  os.Getenv("JWT_SECRET"),
+		"SCRAPER_POLL_BACKOFF_MAX_MS": os.Getenv("SCRAPER_POLL_BACKOFF_MAX_MS"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("SCRAPER_POLL_BACKOFF_MAX_MS", "-1")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Expected error for invalid SCRAPER_POLL_BACKOFF_MAX_MS, got nil")
+	}
+	if !strings.Contains(err.Error(), "SCRAPER_POLL_BACKOFF_MAX_MS") {
+		t.Errorf("Expected error to mention SCRAPER_POLL_BACKOFF_MAX_MS, got: %v", err)
+	}
+}
+
+func TestLoad_ScraperPolling_BackoffMaxLessThanStart(t *testing.T) {
+	originalEnv := map[string]string{
+		"ENVIRONMENT":                   os.Getenv("ENVIRONMENT"),
+		"DATABASE_URL":                  os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":                    os.Getenv("JWT_SECRET"),
+		"SCRAPER_POLL_BACKOFF_START_MS": os.Getenv("SCRAPER_POLL_BACKOFF_START_MS"),
+		"SCRAPER_POLL_BACKOFF_MAX_MS":   os.Getenv("SCRAPER_POLL_BACKOFF_MAX_MS"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("SCRAPER_POLL_BACKOFF_START_MS", "500")
+	_ = os.Setenv("SCRAPER_POLL_BACKOFF_MAX_MS", "100")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Expected error when SCRAPER_POLL_BACKOFF_MAX_MS < SCRAPER_POLL_BACKOFF_START_MS, got nil")
+	}
+	if !strings.Contains(err.Error(), "SCRAPER_POLL_BACKOFF_MAX_MS") {
+		t.Errorf("Expected error to mention SCRAPER_POLL_BACKOFF_MAX_MS, got: %v", err)
+	}
+}
+
+func TestLoad_ScraperPolling_InvalidHTTPClientTimeout(t *testing.T) {
+	originalEnv := map[string]string{
+		"ENVIRONMENT":                    os.Getenv("ENVIRONMENT"),
+		"DATABASE_URL":                   os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":                     os.Getenv("JWT_SECRET"),
+		"SCRAPER_HTTP_CLIENT_TIMEOUT_MS": os.Getenv("SCRAPER_HTTP_CLIENT_TIMEOUT_MS"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("SCRAPER_HTTP_CLIENT_TIMEOUT_MS", "-5000")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Expected error for invalid SCRAPER_HTTP_CLIENT_TIMEOUT_MS, got nil")
+	}
+	if !strings.Contains(err.Error(), "SCRAPER_HTTP_CLIENT_TIMEOUT_MS") {
+		t.Errorf("Expected error to mention SCRAPER_HTTP_CLIENT_TIMEOUT_MS, got: %v", err)
+	}
+}
+
+func TestLoad_ScraperPolling_ValidConfig(t *testing.T) {
+	originalEnv := map[string]string{
+		"ENVIRONMENT":                    os.Getenv("ENVIRONMENT"),
+		"DATABASE_URL":                   os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":                     os.Getenv("JWT_SECRET"),
+		"SCRAPER_POLL_BACKOFF_START_MS":  os.Getenv("SCRAPER_POLL_BACKOFF_START_MS"),
+		"SCRAPER_POLL_BACKOFF_MAX_MS":    os.Getenv("SCRAPER_POLL_BACKOFF_MAX_MS"),
+		"SCRAPER_POLL_TIMEOUT_MS":        os.Getenv("SCRAPER_POLL_TIMEOUT_MS"),
+		"SCRAPER_HTTP_CLIENT_TIMEOUT_MS": os.Getenv("SCRAPER_HTTP_CLIENT_TIMEOUT_MS"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("SCRAPER_POLL_BACKOFF_START_MS", "100")
+	_ = os.Setenv("SCRAPER_POLL_BACKOFF_MAX_MS", "5000")
+	_ = os.Setenv("SCRAPER_POLL_TIMEOUT_MS", "60000")
+	_ = os.Setenv("SCRAPER_HTTP_CLIENT_TIMEOUT_MS", "15000")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Expected no error with valid polling config, got: %v", err)
+	}
+	if cfg.Scraper.PollBackoffStart != 100 {
+		t.Errorf("PollBackoffStart = %d, want 100", cfg.Scraper.PollBackoffStart)
+	}
+	if cfg.Scraper.PollBackoffMax != 5000 {
+		t.Errorf("PollBackoffMax = %d, want 5000", cfg.Scraper.PollBackoffMax)
+	}
+}
