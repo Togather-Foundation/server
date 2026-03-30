@@ -132,14 +132,13 @@ selectors:
 ```
 
 This concatenates matched text with spaces. Non-matching selectors are skipped.
-The single `description` field still works for backward compatibility — it's normalized
-to `description_selectors` internally. This feature solves truncated description issues
-(srv-nojwn).
+**This is the preferred approach.** The single `description` field is deprecated and
+emits a validation warning when used. Migrate to `description_selectors` to silence the
+warning. This feature solves truncated description issues (srv-nojwn).
 
-**Precedence rule:** When both `description` and `description_selectors` are set,
-`description` takes priority (the single value becomes the only element in
-`DescriptionSelectors`). This ensures a single extraction code path in Tier 1 and
-Tier 2, and applies consistently to both YAML configs and DB-loaded configs.
+**Precedence (deprecated):** When both `description` and `description_selectors` are set,
+`description` takes priority and a warning is emitted. Migrate to `description_selectors`
+only to resolve the warning.
 
 ## Individual Source Notes
 

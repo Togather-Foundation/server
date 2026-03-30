@@ -550,6 +550,10 @@ paragraph + full description + "more info" section), use `description_selectors`
 extract and concatenate text from all selectors. This solves the truncated description
 problem where only preview text is captured (srv-nojwn).
 
+**This is the preferred approach.** The single `description` field is deprecated
+and will be removed in a future version. Configs using `description` will emit a
+validation warning prompting migration to `description_selectors`.
+
 ```yaml
 selectors:
   event_list: "div.event-card"
@@ -568,13 +572,13 @@ selectors:
 3. All matched text fragments are concatenated with spaces in selector order
 4. If no selectors match, the description is empty (no crash)
 
-**Precedence:**
+**Precedence (deprecated):**
 
-- `description` (single selector) takes priority over `description_selectors` for
-  backward compatibility with existing configs
-- When `description` is set, it becomes the single element in `DescriptionSelectors`
-- When `description` is empty but `description_selectors` is set, use `description_selectors`
-- This ensures a single extraction code path in Tier 1 and Tier 2
+The single `description` field is kept for backward compatibility but is deprecated.
+When both are set, `description` takes precedence (becomes the only element in
+`DescriptionSelectors`), and a validation warning is emitted. This ensures a
+single extraction code path in Tier 1 and Tier 2. Migrate to `description_selectors`
+to silence the warning.
 
 **Example:**
 
@@ -590,9 +594,6 @@ For HTML:
 
 With `description_selectors: [".summary", ".full-description", ".more-info"]`:
 → Description = "Join us for an amazing exhibition. This event features works from local artists. Free admission."
-
-Existing configs using single `description: "p.summary"` continue to work unchanged —
-the single value is normalized to `DescriptionSelectors` internally.
 
 ### Quality Warnings
 

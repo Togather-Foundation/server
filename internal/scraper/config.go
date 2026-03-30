@@ -569,6 +569,15 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		errs = append(errs, fmt.Sprintf("max_pages: must be > 0, got %d", cfg.MaxPages))
 	}
 
+	// Warn about deprecated selectors.description usage.
+	if cfg.Selectors.Description != "" {
+		if len(cfg.Selectors.DescriptionSelectors) > 0 {
+			warnings = append(warnings, "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
+		} else {
+			warnings = append(warnings, "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version.")
+		}
+	}
+
 	// Warn about unrecognised FieldMap keys. These are non-fatal: the scraper
 	// silently ignores unknown keys, but a typo (e.g. "strat_date") would
 	// produce an empty field with no other indication to the operator.

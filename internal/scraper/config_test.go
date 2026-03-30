@@ -2551,3 +2551,80 @@ func TestSourceConfigFromDomain_DescriptionSelectorsNormalization(t *testing.T) 
 		})
 	}
 }
+
+// --------------------------------------------------------------------------
+// ValidateConfigWithWarnings — deprecated selectors.description (srv-nojwn)
+// --------------------------------------------------------------------------
+
+func TestValidateConfigWithWarnings_DeprecatedDescription(t *testing.T) {
+	t.Parallel()
+
+	base := SourceConfig{
+		Name:       "Test Source",
+		URL:        "https://example.com/events",
+		Tier:       1,
+		TrustLevel: 5,
+		MaxPages:   10,
+		Schedule:   "daily",
+		Enabled:    true,
+		Selectors: SelectorConfig{
+			EventList: "div.event-card",
+			Name:      "h2.title",
+		},
+	}
+
+	tests := []struct {
+		name         string
+		cfg          SourceConfig
+		wantWarnings []string // substrings expected in warnings
+	}{
+		{
+			name:         "no description field — no warning",
+			cfg:          base,
+			wantWarnings: nil,
+		},
+		{
+			name: "description_selectors only — no warning",
+			cfg: func() SourceConfig {
+				c := base
+				c.Selectors.DescriptionSelectors = []string{".lead", ".full"}
+				return c
+			}(),
+			wantWarnings: nil,
+		},
+		{
+			name: "description set — deprecation warning",
+			cfg: func() SourceConfig {
+				c := base
+				c.Selectors.Description = "p.summary"
+				return c
+			}(),
+			wantWarnings: []string{"selectors.description: deprecated", "description_selectors"},
+		},
+		{
+			name: "both description and description_selectors set — precedence warning",
+			cfg: func() SourceConfig {
+				c := base
+				c.Selectors.Description = "p.summary"
+				c.Selectors.DescriptionSelectors = []string{".lead", ".full"}
+				return c
+			}(),
+			wantWarnings: []string{"selectors.description: deprecated", "both description and description_selectors", "description takes precedence"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			warnings, err := ValidateConfigWithWarnings(tt.cfg)
+			require.NoError(t, err)
+
+			joined := strings.Join(warnings, "\n")
+			for _, wantSub := range tt.wantWarnings {
+				assert.Contains(t, joined, wantSub,
+					"expected warning substring %q in: %s", wantSub, joined)
+			}
+		})
+	}
+}
