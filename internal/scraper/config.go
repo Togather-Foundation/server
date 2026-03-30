@@ -661,6 +661,21 @@ func LoadSourceConfig(path string) (SourceConfig, error) {
 	return cfg, nil
 }
 
+// normalizeDescriptionSelectors applies the precedence rule: when Description
+// (single selector) is set, it takes precedence over DescriptionSelectors.
+// The Description value becomes the single element in DescriptionSelectors.
+// This ensures a single extraction code path in Tier 1/Tier 2.
+func normalizeDescriptionSelectors(cfg *SourceConfig) {
+	if cfg.Selectors.Description != "" {
+		cfg.Selectors.DescriptionSelectors = []string{cfg.Selectors.Description}
+	} else if len(cfg.Selectors.DescriptionSelectors) > 0 {
+		// Already populated from input, keep as-is
+	} else {
+		// Neither set — leave empty (no description extraction)
+		cfg.Selectors.DescriptionSelectors = nil
+	}
+}
+
 // loadFile reads a single YAML source config file and applies defaults.
 func loadFile(path string) (SourceConfig, error) {
 	data, err := os.ReadFile(path)
@@ -693,20 +708,7 @@ func loadFile(path string) (SourceConfig, error) {
 		cfg.Headless.Iframe.WaitTimeoutMs = 10000
 	}
 
-	// Normalize DescriptionSelectors: single description field takes precedence
-	// over description_selectors for backward compatibility. When description
-	// is set (non-empty), it becomes the first (and only) element in
-	// DescriptionSelectors. When description is empty but description_selectors
-	// is set, use description_selectors as-is. This ensures a single code path
-	// in Tier 1/Tier 2 extraction.
-	if cfg.Selectors.Description != "" {
-		cfg.Selectors.DescriptionSelectors = []string{cfg.Selectors.Description}
-	} else if len(cfg.Selectors.DescriptionSelectors) > 0 {
-		// Already populated from YAML, keep as-is
-	} else {
-		// Neither set — leave empty (no description extraction)
-		cfg.Selectors.DescriptionSelectors = nil
-	}
+	normalizeDescriptionSelectors(&cfg)
 
 	return cfg, nil
 }

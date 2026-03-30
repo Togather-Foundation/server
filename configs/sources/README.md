@@ -136,6 +136,11 @@ The single `description` field still works for backward compatibility — it's n
 to `description_selectors` internally. This feature solves truncated description issues
 (srv-nojwn).
 
+**Precedence rule:** When both `description` and `description_selectors` are set,
+`description` takes priority (the single value becomes the only element in
+`DescriptionSelectors`). This ensures a single extraction code path in Tier 1 and
+Tier 2, and applies consistently to both YAML configs and DB-loaded configs.
+
 ## Individual Source Notes
 
 ### harbourfront-centre.yaml (Tier 1, enabled)

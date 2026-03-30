@@ -44,6 +44,8 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		}
 	}
 
+	normalizeDescriptionSelectors(&cfg)
+
 	cfg.EventURLPattern = src.EventURLPattern
 	cfg.SkipMultiSessionCheck = src.SkipMultiSessionCheck
 	cfg.MultiSessionDurationThreshold = src.MultiSessionDurationThreshold

@@ -1371,12 +1371,17 @@ func TestParseMultiSessionThreshold(t *testing.T) {
 // json: struct tags, json.Marshal produced PascalCase keys ("EventList"), but
 // the DB stored snake_case keys ("event_list"), so Unmarshal silently produced
 // a zero-valued SelectorConfig on every read.
+//
+// Note: as of srv-nojwn, SourceConfigFromDomain applies description precedence
+// normalization, so the round-trip result may differ from the input when
+// Description is set (it gets copied to DescriptionSelectors).
 func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		selectors SelectorConfig
+		name               string
+		selectors          SelectorConfig
+		wantAfterNormalize SelectorConfig // expected after DB load (includes normalization)
 	}{
 		{
 			name: "all fields populated",
@@ -1391,6 +1396,19 @@ func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 				Image:       "img.thumb",
 				Pagination:  "a.next-page",
 			},
+			// After DB load, Description is normalized to DescriptionSelectors (srv-nojwn)
+			wantAfterNormalize: SelectorConfig{
+				EventList:            "div.event-card",
+				Name:                 "h2.title",
+				StartDate:            "time[datetime]",
+				EndDate:              "time.end",
+				Location:             "span.venue",
+				Description:          "p.summary",
+				URL:                  "a.event-link",
+				Image:                "img.thumb",
+				Pagination:           "a.next-page",
+				DescriptionSelectors: []string{"p.summary"},
+			},
 		},
 		{
 			name: "partial fields (Tier 2 typical)",
@@ -1400,10 +1418,30 @@ func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 				StartDate: ".evcal_desc2",
 				URL:       ".evcal_list_a a",
 			},
+			// No Description set, so no normalization applies
+			wantAfterNormalize: SelectorConfig{
+				EventList: ".eventon_list_event",
+				Name:      ".evcal_event_title",
+				StartDate: ".evcal_desc2",
+				URL:       ".evcal_list_a a",
+			},
 		},
 		{
-			name:      "empty (Tier 0 — no selectors)",
-			selectors: SelectorConfig{},
+			name:               "empty (Tier 0 — no selectors)",
+			selectors:          SelectorConfig{},
+			wantAfterNormalize: SelectorConfig{},
+		},
+		{
+			name: "with DescriptionSelectors (no Description)",
+			selectors: SelectorConfig{
+				EventList:            ".card",
+				DescriptionSelectors: []string{".lead", ".full"},
+			},
+			// DescriptionSelectors preserved as-is when Description is empty
+			wantAfterNormalize: SelectorConfig{
+				EventList:            ".card",
+				DescriptionSelectors: []string{".lead", ".full"},
+			},
 		},
 	}
 
@@ -1440,11 +1478,11 @@ func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 				Selectors:  raw,
 			}
 
-			// SourceConfigFromDomain must reconstruct the original SelectorConfig.
+			// SourceConfigFromDomain must reconstruct with normalization applied.
 			cfg, err := SourceConfigFromDomain(src)
 			require.NoError(t, err)
-			assert.Equal(t, tt.selectors, cfg.Selectors,
-				"SourceConfigFromDomain must round-trip SelectorConfig through JSON")
+			assert.Equal(t, tt.wantAfterNormalize, cfg.Selectors,
+				"SourceConfigFromDomain must round-trip SelectorConfig through JSON with normalization")
 		})
 	}
 }
@@ -1463,7 +1501,8 @@ func TestSourceConfigFromDomain_EmptySelectors(t *testing.T) {
 
 	cfg, err := SourceConfigFromDomain(src)
 	require.NoError(t, err)
-	assert.Equal(t, SelectorConfig{}, cfg.Selectors)
+	// Selectors is zero-value; normalization produces nil DescriptionSelectors
+	assert.Equal(t, SelectorConfig{DescriptionSelectors: nil}, cfg.Selectors)
 }
 
 // TestSourceConfigFromDomain_InvalidJSON verifies that malformed JSONB in the
@@ -2445,4 +2484,70 @@ selectors:
 		assert.Equal(t, []string{".lead", ".full"}, cfg.Selectors.DescriptionSelectors,
 			"empty description with description_selectors should use description_selectors")
 	})
+}
+
+// --------------------------------------------------------------------------
+// SourceConfigFromDomain — DescriptionSelectors normalization (srv-nojwn)
+// --------------------------------------------------------------------------
+
+// TestSourceConfigFromDomain_DescriptionSelectorsNormalization verifies that
+// description precedence is applied consistently when loading configs from DB.
+func TestSourceConfigFromDomain_DescriptionSelectorsNormalization(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		selectorsJSON     string
+		wantDescSelectors []string
+	}{
+		{
+			name:              "single description field - normalized to DescriptionSelectors",
+			selectorsJSON:     `{"event_list": ".card", "description": "p.summary"}`,
+			wantDescSelectors: []string{"p.summary"},
+		},
+		{
+			name:              "description_selectors field - used as-is",
+			selectorsJSON:     `{"event_list": ".card", "description_selectors": [".lead", ".full"]}`,
+			wantDescSelectors: []string{".lead", ".full"},
+		},
+		{
+			name:              "both fields - description takes precedence",
+			selectorsJSON:     `{"event_list": ".card", "description": "p.summary", "description_selectors": [".lead", ".full"]}`,
+			wantDescSelectors: []string{"p.summary"},
+		},
+		{
+			name:              "empty description with description_selectors - uses description_selectors",
+			selectorsJSON:     `{"event_list": ".card", "description": "", "description_selectors": [".lead", ".full"]}`,
+			wantDescSelectors: []string{".lead", ".full"},
+		},
+		{
+			name:              "neither field set - nil DescriptionSelectors",
+			selectorsJSON:     `{"event_list": ".card"}`,
+			wantDescSelectors: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			src := domainScraper.Source{
+				Name:       "test-source",
+				URL:        "https://example.com/events",
+				Tier:       1,
+				TrustLevel: 5,
+				License:    "CC0-1.0",
+				Enabled:    true,
+				MaxPages:   10,
+				Schedule:   "weekly",
+				Selectors:  []byte(tt.selectorsJSON),
+			}
+
+			cfg, err := SourceConfigFromDomain(src)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantDescSelectors, cfg.Selectors.DescriptionSelectors,
+				"DescriptionSelectors should be normalized consistently for DB-loaded configs")
+		})
+	}
 }
