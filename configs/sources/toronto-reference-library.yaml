@@ -19,7 +19,8 @@ selectors:
   event_list: ".cp-events-search-item"
   name: "h3.cp-heading a"
   location: ".cp-event-location-name a"
-  description: ".cp-event-description"
+  description_selectors:
+    - ".cp-event-description"
   url: "h3.cp-heading a"
   image: ".cp-event-featured-image img"
   pagination: "a.cp-pagination-btn--next"

@@ -70,6 +70,11 @@ type SourceConfig struct {
 	// source repository. It is NOT read from YAML. Used by sitemap scraping
 	// to filter URLs by lastmod date.
 	LastScrapedAt *time.Time `yaml:"-" json:"-"`
+
+	// normalized is true after normalizeDescriptionSelectors has been applied.
+	// Used to avoid emitting inaccurate deprecation warnings in ValidateConfigWithWarnings
+	// when the config has already been normalized (warning already emitted accurately in loadFile).
+	normalized bool `yaml:"-" json:"-"`
 }
 
 // SitemapConfig holds sitemap-based URL discovery options. When set on a
@@ -128,6 +133,24 @@ type SelectorConfig struct {
 	//     - ".first [class^='time-container-']"     # "Thu 5th March"
 	//     - "[style*='display: flex'] [class^='time-container-']"  # "9:30 PM"
 	DateSelectors []string `yaml:"date_selectors,omitempty" json:"date_selectors,omitempty"`
+	// DescriptionSelectors is a list of CSS selectors that each extract a
+	// fragment of the event description. The scraper concatenates all matched
+	// text fragments in order, separated by a space, to produce the full
+	// description. This is useful when a site's description is split across
+	// multiple elements (e.g., a summary paragraph + expanded content).
+	//
+	// Note: the legacy single Description field takes precedence — during config
+	// loading, normalizeDescriptionSelectors promotes Description to
+	// DescriptionSelectors when Description is set. This ensures a single
+	// extraction code path in Tier 1/Tier 2. Use DescriptionSelectors for new
+	// configs; Description is deprecated.
+	//
+	// Example:
+	//   description_selectors:
+	//     - ".summary"           # Lead paragraph
+	//     - ".full-description"  # Expanded content
+	//     - ".more-info"         # Additional details
+	DescriptionSelectors []string `yaml:"description_selectors,omitempty" json:"description_selectors,omitempty"`
 }
 
 // HeadlessConfig holds Tier 2 headless-browser-specific options.
@@ -553,6 +576,17 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		errs = append(errs, fmt.Sprintf("max_pages: must be > 0, got %d", cfg.MaxPages))
 	}
 
+	// Warn about deprecated selectors.description usage.
+	// Skip this warning if the config has already been normalized (loadFile/SourceConfigFromDomain
+	// already emitted accurate warnings based on the original input state).
+	if !cfg.normalized && cfg.Selectors.Description != "" {
+		if len(cfg.Selectors.DescriptionSelectors) > 0 {
+			warnings = append(warnings, "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
+		} else {
+			warnings = append(warnings, "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version.")
+		}
+	}
+
 	// Warn about unrecognised FieldMap keys. These are non-fatal: the scraper
 	// silently ignores unknown keys, but a typo (e.g. "strat_date") would
 	// produce an empty field with no other indication to the operator.
@@ -645,6 +679,27 @@ func LoadSourceConfig(path string) (SourceConfig, error) {
 	return cfg, nil
 }
 
+// normalizeDescriptionSelectors applies the precedence rule: when Description
+// (single selector) is set, it takes precedence over DescriptionSelectors.
+// The Description value becomes the single element in DescriptionSelectors.
+// This ensures a single extraction code path in Tier 1/Tier 2.
+//
+// Returns true if the original Description field was non-empty (before
+// normalization), allowing callers to emit accurate deprecation warnings
+// that reflect the actual input rather than the post-normalization state.
+func normalizeDescriptionSelectors(cfg *SourceConfig) bool {
+	hadDescription := cfg.Selectors.Description != ""
+	if cfg.Selectors.Description != "" {
+		cfg.Selectors.DescriptionSelectors = []string{cfg.Selectors.Description}
+	} else if len(cfg.Selectors.DescriptionSelectors) > 0 {
+		// Already populated from input, keep as-is
+	} else {
+		// Neither set — leave empty (no description extraction)
+		cfg.Selectors.DescriptionSelectors = nil
+	}
+	return hadDescription
+}
+
 // loadFile reads a single YAML source config file and applies defaults.
 func loadFile(path string) (SourceConfig, error) {
 	data, err := os.ReadFile(path)
@@ -675,6 +730,22 @@ func loadFile(path string) (SourceConfig, error) {
 	}
 	if cfg.Headless.Iframe != nil && cfg.Headless.Iframe.WaitTimeoutMs == 0 {
 		cfg.Headless.Iframe.WaitTimeoutMs = 10000
+	}
+
+	// Track original DescriptionSelectors presence before normalization for accurate warning.
+	hadDescriptionSelectors := len(cfg.Selectors.DescriptionSelectors) > 0
+	hadDescription := normalizeDescriptionSelectors(&cfg)
+	cfg.normalized = true
+
+	// Emit accurate deprecation warnings based on original input (before normalization).
+	if hadDescription {
+		if hadDescriptionSelectors {
+			slog.Warn("source config warning", "file", path,
+				"warning", "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
+		} else {
+			slog.Warn("source config warning", "file", path,
+				"warning", "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version.")
+		}
 	}
 
 	return cfg, nil

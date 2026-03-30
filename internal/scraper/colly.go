@@ -123,8 +123,16 @@ func (e *CollyExtractor) ScrapeWithSelectors(ctx context.Context, config SourceC
 			staticLocation = extractTextOrAttr(h, config.Selectors.Location)
 		}
 
+		// Description extraction: use DescriptionSelectors (array) if set; fallback
+		// to legacy single Description if not. Note: during config loading,
+		// normalizeDescriptionSelectors promotes Description to DescriptionSelectors
+		// when Description is set, so the DescriptionSelectors path will be taken
+		// for configs using either field — this ensures a single extraction code path.
 		staticDescription := ""
-		if config.Selectors.Description != "" {
+		if len(config.Selectors.DescriptionSelectors) > 0 {
+			staticDescription = extractDescriptionFromSelectors(h, config.Selectors.DescriptionSelectors)
+		} else if config.Selectors.Description != "" {
+			// Fallback to legacy single Description selector (rare; prefer DescriptionSelectors).
 			staticDescription = extractTextOrAttr(h, config.Selectors.Description)
 		}
 
@@ -531,4 +539,23 @@ func selectionTextBR(s *goquery.Selection) string {
 	walk(s)
 	// Collapse runs of whitespace.
 	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// extractDescriptionFromSelectors extracts text from multiple CSS selectors and
+// concatenates them with spaces. This handles cases where event descriptions are
+// split across multiple elements (e.g., summary + full description + more info).
+// Empty selector matches are skipped; if all are empty, returns empty string.
+func extractDescriptionFromSelectors(h *colly.HTMLElement, selectors []string) string {
+	if len(selectors) == 0 {
+		return ""
+	}
+
+	var parts []string
+	for _, sel := range selectors {
+		text := extractTextOrAttr(h, sel)
+		if text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, " ")
 }

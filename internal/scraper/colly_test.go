@@ -909,3 +909,151 @@ func TestScrapeWithSelectors_MultiRowConsolidation(t *testing.T) {
 			"occurrence %d start date should contain 2026-06-0%d", i, 1+i)
 	}
 }
+
+// TestScrapeWithSelectors_DescriptionSelectors verifies that description_selectors
+// extracts and concatenates text from multiple selectors (srv-nojwn).
+func TestScrapeWithSelectors_DescriptionSelectors(t *testing.T) {
+	t.Parallel()
+
+	const html = `
+<html><body>
+<div class="event">
+	<h1>Art Exhibition</h1>
+	<p class="summary">Join us for an amazing exhibition.</p>
+	<div class="full-description">This event features works from local artists. It's a must-see!</div>
+	<p class="more-info">Free admission. Accessible venue.</p>
+	<span class="location">Gallery One</span>
+	<a href="/events/1">Event Link</a>
+</div>
+</body></html>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := SourceConfig{
+		Name:     "Description Selectors Test",
+		URL:      server.URL,
+		Tier:     1,
+		MaxPages: 1,
+		Selectors: SelectorConfig{
+			EventList: ".event",
+			Name:      "h1",
+			Location:  "span.location",
+			// Use DescriptionSelectors for multi-element extraction
+			DescriptionSelectors: []string{
+				"p.summary",
+				"div.full-description",
+				"p.more-info",
+			},
+			URL: "a",
+		},
+	}
+
+	extractor := newTestExtractor()
+	rawEvents, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, rawEvents, 1, "should extract 1 RawEvent")
+
+	event := rawEvents[0]
+	assert.Equal(t, "Art Exhibition", event.Name)
+	assert.Equal(t, "Gallery One", event.Location)
+	// Description should be concatenated from all three selectors
+	expectedDesc := "Join us for an amazing exhibition. This event features works from local artists. It's a must-see! Free admission. Accessible venue."
+	assert.Equal(t, expectedDesc, event.Description,
+		"description should be assembled from all description_selectors")
+}
+
+// TestScrapeWithSelectors_DescriptionSelectorsFallback verifies that when
+// DescriptionSelectors is empty, it falls back to single Description selector.
+func TestScrapeWithSelectors_DescriptionSelectorsFallback(t *testing.T) {
+	t.Parallel()
+
+	const html = `
+<html><body>
+<div class="event">
+	<h1>Simple Event</h1>
+	<p class="desc">A simple description.</p>
+	<span class="location">Venue</span>
+</div>
+</body></html>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	t.Cleanup(server.Close)
+
+	// Test with single Description (gets normalized to DescriptionSelectors internally)
+	cfg := SourceConfig{
+		Name:     "Description Fallback Test",
+		URL:      server.URL,
+		Tier:     1,
+		MaxPages: 1,
+		Selectors: SelectorConfig{
+			EventList: ".event",
+			Name:      "h1",
+			Location:  "span.location",
+			// Single description - should be normalized to DescriptionSelectors
+			Description: "p.desc",
+		},
+	}
+
+	extractor := newTestExtractor()
+	rawEvents, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, rawEvents, 1, "should extract 1 RawEvent")
+
+	event := rawEvents[0]
+	assert.Equal(t, "Simple Event", event.Name)
+	assert.Equal(t, "A simple description.", event.Description,
+		"description should be extracted via normalized DescriptionSelectors")
+}
+
+// TestScrapeWithSelectors_DescriptionSelectorsEmptyResult verifies that when
+// no description selectors match, the result is empty (no crash).
+func TestScrapeWithSelectors_DescriptionSelectorsEmptyResult(t *testing.T) {
+	t.Parallel()
+
+	const html = `
+<html><body>
+<div class="event">
+	<h1>No Description Event</h1>
+	<span class="location">Venue</span>
+</div>
+</body></html>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(html))
+	}))
+	t.Cleanup(server.Close)
+
+	cfg := SourceConfig{
+		Name:     "Empty Description Test",
+		URL:      server.URL,
+		Tier:     1,
+		MaxPages: 1,
+		Selectors: SelectorConfig{
+			EventList: ".event",
+			Name:      "h1",
+			Location:  "span.location",
+			DescriptionSelectors: []string{
+				"p.nonexistent",
+				"div.alsonotthere",
+			},
+		},
+	}
+
+	extractor := newTestExtractor()
+	rawEvents, _, err := extractor.ScrapeWithSelectors(context.Background(), cfg)
+	require.NoError(t, err)
+	require.Len(t, rawEvents, 1, "should extract 1 RawEvent")
+
+	event := rawEvents[0]
+	assert.Equal(t, "No Description Event", event.Name)
+	assert.Equal(t, "", event.Description,
+		"description should be empty when no selectors match")
+}

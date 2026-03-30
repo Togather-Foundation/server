@@ -1,10 +1,13 @@
 package scraper
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +15,47 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type warningHandler struct {
+	mu       sync.Mutex
+	warnings []string
+}
+
+func (h *warningHandler) Handle(ctx context.Context, r slog.Record) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var msg string
+	if r.Message != "" {
+		msg = r.Message
+	}
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "warning" {
+			msg = a.Value.String()
+		}
+		return true
+	})
+	h.warnings = append(h.warnings, msg)
+	return nil
+}
+
+func (h *warningHandler) GetWarnings() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slicesClone(h.warnings)
+}
+
+func (h *warningHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return h }
+func (h *warningHandler) WithGroup(name string) slog.Handler       { return h }
+func (h *warningHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func slicesClone[T any](s []T) []T {
+	if s == nil {
+		return nil
+	}
+	c := make([]T, len(s))
+	copy(c, s)
+	return c
+}
 
 // writeYAML writes content to a file named fname inside dir.
 func writeYAML(t *testing.T, dir, fname, content string) string {
@@ -1371,12 +1415,17 @@ func TestParseMultiSessionThreshold(t *testing.T) {
 // json: struct tags, json.Marshal produced PascalCase keys ("EventList"), but
 // the DB stored snake_case keys ("event_list"), so Unmarshal silently produced
 // a zero-valued SelectorConfig on every read.
+//
+// Note: as of srv-nojwn, SourceConfigFromDomain applies description precedence
+// normalization, so the round-trip result may differ from the input when
+// Description is set (it gets copied to DescriptionSelectors).
 func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name      string
-		selectors SelectorConfig
+		name               string
+		selectors          SelectorConfig
+		wantAfterNormalize SelectorConfig // expected after DB load (includes normalization)
 	}{
 		{
 			name: "all fields populated",
@@ -1391,6 +1440,19 @@ func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 				Image:       "img.thumb",
 				Pagination:  "a.next-page",
 			},
+			// After DB load, Description is normalized to DescriptionSelectors (srv-nojwn)
+			wantAfterNormalize: SelectorConfig{
+				EventList:            "div.event-card",
+				Name:                 "h2.title",
+				StartDate:            "time[datetime]",
+				EndDate:              "time.end",
+				Location:             "span.venue",
+				Description:          "p.summary",
+				URL:                  "a.event-link",
+				Image:                "img.thumb",
+				Pagination:           "a.next-page",
+				DescriptionSelectors: []string{"p.summary"},
+			},
 		},
 		{
 			name: "partial fields (Tier 2 typical)",
@@ -1400,10 +1462,30 @@ func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 				StartDate: ".evcal_desc2",
 				URL:       ".evcal_list_a a",
 			},
+			// No Description set, so no normalization applies
+			wantAfterNormalize: SelectorConfig{
+				EventList: ".eventon_list_event",
+				Name:      ".evcal_event_title",
+				StartDate: ".evcal_desc2",
+				URL:       ".evcal_list_a a",
+			},
 		},
 		{
-			name:      "empty (Tier 0 — no selectors)",
-			selectors: SelectorConfig{},
+			name:               "empty (Tier 0 — no selectors)",
+			selectors:          SelectorConfig{},
+			wantAfterNormalize: SelectorConfig{},
+		},
+		{
+			name: "with DescriptionSelectors (no Description)",
+			selectors: SelectorConfig{
+				EventList:            ".card",
+				DescriptionSelectors: []string{".lead", ".full"},
+			},
+			// DescriptionSelectors preserved as-is when Description is empty
+			wantAfterNormalize: SelectorConfig{
+				EventList:            ".card",
+				DescriptionSelectors: []string{".lead", ".full"},
+			},
 		},
 	}
 
@@ -1440,11 +1522,11 @@ func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 				Selectors:  raw,
 			}
 
-			// SourceConfigFromDomain must reconstruct the original SelectorConfig.
+			// SourceConfigFromDomain must reconstruct with normalization applied.
 			cfg, err := SourceConfigFromDomain(src)
 			require.NoError(t, err)
-			assert.Equal(t, tt.selectors, cfg.Selectors,
-				"SourceConfigFromDomain must round-trip SelectorConfig through JSON")
+			assert.Equal(t, tt.wantAfterNormalize, cfg.Selectors,
+				"SourceConfigFromDomain must round-trip SelectorConfig through JSON with normalization")
 		})
 	}
 }
@@ -1463,7 +1545,8 @@ func TestSourceConfigFromDomain_EmptySelectors(t *testing.T) {
 
 	cfg, err := SourceConfigFromDomain(src)
 	require.NoError(t, err)
-	assert.Equal(t, SelectorConfig{}, cfg.Selectors)
+	// Selectors is zero-value; normalization produces nil DescriptionSelectors
+	assert.Equal(t, SelectorConfig{DescriptionSelectors: nil}, cfg.Selectors)
 }
 
 // TestSourceConfigFromDomain_InvalidJSON verifies that malformed JSONB in the
@@ -2320,4 +2403,570 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 			assert.Equal(t, cfg, got, "SourceConfig should survive DB round-trip without data loss")
 		})
 	}
+}
+
+// --------------------------------------------------------------------------
+// DescriptionSelectors — srv-nojwn
+// --------------------------------------------------------------------------
+
+// TestLoadFile_DescriptionSelectors verifies that description_selectors is parsed
+// correctly from YAML and available for both Tier 1 and Tier 2 extraction.
+func TestLoadFile_DescriptionSelectors(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single description selector parses as single-element slice in DescriptionSelectors", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Single Desc Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: "p.summary"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "single_desc.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		// Single description should also populate DescriptionSelectors for the unified path
+		assert.Equal(t, []string{"p.summary"}, cfg.Selectors.DescriptionSelectors,
+			"single description should be normalized to DescriptionSelectors")
+	})
+
+	t.Run("multiple description selectors parse correctly via description_selectors field", func(t *testing.T) {
+		t.Parallel()
+		// Multiple selectors should be specified via the explicit description_selectors field
+		yamlContent := `
+name: "Multi Desc Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description_selectors:
+    - "p.summary"
+    - "div.full-description"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "multi_desc.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"p.summary", "div.full-description"}, cfg.Selectors.DescriptionSelectors,
+			"multiple description selectors should be parsed as DescriptionSelectors")
+	})
+
+	t.Run("description_selectors field parses correctly", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Desc Selectors Field Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description_selectors:
+    - ".lead"
+    - ".full"
+    - ".more"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "desc_selectors.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{".lead", ".full", ".more"}, cfg.Selectors.DescriptionSelectors,
+			"description_selectors field should be parsed correctly")
+	})
+
+	t.Run("both description and description_selectors - description takes precedence", func(t *testing.T) {
+		t.Parallel()
+		// When both are set, description (single) takes precedence for backward compat
+		yamlContent := `
+name: "Both Desc Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: "p.summary"
+  description_selectors:
+    - ".lead"
+    - ".full"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "both_desc.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		// description (single) takes precedence for backward compatibility
+		assert.Equal(t, []string{"p.summary"}, cfg.Selectors.DescriptionSelectors,
+			"description should take precedence over description_selectors")
+	})
+
+	t.Run("empty description with description_selectors uses description_selectors", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Desc Selectors Only"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: ""
+  description_selectors:
+    - ".lead"
+    - ".full"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "desc_selectors_only.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, []string{".lead", ".full"}, cfg.Selectors.DescriptionSelectors,
+			"empty description with description_selectors should use description_selectors")
+	})
+}
+
+// TestLoadFile_DescriptionSelectorsWarnings verifies that loadFile emits accurate
+// deprecation warnings based on the original YAML input, not the post-normalization
+// state. This is a regression test for the inaccurate "both set" warning that could
+// appear after normalization when only description was set in the YAML.
+func TestLoadFile_DescriptionSelectorsWarnings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("only description set - accurate deprecation warning (not 'both set')", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Desc Only Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: "p.summary"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "desc_only.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+
+		// After normalization, both are populated, but the warning should reflect original input
+		assert.Equal(t, []string{"p.summary"}, cfg.Selectors.DescriptionSelectors)
+		assert.True(t, cfg.normalized, "normalized flag should be set after loadFile")
+	})
+
+	t.Run("both description and description_selectors set - accurate 'both set' warning", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "Both Set Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: "p.summary"
+  description_selectors:
+    - ".lead"
+    - ".full"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "both_set.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+
+		// Description takes precedence
+		assert.Equal(t, []string{"p.summary"}, cfg.Selectors.DescriptionSelectors)
+		assert.True(t, cfg.normalized)
+	})
+
+	t.Run("only description_selectors set - no warning", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "DescSelectors Only Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description_selectors:
+    - ".lead"
+    - ".full"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "desc_selectors_only.yaml", yamlContent)
+
+		cfg, err := loadFile(path)
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{".lead", ".full"}, cfg.Selectors.DescriptionSelectors)
+		assert.True(t, cfg.normalized)
+	})
+}
+
+// --------------------------------------------------------------------------
+// SourceConfigFromDomain — DescriptionSelectors normalization (srv-nojwn)
+// --------------------------------------------------------------------------
+
+// TestSourceConfigFromDomain_DescriptionSelectorsNormalization verifies that
+// description precedence is applied consistently when loading configs from DB.
+func TestSourceConfigFromDomain_DescriptionSelectorsNormalization(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name              string
+		selectorsJSON     string
+		wantDescSelectors []string
+	}{
+		{
+			name:              "single description field - normalized to DescriptionSelectors",
+			selectorsJSON:     `{"event_list": ".card", "description": "p.summary"}`,
+			wantDescSelectors: []string{"p.summary"},
+		},
+		{
+			name:              "description_selectors field - used as-is",
+			selectorsJSON:     `{"event_list": ".card", "description_selectors": [".lead", ".full"]}`,
+			wantDescSelectors: []string{".lead", ".full"},
+		},
+		{
+			name:              "both fields - description takes precedence",
+			selectorsJSON:     `{"event_list": ".card", "description": "p.summary", "description_selectors": [".lead", ".full"]}`,
+			wantDescSelectors: []string{"p.summary"},
+		},
+		{
+			name:              "empty description with description_selectors - uses description_selectors",
+			selectorsJSON:     `{"event_list": ".card", "description": "", "description_selectors": [".lead", ".full"]}`,
+			wantDescSelectors: []string{".lead", ".full"},
+		},
+		{
+			name:              "neither field set - nil DescriptionSelectors",
+			selectorsJSON:     `{"event_list": ".card"}`,
+			wantDescSelectors: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			src := domainScraper.Source{
+				Name:       "test-source",
+				URL:        "https://example.com/events",
+				Tier:       1,
+				TrustLevel: 5,
+				License:    "CC0-1.0",
+				Enabled:    true,
+				MaxPages:   10,
+				Schedule:   "weekly",
+				Selectors:  []byte(tt.selectorsJSON),
+			}
+
+			cfg, err := SourceConfigFromDomain(src)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantDescSelectors, cfg.Selectors.DescriptionSelectors,
+				"DescriptionSelectors should be normalized consistently for DB-loaded configs")
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
+// ValidateConfigWithWarnings — deprecated selectors.description (srv-nojwn)
+// --------------------------------------------------------------------------
+
+func TestValidateConfigWithWarnings_DeprecatedDescription(t *testing.T) {
+	t.Parallel()
+
+	base := SourceConfig{
+		Name:       "Test Source",
+		URL:        "https://example.com/events",
+		Tier:       1,
+		TrustLevel: 5,
+		MaxPages:   10,
+		Schedule:   "daily",
+		Enabled:    true,
+		Selectors: SelectorConfig{
+			EventList: "div.event-card",
+			Name:      "h2.title",
+		},
+	}
+
+	tests := []struct {
+		name         string
+		cfg          SourceConfig
+		wantWarnings []string // substrings expected in warnings
+	}{
+		{
+			name:         "no description field — no warning",
+			cfg:          base,
+			wantWarnings: nil,
+		},
+		{
+			name: "description_selectors only — no warning",
+			cfg: func() SourceConfig {
+				c := base
+				c.Selectors.DescriptionSelectors = []string{".lead", ".full"}
+				return c
+			}(),
+			wantWarnings: nil,
+		},
+		{
+			name: "description set — deprecation warning",
+			cfg: func() SourceConfig {
+				c := base
+				c.Selectors.Description = "p.summary"
+				return c
+			}(),
+			wantWarnings: []string{"selectors.description: deprecated", "description_selectors"},
+		},
+		{
+			name: "both description and description_selectors set — precedence warning",
+			cfg: func() SourceConfig {
+				c := base
+				c.Selectors.Description = "p.summary"
+				c.Selectors.DescriptionSelectors = []string{".lead", ".full"}
+				return c
+			}(),
+			wantWarnings: []string{"selectors.description: deprecated", "both description and description_selectors", "description takes precedence"},
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			warnings, err := ValidateConfigWithWarnings(tt.cfg)
+			require.NoError(t, err)
+
+			joined := strings.Join(warnings, "\n")
+			for _, wantSub := range tt.wantWarnings {
+				assert.Contains(t, joined, wantSub,
+					"expected warning substring %q in: %s", wantSub, joined)
+			}
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
+// slog.Warn — loadFile path (srv-nojwn)
+// --------------------------------------------------------------------------
+
+func TestLoadFile_DescriptionDeprecationWarningsSlog(t *testing.T) {
+	dir := t.TempDir()
+
+	// Save original default logger and restore after test
+	originalDefault := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalDefault) })
+
+	t.Run("only description set - deprecation warning (NOT both set)", func(t *testing.T) {
+		yamlContent := `
+name: "Desc Only Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: "p.summary"
+`
+		path := writeYAML(t, dir, "desc_only_3.yaml", yamlContent)
+
+		handler := &warningHandler{}
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
+
+		_, err := loadFile(path)
+		require.NoError(t, err)
+
+		warnings := handler.GetWarnings()
+		require.NotEmpty(t, warnings, "expected slog.Warn to be called, got: %v", warnings)
+
+		foundDeprecation := false
+		foundBothSet := false
+		for _, w := range warnings {
+			if strings.Contains(w, "selectors.description: deprecated") {
+				foundDeprecation = true
+			}
+			if strings.Contains(w, "both description and description_selectors are set") {
+				foundBothSet = true
+			}
+		}
+		assert.True(t, foundDeprecation, "expected deprecation warning for description, got: %v", warnings)
+		assert.False(t, foundBothSet, "should NOT warn about both fields when only description was set, got: %v", warnings)
+	})
+
+	t.Run("both description and description_selectors set - precedence warning with 'takes precedence'", func(t *testing.T) {
+		yamlContent := `
+name: "Both Set Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description: "p.summary"
+  description_selectors:
+    - ".lead"
+    - ".full"
+`
+		path := writeYAML(t, dir, "both_set_3.yaml", yamlContent)
+
+		handler := &warningHandler{}
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
+
+		_, err := loadFile(path)
+		require.NoError(t, err)
+
+		warnings := handler.GetWarnings()
+		require.NotEmpty(t, warnings, "expected slog.Warn to be called, got: %v", warnings)
+
+		foundPrecedence := false
+		for _, w := range warnings {
+			if strings.Contains(w, "description takes precedence") {
+				foundPrecedence = true
+			}
+		}
+		assert.True(t, foundPrecedence, "expected precedence warning containing 'description takes precedence', got: %v", warnings)
+	})
+
+	t.Run("only description_selectors set - no warning", func(t *testing.T) {
+		yamlContent := `
+name: "DescSelectors Only Source"
+url: "https://example.com/events"
+tier: 1
+selectors:
+  event_list: ".event-card"
+  name: "h2.title"
+  description_selectors:
+    - ".lead"
+    - ".full"
+`
+		path := writeYAML(t, dir, "desc_selectors_only_3.yaml", yamlContent)
+
+		handler := &warningHandler{}
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
+
+		_, err := loadFile(path)
+		require.NoError(t, err)
+
+		warnings := handler.GetWarnings()
+		for _, w := range warnings {
+			assert.NotContains(t, w, "selectors.description", "should not warn about description when not set, got: %v", warnings)
+		}
+	})
+}
+
+// --------------------------------------------------------------------------
+// slog.Warn — SourceConfigFromDomain path (srv-nojwn)
+// --------------------------------------------------------------------------
+
+func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T) {
+	// Save original default logger and restore after test
+	originalDefault := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(originalDefault) })
+
+	t.Run("only description set - deprecation warning (NOT both set)", func(t *testing.T) {
+		selectorsJSON := `{"event_list": ".card", "description": "p.summary"}`
+
+		src := domainScraper.Source{
+			Name:       "test-source",
+			URL:        "https://example.com/events",
+			Tier:       1,
+			TrustLevel: 5,
+			License:    "CC0-1.0",
+			Enabled:    true,
+			MaxPages:   10,
+			Schedule:   "weekly",
+			Selectors:  []byte(selectorsJSON),
+		}
+
+		handler := &warningHandler{}
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
+
+		_, err := SourceConfigFromDomain(src)
+		require.NoError(t, err)
+
+		warnings := handler.GetWarnings()
+		require.NotEmpty(t, warnings, "expected slog.Warn to be called, got: %v", warnings)
+
+		foundDeprecation := false
+		foundBothSet := false
+		for _, w := range warnings {
+			if strings.Contains(w, "selectors.description: deprecated") {
+				foundDeprecation = true
+			}
+			if strings.Contains(w, "both description and description_selectors are set") {
+				foundBothSet = true
+			}
+		}
+		assert.True(t, foundDeprecation, "expected deprecation warning for description, got: %v", warnings)
+		assert.False(t, foundBothSet, "should NOT warn about both fields when only description was set, got: %v", warnings)
+	})
+
+	t.Run("both description and description_selectors set - precedence warning with 'takes precedence'", func(t *testing.T) {
+		selectorsJSON := `{"event_list": ".card", "description": "p.summary", "description_selectors": [".lead", ".full"]}`
+
+		src := domainScraper.Source{
+			Name:       "test-source",
+			URL:        "https://example.com/events",
+			Tier:       1,
+			TrustLevel: 5,
+			License:    "CC0-1.0",
+			Enabled:    true,
+			MaxPages:   10,
+			Schedule:   "weekly",
+			Selectors:  []byte(selectorsJSON),
+		}
+
+		handler := &warningHandler{}
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
+
+		_, err := SourceConfigFromDomain(src)
+		require.NoError(t, err)
+
+		warnings := handler.GetWarnings()
+		require.NotEmpty(t, warnings, "expected slog.Warn to be called, got: %v", warnings)
+
+		foundPrecedence := false
+		for _, w := range warnings {
+			if strings.Contains(w, "description takes precedence") {
+				foundPrecedence = true
+			}
+		}
+		assert.True(t, foundPrecedence, "expected precedence warning containing 'description takes precedence', got: %v", warnings)
+	})
+
+	t.Run("only description_selectors set - no warning", func(t *testing.T) {
+		selectorsJSON := `{"event_list": ".card", "description_selectors": [".lead", ".full"]}`
+
+		src := domainScraper.Source{
+			Name:       "test-source",
+			URL:        "https://example.com/events",
+			Tier:       1,
+			TrustLevel: 5,
+			License:    "CC0-1.0",
+			Enabled:    true,
+			MaxPages:   10,
+			Schedule:   "weekly",
+			Selectors:  []byte(selectorsJSON),
+		}
+
+		handler := &warningHandler{}
+		logger := slog.New(handler)
+		slog.SetDefault(logger)
+
+		_, err := SourceConfigFromDomain(src)
+		require.NoError(t, err)
+
+		warnings := handler.GetWarnings()
+		for _, w := range warnings {
+			assert.NotContains(t, w, "selectors.description", "should not warn about description when not set, got: %v", warnings)
+		}
+	})
 }

@@ -17,6 +17,7 @@ selectors:
   event_list: "article[role=item]"
   name: ".article-title h3"
   start_date: ".article-subtitle h4"
-  description: ".article-paragraph"
+  description_selectors:
+    - ".article-paragraph"
   url: "a"
   image: ".article-image img"

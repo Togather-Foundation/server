@@ -13,6 +13,7 @@ selectors:
   event_list: ".wo-event"
   name: ".date-copy div:nth-child(2)"
   start_date: ".date-copy div:first-child"
-  description: ".wo-event-copy"
+  description_selectors:
+    - ".wo-event-copy"
   url: "a.col"
   image: ".img-fluid"

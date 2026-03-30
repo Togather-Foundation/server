@@ -171,7 +171,14 @@ server scrape test https://example.com/events \
 
 # Or load from a config file
 server scrape test https://example.com/events --config my-source.yaml
+
+# Output as JSON (full description, no truncation)
+server scrape test https://example.com/events --event-list ".event-card" --json
 ```
+
+**`--json` flag:** When set, outputs valid JSON array to stdout with full extracted
+fields. Description is not truncated. If no events are extracted, outputs `[]`.
+Use this for programmatic consumption by agents or scripts.
 
 ### `server scrape capture <URL>`
 
@@ -542,6 +549,58 @@ discovery). No special configuration is needed beyond a correctly-scoped
   to avoid merging unrelated events that happen to share a name.
 - Within a group, rows with unparseable dates are silently skipped from the
   occurrence list; the group succeeds as long as at least one row has a valid date.
+
+#### Multi-Element Description Selectors (`description_selectors`)
+
+When a site's event description is split across multiple elements (e.g., a summary
+paragraph + full description + "more info" section), use `description_selectors` to
+extract and concatenate text from all selectors. This solves the truncated description
+problem where only preview text is captured (srv-nojwn).
+
+**This is the preferred approach.** The single `description` field is deprecated
+and will be removed in a future version. Configs using `description` will emit a
+validation warning prompting migration to `description_selectors`.
+
+```yaml
+selectors:
+  event_list: "div.event-card"
+  name: "h2.event-title"
+  # Extract description from multiple elements, concatenated in order:
+  description_selectors:
+    - ".summary"              # Lead paragraph
+    - ".full-description"     # Expanded content
+    - ".more-info"           # Additional details
+```
+
+**How it works:**
+
+1. Each selector in `description_selectors` extracts text from within the event card
+2. Non-matching selectors are skipped (no empty placeholders)
+3. All matched text fragments are concatenated with spaces in selector order
+4. If no selectors match, the description is empty (no crash)
+
+**Precedence (deprecated):**
+
+The single `description` field is kept for backward compatibility but is deprecated.
+When both are set, `description` takes precedence (becomes the only element in
+`DescriptionSelectors`), and a validation warning is emitted. This ensures a
+single extraction code path in Tier 1 and Tier 2. Migrate to `description_selectors`
+to silence the warning.
+
+**Example:**
+
+For HTML:
+```html
+<div class="event">
+  <h2 class="title">Art Exhibition</h2>
+  <p class="summary">Join us for an amazing exhibition.</p>
+  <div class="full-description">This event features works from local artists.</div>
+  <p class="more-info">Free admission.</p>
+</div>
+```
+
+With `description_selectors: [".summary", ".full-description", ".more-info"]`:
+→ Description = "Join us for an amazing exhibition. This event features works from local artists. Free admission."
 
 ### Quality Warnings
 

@@ -184,7 +184,10 @@ selectors:
   start_date: "time[datetime]"         # Prefers datetime attribute
   end_date: "time.end-time[datetime]"
   location: "span.venue-name"
-  description: "p.event-description"
+  description_selectors:              # Preferred — multi-element: extracts and concatenates
+    - ".summary"                       # e.g., lead paragraph
+    - ".full-description"              # e.g., expanded content
+  # description: "p.event-description" # DEPRECATED — use description_selectors instead
   url: "a.event-link"                  # Link to detail page
   image: "img.event-image"
   pagination: "a.next-page"
@@ -208,6 +211,8 @@ graphql:
   url_template: "https://example.com/events/{{.slug}}"
   timeout_ms: 30000
 ```
+
+**Description extraction:** Use `description_selectors` (array) to extract and concatenate text from multiple elements. This is the preferred approach. The single `description` field is deprecated and will emit a validation warning when used. Non-matching selectors in `description_selectors` are skipped; matching text fragments are concatenated with spaces.
 
 Tier assignments map to both YAML configs and `scraper_sources.tier`: Tier 0 (JSON-LD), Tier 1 (CSS selectors), Tier 2 (headless Chromium), Tier 3 (GraphQL API).
 

@@ -16,6 +16,8 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // headlessEnabled reports whether the SCRAPER_HEADLESS_ENABLED env var is set to "true".
@@ -284,6 +286,122 @@ func TestExtractEventsFromHTML_DateSelectorProbes(t *testing.T) {
 	if legacyProbes != nil {
 		t.Errorf("expected nil probes for legacy (non-date_selectors) config, got %v", legacyProbes)
 	}
+}
+
+// TestExtractEventsFromHTML_DescriptionSelectors verifies that description_selectors
+// extracts and concatenates text from multiple selectors in Tier 2 (srv-nojwn).
+func TestExtractEventsFromHTML_DescriptionSelectors(t *testing.T) {
+	t.Parallel()
+
+	html := `
+<html><body>
+  <div class="event">
+    <h2 class="name">Art Exhibition</h2>
+    <p class="summary">Join us for an amazing exhibition.</p>
+    <div class="full-description">This event features works from local artists.</div>
+    <p class="more-info">Free admission. Accessible venue.</p>
+    <span class="location">Gallery One</span>
+  </div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "Description Selectors Test",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".event",
+			Name:      "h2.name",
+			Location:  "span.location",
+			DescriptionSelectors: []string{
+				"p.summary",
+				"div.full-description",
+				"p.more-info",
+			},
+		},
+	}
+
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	require.NoError(t, err)
+	require.Len(t, events, 1, "should extract 1 event")
+
+	event := events[0]
+	assert.Equal(t, "Art Exhibition", event.Name)
+	assert.Equal(t, "Gallery One", event.Location)
+	// Description should be concatenated from all three selectors
+	expectedDesc := "Join us for an amazing exhibition. This event features works from local artists. Free admission. Accessible venue."
+	assert.Equal(t, expectedDesc, event.Description,
+		"description should be assembled from all description_selectors")
+}
+
+// TestExtractEventsFromHTML_DescriptionSelectorsFallback verifies that when
+// DescriptionSelectors is empty, it falls back to single Description selector.
+func TestExtractEventsFromHTML_DescriptionSelectorsFallback(t *testing.T) {
+	t.Parallel()
+
+	html := `
+<html><body>
+  <div class="event">
+    <h2 class="name">Simple Event</h2>
+    <p class="desc">A simple description.</p>
+    <span class="location">Venue</span>
+  </div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "Description Fallback Test",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList:   ".event",
+			Name:        "h2.name",
+			Location:    "span.location",
+			Description: "p.desc",
+		},
+	}
+
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	require.NoError(t, err)
+	require.Len(t, events, 1, "should extract 1 event")
+
+	event := events[0]
+	assert.Equal(t, "Simple Event", event.Name)
+	assert.Equal(t, "A simple description.", event.Description,
+		"description should be extracted via legacy Description field")
+}
+
+// TestExtractEventsFromHTML_DescriptionSelectorsEmptyResult verifies that when
+// no description selectors match, the result is empty (no crash).
+func TestExtractEventsFromHTML_DescriptionSelectorsEmptyResult(t *testing.T) {
+	t.Parallel()
+
+	html := `
+<html><body>
+  <div class="event">
+    <h2 class="name">No Description Event</h2>
+    <span class="location">Venue</span>
+  </div>
+</body></html>`
+
+	cfg := SourceConfig{
+		Name: "Empty Description Test",
+		URL:  "https://example.com",
+		Selectors: SelectorConfig{
+			EventList: ".event",
+			Name:      "h2.name",
+			Location:  "span.location",
+			DescriptionSelectors: []string{
+				"p.nonexistent",
+				"div.alsonotthere",
+			},
+		},
+	}
+
+	events, _, err := extractEventsFromHTML(html, cfg, "https://example.com")
+	require.NoError(t, err)
+	require.Len(t, events, 1, "should extract 1 event")
+
+	event := events[0]
+	assert.Equal(t, "No Description Event", event.Name)
+	assert.Equal(t, "", event.Description,
+		"description should be empty when no selectors match")
 }
 
 func TestExtractEventsFromHTML_NoEventListSelector(t *testing.T) {

@@ -19,5 +19,6 @@ selectors:
   event_list: ".wpb_column.vc_col-sm-4"
   name: ".wpb_text_column a strong, .wpb_text_column a b"
   url: ".wpb_text_column a"
-  description: ".btn-wrapper p"
+  description_selectors:
+    - ".btn-wrapper p"
   image: ".wpb_single_image-img"

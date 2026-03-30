@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,18 +16,84 @@ import (
 
 var (
 	// flags for scrape test
-	scrapeTestSelectorFile string
-	scrapeTestEventList    string
-	scrapeTestName         string
-	scrapeTestStartDate    string
-	scrapeTestEndDate      string
-	scrapeTestLocation     string
-	scrapeTestDescription  string
-	scrapeTestURL          string
-	scrapeTestImage        string
-	scrapeTestPagination   string
-	scrapeTestDateSels     []string
+	scrapeTestSelectorFile    string
+	scrapeTestEventList       string
+	scrapeTestName            string
+	scrapeTestStartDate       string
+	scrapeTestEndDate         string
+	scrapeTestLocation        string
+	scrapeTestDescription     string
+	scrapeTestDescriptionSels []string
+	scrapeTestURL             string
+	scrapeTestImage           string
+	scrapeTestPagination      string
+	scrapeTestDateSels        []string
+	scrapeTestJSON            bool
 )
+
+const maxDescriptionLength = 120
+
+func formatScrapeTestOutput(w io.Writer, events []scraper.RawEvent, asJSON bool) error {
+	if len(events) == 0 {
+		if asJSON {
+			_, err := fmt.Fprintln(w, "[]")
+			return err
+		}
+		_, err := fmt.Fprintln(w, "No events extracted.")
+		return err
+	}
+
+	if asJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		if err := enc.Encode(events); err != nil {
+			return fmt.Errorf("json output: %w", err)
+		}
+		return nil
+	}
+
+	if _, err := fmt.Fprintf(w, "Extracted %d event(s):\n\n", len(events)); err != nil {
+		return err
+	}
+	for i, e := range events {
+		if _, err := fmt.Fprintf(w, "[%d] Name:        %s\n", i+1, e.Name); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "    StartDate:   %s\n", e.StartDate); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "    EndDate:     %s\n", e.EndDate); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "    Location:    %s\n", e.Location); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "    URL:         %s\n", e.URL); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "    Image:       %s\n", e.Image); err != nil {
+			return err
+		}
+		if len(e.DateParts) > 0 {
+			if _, err := fmt.Fprintf(w, "    DateParts:   %v\n", e.DateParts); err != nil {
+				return err
+			}
+		}
+		if e.Description != "" {
+			desc := e.Description
+			if len(desc) > maxDescriptionLength {
+				desc = desc[:maxDescriptionLength] + "…"
+			}
+			if _, err := fmt.Fprintf(w, "    Description: %s\n", desc); err != nil {
+				return err
+			}
+		}
+		if _, err := fmt.Fprintln(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // scrapeInspectCmd fetches a URL and prints a DOM structure summary to help
 // discover CSS selectors for Tier 1 scraping.
@@ -74,6 +142,9 @@ When --date-selectors is used, each selector's extracted text is shown in the
 DateParts output field. The smart date assembler combines them into start/end
 dates during normalisation.
 
+Use --json to output valid JSON with full extracted fields (no description
+truncation). This is useful for programmatic consumption by agents.
+
 Examples:
   # Test with inline flags
   server scrape test https://harbourfrontcentre.com/whats-on/ \
@@ -89,7 +160,11 @@ Examples:
 
   # Test using an existing source config file
   server scrape test https://harbourfrontcentre.com/whats-on/ \
-    --config configs/sources/harbourfront-centre.yaml`,
+    --config configs/sources/harbourfront-centre.yaml
+
+  # Output as JSON for programmatic use
+  server scrape test https://example.com/events \
+    --event-list ".event-card" --json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		rawURL := args[0]
@@ -132,6 +207,9 @@ Examples:
 		if scrapeTestDescription != "" {
 			cfg.Selectors.Description = scrapeTestDescription
 		}
+		if len(scrapeTestDescriptionSels) > 0 {
+			cfg.Selectors.DescriptionSelectors = scrapeTestDescriptionSels
+		}
 		if scrapeTestURL != "" {
 			cfg.Selectors.URL = scrapeTestURL
 		}
@@ -158,31 +236,6 @@ Examples:
 			return fmt.Errorf("scrape test: %w", err)
 		}
 
-		if len(events) == 0 {
-			fmt.Println("No events extracted.")
-			return nil
-		}
-
-		fmt.Printf("Extracted %d event(s):\n\n", len(events))
-		for i, e := range events {
-			fmt.Printf("[%d] Name:        %s\n", i+1, e.Name)
-			fmt.Printf("    StartDate:   %s\n", e.StartDate)
-			fmt.Printf("    EndDate:     %s\n", e.EndDate)
-			fmt.Printf("    Location:    %s\n", e.Location)
-			fmt.Printf("    URL:         %s\n", e.URL)
-			fmt.Printf("    Image:       %s\n", e.Image)
-			if len(e.DateParts) > 0 {
-				fmt.Printf("    DateParts:   %v\n", e.DateParts)
-			}
-			if e.Description != "" {
-				desc := e.Description
-				if len(desc) > 120 {
-					desc = desc[:120] + "…"
-				}
-				fmt.Printf("    Description: %s\n", desc)
-			}
-			fmt.Println()
-		}
-		return nil
+		return formatScrapeTestOutput(os.Stdout, events, scrapeTestJSON)
 	},
 }
