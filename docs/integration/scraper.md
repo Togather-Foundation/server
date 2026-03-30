@@ -171,7 +171,14 @@ server scrape test https://example.com/events \
 
 # Or load from a config file
 server scrape test https://example.com/events --config my-source.yaml
+
+# Output as JSON (full description, no truncation)
+server scrape test https://example.com/events --event-list ".event-card" --json
 ```
+
+**`--json` flag:** When set, outputs valid JSON array to stdout with full extracted
+fields. Description is not truncated. If no events are extracted, outputs `[]`.
+Use this for programmatic consumption by agents or scripts.
 
 ### `server scrape capture <URL>`
 

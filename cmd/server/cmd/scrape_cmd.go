@@ -96,6 +96,7 @@ func init() {
 	scrapeTestCmd.Flags().StringVar(&scrapeTestImage, "image", "", "CSS selector for the event image element")
 	scrapeTestCmd.Flags().StringVar(&scrapeTestPagination, "pagination", "", "CSS selector for the pagination next-page link")
 	scrapeTestCmd.Flags().StringSliceVar(&scrapeTestDateSels, "date-selectors", nil, "CSS selectors for date_selectors (comma-separated or repeated)")
+	scrapeTestCmd.Flags().BoolVar(&scrapeTestJSON, "json", false, "output extracted events as JSON (full description, no truncation)")
 }
 
 // loadScrapeConfig loads environment files and resolves server URL and API key
