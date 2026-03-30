@@ -349,16 +349,18 @@
      * wireStartBlur — attaches a change event listener to auto-fill end time when start changes.
      * @param {string} entryId - Entry ID for input element IDs
      * @param {Function} hintsProvider - Function returning hints for defaultEndTime
-     * @returns {{ destroy: Function }} Object with destroy method to remove listener
+     * @param {string} [inputPrefix='occ-'] - Prefix used in input element IDs (e.g. 'occ-' for edit, 'occ-add-' for add form)
+     * @returns {Function} Destroy function to remove listener
      */
-    function wireStartBlur(entryId, hintsProvider) {
-        var startInput = document.getElementById('occ-start-' + entryId);
+    function wireStartBlur(entryId, hintsProvider, inputPrefix) {
+        var prefix = inputPrefix || 'occ-';
+        var startInput = document.getElementById(prefix + 'start-' + entryId);
         if (!startInput) return function() {};
 
         function handler() {
-            var endInput = document.getElementById('occ-end-' + entryId);
+            var endInput = document.getElementById(prefix + 'end-' + entryId);
             if (!endInput || endInput.value) return;
-            var tzInput = document.getElementById('occ-tz-' + entryId);
+            var tzInput = document.getElementById(prefix + 'tz-' + entryId);
             var tz = (tzInput && tzInput.value) || 'America/Toronto';
             var startRFC = convertToRFC3339(startInput.value, tz);
             if (!startRFC) return;

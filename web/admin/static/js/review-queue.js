@@ -239,6 +239,7 @@
                     const rowEl = document.getElementById(`occ-row-${entryId}-${occId}`);
                     if (rowEl) {
                         rowEl.innerHTML = OccurrenceRendering.renderEditRow(occ, eventUlid, entryId);
+                        OccurrenceRendering.resolveVenueDisplayValue(String(entryId));
                     }
                     OccurrenceRendering.hideAddForm(String(entryId));
                     if (window._rqBlurDestroy) window._rqBlurDestroy();
@@ -378,7 +379,7 @@
                                 return { copyDuration: { prevStart: lastOccShow.startTime, prevEnd: lastOccShow.endTime } };
                             }
                             return { durationHours: 2 };
-                        });
+                        }, 'occ-add-');
                     }
                     break;
                 case 'cancel-add-occurrence':
@@ -389,8 +390,10 @@
                 case 'clear-occurrence-venue': {
                     e.preventDefault();
                     const entryId = target.dataset.entryId;
-                    const venueIdInput = document.getElementById(`occ-venue-id-${entryId}`);
-                    const venueDisplay = document.getElementById(`occ-venue-display-${entryId}`);
+                    const isAddForm = !!target.closest('[data-add-form]');
+                    const prefix = isAddForm ? 'occ-add-' : 'occ-';
+                    const venueIdInput = document.getElementById(`${prefix}venue-id-${entryId}`);
+                    const venueDisplay = document.getElementById(`${prefix}venue-display-${entryId}`);
                     const clearBtn = target;
                     if (venueIdInput) venueIdInput.value = '';
                     if (venueDisplay) {
@@ -1191,7 +1194,7 @@
                         return { copyDuration: { prevStart: lastOcc.startTime, prevEnd: lastOcc.endTime } };
                     }
                     return { durationHours: 2 };
-                });
+                }, 'occ-add-');
                 OccurrenceRendering.resolveVenueNames(occContainer);
             }
         }
@@ -1246,10 +1249,14 @@
      * @param {string} eventUlid - ULID of the event
      */
     async function addOccurrence(entryId, eventUlid) {
-        const startInput = document.getElementById(`occ-start-${entryId}`);
-        const endInput = document.getElementById(`occ-end-${entryId}`);
-        const tzInput = document.getElementById(`occ-tz-${entryId}`);
-        const errorDiv = document.getElementById(`occ-error-${entryId}`);
+        const startInput = document.getElementById(`occ-add-start-${entryId}`);
+        const endInput = document.getElementById(`occ-add-end-${entryId}`);
+        const tzInput = document.getElementById(`occ-add-tz-${entryId}`);
+        const doorInput = document.getElementById(`occ-add-door-${entryId}`);
+        const virtualUrlInput = document.getElementById(`occ-add-virtual-url-${entryId}`);
+        const venueIdInput = document.getElementById(`occ-add-venue-id-${entryId}`);
+        const venueDisplayInput = document.getElementById(`occ-add-venue-display-${entryId}`);
+        const errorDiv = document.getElementById(`occ-add-error-${entryId}`);
         const addBtn = document.querySelector(`[data-action="add-occurrence"][data-entry-id="${entryId}"]`);
 
         if (!startInput) return;
@@ -1287,6 +1294,19 @@
             if (endVal) {
                 body.end_time = OccurrenceLogic.convertToRFC3339(endVal, timezone);
             }
+            const doorVal = doorInput ? doorInput.value : '';
+            if (doorVal) {
+                body.door_time = OccurrenceLogic.convertToRFC3339(doorVal, timezone);
+            }
+            const virtualUrl = virtualUrlInput ? virtualUrlInput.value.trim() : '';
+            if (virtualUrl) {
+                body.virtual_url = virtualUrl;
+            }
+            const venueId = venueIdInput ? venueIdInput.value.trim() : '';
+            if (venueId) {
+                const venueUlid = venueId.match(/([A-Z0-9]{26})$/i);
+                if (venueUlid) body.venue_ulid = venueUlid[1];
+            }
 
             const created = await API.events.occurrences.create(eventUlid, body);
 
@@ -1313,12 +1333,18 @@
                         return { copyDuration: { prevStart: lastOcc2.startTime, prevEnd: lastOcc2.endTime } };
                     }
                     return { durationHours: 2 };
-                });
+                }, 'occ-add-');
+            } else {
+                // refreshList was not called (no cached detail); clear inputs manually
+                if (startInput) startInput.value = '';
+                if (endInput) endInput.value = '';
+                if (doorInput) doorInput.value = '';
+                if (virtualUrlInput) virtualUrlInput.value = '';
+                if (venueIdInput) venueIdInput.value = '';
+                if (venueDisplayInput) { venueDisplayInput.value = ''; }
+                const clearVenueBtn = document.querySelector(`[data-action="clear-occurrence-venue"][data-entry-id="${entryId}"][data-form-type="add"]`);
+                if (clearVenueBtn) clearVenueBtn.style.display = 'none';
             }
-
-            // Clear form inputs
-            if (startInput) startInput.value = '';
-            if (endInput) endInput.value = '';
 
         } catch (err) {
             console.error('Failed to add occurrence:', err);
@@ -2758,7 +2784,7 @@
                     return { copyDuration: { prevStart: lastOcc.startTime, prevEnd: lastOcc.endTime } };
                 }
                 return { durationHours: 2 };
-            });
+            }, 'occ-add-');
             OccurrenceRendering.resolveVenueNames(occListContainer);
         }
     }

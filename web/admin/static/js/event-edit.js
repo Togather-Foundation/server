@@ -347,7 +347,7 @@
                 return { copyDuration: { prevStart: lastOcc.start_time, prevEnd: lastOcc.end_time } };
             }
             return { durationHours: 2 };
-        });
+        }, 'occ-add-');
         OccurrenceRendering.resolveVenueNames(container);
     }
     
@@ -410,17 +410,17 @@
     async function handleAddOccurrence(target) {
         const entryId = target.dataset.entryId || 'event-edit';
 
-        const startTimeRaw = document.getElementById('occ-start-' + entryId)?.value;
+        const startTimeRaw = document.getElementById('occ-add-start-' + entryId)?.value;
         if (!startTimeRaw) {
             showToast('Start time is required', 'error');
             return;
         }
 
-        const endTimeRaw = document.getElementById('occ-end-' + entryId)?.value;
-        const timezone = document.getElementById('occ-tz-' + entryId)?.value || 'America/Toronto';
-        const doorTimeRaw = document.getElementById('occ-door-' + entryId)?.value;
-        const virtualUrl = document.getElementById('occ-virtual-url-' + entryId)?.value || null;
-        const venueIdRaw = document.getElementById('occ-venue-id-' + entryId)?.value || null;
+        const endTimeRaw = document.getElementById('occ-add-end-' + entryId)?.value;
+        const timezone = document.getElementById('occ-add-tz-' + entryId)?.value || 'America/Toronto';
+        const doorTimeRaw = document.getElementById('occ-add-door-' + entryId)?.value;
+        const virtualUrl = document.getElementById('occ-add-virtual-url-' + entryId)?.value || null;
+        const venueIdRaw = document.getElementById('occ-add-venue-id-' + entryId)?.value || null;
         const venueId = venueIdRaw || eventVenueUri();
         const venueUlid = extractUlid(venueId);
 
@@ -580,8 +580,10 @@
 
     function handleClearOccurrenceVenue(target) {
         const entryId = target.dataset.entryId || 'event-edit';
-        const venueInput = document.getElementById('occ-venue-id-' + entryId);
-        const displayInput = document.getElementById('occ-venue-display-' + entryId);
+        const isAddForm = !!target.closest('[data-add-form]');
+        const prefix = isAddForm ? 'occ-add-' : 'occ-';
+        const venueInput = document.getElementById(prefix + 'venue-id-' + entryId);
+        const displayInput = document.getElementById(prefix + 'venue-display-' + entryId);
         const clearBtn = target;
         
         if (venueInput) venueInput.value = '';

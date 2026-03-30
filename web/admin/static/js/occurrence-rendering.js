@@ -53,7 +53,7 @@
 
         const actionBtns = editable
             ? '<button type="button" class="btn btn-sm btn-outline-secondary ms-2" data-action="edit-occurrence">Edit</button>' +
-              '<button type="button" class="btn btn-sm btn-ghost-danger ms-1" data-action="remove-occurrence" title="Remove occurrence">&#10005;</button>'
+              (occId && !String(occId).startsWith('_pending_') ? '<button type="button" class="btn btn-sm btn-ghost-danger ms-1" data-action="remove-occurrence" title="Remove occurrence">&#10005;</button>' : '')
             : '';
 
         // Row ID uses occurrence id when available, falls back to index for pending (unsaved) occurrences.
@@ -162,30 +162,30 @@
             '<div class="row g-2">' +
             '<div class="col-md-6">' +
             '<label class="form-label form-label-sm mb-1">Start *</label>' +
-            '<input type="datetime-local" class="form-control form-control-sm"' + smartStart + ' id="occ-start-' + safeEntryId + '">' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + smartStart + ' id="occ-add-start-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
             '<label class="form-label form-label-sm mb-1">End</label>' +
-            '<input type="datetime-local" class="form-control form-control-sm"' + smartEnd + ' id="occ-end-' + safeEntryId + '">' +
+            '<input type="datetime-local" class="form-control form-control-sm"' + smartEnd + ' id="occ-add-end-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
             '<label class="form-label form-label-sm mb-1">Timezone *</label>' +
-            '<input type="text" class="form-control form-control-sm" id="occ-tz-' + safeEntryId + '" value="' + escapeHtml(defaultTz) + '">' +
+            '<input type="text" class="form-control form-control-sm" id="occ-add-tz-' + safeEntryId + '" value="' + escapeHtml(defaultTz) + '">' +
             '</div>' +
             '<div class="col-md-6">' +
             '<label class="form-label form-label-sm mb-1">Door time</label>' +
-            '<input type="datetime-local" class="form-control form-control-sm" id="occ-door-' + safeEntryId + '">' +
+            '<input type="datetime-local" class="form-control form-control-sm" id="occ-add-door-' + safeEntryId + '">' +
             '</div>' +
             '<div class="col-md-6">' +
             '<label class="form-label form-label-sm mb-1">Virtual URL</label>' +
-            '<input type="url" class="form-control form-control-sm" id="occ-virtual-url-' + safeEntryId + '" placeholder="https://...">' +
+            '<input type="url" class="form-control form-control-sm" id="occ-add-virtual-url-' + safeEntryId + '" placeholder="https://...">' +
             '</div>' +
             '<div class="col-md-6">' +
             '<label class="form-label form-label-sm mb-1">Venue override</label>' +
             '<div class="input-group input-group-sm">' +
-            '<input type="hidden" id="occ-venue-id-' + safeEntryId + '" value="">' +
-            '<input type="text" class="form-control" id="occ-venue-display-' + safeEntryId + '" readonly placeholder="(none \u2014 uses event default)">' +
-            '<button class="btn btn-outline-danger" type="button" data-action="clear-occurrence-venue" data-entry-id="' + safeEntryId + '" style="display:none;" title="Clear venue override">Clear</button>' +
+            '<input type="hidden" id="occ-add-venue-id-' + safeEntryId + '" value="">' +
+            '<input type="text" class="form-control" id="occ-add-venue-display-' + safeEntryId + '" readonly placeholder="(none \u2014 uses event default)">' +
+            '<button class="btn btn-outline-danger" type="button" data-action="clear-occurrence-venue" data-entry-id="' + safeEntryId + '" data-form-type="add" style="display:none;" title="Clear venue override">Clear</button>' +
             '</div>' +
             '</div>' +
             '<div class="col-12 d-flex justify-content-end gap-2">' +
@@ -193,7 +193,7 @@
             '<button type="button" class="btn btn-sm btn-primary" data-action="add-occurrence" data-entry-id="' + safeEntryId + '" data-event-ulid="' + escapeHtml(eventUlid) + '">Save</button>' +
             '</div>' +
             '</div>' +
-            '<div id="occ-error-' + safeEntryId + '" class="text-danger small mt-1" style="display:none;"></div>' +
+            '<div id="occ-add-error-' + safeEntryId + '" class="text-danger small mt-1" style="display:none;"></div>' +
             '</div>';
     }
 
@@ -532,7 +532,7 @@
      * @param {string|Object|null} venueRef - Venue URI string, Place object with @id, or bare ULID
      */
     function fillEventVenuePlaceholder(entryId, venueRef) {
-        var displayInput = document.getElementById('occ-venue-display-' + entryId);
+        var displayInput = document.getElementById('occ-add-venue-display-' + entryId);
         if (!displayInput) return;
         // Only update placeholder when the field has no explicit value set (no override selected)
         if (displayInput.value) return;
