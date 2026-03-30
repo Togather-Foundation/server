@@ -1682,6 +1682,77 @@ validate_health() {
 }
 
 # ============================================================================
+# SCRAPER SOURCE SYNC FUNCTIONS (T021a)
+# ============================================================================
+
+# sync_sources - Syncs scraper YAML configs to database after deployment
+# Runs 'server scrape sync' inside the newly deployed container to ensure
+# the database has the latest source configs. This is critical because:
+# 1. YAML configs in the repo may have been updated since last deploy
+# 2. The scraper reads from DB at runtime, not from YAML files
+# 3. Deploy must fail clearly if sync fails (prevents scraper running with stale config)
+# Args:
+#   $1 - environment (e.g., "production", "staging")
+#   $2 - slot (the newly deployed slot, e.g., "blue" or "green")
+# Returns:
+#   0 on success, 1 on sync failure (deployment fails)
+# Side effects:
+#   - Runs 'server scrape sync' inside the container
+#   - Logs sync output for debugging
+sync_sources() {
+    local env="$1"
+    local slot="$2"
+    
+    log "INFO" "Syncing scraper source configs to database"
+    
+    # Get container name for the deployed slot
+    local container_name="togather-server-${slot}"
+    
+    # Check if container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        log "ERROR" "Container ${container_name} is not running"
+        log "ERROR" "Cannot sync sources - deployment may have failed"
+        return 1
+    fi
+    
+    # Run sync inside the container
+    # The container has configs/sources mounted at /app/configs/sources from the image
+    log "INFO" "Running 'server scrape sync' in ${container_name}"
+    
+    local sync_output
+    local sync_status=0
+    
+    # Run sync command and capture output
+    sync_output=$(docker exec "${container_name}" /app/server scrape sync 2>&1) || sync_status=$?
+    
+    # Log the output
+    while IFS= read -r line; do
+        log "INFO" "  ${line}"
+    done <<< "${sync_output}"
+    
+    if [[ $sync_status -ne 0 ]]; then
+        log "ERROR" "Scraper source sync failed (exit code: ${sync_status})"
+        log "ERROR" "This indicates the database may be out of sync with YAML configs"
+        log "ERROR" "The scraper will run with stale source configurations"
+        log "ERROR" "Please investigate and re-run sync manually:"
+        log "ERROR" "  docker exec ${container_name} /app/server scrape sync"
+        return 1
+    fi
+    
+    # Verify sync actually processed sources (not just "no sources found")
+    if echo "${sync_output}" | grep -q "No source configs found"; then
+        log "WARN" "No source configs found in container"
+        log "WARN" "This may indicate configs/sources is missing from the Docker image"
+        log "WARN" "Scraper will fall back to database configs (if any exist)"
+        # This is a warning, not a failure - don't return 1
+    else
+        log "SUCCESS" "Scraper source configs synced successfully"
+    fi
+    
+    return 0
+}
+
+# ============================================================================
 # STATE TRACKING FUNCTIONS (T022)
 # ============================================================================
 
@@ -1864,6 +1935,9 @@ deploy() {
     
     # T021: Switch traffic to new slot
     switch_traffic "$env" "$target_slot" || return 1
+    
+    # T021a: Sync scraper source configs to database
+    sync_sources "$env" "$target_slot" || return 1
     
     # T022: Update deployment state
     update_deployment_state "$env" "active" || return 1
