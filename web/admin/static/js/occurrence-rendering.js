@@ -105,10 +105,12 @@
             '<div class="border rounded p-2 mt-1">' +
             (rowsHtml || '<span class="text-muted small">No occurrences yet</span>') +
             '</div>' +
-            '<div class="mt-2">' +
-            '<button type="button" class="btn btn-sm btn-outline-primary" data-action="show-add-form" data-entry-id="' + safeEntryId + '" id="add-occ-btn-' + safeEntryId + '">+ Add Occurrence</button>' +
-            '</div>' +
-            addFormHtml +
+            (editable
+                ? '<div class="mt-2">' +
+                  '<button type="button" class="btn btn-sm btn-outline-primary" data-action="show-add-form" data-entry-id="' + safeEntryId + '" id="add-occ-btn-' + safeEntryId + '">+ Add Occurrence</button>' +
+                  '</div>' +
+                  addFormHtml
+                : '') +
             '</div>';
     }
 
