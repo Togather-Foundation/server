@@ -989,7 +989,10 @@ by a River background worker (`ScrapeSourceWorker`) registered at server startup
 | `manual` | Never run automatically; CLI-only |
 
 Periodic jobs are registered via `NewPeriodicJobsFromSources(sources)` during
-`server serve` startup. Only sources where `enabled: true` are registered.
+`server serve` startup. Sources are loaded from the database first (for dynamic
+source management without restart); if the DB is unavailable or returns empty,
+YAML configs are used as fallback. Only sources where `enabled: true` and
+`schedule` is `daily` or `weekly` are registered.
 Job runs are recorded in `scraper_runs` (same as manual scrapes).
 
 Automatic scheduling is gated by the `auto_scrape` flag in the global scraper

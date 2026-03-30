@@ -169,8 +169,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	if ingestAPIKey == "" {
 		ingestAPIKey = os.Getenv("SEL_INGEST_KEY")
 	}
+	var scraperSourceRepo *postgres.ScraperSourceRepository
 	if ingestAPIKey != "" {
-		scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
+		scraperSourceRepo = postgres.NewScraperSourceRepository(pool)
 		ingestClient := scraper.NewIngestClient(
 			cfg.Server.BaseURL,
 			ingestAPIKey,
@@ -198,14 +199,24 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	// Load source configs for periodic job registration.
-	// TODO(srv-ephoo): Load sources from DB (with YAML fallback) so dynamically
-	// added/removed sources are picked up without a server restart.
+	// Try DB first (sources added/removed via admin API are picked up without restart).
+	// Fall back to YAML if DB fails or returns empty.
 	var sourceCfgs []scraper.SourceConfig
+	var loadErr error
 	if scraperSvc != nil {
-		var loadErr error
-		sourceCfgs, loadErr = scraper.LoadSourceConfigs("configs/sources")
-		if loadErr != nil {
-			logger.Warn().Err(loadErr).Msg("router: failed to load source configs for periodic jobs (non-fatal)")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		sourceCfgs, loadErr = jobs.LoadSourcesForPeriodicJobs(ctx, scraperSourceRepo, logger)
+		cancel()
+		if loadErr != nil || len(sourceCfgs) == 0 {
+			if loadErr != nil {
+				logger.Warn().Err(loadErr).Msg("router: DB sources unavailable for periodic jobs, falling back to YAML")
+			} else if len(sourceCfgs) == 0 {
+				logger.Warn().Msg("router: no enabled daily/weekly sources in DB, falling back to YAML")
+			}
+			sourceCfgs, loadErr = scraper.LoadSourceConfigs("configs/sources")
+			if loadErr != nil {
+				logger.Warn().Err(loadErr).Msg("router: YAML fallback also failed for periodic jobs (non-fatal)")
+			}
 		}
 	}
 
@@ -264,7 +275,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	orgHandler.Loc = loc
 
 	// Wire scraper source repo into org/place handlers for sel:scraperSource linkage (best-effort).
-	scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
+	scraperSourceRepo = postgres.NewScraperSourceRepository(pool)
 	placesHandler = placesHandler.WithScraperSourceRepo(scraperSourceRepo)
 	orgHandler = orgHandler.WithScraperSourceRepo(scraperSourceRepo)
 
