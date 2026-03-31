@@ -222,19 +222,17 @@ make run   # or make dev for live reload
 
 **Goal:** Capture design and workflow hindsight while context is fresh.
 
-Reflect on what you (and implementation agents) would do differently: 
-awkward abstractions, package boundaries, tech debt, performance concerns, 
-test coverage gaps, missing docs, confusing or missing instructions, etc, 
-and evaluate your workflow for actionable improvements.
+Reflect on what you (and implementation agents) would do differently next time, evaluating the work process, architectural decisions, and paths not taken.
+The goal is meta-process improvement and surfacing hidden debt, not recounting a commit log.
 
-- Present a **human-readable reflection report** to the user (not a file). Do not
-  reduce this to one sentence.
+- Present a **human-readable reflection report** to the user.
 - Use this structure:
-  1. **What changed and why** (decision-level, not commit log)
-  2. **What was hard/surprising** (including near-misses)
-  3. **Tradeoffs and accepted debt** (what you intentionally did not do)
-  4. **Quality gaps** (tests/docs/observability still missing)
-  5. **Actionable follow-ups** (what should happen next and why)
+  1. **What was hard/surprising** (Why did certain things take longer than expected?)
+  2. **Alternate paths considered** (Why was this approach chosen over others?)
+  3. **Workflow evaluation** (Did the agent tooling/instructions break down? What prompted manual intervention?)
+  4. **Tradeoffs and accepted debt** (What you intentionally did not do or polish)
+  5. **Quality gaps** (tests/docs/observability still missing)
+  6. **Actionable follow-ups** (what should happen next and why)
 - Create follow-up beads for actionable items:
   `bd create --title="<improvement>" --description="Discovered during <bead-id>: <context>" --type=task --priority=3`
 - Include created follow-up bead IDs in the report so the user can track them.
