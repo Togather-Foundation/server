@@ -1738,14 +1738,29 @@ sync_sources() {
         return 1
     fi
     
-    # Parse JSON output to get source counts and warnings/errors
+    # Parse JSON payload from mixed sync output (warn logs + final JSON line).
+    local sync_json
+    sync_json=$(printf '%s' "${sync_output}" | jq -Rns '
+      [inputs | split("\n")[] | select(length > 0) | (try fromjson catch empty)]
+      | if length > 0 then .[-1] else empty end
+    ' 2>/dev/null || true)
+
     local sources_found total created updated warnings errors
-    sources_found=$(echo "${sync_output}" | jq -r '.sources_found // 0' 2>/dev/null || echo "0")
-    total=$(echo "${sync_output}" | jq -r '.total // -1' 2>/dev/null || echo "-1")
-    created=$(echo "${sync_output}" | jq -r '.created // 0' 2>/dev/null || echo "0")
-    updated=$(echo "${sync_output}" | jq -r '.updated // 0' 2>/dev/null || echo "0")
-    warnings=$(echo "${sync_output}" | jq -r '.warnings // 0' 2>/dev/null || echo "0")
-    errors=$(echo "${sync_output}" | jq -r '.errors // 0' 2>/dev/null || echo "0")
+    if [[ -z "${sync_json}" ]]; then
+        total="-1"
+        created="0"
+        updated="0"
+        warnings="0"
+        errors="0"
+        sources_found="0"
+    else
+        sources_found=$(printf '%s' "${sync_json}" | jq -r '.sources_found // 0' 2>/dev/null || echo "0")
+        total=$(printf '%s' "${sync_json}" | jq -r '.total // -1' 2>/dev/null || echo "-1")
+        created=$(printf '%s' "${sync_json}" | jq -r '.created // 0' 2>/dev/null || echo "0")
+        updated=$(printf '%s' "${sync_json}" | jq -r '.updated // 0' 2>/dev/null || echo "0")
+        warnings=$(printf '%s' "${sync_json}" | jq -r '.warnings // 0' 2>/dev/null || echo "0")
+        errors=$(printf '%s' "${sync_json}" | jq -r '.errors // 0' 2>/dev/null || echo "0")
+    fi
 
     # Check for partial failures - fail staging/prod on warnings or errors
     if [[ "$env" == "staging" || "$env" == "production" ]]; then
