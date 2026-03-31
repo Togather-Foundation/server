@@ -110,17 +110,31 @@ func sharedCtx(t *testing.T) context.Context {
 	return ctx
 }
 
-// awaitChainCompletion polls until all expected sources have been scraped or timeout.
-func awaitChainCompletion(t *testing.T, mock *mockChainScraper, expectedSources []string, timeout time.Duration) {
+// awaitChainCompletion waits for all expected sources to be scraped using River job events,
+// falling back to a timeout if the chain does not complete in time.
+func awaitChainCompletion(t *testing.T, riverClient *river.Client[pgx.Tx], mock *mockChainScraper, expectedSources []string, timeout time.Duration) {
 	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if len(mock.getCalls()) >= len(expectedSources) {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
+
+	sub, cancelSub := riverClient.Subscribe(river.EventKindJobCompleted, river.EventKindJobSnoozed)
+	defer cancelSub()
+
+	if len(mock.getCalls()) >= len(expectedSources) {
+		return
 	}
-	t.Fatalf("chain did not complete within %v: got %d calls, expected %d (%v)", timeout, len(mock.getCalls()), len(expectedSources), mock.getCalls())
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-sub:
+			if len(mock.getCalls()) >= len(expectedSources) {
+				return
+			}
+		case <-timer.C:
+			t.Fatalf("chain did not complete within %v: got %d calls, expected %d (%v)", timeout, len(mock.getCalls()), len(expectedSources), mock.getCalls())
+		}
+	}
 }
 
 func TestScrapeChain_SerialProgression(t *testing.T) {
@@ -148,7 +162,7 @@ func TestScrapeChain_SerialProgression(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for the chain to complete — all 3 sources should be scraped serially.
-	awaitChainCompletion(t, mock, sources, 15*time.Second)
+	awaitChainCompletion(t, riverClient, mock, sources, 15*time.Second)
 
 	// Assert all sources were called.
 	calls := mock.getCalls()
@@ -188,7 +202,7 @@ func TestScrapeChain_ContinueOnFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wait for the chain to complete — all 3 sources should be attempted despite the failure.
-	awaitChainCompletion(t, mock, sources, 15*time.Second)
+	awaitChainCompletion(t, riverClient, mock, sources, 15*time.Second)
 
 	// Assert all sources were called (best-effort continue-on-failure).
 	calls := mock.getCalls()
