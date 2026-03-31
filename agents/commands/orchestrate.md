@@ -22,6 +22,7 @@ Phase 3: BEAD & BRANCH  -- Create feature branch, create/claim bead
 Phase 4: IMPLEMENT      -- TDD in subagents (delegate to @general)
 Phase 5: REVIEW         -- CI + code review (delegate to @beads-code-reviewer)
 Phase 6: REFLECT        -- Design hindsight, create follow-up beads
+  >>> GATE: Stop and present reflection report to the user <<<
 Phase 7: DOCUMENTATION  -- Update docs (delegate to @general)
 Phase 8: DEPLOY         -- Push, deploy to staging, run tests
   >>> GATE: Stop and wait for user to test staging and sign off <<<
@@ -30,12 +31,15 @@ Phase 9: LAND           -- Rebase, merge to main, close beads, push
 
 ## GATE Rules (CRITICAL)
 
-There are exactly **2 mandatory stops** where you MUST wait for the user:
+There are exactly **3 mandatory stops** where you MUST wait for the user:
 
 1. **After Phase 2 (PLAN):** Present the plan. STOP. Do not proceed until the user
    says "yes", "proceed", "go", "lgtm", or similar. If they want changes, revise.
 
-2. **After Phase 8 (DEPLOY):** Present staging test results and list manual testing
+2. **After Phase 6 (REFLECT):** Present the reflection report. STOP. Do not proceed
+   to Phase 7 until the user acknowledges it.
+
+3. **After Phase 8 (DEPLOY):** Present staging test results and list manual testing
    steps. STOP. Do not proceed to Phase 9 (LAND) until the user explicitly signs off.
    The user may need minutes or hours to manually test. **Wait.**
 
@@ -86,7 +90,9 @@ If bead IDs are provided, read them with `bd show <id> --json` to get context.
 2. **Explore** -- Delegate to `@explore`: find related code, patterns, files to change,
    and relevant docs from `specs/`, `docs/`, `contexts/`, `shapes/`. Ask it to return
    a context summary with **file paths** of all relevant docs (you'll pass these to
-   later subagents as "Reference Docs"). Remind to only explore, not plan or implement.
+   later subagents as "Reference Docs"). Remind to only explore, update bead, not plan 
+   or implement. Explore subagents should update the associated bead with the exploration
+   report so work can be resumed as needed.
 3. **Check blockers** -- `bd blocked --json`. If blocked, report to user and STOP.
 
 **Output:** Concise context summary for the user with a "Reference Docs" file list.
@@ -167,7 +173,7 @@ and to use context7 MCP for external library docs. For migrations: `migrate crea
 -ext sql -dir internal/storage/postgres/migrations -seq <name>`, write up+down,
 update SQLc queries as needed.
 
-**Every subagent prompt must include (copy verbatim):**
+**Implement subagent prompts must include:**
 > **Do NOT commit or push any changes. The orchestrator owns all git commits.
 > Write the code, run the tests, fix failures — then stop and reflect.
 > 
@@ -216,23 +222,25 @@ make run   # or make dev for live reload
 
 **Goal:** Capture design and workflow hindsight while context is fresh.
 
-Reflect on what you (and implementation agents) would do differently: 
-awkward abstractions, package boundaries, tech debt, performance concerns, 
-test coverage gaps, missing docs, confusing or missing instructions, etc, 
-and evaluate your workflow for actionable improvements.
+Reflect on what you (and implementation agents) would do differently next time, evaluating the work process, architectural decisions, and paths not taken.
+The goal is meta-process improvement and surfacing hidden debt, not recounting a commit log.
 
-- Present a **human-readable reflection report** to the user (not a file). Do not
-  reduce this to one sentence.
+- Present a **human-readable reflection report** to the user.
 - Use this structure:
-  1. **What changed and why** (decision-level, not commit log)
-  2. **What was hard/surprising** (including near-misses)
-  3. **Tradeoffs and accepted debt** (what you intentionally did not do)
-  4. **Quality gaps** (tests/docs/observability still missing)
-  5. **Actionable follow-ups** (what should happen next and why)
+  1. **What was hard/surprising** (Why did certain things take longer than expected?)
+  2. **Alternate paths considered** (Is there a better way if things were different?)
+  3. **Workflow evaluation** (Did the agent tooling/instructions break down? What prompted manual intervention?)
+  4. **Tradeoffs and accepted debt** (What you intentionally did not do or polish)
+  5. **Quality gaps** (tests/docs/observability still missing)
+  6. **Actionable follow-ups** (what should happen next and why)
 - Create follow-up beads for actionable items:
   `bd create --title="<improvement>" --description="Discovered during <bead-id>: <context>" --type=task --priority=3`
 - Include created follow-up bead IDs in the report so the user can track them.
 - Do not block on these, except for critical tests that are missing, which should be done now.
+
+### >>> GATE: Reflection Review <<<
+
+Present the reflection report to the user. **STOP HERE.** Wait for the user to read it and optionally discuss the follow-ups before proceeding to Phase 7.
 
 ---
 
@@ -249,10 +257,9 @@ non-obvious learnings (gotchas, patterns) in relevant AGENTS.md files.
 When delegating docs work, provide a **Docs Brief** so the doc agent has strong
 context but still performs a fresh-eyes verification against code.
 
-Your prompt should include:
+Your documentation prompt should include:
 - Bead ID(s) and one-line intent for each
 - `Reference Docs` paths from Phase 1
-- **Code paths changed** (exact file paths)
 - **Behavior deltas to verify** (runtime behavior, deploy behavior, env vars,
   endpoint/schema changes, defaults)
 - What to check for consistency: code vs docs, docs vs openapi, docs vs tests
@@ -284,6 +291,8 @@ git push -u origin HEAD
 ```
 
 **Step 2 — Deploy and test:**
+> **WARNING:** Deployment scripts (specifically Docker builds) often take longer than the default agent `bash` tool timeout (120s). You MUST increase the tool's timeout limit (e.g., `timeout: 600000` / 10 minutes) when running these deploy commands to prevent premature termination.
+
 ```bash
 source .deploy.conf.staging 2>/dev/null
 scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD

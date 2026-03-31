@@ -55,7 +55,7 @@ The scraper uses this priority order when loading a source config:
 
 | Command | Direction | Description |
 |---------|-----------|-------------|
-| `server scrape sync` | YAML → DB | Reads all `configs/sources/*.yaml` files and upserts them into `scraper_sources`. Reports created/updated counts. |
+| `server scrape sync` | YAML → DB | Reads all `configs/sources/*.yaml` files and upserts them into `scraper_sources`. Reports created/updated counts. **The `enabled` field is only applied on initial insert — existing DB rows retain their current `enabled` value.** This means an operator can disable a source via the admin UI or direct DB edit, and it will stay disabled across future syncs. |
 | `server scrape export` | DB → YAML | Reads all `scraper_sources` rows and writes them as YAML files to `configs/sources/`. Overwrites existing files. |
 
 **Typical workflow after editing a YAML config:**
@@ -316,6 +316,14 @@ Output: per-source table with totals row.
 Sync all YAML source configs from `configs/sources/` into the `scraper_sources`
 database table. Upserts by source name — new sources are created, existing sources
 are updated. Requires `DATABASE_URL`.
+
+**`enabled` field preservation:** The upsert query deliberately excludes `enabled`
+from the `ON CONFLICT DO UPDATE` clause. This means:
+
+- New sources get their `enabled` value from the YAML config.
+- Existing sources **keep their current DB `enabled` value** — a sync will not
+  overwrite an admin UI toggle or manual DB change.
+- To re-enable a disabled source, update the DB row directly (admin UI or SQL).
 
 ```bash
 server scrape sync

@@ -21,9 +21,12 @@ import (
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
+	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
 	"github.com/rs/zerolog"
@@ -42,12 +45,13 @@ type testEnv struct {
 }
 
 var (
-	sharedOnce      sync.Once
-	sharedInitErr   error
-	sharedContainer *tcpostgres.PostgresContainer
-	sharedPool      *pgxpool.Pool
-	sharedDBURL     string
-	sharedConfig    config.Config
+	sharedOnce        sync.Once
+	sharedInitErr     error
+	sharedContainer   *tcpostgres.PostgresContainer
+	sharedPool        *pgxpool.Pool
+	sharedDBURL       string
+	sharedConfig      config.Config
+	sharedRiverClient *river.Client[pgx.Tx]
 )
 
 const sharedContainerName = "togather-integration-batch-db"
@@ -70,12 +74,14 @@ func setupTestEnv(t *testing.T) *testEnv {
 	routerWithClient := api.NewRouter(sharedConfig, testLogger(), sharedPool, "test", "test-commit", "test-date")
 
 	// Start River workers for batch ingestion tests
-	// This is the key difference from tests/integration - we NEED River workers here
+	// This is the key difference from tests/integration - we NEED River Workers here
 	if routerWithClient.RiverClient != nil {
+		sharedRiverClient = routerWithClient.RiverClient
 		if err := routerWithClient.RiverClient.Start(ctx); err != nil {
 			t.Fatalf("failed to start river workers: %v", err)
 		}
 		t.Cleanup(func() {
+			sharedRiverClient = nil
 			if err := routerWithClient.RiverClient.Stop(context.Background()); err != nil {
 				t.Logf("failed to stop river workers: %v", err)
 			}
@@ -426,4 +432,49 @@ func fetchChangeFeed(t *testing.T, env *testEnv, params url.Values) changeFeedRe
 	var payload changeFeedResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload), "failed to decode change feed response JSON")
 	return payload
+}
+
+// awaitBatchCompletion waits for a batch ingestion River job to complete by subscribing
+// to River client events. This replaces HTTP polling loops in batch tests.
+func awaitBatchCompletion(t *testing.T, batchID string, timeout time.Duration) {
+	t.Helper()
+
+	require.NotNil(t, sharedRiverClient, "sharedRiverClient must be set")
+
+	subscribeChan, cancel := sharedRiverClient.Subscribe(
+		river.EventKindJobCompleted,
+		river.EventKindJobFailed,
+	)
+	defer cancel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	for {
+		select {
+		case event, ok := <-subscribeChan:
+			if !ok {
+				t.Fatal("subscription channel closed before batch job completed")
+				return
+			}
+			if event == nil {
+				continue
+			}
+			// Check if this is a batch_ingestion job for our batch
+			if event.Job.Kind != jobs.JobKindBatchIngestion {
+				continue
+			}
+			var args jobs.BatchIngestionArgs
+			if err := json.Unmarshal(event.Job.EncodedArgs, &args); err != nil {
+				t.Logf("failed to unmarshal job args: %v", err)
+				continue
+			}
+			if args.BatchID == batchID {
+				return
+			}
+		case <-ctx.Done():
+			t.Fatalf("timed out waiting for batch job %s to complete", batchID)
+			return
+		}
+	}
 }

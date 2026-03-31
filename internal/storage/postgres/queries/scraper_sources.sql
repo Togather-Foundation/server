@@ -53,7 +53,6 @@ ON CONFLICT (name) DO UPDATE SET
   schedule                 = EXCLUDED.schedule,
   trust_level              = EXCLUDED.trust_level,
   license                  = EXCLUDED.license,
-  enabled                  = EXCLUDED.enabled,
   max_pages                = EXCLUDED.max_pages,
   selectors                = EXCLUDED.selectors,
   notes                    = EXCLUDED.notes,
