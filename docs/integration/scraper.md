@@ -1130,6 +1130,9 @@ These variables control the batch status polling behavior during scrape ingestio
 | `SCRAPER_POLL_BACKOFF_MAX_MS` | 2000 | Maximum delay (ms) between status polls |
 | `SCRAPER_POLL_TIMEOUT_MS` | 30000 | Total time (ms) spent polling for a single batch result |
 | `SCRAPER_HTTP_CLIENT_TIMEOUT_MS` | 30000 | HTTP client timeout (ms) for scraper requests |
+| `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` | 300 | Max runtime (seconds) for a single `scrape_source` River job before context cancellation |
+| `SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS` | 5000 | Timeout (ms) when enqueueing the next source in a serial run-all chain |
+| `SCRAPER_CHAIN_ENQUEUE_RETRIES` | 3 | Retry attempts for enqueueing the next source in a serial run-all chain |
 
 ---
 

@@ -2173,6 +2173,11 @@ paths:
         Queues an orchestrator job that serially scrapes all enabled sources with
         daily or weekly schedules. Returns immediately with 202 after queuing.
 
+        Serial chaining timeout behavior is configurable via:
+        - `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` (default 300)
+        - `SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS` (default 5000)
+        - `SCRAPER_CHAIN_ENQUEUE_RETRIES` (default 3)
+
         Options:
         - `respect_auto_scrape` (default: true): If true and global auto_scrape is disabled, skip the run
         - `skip_up_to_date` (default: true): Skip sources with fresh runs (daily <24h, weekly <7d)

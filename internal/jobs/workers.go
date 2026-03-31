@@ -919,7 +919,7 @@ func NewWorkers() *river.Workers {
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
 func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, submissionRepo domainScraper.SubmissionRepository) *river.Workers {
-	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, (*postgres.Queries)(nil), submissionRepo)
+	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, (*postgres.Queries)(nil), submissionRepo, 0, 0, 0)
 }
 
 // scraperQueries combines both config and sources queries needed by scrape workers.
@@ -930,7 +930,7 @@ type scraperQueries interface {
 
 // NewWorkersWithScraper creates workers like NewWorkersWithPool but also
 // registers ScrapeSourceWorker when a non-nil scraper is provided.
-func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperQueries, submissionRepo domainScraper.SubmissionRepository) *river.Workers {
+func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperQueries, submissionRepo domainScraper.SubmissionRepository, scrapeSourceJobTimeout, chainEnqueueTimeout time.Duration, chainEnqueueRetries int) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -998,10 +998,13 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 	// Periodic scrape worker (srv-pfeud)
 	if scr != nil {
 		river.AddWorker[ScrapeSourceArgs](workers, ScrapeSourceWorker{
-			Scraper:       scr,
-			ConfigQueries: cfgQueries,
-			Logger:        logger,
-			Slot:          slot,
+			Scraper:        scr,
+			ConfigQueries:  cfgQueries,
+			Logger:         logger,
+			JobTimeout:     scrapeSourceJobTimeout,
+			EnqueueTimeout: chainEnqueueTimeout,
+			EnqueueRetries: chainEnqueueRetries,
+			Slot:           slot,
 		})
 	}
 

@@ -224,7 +224,23 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Register scrape worker when scraper is available.
 	if scraperSvc != nil {
-		workers = jobs.NewWorkersWithScraper(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, scraperSvc, queries, submissionRepo)
+		workers = jobs.NewWorkersWithScraper(
+			pool,
+			ingestService,
+			repo.Events(),
+			geocodingService,
+			reconciliationService,
+			placesService,
+			orgService,
+			slogLogger,
+			slot,
+			scraperSvc,
+			queries,
+			submissionRepo,
+			time.Duration(cfg.Scraper.SourceJobTimeoutSeconds)*time.Second,
+			time.Duration(cfg.Scraper.ChainEnqueueTimeoutMs)*time.Millisecond,
+			cfg.Scraper.ChainEnqueueRetries,
+		)
 	}
 
 	// Configure periodic cleanup jobs and per-source scrape jobs.

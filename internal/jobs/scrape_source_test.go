@@ -706,6 +706,30 @@ func TestScrapeSourceWorker_ChainedScraperError_BestEffortContinues(t *testing.T
 	}
 }
 
+func TestScrapeSourceWorker_TimeoutOverride(t *testing.T) {
+	t.Parallel()
+
+	w := ScrapeSourceWorker{JobTimeout: 5 * time.Minute}
+	job := newTestJob("any")
+
+	got := w.Timeout(job)
+	if got != 5*time.Minute {
+		t.Fatalf("expected timeout 5m, got %v", got)
+	}
+}
+
+func TestScrapeSourceWorker_TimeoutZeroUsesClientDefault(t *testing.T) {
+	t.Parallel()
+
+	w := ScrapeSourceWorker{}
+	job := newTestJob("any")
+
+	got := w.Timeout(job)
+	if got != 0 {
+		t.Fatalf("expected timeout 0 (client default), got %v", got)
+	}
+}
+
 func TestScrapeSourceWorker_StandaloneScraperError_PropagatesWithName(t *testing.T) {
 	t.Parallel()
 
