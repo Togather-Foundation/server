@@ -109,18 +109,27 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 	start := time.Now()
 	result, err := w.Scraper.ScrapeSource(ctx, sourceName, opts)
 	if err != nil {
-		return fmt.Errorf("scrape_source %s: %w", sourceName, err)
+		// For chained jobs: continue to next source (best-effort policy ensures run covers all eligible).
+		// For standalone jobs: propagate error to trigger retry logic.
+		if job.Args.IsChained() {
+			logger.WarnContext(ctx, "scrape_source: scrape failed, continuing to next source (best-effort chain)",
+				"source", sourceName, "error", err)
+		} else {
+			return fmt.Errorf("scrape_source %s: %w", sourceName, err)
+		}
+	} else {
+		logger.InfoContext(ctx, "scrape_source: periodic scrape completed",
+			"source", sourceName,
+			"events_found", result.EventsFound,
+			"events_created", result.EventsCreated,
+			"events_duplicate", result.EventsDuplicate,
+			"duration", time.Since(start),
+		)
 	}
 
-	logger.InfoContext(ctx, "scrape_source: periodic scrape completed",
-		"source", sourceName,
-		"events_found", result.EventsFound,
-		"events_created", result.EventsCreated,
-		"events_duplicate", result.EventsDuplicate,
-		"duration", time.Since(start),
-	)
-
-	// Chain to next source if this is a chained job and there are remaining sources
+	// Chain to next source if this is a chained job and there are remaining sources.
+	// Best-effort policy: always attempt to enqueue next source, even if current source failed.
+	// This ensures the run covers all eligible sources.
 	if job.Args.IsChained() {
 		nextIndex := job.Args.CurrentIndex + 1
 		if nextIndex < len(job.Args.SourceNames) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/riverqueue/river"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -165,4 +166,58 @@ func TestScrapeOrchestratorWorker_SkipUpToDateFiltersCorrectly(t *testing.T) {
 	// Should only have stale sources
 	assert.Equal(t, "stale-daily", eligible[0].name)
 	assert.Equal(t, "stale-weekly", eligible[1].name)
+}
+
+func TestScrapeOrchestratorWorker_NilDependencySafety(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns error when ConfigQueries nil", func(t *testing.T) {
+		t.Parallel()
+
+		w := &ScrapeOrchestratorWorker{
+			ConfigQueries: nil,
+			SourcesReader: &mockSourcesReader{},
+			Logger:        slog.Default(),
+		}
+
+		job := &river.Job[ScrapeOrchestratorArgs]{
+			Args: ScrapeOrchestratorArgs{},
+		}
+
+		err := w.Work(context.Background(), job)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "config queries not configured")
+	})
+
+	t.Run("returns error when SourcesReader nil", func(t *testing.T) {
+		t.Parallel()
+
+		w := &ScrapeOrchestratorWorker{
+			ConfigQueries: &mockConfigReader{},
+			SourcesReader: nil,
+			Logger:        slog.Default(),
+		}
+
+		job := &river.Job[ScrapeOrchestratorArgs]{
+			Args: ScrapeOrchestratorArgs{},
+		}
+
+		err := w.Work(context.Background(), job)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "sources reader not configured")
+	})
+}
+
+type mockConfigReader struct{}
+
+func (m *mockConfigReader) GetScraperConfig(ctx context.Context) (postgres.ScraperConfig, error) {
+	return postgres.ScraperConfig{AutoScrape: true}, nil
+}
+
+type mockSourcesReader struct{}
+
+func (m *mockSourcesReader) ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]postgres.ListScraperSourcesWithLatestRunRow, error) {
+	return []postgres.ListScraperSourcesWithLatestRunRow{
+		{ID: 1, Name: "source-a", Schedule: "daily", Enabled: true},
+	}, nil
 }

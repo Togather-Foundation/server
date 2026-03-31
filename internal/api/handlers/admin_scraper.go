@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -36,10 +37,11 @@ type scraperJobInserter interface {
 
 // AdminScraperHandler handles admin scraper source management and run history.
 type AdminScraperHandler struct {
-	Queries     scraperQueriesIface
-	Logger      zerolog.Logger
-	Env         string
-	RiverClient scraperJobInserter
+	Queries           scraperQueriesIface
+	Logger            zerolog.Logger
+	Env               string
+	RiverClient       scraperJobInserter
+	OrchestratorReady bool // false if orchestrator dependencies not wired (nil ConfigQueries/SourcesReader)
 }
 
 // scraperSourceResponse is the JSON representation of a scraper source.
@@ -470,13 +472,13 @@ type triggerAllResponse struct {
 }
 
 func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Request) {
-	if h.RiverClient == nil {
-		problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/not-available", "Job queue not available on this node", nil, h.Env)
+	if h.RiverClient == nil || !h.OrchestratorReady {
+		problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/not-available", "Scraper orchestrator not configured on this node", nil, h.Env)
 		return
 	}
 
 	var req triggerAllRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
 		return
 	}
@@ -501,16 +503,6 @@ func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Re
 				return
 			}
 		} else if !cfg.AutoScrape {
-			sources, listErr := h.Queries.ListScraperSourcesWithLatestRun(r.Context(), pgtype.Bool{Valid: true, Bool: true})
-			var enabledCount int
-			if listErr == nil {
-				for _, s := range sources {
-					if s.Enabled && (s.Schedule == "daily" || s.Schedule == "weekly") {
-						enabledCount++
-					}
-				}
-				_ = enabledCount
-			}
 			writeJSON(w, http.StatusOK, triggerAllResponse{
 				Status:            "skipped",
 				RespectAutoScrape: respectAutoScrape,

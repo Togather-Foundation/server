@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 )
 
@@ -51,12 +53,14 @@ type fakeScraperQueries struct {
 
 // fakeRiverInserter is a test double for scraperJobInserter.
 type fakeRiverInserter struct {
-	err         error // error to return from Insert
-	insertedArg river.JobArgs
+	err         error
+	insertedArg jobs.ScrapeOrchestratorArgs
 }
 
 func (f *fakeRiverInserter) Insert(_ context.Context, args river.JobArgs, _ *river.InsertOpts) (*rivertype.JobInsertResult, error) {
-	f.insertedArg = args
+	if argsTyped, ok := args.(jobs.ScrapeOrchestratorArgs); ok {
+		f.insertedArg = argsTyped
+	}
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -547,10 +551,36 @@ func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
 
 		q := &fakeScraperQueries{}
 		h := &AdminScraperHandler{
-			Queries:     q,
-			Logger:      zerolog.Nop(),
-			Env:         "test",
-			RiverClient: nil,
+			Queries:           q,
+			Logger:            zerolog.Nop(),
+			Env:               "test",
+			RiverClient:       nil,
+			OrchestratorReady: true,
+		}
+
+		bodyBytes, err := json.Marshal(map[string]any{"respect_auto_scrape": false})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/trigger-all", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.TriggerAllScrape(w, req)
+
+		resp := w.Result()
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	})
+
+	t.Run("returns 503 when orchestrator not ready (nil dependencies)", func(t *testing.T) {
+		t.Parallel()
+
+		inserter := &fakeRiverInserter{}
+		q := &fakeScraperQueries{}
+		h := &AdminScraperHandler{
+			Queries:           q,
+			Logger:            zerolog.Nop(),
+			Env:               "test",
+			RiverClient:       inserter,
+			OrchestratorReady: false,
 		}
 
 		bodyBytes, err := json.Marshal(map[string]any{"respect_auto_scrape": false})
@@ -624,10 +654,11 @@ func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
 				configGetErr: tc.configGetErr,
 			}
 			h := &AdminScraperHandler{
-				Queries:     q,
-				Logger:      zerolog.Nop(),
-				Env:         "test",
-				RiverClient: inserter,
+				Queries:           q,
+				Logger:            zerolog.Nop(),
+				Env:               "test",
+				RiverClient:       inserter,
+				OrchestratorReady: true,
 			}
 
 			var bodyBytes []byte
@@ -669,10 +700,11 @@ func TestAdminScraperHandler_TriggerAllScrape_WithRiver(t *testing.T) {
 			configRow: postgres.ScraperConfig{AutoScrape: true},
 		}
 		h := &AdminScraperHandler{
-			Queries:     q,
-			Logger:      zerolog.Nop(),
-			Env:         "test",
-			RiverClient: inserter,
+			Queries:           q,
+			Logger:            zerolog.Nop(),
+			Env:               "test",
+			RiverClient:       inserter,
+			OrchestratorReady: true,
 		}
 
 		bodyBytes, err := json.Marshal(map[string]any{"respect_auto_scrape": false})
@@ -687,6 +719,34 @@ func TestAdminScraperHandler_TriggerAllScrape_WithRiver(t *testing.T) {
 		require.NotNil(t, inserter.insertedArg, "Insert should have been called")
 	})
 
+	t.Run("empty request body uses defaults and does not 400", func(t *testing.T) {
+		t.Parallel()
+
+		inserter := &fakeRiverInserter{}
+		q := &fakeScraperQueries{
+			configRow: postgres.ScraperConfig{AutoScrape: true},
+		}
+		h := &AdminScraperHandler{
+			Queries:           q,
+			Logger:            zerolog.Nop(),
+			Env:               "test",
+			RiverClient:       inserter,
+			OrchestratorReady: true,
+		}
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/trigger-all", strings.NewReader(""))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.TriggerAllScrape(w, req)
+
+		resp := w.Result()
+		assert.Equal(t, http.StatusAccepted, resp.StatusCode, "empty body should use defaults (respect_auto_scrape=true, skip_up_to_date=true) and not 400")
+
+		require.NotNil(t, inserter.insertedArg, "Insert should have been called with default args")
+		assert.True(t, inserter.insertedArg.RespectAutoScrape, "default RespectAutoScrape should be true")
+		assert.True(t, inserter.insertedArg.SkipUpToDate, "default SkipUpToDate should be true")
+	})
+
 	t.Run("returns 500 when River Insert fails", func(t *testing.T) {
 		t.Parallel()
 
@@ -695,10 +755,11 @@ func TestAdminScraperHandler_TriggerAllScrape_WithRiver(t *testing.T) {
 			configRow: postgres.ScraperConfig{AutoScrape: true},
 		}
 		h := &AdminScraperHandler{
-			Queries:     q,
-			Logger:      zerolog.Nop(),
-			Env:         "test",
-			RiverClient: inserter,
+			Queries:           q,
+			Logger:            zerolog.Nop(),
+			Env:               "test",
+			RiverClient:       inserter,
+			OrchestratorReady: true,
 		}
 
 		bodyBytes, err := json.Marshal(map[string]any{"respect_auto_scrape": false})

@@ -400,11 +400,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create Admin Scraper handler (srv-5127b)
 	// TriggerScrape enqueues a River ScrapeSourceJob — same path as scheduled scrapes.
+	// OrchestratorReady is true when scraper worker was registered (scraperSvc != nil means
+	// NewWorkersWithScraper was called which registers ScrapeOrchestratorWorker with ConfigQueries/SourcesReader).
 	adminScraperHandler := &handlers.AdminScraperHandler{
-		Queries:     queries,
-		Logger:      logger.With().Str("component", "scraper").Logger(),
-		Env:         cfg.Environment,
-		RiverClient: riverClient,
+		Queries:           queries,
+		Logger:            logger.With().Str("component", "scraper").Logger(),
+		Env:               cfg.Environment,
+		RiverClient:       riverClient,
+		OrchestratorReady: scraperSvc != nil,
 	}
 
 	// Create Admin Geocoding handler (srv-qq7o1)

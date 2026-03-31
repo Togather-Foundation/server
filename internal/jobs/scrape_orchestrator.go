@@ -48,6 +48,13 @@ func (w *ScrapeOrchestratorWorker) Work(ctx context.Context, job *river.Job[Scra
 		logger = slog.Default()
 	}
 
+	if w.ConfigQueries == nil {
+		return fmt.Errorf("scrape_orchestrator: config queries not configured")
+	}
+	if w.SourcesReader == nil {
+		return fmt.Errorf("scrape_orchestrator: sources reader not configured")
+	}
+
 	respectAutoScrape := job.Args.RespectAutoScrape
 	skipUpToDate := job.Args.SkipUpToDate
 

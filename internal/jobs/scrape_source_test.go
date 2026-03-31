@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -662,5 +663,86 @@ func TestScrapeSourceWorker_RespectAutoScrapeTrueChecksConfig(t *testing.T) {
 	// Should NOT scrape because RespectAutoScrape=true AND global auto_scrape=false
 	if ms.called {
 		t.Error("expected ScrapeSource NOT to be called when RespectAutoScrape=true and auto_scrape=false")
+	}
+}
+
+func TestScrapeSourceWorker_ChainedScraperError_BestEffortContinues(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockScraperConfig{
+		cfg: postgres.ScraperConfig{AutoScrape: true},
+	}
+	scrapeErr := errors.New("network timeout")
+	ms := &mockScraper{err: scrapeErr}
+
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: cfg,
+		Logger:        nil,
+		Slot:          "test",
+	}
+
+	job := &river.Job[ScrapeSourceArgs]{
+		JobRow: &rivertype.JobRow{
+			Kind:        JobKindScrapeSource,
+			EncodedArgs: []byte(`{"source_name":"first-source"}`),
+			Attempt:     1,
+			CreatedAt:   time.Now(),
+		},
+		Args: ScrapeSourceArgs{
+			SourceName:        "first-source",
+			SourceNames:       []string{"first-source", "second-source"},
+			CurrentIndex:      0,
+			RespectAutoScrape: false,
+			SkipUpToDate:      false,
+		},
+	}
+
+	err := w.Work(context.Background(), job)
+	if err != nil {
+		if strings.Contains(err.Error(), "scrape_source first-source") {
+			t.Errorf("chained job should NOT return scrape_source error format, got: %v", err)
+		}
+	}
+}
+
+func TestScrapeSourceWorker_StandaloneScraperError_PropagatesWithName(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockScraperConfig{
+		cfg: postgres.ScraperConfig{AutoScrape: true},
+	}
+	scrapeErr := errors.New("network timeout")
+	ms := &mockScraper{err: scrapeErr}
+
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: cfg,
+		Logger:        nil,
+		Slot:          "test",
+	}
+
+	job := &river.Job[ScrapeSourceArgs]{
+		JobRow: &rivertype.JobRow{
+			Kind:        JobKindScrapeSource,
+			EncodedArgs: []byte(`{"source_name":"standalone-source"}`),
+			Attempt:     1,
+			CreatedAt:   time.Now(),
+		},
+		Args: ScrapeSourceArgs{
+			SourceName:        "standalone-source",
+			SourceNames:       nil,
+			CurrentIndex:      0,
+			RespectAutoScrape: false,
+			SkipUpToDate:      false,
+		},
+	}
+
+	err := w.Work(context.Background(), job)
+	if err == nil {
+		t.Fatal("expected error for standalone job with scrape failure")
+	}
+	if !strings.Contains(err.Error(), "standalone-source") {
+		t.Errorf("expected error containing source name, got %v", err)
 	}
 }

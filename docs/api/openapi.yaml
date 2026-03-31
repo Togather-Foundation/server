@@ -2083,7 +2083,7 @@ paths:
         '503':
           description: Scraper not configured on this node
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
@@ -2161,7 +2161,7 @@ paths:
         '503':
           description: Job queue not available on this node
           content:
-            application/json:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
