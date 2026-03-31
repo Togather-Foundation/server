@@ -50,6 +50,9 @@ type fakeScraperQueries struct {
 	configRow    postgres.ScraperConfig
 	configGetErr error
 	configSetErr error
+
+	countRunningScraperRunsValue int64
+	countRunningScraperRunsErr   error
 }
 
 // fakeRiverInserter is a test double for scraperJobInserter.
@@ -94,6 +97,13 @@ func (f *fakeScraperQueries) GetScraperConfig(_ context.Context) (postgres.Scrap
 
 func (f *fakeScraperQueries) SetScraperConfig(_ context.Context, _ postgres.SetScraperConfigParams) error {
 	return f.configSetErr
+}
+
+func (f *fakeScraperQueries) CountRunningScraperRuns(_ context.Context) (int64, error) {
+	if f.countRunningScraperRunsErr != nil {
+		return 0, f.countRunningScraperRunsErr
+	}
+	return f.countRunningScraperRunsValue, nil
 }
 
 // ----------------------------------------------------------------------------
@@ -603,6 +613,7 @@ func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
 		body           any
 		configRow      postgres.ScraperConfig
 		configGetErr   error
+		runningCount   int64
 		wantStatus     int
 		wantStatusText string
 	}{
@@ -618,6 +629,7 @@ func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
 			configRow: postgres.ScraperConfig{
 				AutoScrape: false,
 			},
+			runningCount:   0,
 			wantStatus:     http.StatusAccepted,
 			wantStatusText: "triggered",
 		},
@@ -627,6 +639,7 @@ func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
 			configRow: postgres.ScraperConfig{
 				AutoScrape: false,
 			},
+			runningCount:   0,
 			wantStatus:     http.StatusOK,
 			wantStatusText: "skipped",
 		},
@@ -634,6 +647,7 @@ func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
 			name:           "defaults respect_auto_scrape to true",
 			body:           map[string]any{},
 			configRow:      postgres.ScraperConfig{AutoScrape: false},
+			runningCount:   0,
 			wantStatus:     http.StatusOK,
 			wantStatusText: "skipped",
 		},
@@ -641,8 +655,17 @@ func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
 			name:           "defaults skip_up_to_date to true",
 			body:           map[string]any{"respect_auto_scrape": false},
 			configRow:      postgres.ScraperConfig{AutoScrape: true},
+			runningCount:   0,
 			wantStatus:     http.StatusAccepted,
 			wantStatusText: "triggered",
+		},
+		{
+			name:           "returns conflict when run already active",
+			body:           map[string]any{"respect_auto_scrape": false},
+			configRow:      postgres.ScraperConfig{AutoScrape: true},
+			runningCount:   2,
+			wantStatus:     http.StatusConflict,
+			wantStatusText: "already_running",
 		},
 	}
 
@@ -653,8 +676,9 @@ func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
 
 			inserter := &fakeRiverInserter{}
 			q := &fakeScraperQueries{
-				configRow:    tc.configRow,
-				configGetErr: tc.configGetErr,
+				configRow:                    tc.configRow,
+				configGetErr:                 tc.configGetErr,
+				countRunningScraperRunsValue: tc.runningCount,
 			}
 			h := &AdminScraperHandler{
 				Queries:           q,
@@ -720,6 +744,40 @@ func TestAdminScraperHandler_TriggerAllScrape_WithRiver(t *testing.T) {
 
 		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
 		require.True(t, inserter.called, "Insert should have been called")
+	})
+
+	t.Run("returns 409 when running source exists and does not enqueue", func(t *testing.T) {
+		t.Parallel()
+
+		inserter := &fakeRiverInserter{}
+		q := &fakeScraperQueries{
+			configRow:                    postgres.ScraperConfig{AutoScrape: true},
+			countRunningScraperRunsValue: 1,
+		}
+		h := &AdminScraperHandler{
+			Queries:           q,
+			Logger:            zerolog.Nop(),
+			Env:               "test",
+			RiverClient:       inserter,
+			OrchestratorReady: true,
+		}
+
+		bodyBytes, err := json.Marshal(map[string]any{"respect_auto_scrape": false})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/trigger-all", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.TriggerAllScrape(w, req)
+
+		resp := w.Result()
+		assert.Equal(t, http.StatusConflict, resp.StatusCode)
+		assert.False(t, inserter.called, "Insert should not be called when a run is active")
+
+		var body triggerAllResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+		assert.Equal(t, "already_running", body.Status)
+		assert.EqualValues(t, 1, body.RunningSources)
 	})
 
 	t.Run("empty request body uses defaults and does not 400", func(t *testing.T) {

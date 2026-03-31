@@ -133,6 +133,7 @@ const API = {
             }
             const err = new Error(message);
             err.status = response.status; // Preserve status code for error handling
+            err.body = error; // Preserve parsed response payload for callers needing details
             throw err;
         }
         

@@ -50,3 +50,11 @@ SELECT id, source_name, source_url, tier, started_at, completed_at, status,
  WHERE source_name = sqlc.arg('source_name')
  ORDER BY started_at DESC
  LIMIT sqlc.arg('limit');
+
+-- name: CountRunningScraperRuns :one
+-- Count scraper runs currently marked as running within a recent window.
+-- The time window avoids stale rows permanently blocking new run-all attempts.
+SELECT COUNT(*)
+  FROM scraper_runs
+ WHERE status = 'running'
+   AND started_at > NOW() - INTERVAL '30 minutes';

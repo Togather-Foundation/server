@@ -305,10 +305,30 @@
                 showToast('Serial scrape triggered: ' + result.status, 'success');
             }
         } catch (err) {
-            showToast('Failed to trigger serial scrape: ' + err.message, 'error');
+            if (err && err.status === 409) {
+                var running = parseRunningSourcesFromError(err);
+                if (running > 0) {
+                    showToast('Run already in progress (' + running + ' source' + (running === 1 ? '' : 's') + ' running)', 'warning');
+                } else {
+                    showToast('Run already in progress — wait for current run to finish', 'warning');
+                }
+            } else {
+                showToast('Failed to trigger serial scrape: ' + err.message, 'error');
+            }
         } finally {
             setLoading(btn, false);
         }
+    }
+
+    function parseRunningSourcesFromError(err) {
+        if (!err) return 0;
+        if (err.body && typeof err.body.running_sources === 'number') {
+            return err.body.running_sources;
+        }
+        var m = String(err.message || '').match(/\((\d+) source/);
+        if (!m) return 0;
+        var n = parseInt(m[1], 10);
+        return Number.isFinite(n) ? n : 0;
     }
 
     // -------------------------------------------------------------------------

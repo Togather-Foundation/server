@@ -28,6 +28,7 @@ type scraperQueriesIface interface {
 	UpsertScraperSource(ctx context.Context, arg postgres.UpsertScraperSourceParams) (postgres.UpsertScraperSourceRow, error)
 	GetScraperConfig(ctx context.Context) (postgres.ScraperConfig, error)
 	SetScraperConfig(ctx context.Context, arg postgres.SetScraperConfigParams) error
+	CountRunningScraperRuns(ctx context.Context) (int64, error)
 }
 
 // scraperJobInserter is the River client method subset used by AdminScraperHandler.
@@ -469,6 +470,7 @@ type triggerAllResponse struct {
 	RespectAutoScrape bool   `json:"respect_auto_scrape"`
 	SkipUpToDate      bool   `json:"skip_up_to_date"`
 	OrchestratorJobID int64  `json:"orchestrator_job_id,omitempty"`
+	RunningSources    int64  `json:"running_sources,omitempty"`
 }
 
 func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Request) {
@@ -512,6 +514,22 @@ func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Re
 		}
 	}
 
+	runningSources, err := h.Queries.CountRunningScraperRuns(r.Context())
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("admin scraper: trigger-all count running runs")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to inspect active scraper runs", fmt.Errorf("count running scraper runs: %w", err), h.Env)
+		return
+	}
+	if runningSources > 0 {
+		writeJSON(w, http.StatusConflict, triggerAllResponse{
+			Status:            "already_running",
+			RespectAutoScrape: respectAutoScrape,
+			SkipUpToDate:      skipUpToDate,
+			RunningSources:    runningSources,
+		}, "application/json")
+		return
+	}
+
 	insertResult, err := h.RiverClient.Insert(r.Context(), jobs.ScrapeOrchestratorArgs{
 		RespectAutoScrape: respectAutoScrape,
 		SkipUpToDate:      skipUpToDate,
@@ -540,5 +558,6 @@ func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Re
 		RespectAutoScrape: respectAutoScrape,
 		SkipUpToDate:      skipUpToDate,
 		OrchestratorJobID: insertResult.Job.ID,
+		RunningSources:    runningSources,
 	}, "application/json")
 }

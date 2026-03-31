@@ -2229,6 +2229,23 @@ paths:
                     type: boolean
                   skip_up_to_date:
                     type: boolean
+        '409':
+          description: Run already in progress; overlapping run-all is blocked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: already_running
+                  respect_auto_scrape:
+                    type: boolean
+                  skip_up_to_date:
+                    type: boolean
+                  running_sources:
+                    type: integer
+                    minimum: 1
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':

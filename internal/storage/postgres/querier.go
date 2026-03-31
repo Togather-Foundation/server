@@ -44,6 +44,9 @@ type Querier interface {
 	CountRecentSubmissionsByIP(ctx context.Context, arg CountRecentSubmissionsByIPParams) (int64, error)
 	// Count total reviews by status (for badge display)
 	CountReviewQueueByStatus(ctx context.Context, status pgtype.Text) (int64, error)
+	// Count scraper runs currently marked as running within a recent window.
+	// The time window avoids stale rows permanently blocking new run-all attempts.
+	CountRunningScraperRuns(ctx context.Context) (int64, error)
 	// Count submissions with optional status filter (for pagination total).
 	CountScraperSubmissions(ctx context.Context, status pgtype.Text) (int64, error)
 	// Count entities of a type that have no external identifiers

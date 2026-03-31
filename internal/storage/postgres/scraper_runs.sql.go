@@ -11,6 +11,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countRunningScraperRuns = `-- name: CountRunningScraperRuns :one
+SELECT COUNT(*)
+  FROM scraper_runs
+ WHERE status = 'running'
+   AND started_at > NOW() - INTERVAL '30 minutes'
+`
+
+// Count scraper runs currently marked as running within a recent window.
+// The time window avoids stale rows permanently blocking new run-all attempts.
+func (q *Queries) CountRunningScraperRuns(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countRunningScraperRuns)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getLatestScraperRunBySource = `-- name: GetLatestScraperRunBySource :one
 SELECT id, source_name, source_url, tier, started_at, completed_at, status,
        events_found, events_new, events_dup, events_failed, error_message, metadata
