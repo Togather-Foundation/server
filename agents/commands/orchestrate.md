@@ -228,7 +228,7 @@ The goal is meta-process improvement and surfacing hidden debt, not recounting a
 - Present a **human-readable reflection report** to the user.
 - Use this structure:
   1. **What was hard/surprising** (Why did certain things take longer than expected?)
-  2. **Alternate paths considered** (Why was this approach chosen over others?)
+  2. **Alternate paths considered** (Is there a better way if things were different?)
   3. **Workflow evaluation** (Did the agent tooling/instructions break down? What prompted manual intervention?)
   4. **Tradeoffs and accepted debt** (What you intentionally did not do or polish)
   5. **Quality gaps** (tests/docs/observability still missing)
