@@ -56,7 +56,10 @@ Examples:
 		if len(configs) == 0 {
 			if syncJSON {
 				result := syncResult{SourcesFound: 0, Total: 0, Warnings: warnings, Errors: errors}
-				jsonOut, _ := json.Marshal(result)
+				jsonOut, jsonErr := json.Marshal(result)
+				if jsonErr != nil {
+					return fmt.Errorf("marshal JSON output: %w", jsonErr)
+				}
 				fmt.Println(string(jsonOut))
 				return nil
 			}

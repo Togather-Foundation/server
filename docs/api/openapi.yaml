@@ -2237,7 +2237,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '503':
-          description: Job queue not available on this node
+          description: |
+            Job queue not available or orchestrator not configured.
+            This can occur if:
+            - The River job queue is unavailable on this node
+            - The scraper orchestrator dependencies are not wired (e.g., River not initialized)
+            Check that the server is configured with `RIVER_ENABLED=true` and the database
+            schema includes River tables.
           content:
             application/problem+json:
               schema:

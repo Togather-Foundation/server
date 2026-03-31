@@ -1738,13 +1738,31 @@ sync_sources() {
         return 1
     fi
     
-    # Parse JSON output to get source counts
-    local sources_found total created updated
+    # Parse JSON output to get source counts and warnings/errors
+    local sources_found total created updated warnings errors
     sources_found=$(echo "${sync_output}" | jq -r '.sources_found // 0' 2>/dev/null || echo "0")
     total=$(echo "${sync_output}" | jq -r '.total // -1' 2>/dev/null || echo "-1")
     created=$(echo "${sync_output}" | jq -r '.created // 0' 2>/dev/null || echo "0")
     updated=$(echo "${sync_output}" | jq -r '.updated // 0' 2>/dev/null || echo "0")
-    
+    warnings=$(echo "${sync_output}" | jq -r '.warnings // 0' 2>/dev/null || echo "0")
+    errors=$(echo "${sync_output}" | jq -r '.errors // 0' 2>/dev/null || echo "0")
+
+    # Check for partial failures - fail staging/prod on warnings or errors
+    if [[ "$env" == "staging" || "$env" == "production" ]]; then
+        if [[ "$warnings" -gt 0 || "$errors" -gt 0 ]]; then
+            log "ERROR" "Scraper source sync reported partial failures (warnings=${warnings}, errors=${errors})"
+            log "ERROR" "This indicates problems with one or more source configurations"
+            log "ERROR" "Raw output: ${sync_output}"
+            log "ERROR" "Deployment aborted: scraper config sync had warnings/errors"
+            return 1
+        fi
+    else
+        if [[ "$warnings" -gt 0 || "$errors" -gt 0 ]]; then
+            log "WARN" "Scraper source sync reported warnings=${warnings}, errors=${errors}"
+            log "WARN" "Raw output: ${sync_output}"
+        fi
+    fi
+
     # Validate JSON parsing succeeded - check for non-numeric or sentinel values
     if [[ ! "$total" =~ ^-?[0-9]+$ ]] || [[ "$total" -le 0 ]]; then
         if [[ "$env" == "staging" || "$env" == "production" ]]; then
