@@ -1049,8 +1049,19 @@ automatically for same-origin requests.
 ### Admin UI Toggle
 
 The `/admin/scraper` page includes an **Auto-scrape** toggle that sets `auto_scrape`
-via `PATCH /api/admin/scraper/config`. Enabling it activates periodic job scheduling
+via `PATCH /api/v1/admin/scraper/config`. Enabling it activates periodic job scheduling
 for all sources with a `daily` or `weekly` schedule.
+
+The same page also includes a **Run All** control that triggers serial scraping
+via `POST /api/v1/admin/scraper/trigger-all` with options:
+
+- `respect_auto_scrape` (default `true`) - if `true`, run is skipped when global
+  `auto_scrape` is disabled.
+- `skip_up_to_date` (default `true`) - skips sources with fresh successful runs
+  (`daily` < 24h, `weekly` < 7d).
+
+Serial runs reuse `scrape_source` jobs and process one source at a time; failures
+on one source do not stop later sources (best-effort chain).
 
 ---
 
