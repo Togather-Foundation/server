@@ -80,6 +80,7 @@ run_sync_sources_test() {
     local docker_ps_output="${3:-togather-server-${slot}}"
     local docker_exec_output="$4"
     local docker_exec_exit="${5:-0}"
+    local docker_ps_exit="${6:-0}"
 
     # Create a temporary script that contains:
     # 1. Our mock log function
@@ -143,6 +144,7 @@ TESTSCRIPT
     local result=0
     LOG_OUTPUT_FILE="$log_file" \
     DOCKER_PS_OUTPUT="$docker_ps_output" \
+    DOCKER_PS_EXIT="$docker_ps_exit" \
     DOCKER_EXEC_OUTPUT="$docker_exec_output" \
     DOCKER_EXEC_EXIT="$docker_exec_exit" \
     bash "$tmp_script" >> "$log_file" 2>&1 || result=$?
@@ -162,349 +164,97 @@ TESTSCRIPT
 
 # Test 1: Success case - exit 0 in staging
 test_success_staging() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, "created": 1, "updated": 0, "total": 1, "warnings": 0, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "staging" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "staging" "blue" "togather-server-blue" \
+        '{"sources_found": 1, "created": 1, "updated": 0, "total": 1, "warnings": 0, "errors": 0}' 0 || result=$?
     [[ $result -eq 0 ]]
 }
 
 # Test 2: Success case - exit 0 in production
 test_success_production() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-green" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 2, "created": 1, "updated": 1, "total": 2, "warnings": 0, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "production" "green"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "production" "green" "togather-server-green" \
+        '{"sources_found": 2, "created": 1, "updated": 1, "total": 2, "warnings": 0, "errors": 0}' 0 || result=$?
     [[ $result -eq 0 ]]
 }
 
 # Test 3: Success case - exit 0 in development
 test_success_development() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, "created": 1, "updated": 0, "total": 1, "warnings": 0, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "development" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "development" "blue" "togather-server-blue" \
+        '{"sources_found": 1, "created": 1, "updated": 0, "total": 1, "warnings": 0, "errors": 0}' 0 || result=$?
     [[ $result -eq 0 ]]
 }
 
 # Test 4: Warnings cause failure in staging
 test_warnings_fail_staging() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, "created": 0, "updated": 1, "total": 1, "warnings": 1, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "staging" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "staging" "blue" "togather-server-blue" \
+        '{"sources_found": 1, "created": 0, "updated": 1, "total": 1, "warnings": 1, "errors": 0}' 0 || result=$?
     [[ $result -eq 1 ]]
 }
 
 # Test 5: Warnings cause failure in production
 test_warnings_fail_production() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-green" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, "created": 0, "updated": 1, "total": 1, "warnings": 2, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "production" "green"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "production" "green" "togather-server-green" \
+        '{"sources_found": 1, "created": 0, "updated": 1, "total": 1, "warnings": 2, "errors": 0}' 0 || result=$?
     [[ $result -eq 1 ]]
 }
 
 # Test 6: Warnings only log in development (exit 0)
 test_warnings_warn_development() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, "created": 0, "updated": 1, "total": 1, "warnings": 1, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "development" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "development" "blue" "togather-server-blue" \
+        '{"sources_found": 1, "created": 0, "updated": 1, "total": 1, "warnings": 1, "errors": 0}' 0 || result=$?
     [[ $result -eq 0 ]]
 }
 
 # Test 7: Total 0 causes failure in staging
 test_total_zero_fail_staging() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 0, "created": 0, "updated": 0, "total": 0, "warnings": 0, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "staging" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "staging" "blue" "togather-server-blue" \
+        '{"sources_found": 0, "created": 0, "updated": 0, "total": 0, "warnings": 0, "errors": 0}' 0 || result=$?
     [[ $result -eq 1 ]]
 }
 
 # Test 8: Total 0 causes failure in production
 test_total_zero_fail_production() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-green" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 0, "created": 0, "updated": 0, "total": 0, "warnings": 0, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "production" "green"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "production" "green" "togather-server-green" \
+        '{"sources_found": 0, "created": 0, "updated": 0, "total": 0, "warnings": 0, "errors": 0}' 0 || result=$?
     [[ $result -eq 1 ]]
 }
 
 # Test 9: Total 0 only warns in development (exit 0)
 test_total_zero_warn_development() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 0, "created": 0, "updated": 0, "total": 0, "warnings": 0, "errors": 0}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "development" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "development" "blue" "togather-server-blue" \
+        '{"sources_found": 0, "created": 0, "updated": 0, "total": 0, "warnings": 0, "errors": 0}' 0 || result=$?
     [[ $result -eq 0 ]]
 }
 
 # Test 10: Malformed JSON causes failure in staging
 test_malformed_json_fail_staging() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, oops broken' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "staging" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "staging" "blue" "togather-server-blue" \
+        '{"sources_found": 1, oops broken' 0 || result=$?
     [[ $result -eq 1 ]]
 }
 
 # Test 11: Malformed JSON causes failure in production
 test_malformed_json_fail_production() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-green" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, oops broken' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "production" "green"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "production" "green" "togather-server-green" \
+        '{"sources_found": 1, oops broken' 0 || result=$?
     [[ $result -eq 1 ]]
 }
 
 # Test 12: Malformed JSON causes failure in development (total=-1 sentinel)
 test_malformed_json_fail_development() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, oops broken' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "development" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "development" "blue" "togather-server-blue" \
+        '{"sources_found": 1, oops broken' 0 || result=$?
     # Malformed JSON results in total=-1 which is <= 0, so even dev should handle it
     # Looking at the code: total=-1 triggers the "non-numeric or sentinel" check
     # In dev, it only warns, so exit 0
@@ -513,89 +263,24 @@ test_malformed_json_fail_development() {
 
 # Test 13: Errors cause failure in staging
 test_errors_fail_staging() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, "created": 0, "updated": 0, "total": 1, "warnings": 0, "errors": 1}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "staging" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "staging" "blue" "togather-server-blue" \
+        '{"sources_found": 1, "created": 0, "updated": 0, "total": 1, "warnings": 0, "errors": 1}' 0 || result=$?
     [[ $result -eq 1 ]]
 }
 
 # Test 14: Errors only warn in development
 test_errors_warn_development() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="togather-server-blue" \
-    DOCKER_EXEC_OUTPUT='{"sources_found": 1, "created": 0, "updated": 1, "total": 1, "warnings": 0, "errors": 1}' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "development" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "development" "blue" "togather-server-blue" \
+        '{"sources_found": 1, "created": 0, "updated": 1, "total": 1, "warnings": 0, "errors": 1}' 0 || result=$?
     [[ $result -eq 0 ]]
 }
 
 # Test 15: Container not running causes failure
 test_container_not_running() {
-    local log_file
-    log_file=$(mktemp /tmp/sync-log-XXXXXX.txt)
-
     local result=0
-    LOG_OUTPUT_FILE="$log_file" \
-    DOCKER_PS_OUTPUT="" \
-    DOCKER_PS_EXIT=1 \
-    DOCKER_EXEC_OUTPUT='' \
-    DOCKER_EXEC_EXIT=0 \
-    bash -c '
-        set -euo pipefail
-        log() { echo "[${1}] ${*:2}" >> "'"$log_file"'"; }
-        docker() {
-            case "$1" in
-                ps) echo "$DOCKER_PS_OUTPUT"; return "${DOCKER_PS_EXIT:-0}" ;;
-                exec) echo "$DOCKER_EXEC_OUTPUT"; return "${DOCKER_EXEC_EXIT:-0}" ;;
-            esac
-        }
-        '"$SYNC_SOURCES_FUNC"'
-        sync_sources "staging" "blue"
-    ' || result=$?
-
-    TEST_LOG_CONTENT=$(cat "$log_file")
-    rm -f "$log_file"
-
+    run_sync_sources_test "staging" "blue" "" "" 0 1 || result=$?
     [[ $result -eq 1 ]]
 }
 

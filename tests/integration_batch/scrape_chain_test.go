@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -19,17 +20,28 @@ import (
 
 // mockChainScraper implements scraperSourceScraper and records each call.
 type mockChainScraper struct {
+	mu      sync.Mutex
 	results map[string]scraper.ScrapeResult
 	errs    map[string]error
 	calls   []string
 }
 
 func (m *mockChainScraper) ScrapeSource(ctx context.Context, sourceName string, opts scraper.ScrapeOptions) (scraper.ScrapeResult, error) {
+	m.mu.Lock()
 	m.calls = append(m.calls, sourceName)
+	m.mu.Unlock()
 	if err, ok := m.errs[sourceName]; ok && err != nil {
 		return m.results[sourceName], err
 	}
 	return m.results[sourceName], nil
+}
+
+func (m *mockChainScraper) getCalls() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	c := make([]string, len(m.calls))
+	copy(c, m.calls)
+	return c
 }
 
 // setupScrapeChainTest creates a River client with scrape workers wired to a mock scraper,
@@ -103,12 +115,12 @@ func awaitChainCompletion(t *testing.T, mock *mockChainScraper, expectedSources 
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		if len(mock.calls) >= len(expectedSources) {
+		if len(mock.getCalls()) >= len(expectedSources) {
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("chain did not complete within %v: got %d calls, expected %d (%v)", timeout, len(mock.calls), len(expectedSources), mock.calls)
+	t.Fatalf("chain did not complete within %v: got %d calls, expected %d (%v)", timeout, len(mock.getCalls()), len(expectedSources), mock.getCalls())
 }
 
 func TestScrapeChain_SerialProgression(t *testing.T) {
@@ -139,14 +151,15 @@ func TestScrapeChain_SerialProgression(t *testing.T) {
 	awaitChainCompletion(t, mock, sources, 15*time.Second)
 
 	// Assert all sources were called.
-	assert.ElementsMatch(t, sources, mock.calls, "all sources should have been scraped")
+	calls := mock.getCalls()
+	assert.ElementsMatch(t, sources, calls, "all sources should have been scraped")
 
 	// Assert serial ordering: each source should be called after the previous one.
 	// Since the chain enqueues the next source only after the current one finishes,
 	// the call order should match the source order (sorted by name in the DB query).
-	require.Len(t, mock.calls, 3, "expected exactly 3 scrape calls")
+	require.Len(t, calls, 3, "expected exactly 3 scrape calls")
 	for i, name := range sources {
-		assert.Equal(t, name, mock.calls[i], "source %d should be %s", i, name)
+		assert.Equal(t, name, calls[i], "source %d should be %s", i, name)
 	}
 }
 
@@ -178,11 +191,12 @@ func TestScrapeChain_ContinueOnFailure(t *testing.T) {
 	awaitChainCompletion(t, mock, sources, 15*time.Second)
 
 	// Assert all sources were called (best-effort continue-on-failure).
-	assert.ElementsMatch(t, sources, mock.calls, "all sources should be attempted despite failure")
+	calls := mock.getCalls()
+	assert.ElementsMatch(t, sources, calls, "all sources should be attempted despite failure")
 
 	// Assert ordering is preserved.
-	require.Len(t, mock.calls, 3, "expected exactly 3 scrape calls")
+	require.Len(t, calls, 3, "expected exactly 3 scrape calls")
 	for i, name := range sources {
-		assert.Equal(t, name, mock.calls[i], "source %d should be %s", i, name)
+		assert.Equal(t, name, calls[i], "source %d should be %s", i, name)
 	}
 }
