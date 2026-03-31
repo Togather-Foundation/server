@@ -324,8 +324,8 @@ Do not proceed to Phase 9 until user explicitly signs off.
 git checkout main && git pull && git checkout - && git rebase main
 scripts/agent-run.sh make ci    # re-verify after rebase
 
-# Merge
-git checkout main && git merge --no-ff <branch-name>
+# Merge (include a detailed summary of changes and resolved beads in the commit message)
+git checkout main && git merge --no-ff <branch-name> -m "Merge branch '<branch-name>'" -m "<Detailed summary of what was built, fixed, and why. List closed beads.>"
 
 # Close beads
 bd close <id> --reason "<summary of what changed and why>"
