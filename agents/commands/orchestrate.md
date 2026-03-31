@@ -291,6 +291,8 @@ git push -u origin HEAD
 ```
 
 **Step 2 — Deploy and test:**
+> **WARNING:** Deployment scripts (specifically Docker builds) often take longer than the default agent `bash` tool timeout (120s). You MUST increase the tool's timeout limit (e.g., `timeout: 600000` / 10 minutes) when running these deploy commands to prevent premature termination.
+
 ```bash
 source .deploy.conf.staging 2>/dev/null
 scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD
