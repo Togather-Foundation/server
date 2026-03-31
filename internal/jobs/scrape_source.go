@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
 	"github.com/Togather-Foundation/server/internal/scraper"
@@ -21,9 +22,21 @@ const (
 // ScrapeSourceArgs holds the job arguments for a periodic source scrape.
 type ScrapeSourceArgs struct {
 	SourceName string `json:"source_name"`
+
+	// Chain metadata for serial chaining:
+	// When set, the worker will enqueue the next source after completion.
+	SourceNames       []string `json:"source_names"`
+	CurrentIndex      int      `json:"current_index"`
+	RespectAutoScrape bool     `json:"respect_auto_scrape"`
+	SkipUpToDate      bool     `json:"skip_up_to_date"`
 }
 
 func (ScrapeSourceArgs) Kind() string { return JobKindScrapeSource }
+
+// IsChained returns true if this job is part of a chain (has chain metadata).
+func (a ScrapeSourceArgs) IsChained() bool {
+	return len(a.SourceNames) > 0
+}
 
 // scraperConfigReader is the subset of postgres.Queries used by ScrapeSourceWorker.
 type scraperConfigReader interface {
@@ -38,13 +51,23 @@ type scraperSourceScraper interface {
 // ScrapeSourceWorker executes a single-source scrape as a River periodic job.
 type ScrapeSourceWorker struct {
 	river.WorkerDefaults[ScrapeSourceArgs]
-	Scraper       scraperSourceScraper
-	ConfigQueries scraperConfigReader
-	Logger        *slog.Logger
+	Scraper        scraperSourceScraper
+	ConfigQueries  scraperConfigReader
+	Logger         *slog.Logger
+	JobTimeout     time.Duration
+	EnqueueTimeout time.Duration
+	EnqueueRetries int
 	// Slot is the deployment slot (blue/green). It is reserved for structured
 	// logging; Prometheus metrics labels are controlled by the slot baked into
 	// the Scraper instance at construction time (NewScraperWithSourceRepoAndSlot).
 	Slot string
+}
+
+func (w ScrapeSourceWorker) Timeout(*river.Job[ScrapeSourceArgs]) time.Duration {
+	if w.JobTimeout > 0 {
+		return w.JobTimeout
+	}
+	return 0
 }
 
 func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourceArgs]) error {
@@ -61,8 +84,16 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 
 	// Read global scraper config. Proceed on read error (log only); fall back to
 	// zero-value ScrapeOptions which use package-level defaults everywhere.
+	// For chained jobs, respect RespectAutoScrape flag to bypass global check.
 	opts := scraper.ScrapeOptions{}
-	if w.ConfigQueries != nil {
+	shouldCheckAutoScrape := true
+
+	if job.Args.IsChained() && !job.Args.RespectAutoScrape {
+		shouldCheckAutoScrape = false
+		logger.DebugContext(ctx, "scrape_source: chained job bypassing auto_scrape check", "source", sourceName)
+	}
+
+	if shouldCheckAutoScrape && w.ConfigQueries != nil {
 		cfg, err := w.ConfigQueries.GetScraperConfig(ctx)
 		if err != nil {
 			logger.WarnContext(ctx, "scrape_source: failed to read scraper config, proceeding with defaults", "source", sourceName, "error", err)
@@ -80,10 +111,6 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 			if cfg.RateLimitMs > 0 {
 				opts.RateLimitMs = cfg.RateLimitMs
 			}
-			// TODO: cfg.RetryMaxAttempts — wire into retry logic when a retry
-			// wrapper is added to ScrapeSource (srv-ephoo follow-up).
-			// TODO: cfg.MaxConcurrentSources — wire into ScrapeAll fan-out
-			// concurrency when a semaphore is added there (srv-ephoo follow-up).
 		}
 	}
 
@@ -92,16 +119,91 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 	start := time.Now()
 	result, err := w.Scraper.ScrapeSource(ctx, sourceName, opts)
 	if err != nil {
-		return fmt.Errorf("scrape_source %s: %w", sourceName, err)
+		// For chained jobs: continue to next source (best-effort policy ensures run covers all eligible).
+		// For standalone jobs: propagate error to trigger retry logic.
+		if job.Args.IsChained() {
+			logger.WarnContext(ctx, "scrape_source: scrape failed, continuing to next source (best-effort chain)",
+				"source", sourceName, "error", err)
+		} else {
+			return fmt.Errorf("scrape_source %s: %w", sourceName, err)
+		}
+	} else {
+		logger.InfoContext(ctx, "scrape_source: periodic scrape completed",
+			"source", sourceName,
+			"events_found", result.EventsFound,
+			"events_created", result.EventsCreated,
+			"events_duplicate", result.EventsDuplicate,
+			"duration", time.Since(start),
+		)
 	}
 
-	logger.InfoContext(ctx, "scrape_source: periodic scrape completed",
-		"source", sourceName,
-		"events_found", result.EventsFound,
-		"events_created", result.EventsCreated,
-		"events_duplicate", result.EventsDuplicate,
-		"duration", time.Since(start),
-	)
+	// Chain to next source if this is a chained job and there are remaining sources.
+	// Best-effort policy: always attempt to enqueue next source, even if current source failed.
+	// This ensures the run covers all eligible sources.
+	if job.Args.IsChained() {
+		nextIndex := job.Args.CurrentIndex + 1
+		if nextIndex < len(job.Args.SourceNames) {
+			nextSourceName := job.Args.SourceNames[nextIndex]
+			logger.InfoContext(ctx, "scrape_source: enqueuing next chained source",
+				"current", sourceName,
+				"next", nextSourceName,
+				"next_index", nextIndex,
+				"total", len(job.Args.SourceNames),
+			)
+
+			riverClient, err := river.ClientFromContextSafely[pgx.Tx](ctx)
+			if err != nil {
+				logger.ErrorContext(ctx, "scrape_source: river client unavailable for chaining", "error", err)
+				return fmt.Errorf("scrape_source: river client unavailable for chaining: %w", err)
+			}
+
+			enqueueTimeout := w.EnqueueTimeout
+			if enqueueTimeout <= 0 {
+				enqueueTimeout = 5 * time.Second
+			}
+			retries := w.EnqueueRetries
+			if retries <= 0 {
+				retries = 3
+			}
+
+			var insertErr error
+			for attempt := 1; attempt <= retries; attempt++ {
+				enqueueCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), enqueueTimeout)
+				_, insertErr = riverClient.Insert(enqueueCtx, ScrapeSourceArgs{
+					SourceName:        nextSourceName,
+					SourceNames:       job.Args.SourceNames,
+					CurrentIndex:      nextIndex,
+					RespectAutoScrape: job.Args.RespectAutoScrape,
+					SkipUpToDate:      job.Args.SkipUpToDate,
+				}, nil)
+				cancel()
+				if insertErr == nil {
+					break
+				}
+				logger.WarnContext(ctx, "scrape_source: retry enqueue next chained source",
+					"next_source", nextSourceName,
+					"attempt", attempt,
+					"max_attempts", retries,
+					"error", insertErr)
+				time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+			}
+			if insertErr != nil {
+				logger.ErrorContext(ctx, "scrape_source: failed to enqueue next chained source",
+					"next_source", nextSourceName,
+					"attempts", retries,
+					"error", insertErr)
+				return fmt.Errorf("scrape_source: insert next chained job: %w", insertErr)
+			}
+
+			logger.InfoContext(ctx, "scrape_source: chained next source",
+				"next_source", nextSourceName,
+				"next_index", nextIndex,
+				"total", len(job.Args.SourceNames))
+		} else {
+			logger.InfoContext(ctx, "scrape_source: chain complete, no more sources",
+				"total", len(job.Args.SourceNames))
+		}
+	}
 
 	return nil
 }

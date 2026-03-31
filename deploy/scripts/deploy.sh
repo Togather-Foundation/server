@@ -1682,6 +1682,122 @@ validate_health() {
 }
 
 # ============================================================================
+# SCRAPER SOURCE SYNC FUNCTIONS (T021a)
+# ============================================================================
+
+# sync_sources - Syncs scraper YAML configs to database after deployment
+# Runs 'server scrape sync' inside the newly deployed container to ensure
+# the database has the latest source configs. This is critical because:
+# 1. YAML configs in the repo may have been updated since last deploy
+# 2. The scraper reads from DB at runtime, not from YAML files
+# 3. Deploy must fail clearly if sync fails (prevents scraper running with stale config)
+# Args:
+#   $1 - environment (e.g., "production", "staging")
+#   $2 - slot (the newly deployed slot, e.g., "blue" or "green")
+# Returns:
+#   0 on success, 1 on sync failure (deployment fails)
+# Side effects:
+#   - Runs 'server scrape sync --json' inside the container
+#   - Logs sync output for debugging
+sync_sources() {
+    local env="$1"
+    local slot="$2"
+    
+    log "INFO" "Syncing scraper source configs to database"
+    
+    # Get container name for the deployed slot
+    local container_name="togather-server-${slot}"
+    
+    # Check if container is running
+    if ! docker ps --format '{{.Names}}' | grep -q "^${container_name}$"; then
+        log "ERROR" "Container ${container_name} is not running"
+        log "ERROR" "Cannot sync sources - deployment may have failed"
+        return 1
+    fi
+    
+    # Run sync inside the container using JSON output for robust parsing
+    log "INFO" "Running 'server scrape sync --json' in ${container_name}"
+    
+    local sync_output
+    local sync_status=0
+    
+    # Run sync command with JSON output and capture output
+    sync_output=$(docker exec "${container_name}" /app/server scrape sync --json 2>&1) || sync_status=$?
+    
+    # Log the output for debugging
+    while IFS= read -r line; do
+        log "INFO" "  ${line}"
+    done <<< "${sync_output}"
+    
+    if [[ $sync_status -ne 0 ]]; then
+        log "ERROR" "Scraper source sync failed (exit code: ${sync_status})"
+        log "ERROR" "This indicates the database may be out of sync with YAML configs"
+        log "ERROR" "The scraper will run with stale source configurations"
+        log "ERROR" "Please investigate and re-run sync manually:"
+        log "ERROR" "  docker exec ${container_name} /app/server scrape sync"
+        return 1
+    fi
+    
+    # Parse JSON payload from mixed sync output (warn logs + final JSON line).
+    local sync_json
+    sync_json=$(printf '%s' "${sync_output}" | jq -Rns '
+      [inputs | split("\n")[] | select(length > 0) | (try fromjson catch empty)]
+      | if length > 0 then .[-1] else empty end
+    ' 2>/dev/null || true)
+
+    local sources_found total created updated warnings errors
+    if [[ -z "${sync_json}" ]]; then
+        total="-1"
+        created="0"
+        updated="0"
+        warnings="0"
+        errors="0"
+        sources_found="0"
+    else
+        sources_found=$(printf '%s' "${sync_json}" | jq -r '.sources_found // 0' 2>/dev/null || echo "0")
+        total=$(printf '%s' "${sync_json}" | jq -r '.total // -1' 2>/dev/null || echo "-1")
+        created=$(printf '%s' "${sync_json}" | jq -r '.created // 0' 2>/dev/null || echo "0")
+        updated=$(printf '%s' "${sync_json}" | jq -r '.updated // 0' 2>/dev/null || echo "0")
+        warnings=$(printf '%s' "${sync_json}" | jq -r '.warnings // 0' 2>/dev/null || echo "0")
+        errors=$(printf '%s' "${sync_json}" | jq -r '.errors // 0' 2>/dev/null || echo "0")
+    fi
+
+    # Check for partial failures - fail staging/prod on warnings or errors
+    if [[ "$env" == "staging" || "$env" == "production" ]]; then
+        if [[ "$warnings" -gt 0 || "$errors" -gt 0 ]]; then
+            log "ERROR" "Scraper source sync reported partial failures (warnings=${warnings}, errors=${errors})"
+            log "ERROR" "This indicates problems with one or more source configurations"
+            log "ERROR" "Raw output: ${sync_output}"
+            log "ERROR" "Deployment aborted: scraper config sync had warnings/errors"
+            return 1
+        fi
+    else
+        if [[ "$warnings" -gt 0 || "$errors" -gt 0 ]]; then
+            log "WARN" "Scraper source sync reported warnings=${warnings}, errors=${errors}"
+            log "WARN" "Raw output: ${sync_output}"
+        fi
+    fi
+
+    # Validate JSON parsing succeeded - check for non-numeric or sentinel values
+    if [[ ! "$total" =~ ^-?[0-9]+$ ]] || [[ "$total" -le 0 ]]; then
+        if [[ "$env" == "staging" || "$env" == "production" ]]; then
+            log "ERROR" "Failed to parse sync output or no sources processed (total=${total}, created=${created}, updated=${updated})"
+            log "ERROR" "Raw output: ${sync_output}"
+            log "ERROR" "Deployment aborted: scraper config sync failed"
+            return 1
+        else
+            log "WARN" "Failed to parse sync output or no sources processed (total=${total})"
+            log "WARN" "Raw output: ${sync_output}"
+            log "WARN" "Scraper will fall back to database configs (if any exist)"
+        fi
+    else
+        log "SUCCESS" "Scraper source configs synced successfully (${total} sources: ${created} created, ${updated} updated)"
+    fi
+    
+    return 0
+}
+
+# ============================================================================
 # STATE TRACKING FUNCTIONS (T022)
 # ============================================================================
 
@@ -1861,6 +1977,11 @@ deploy() {
     
     # T020: Validate health checks
     validate_health "$env" "$target_slot" || return 1
+    
+    # T021a: Sync scraper source configs to database BEFORE traffic switch
+    # This ensures the new container has updated configs before serving traffic.
+    # If sync fails, we can safely rollback without affecting user traffic.
+    sync_sources "$env" "$target_slot" || return 1
     
     # T021: Switch traffic to new slot
     switch_traffic "$env" "$target_slot" || return 1

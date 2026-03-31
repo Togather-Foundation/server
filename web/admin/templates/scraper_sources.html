@@ -23,6 +23,19 @@
                         </div>
                         <div class="col-auto ms-auto d-print-none">
                             <div class="d-flex align-items-center gap-3">
+                                <div id="orchestrator-options" class="d-none">
+                                    <label class="form-check form-switch mb-0 d-flex align-items-center gap-2" title="Respect auto-scrape configuration">
+                                        <input class="form-check-input" type="checkbox" id="respect-auto-scrape" checked>
+                                        <span class="form-check-label">Auto</span>
+                                    </label>
+                                    <label class="form-check form-switch mb-0 d-flex align-items-center gap-2" title="Skip sources scraped within their schedule window">
+                                        <input class="form-check-input" type="checkbox" id="skip-up-to-date" checked>
+                                        <span class="form-check-label">Skip Fresh</span>
+                                    </label>
+                                </div>
+                                <button id="trigger-all-btn" class="btn btn-primary d-none" data-action="trigger-all-scrape">
+                                    Run All
+                                </button>
                                 <div id="auto-scrape-toggle-wrap" class="d-none">
                                     <label class="form-check form-switch mb-0 d-flex align-items-center gap-2" title="Enable or disable periodic automated scraping">
                                         <input class="form-check-input" type="checkbox" id="auto-scrape-toggle" data-action="toggle-auto-scrape">

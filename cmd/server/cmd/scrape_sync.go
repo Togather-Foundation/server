@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,23 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+var (
+	syncJSON bool
+)
+
+func init() {
+	scrapeSyncCmd.Flags().BoolVar(&syncJSON, "json", false, "Output structured JSON instead of human-readable text")
+}
+
+type syncResult struct {
+	SourcesFound int `json:"sources_found"`
+	Created      int `json:"created"`
+	Updated      int `json:"updated"`
+	Total        int `json:"total"`
+	Warnings     int `json:"warnings"`
+	Errors       int `json:"errors"`
+}
+
 // scrapeSyncCmd upserts all YAML source configs into the scraper_sources DB table.
 var scrapeSyncCmd = &cobra.Command{
 	Use:   "sync",
@@ -21,16 +39,30 @@ into the scraper_sources database table. Reports counts of created and updated r
 
 Examples:
   server scrape sync
-  server scrape sync --sources configs/sources`,
+  server scrape sync --sources configs/sources
+  server scrape sync --json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		dir := scrapeSourceDir
+		var created, updated, warnings, errors int
 
 		configs, err := scraper.LoadSourceConfigs(dir)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+			warnings++
+			if !syncJSON {
+				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
+			}
 		}
 		if len(configs) == 0 {
+			if syncJSON {
+				result := syncResult{SourcesFound: 0, Total: 0, Warnings: warnings, Errors: errors}
+				jsonOut, jsonErr := json.Marshal(result)
+				if jsonErr != nil {
+					return fmt.Errorf("marshal JSON output: %w", jsonErr)
+				}
+				fmt.Println(string(jsonOut))
+				return nil
+			}
 			fmt.Printf("No source configs found in %s\n", dir)
 			return nil
 		}
@@ -47,21 +79,24 @@ Examples:
 
 		repo := postgres.NewScraperSourceRepository(pool)
 
-		var created, updated int
 		for _, cfg := range configs {
 			params, encErr := scraper.SourceConfigToUpsertParams(cfg)
 			if encErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: skipping %q: %v\n", cfg.Name, encErr)
+				warnings++
+				if !syncJSON {
+					fmt.Fprintf(os.Stderr, "Warning: skipping %q: %v\n", cfg.Name, encErr)
+				}
 				continue
 			}
 
 			result, upsertErr := repo.Upsert(ctx, params)
 			if upsertErr != nil {
-				fmt.Fprintf(os.Stderr, "Warning: upsert %q: %v\n", cfg.Name, upsertErr)
+				warnings++
+				if !syncJSON {
+					fmt.Fprintf(os.Stderr, "Warning: upsert %q: %v\n", cfg.Name, upsertErr)
+				}
 				continue
 			}
-			// Infer created vs updated from the RETURNING timestamps.
-			// On INSERT both timestamps are equal; on UPDATE updated_at > created_at.
 			if result.UpdatedAt.Equal(result.CreatedAt) {
 				created++
 			} else {
@@ -69,8 +104,26 @@ Examples:
 			}
 		}
 
+		total := created + updated
+
+		if syncJSON {
+			jsonOut, jsonErr := json.Marshal(syncResult{
+				SourcesFound: len(configs),
+				Created:      created,
+				Updated:      updated,
+				Total:        total,
+				Warnings:     warnings,
+				Errors:       errors,
+			})
+			if jsonErr != nil {
+				return fmt.Errorf("marshal JSON output: %w", jsonErr)
+			}
+			fmt.Println(string(jsonOut))
+			return nil
+		}
+
 		fmt.Printf("Sync complete: %d created, %d updated (total %d sources)\n",
-			created, updated, len(configs))
+			created, updated, total)
 		return nil
 	},
 }

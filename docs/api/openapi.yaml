@@ -2083,7 +2083,191 @@ paths:
         '503':
           description: Scraper not configured on this node
           content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/scraper/config:
+    get:
+      operationId: getScraperConfig
+      summary: Get global scraper configuration
+      description: |
+        Returns the current global scraper configuration including concurrency limits,
+        timeouts, retry settings, and rate limiting. If no config exists in the database,
+        returns sensible defaults.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current scraper configuration
+          content:
             application/json:
+              schema:
+                $ref: '#/components/schemas/ScraperConfig'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    patch:
+      operationId: patchScraperConfig
+      summary: Update global scraper configuration
+      description: |
+        Updates the global scraper configuration with partial JSON. Only provided fields
+        are applied over the current config. All numeric fields must be greater than 0
+        (except rate_limit_ms which can be 0).
+
+        Validation rules:
+        - max_concurrent_sources: must be > 0
+        - request_timeout_seconds: must be > 0
+        - retry_max_attempts: must be > 0
+        - max_batch_size: must be > 0
+        - rate_limit_ms: must be >= 0
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScraperConfigPatch'
+      responses:
+        '200':
+          description: Updated scraper configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScraperConfig'
+        '400':
+          description: Validation error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/scraper/trigger-all:
+    post:
+      operationId: triggerAllScraperSources
+      summary: Trigger a serial scrape run for all eligible sources
+      description: |
+        Queues an orchestrator job that serially scrapes all enabled sources with
+        daily or weekly schedules. Returns immediately with 202 after queuing.
+
+        Serial chaining timeout behavior is configurable via:
+        - `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` (default 300)
+        - `SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS` (default 5000)
+        - `SCRAPER_CHAIN_ENQUEUE_RETRIES` (default 3)
+
+        Options:
+        - `respect_auto_scrape` (default: true): If true and global auto_scrape is disabled, skip the run
+        - `skip_up_to_date` (default: true): Skip sources with fresh runs (daily <24h, weekly <7d)
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                respect_auto_scrape:
+                  type: boolean
+                  default: true
+                skip_up_to_date:
+                  type: boolean
+                  default: true
+      responses:
+        '202':
+          description: Orchestrator job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: triggered
+                  respect_auto_scrape:
+                    type: boolean
+                  skip_up_to_date:
+                    type: boolean
+                  orchestrator_job_id:
+                    type: integer
+        '200':
+          description: Run skipped (auto_scrape disabled and respect_auto_scrape=true)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: skipped
+                  respect_auto_scrape:
+                    type: boolean
+                  skip_up_to_date:
+                    type: boolean
+        '409':
+          description: Run already in progress; overlapping run-all is blocked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: already_running
+                  respect_auto_scrape:
+                    type: boolean
+                  skip_up_to_date:
+                    type: boolean
+                  running_sources:
+                    type: integer
+                    minimum: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: |
+            Job queue not available or orchestrator not configured.
+            This can occur if:
+            - The River job queue is unavailable on this node
+            - The scraper orchestrator dependencies are not wired (e.g., River not initialized)
+            Check that the server is configured with `RIVER_ENABLED=true` and the database
+            schema includes River tables.
+          content:
+            application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
@@ -2664,6 +2848,57 @@ components:
           type: integer
         last_run_error_message:
           type: string
+
+    ScraperConfig:
+      type: object
+      description: Global scraper configuration settings
+      properties:
+        auto_scrape:
+          type: boolean
+          description: Whether automatic scheduled scraping is enabled
+          default: true
+        max_concurrent_sources:
+          type: integer
+          description: Maximum number of sources to scrape concurrently
+          default: 3
+        request_timeout_seconds:
+          type: integer
+          description: HTTP request timeout in seconds
+          default: 30
+        retry_max_attempts:
+          type: integer
+          description: Maximum retry attempts for failed requests
+          default: 3
+        max_batch_size:
+          type: integer
+          description: Maximum number of events to batch per source
+          default: 100
+        rate_limit_ms:
+          type: integer
+          description: Minimum delay between requests in milliseconds
+          default: 0
+
+    ScraperConfigPatch:
+      type: object
+      description: Partial scraper configuration for PATCH requests (all fields optional)
+      properties:
+        auto_scrape:
+          type: boolean
+        max_concurrent_sources:
+          type: integer
+          description: Must be greater than 0
+        request_timeout_seconds:
+          type: integer
+          description: Must be greater than 0
+        retry_max_attempts:
+          type: integer
+          description: Must be greater than 0
+        max_batch_size:
+          type: integer
+          description: Must be greater than 0
+        rate_limit_ms:
+          type: integer
+          description: Must be 0 or greater
 
     ScraperRunDetail:
       type: object

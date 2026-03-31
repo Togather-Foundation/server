@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,12 +15,58 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 )
 
+// IngestClientConfig holds configuration for the IngestClient.
+type IngestClientConfig struct {
+	// PollBackoffStart is the initial delay before the first status poll.
+	// Default: 200ms
+	PollBackoffStart time.Duration
+
+	// PollBackoffMax is the maximum delay between status polls.
+	// Default: 2s
+	PollBackoffMax time.Duration
+
+	// PollTimeout is the maximum total time spent polling for a single chunk's result.
+	// Default: 30s
+	PollTimeout time.Duration
+
+	// HTTPClientTimeout is the timeout for HTTP requests.
+	// Default: 30s
+	HTTPClientTimeout time.Duration
+}
+
+// IngestClientOption configures an IngestClient.
+type IngestClientOption func(*IngestClientConfig)
+
+// WithPollBackoffStart sets the initial backoff delay for polling.
+func WithPollBackoffStart(d time.Duration) IngestClientOption {
+	return func(c *IngestClientConfig) { c.PollBackoffStart = d }
+}
+
+// WithPollBackoffMax sets the maximum backoff delay for polling.
+func WithPollBackoffMax(d time.Duration) IngestClientOption {
+	return func(c *IngestClientConfig) { c.PollBackoffMax = d }
+}
+
+// WithPollTimeout sets the total polling timeout.
+func WithPollTimeout(d time.Duration) IngestClientOption {
+	return func(c *IngestClientConfig) { c.PollTimeout = d }
+}
+
+// WithHTTPClientTimeout sets the HTTP client timeout.
+func WithHTTPClientTimeout(d time.Duration) IngestClientOption {
+	return func(c *IngestClientConfig) { c.HTTPClientTimeout = d }
+}
+
 // IngestClient submits event batches to a SEL server via the batch ingest API.
 type IngestClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
 	userAgent  string
+
+	pollBackoffStart time.Duration
+	pollBackoffMax   time.Duration
+	pollTimeout      time.Duration
 }
 
 // IngestResult holds the parsed response from a batch ingest submission.
@@ -55,29 +102,56 @@ type batchStatusResponse struct {
 
 // NewIngestClient constructs an IngestClient targeting baseURL with the given
 // API key. A 30-second HTTP timeout and a descriptive User-Agent are set by
-// default.
-func NewIngestClient(baseURL, apiKey string) *IngestClient {
+// default. Use options to override default polling behavior.
+func NewIngestClient(baseURL, apiKey string, opts ...IngestClientOption) *IngestClient {
+	cfg := IngestClientConfig{
+		PollBackoffStart:  200 * time.Millisecond,
+		PollBackoffMax:    2 * time.Second,
+		PollTimeout:       30 * time.Second,
+		HTTPClientTimeout: 30 * time.Second,
+	}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	// Defensive clamping: ensure durations are positive and bounded.
+	// Zero or negative values would cause issues; clamp to safe minimums.
+	if cfg.PollBackoffStart <= 0 {
+		cfg.PollBackoffStart = 200 * time.Millisecond
+	}
+	if cfg.PollBackoffMax <= 0 {
+		cfg.PollBackoffMax = 2 * time.Second
+	}
+	if cfg.PollTimeout <= 0 {
+		cfg.PollTimeout = 30 * time.Second
+	}
+	if cfg.HTTPClientTimeout <= 0 {
+		cfg.HTTPClientTimeout = 30 * time.Second
+	}
+	// Ensure PollBackoffMax >= PollBackoffStart
+	if cfg.PollBackoffMax < cfg.PollBackoffStart {
+		cfg.PollBackoffMax = cfg.PollBackoffStart
+	}
+	// Ensure PollTimeout >= PollBackoffMax (sanity bound)
+	if cfg.PollTimeout < cfg.PollBackoffMax {
+		cfg.PollTimeout = cfg.PollBackoffMax
+	}
+
 	return &IngestClient{
 		baseURL: baseURL,
 		apiKey:  apiKey,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: cfg.HTTPClientTimeout,
 		},
-		userAgent: "Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)",
+		userAgent:        "Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)",
+		pollBackoffStart: cfg.PollBackoffStart,
+		pollBackoffMax:   cfg.PollBackoffMax,
+		pollTimeout:      cfg.PollTimeout,
 	}
 }
 
 // maxBatchSize is the maximum number of events accepted by the API per request.
 const maxBatchSize = 100
-
-// pollBackoffStart is the initial delay before the first status poll.
-const pollBackoffStart = 200 * time.Millisecond
-
-// pollBackoffMax is the maximum delay between status polls.
-const pollBackoffMax = 2 * time.Second
-
-// pollTimeout is the maximum total time spent polling for a single chunk's result.
-const pollTimeout = 30 * time.Second
 
 // SubmitBatch marshals events as {"events":[...]} and POSTs them to
 // {baseURL}/api/v1/events:batch. Payloads larger than maxBatchSize are
@@ -170,23 +244,46 @@ func (c *IngestClient) submitChunk(ctx context.Context, evts []events.EventInput
 
 // pollBatchStatus polls statusURL with exponential backoff (start 200 ms, max
 // 2 s) for up to pollTimeout. When the server returns status == "completed"
-// the counts are mapped into an IngestResult. On timeout a partial result is
-// returned with a warning logged so the caller can continue.
+// the counts are mapped into an IngestResult. On internal poll timeout, a partial
+// result is returned with a warning logged so the caller can continue.
+// If the caller's context is cancelled or deadline exceeded, the error is propagated.
 func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL string) (IngestResult, error) {
 	if statusURL == "" {
 		return IngestResult{BatchID: batchID}, fmt.Errorf("no status_url in 202 response for batch %s", batchID)
 	}
 
-	deadline := time.Now().Add(pollTimeout)
-	delay := pollBackoffStart
+	deadline := time.Now().Add(c.pollTimeout)
+	delay := c.pollBackoffStart
 
 	for {
-		// Respect both the polling timeout and the caller's context.
+		// Check caller's context before starting a new poll - propagate cancellation
+		// immediately rather than treating it as a soft timeout.
+		select {
+		case <-ctx.Done():
+			return IngestResult{BatchID: batchID}, fmt.Errorf("caller context cancelled while polling batch %s: %w", batchID, ctx.Err())
+		default:
+		}
+
+		// Create a derived context with our internal poll deadline.
+		// This is separate from the caller's context - we want soft timeout behavior
+		// for our internal deadline, but hard error for caller cancellation.
 		pollCtx, cancel := context.WithDeadline(ctx, deadline)
 		result, done, err := c.fetchBatchStatus(pollCtx, batchID, statusURL)
 		cancel()
 
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return IngestResult{BatchID: batchID}, fmt.Errorf("caller context cancelled while polling batch %s: %w", batchID, ctxErr)
+			}
+			// If the error is due to our internal poll deadline exceeded, treat it
+			// as a soft timeout rather than a hard error - return partial result.
+			if isDeadlineExceeded(err) {
+				log.Warn().
+					Str("batch_id", batchID).
+					Dur("poll_timeout", c.pollTimeout).
+					Msg("scraper: timed out polling batch status; counts may be incomplete")
+				return IngestResult{BatchID: batchID}, nil
+			}
 			// Hard error (network, auth, etc.) — propagate immediately.
 			return IngestResult{BatchID: batchID}, err
 		}
@@ -199,6 +296,7 @@ func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL s
 		if remaining <= 0 {
 			log.Warn().
 				Str("batch_id", batchID).
+				Dur("poll_timeout", c.pollTimeout).
 				Msg("scraper: timed out polling batch status; counts may be incomplete")
 			return IngestResult{BatchID: batchID}, nil
 		}
@@ -210,14 +308,14 @@ func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL s
 
 		select {
 		case <-ctx.Done():
-			return IngestResult{BatchID: batchID}, fmt.Errorf("context cancelled while polling batch %s: %w", batchID, ctx.Err())
+			return IngestResult{BatchID: batchID}, fmt.Errorf("caller context cancelled while polling batch %s: %w", batchID, ctx.Err())
 		case <-time.After(wait):
 		}
 
 		// Exponential backoff capped at pollBackoffMax.
 		delay *= 2
-		if delay > pollBackoffMax {
-			delay = pollBackoffMax
+		if delay > c.pollBackoffMax {
+			delay = c.pollBackoffMax
 		}
 	}
 }
@@ -292,4 +390,9 @@ func bodySnippet(body []byte) string {
 		return string(body[:200])
 	}
 	return string(body)
+}
+
+// isDeadlineExceeded checks if the error is due to context deadline exceeded.
+func isDeadlineExceeded(err error) bool {
+	return errors.Is(err, context.DeadlineExceeded)
 }

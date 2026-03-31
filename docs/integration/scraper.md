@@ -800,7 +800,7 @@ at debug level and the URL is left empty.
 | `wait_network_idle` | bool | `false` | After `wait_selector` resolves, additionally wait for in-flight XHR/fetch requests to settle (500 ms idle window). Use for pages that load content via async requests after the DOM is ready (e.g. third-party event widget embeds). |
 | `undetected` | bool | `false` | Launch page with stealth evasions (patches `navigator.webdriver`, fake plugins, etc.) to reduce bot-detection by sites that check for headless Chrome fingerprints. |
 | `pagination_button` | string | — | CSS selector for a JS "next page" / "load more" button. For URL-based pagination use `selectors.pagination` instead. |
-| `rate_limit_ms` | int | `1000` | Delay between page loads in ms. |
+| `rate_limit_ms` | int | `0` | Delay between page loads in ms. |
 | `headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
 | `iframe.selector` | string | — | CSS selector for the target cross-origin iframe element. When set, the scraper enters the iframe's execution context via CDP frame navigation and extracts HTML from inside the iframe. |
 | `iframe.wait_selector` | string | — | CSS selector to wait for inside the iframe DOM before extracting. |
@@ -989,7 +989,11 @@ by a River background worker (`ScrapeSourceWorker`) registered at server startup
 | `manual` | Never run automatically; CLI-only |
 
 Periodic jobs are registered via `NewPeriodicJobsFromSources(sources)` during
-`server serve` startup. Only sources where `enabled: true` are registered.
+`server serve` startup. Sources are loaded from the database first (for dynamic
+source management without restart); if the DB is unavailable, YAML configs are
+used as fallback. An empty DB result is authoritative — no YAML fallback is used
+in this case. Only sources where `enabled: true` and
+`schedule` is `daily` or `weekly` are registered.
 Job runs are recorded in `scraper_runs` (same as manual scrapes).
 
 Automatic scheduling is gated by the `auto_scrape` flag in the global scraper
@@ -1005,18 +1009,18 @@ that apply to all scrape runs.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto_scrape` | bool | `false` | Enable/disable periodic River job scheduling |
+| `auto_scrape` | bool | `true` | Enable/disable periodic River job scheduling |
 | `max_concurrent_sources` | int | `3` | Max sources scraped in parallel during `scrape all` |
 | `request_timeout_seconds` | int | `30` | HTTP request timeout per page fetch |
 | `retry_max_attempts` | int | `3` | Retries on transient network errors |
 | `max_batch_size` | int | `100` | Max events per ingest batch POST |
-| `rate_limit_ms` | int | `1000` | Minimum ms between requests to the same domain |
+| `rate_limit_ms` | int | `0` | Minimum ms between requests to the same domain |
 
 ### Admin API
 
 ```
-GET  /api/admin/scraper/config   — Read current config
-PATCH /api/admin/scraper/config  — Update one or more fields (partial JSON body)
+GET  /api/v1/admin/scraper/config   — Read current config
+PATCH /api/v1/admin/scraper/config  — Update one or more fields (partial JSON body)
 ```
 
 Both endpoints require an admin API key (`Authorization: Bearer <key>`).
@@ -1045,8 +1049,19 @@ automatically for same-origin requests.
 ### Admin UI Toggle
 
 The `/admin/scraper` page includes an **Auto-scrape** toggle that sets `auto_scrape`
-via `PATCH /api/admin/scraper/config`. Enabling it activates periodic job scheduling
+via `PATCH /api/v1/admin/scraper/config`. Enabling it activates periodic job scheduling
 for all sources with a `daily` or `weekly` schedule.
+
+The same page also includes a **Run All** control that triggers serial scraping
+via `POST /api/v1/admin/scraper/trigger-all` with options:
+
+- `respect_auto_scrape` (default `true`) - if `true`, run is skipped when global
+  `auto_scrape` is disabled.
+- `skip_up_to_date` (default `true`) - skips sources with fresh successful runs
+  (`daily` < 24h, `weekly` < 7d).
+
+Serial runs reuse `scrape_source` jobs and process one source at a time; failures
+on one source do not stop later sources (best-effort chain).
 
 ---
 
@@ -1105,6 +1120,20 @@ LIMIT 20;
 | `SEL_INGEST_KEY` | Alternative API key env var (checked after `SEL_API_KEY`) |
 | `DATABASE_URL` | PostgreSQL connection string for scraper run tracking |
 
+### Polling Configuration
+
+These variables control the batch status polling behavior during scrape ingestion:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCRAPER_POLL_BACKOFF_START_MS` | 200 | Initial delay (ms) before the first status poll after receiving HTTP 202 |
+| `SCRAPER_POLL_BACKOFF_MAX_MS` | 2000 | Maximum delay (ms) between status polls |
+| `SCRAPER_POLL_TIMEOUT_MS` | 30000 | Total time (ms) spent polling for a single batch result |
+| `SCRAPER_HTTP_CLIENT_TIMEOUT_MS` | 30000 | HTTP client timeout (ms) for scraper requests |
+| `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` | 300 | Max runtime (seconds) for a single `scrape_source` River job before context cancellation |
+| `SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS` | 5000 | Timeout (ms) when enqueueing the next source in a serial run-all chain |
+| `SCRAPER_CHAIN_ENQUEUE_RETRIES` | 3 | Retry attempts for enqueueing the next source in a serial run-all chain |
+
 ---
 
 ## Staging Scrape Workflow
@@ -1137,13 +1166,19 @@ when calling admin API endpoints directly.
 
 ### Syncing Source Configs on Staging
 
-The source configs on staging live in the Docker container's database. After deploying
-a new binary or editing YAML configs, you must sync them into the `scraper_sources` table
-on the remote database.
+The source configs on staging live in the Docker container's database. The deployment
+pipeline automatically syncs YAML configs to the database **before** switching traffic
+to the new container. This ensures the new container serves requests with updated configs.
 
+**Automatic sync during deployment:**
+- Deployment flow: `deploy_to_slot` → `validate_health` → `sync_sources` → `switch_traffic`
+- If sync fails, deployment aborts before traffic switches, preventing stale config issues
+- Logs show sync output for debugging
+
+**Manual sync** (rarely needed):
 The deployed server binary runs inside a Docker container — the YAML files in
 `/opt/togather/src/configs/sources/` on the host are not mounted into the container.
-To sync them, spin up a one-off container with the host config directory mounted:
+To sync manually, spin up a one-off container with the host config directory mounted:
 
 ```bash
 # Determine the active container name and image
@@ -1178,10 +1213,9 @@ ssh togather "
 
 Expected output: `Sync complete: N created, M updated (total X sources)`
 
-**When to sync on staging:**
-- After deploying a new binary (the deploy does not auto-sync)
+**When manual sync is needed:**
 - After a staging DB reset (see `scripts/staging-reset.sh`)
-- After adding or modifying YAML configs in `configs/sources/`
+- After adding or modifying YAML configs in `configs/sources/` without redeploying
 
 ### Staging Database Reset
 

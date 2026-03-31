@@ -7,12 +7,14 @@
     document.addEventListener('DOMContentLoaded', init);
 
     var _sseConn = null;
+    var _runAllActiveCount = 0;
 
     function init() {
         setupEventHandlers();
         loadSources();
         loadConfig();
         connectSSE();
+        setRunAllButtonState(0, false);
         window.addEventListener('pagehide', handlePageHide);
     }
 
@@ -55,6 +57,7 @@
         try {
             var data = await API.scraper.listSources();
             var items = data.items || [];
+            refreshRunAllStateFromSources(items);
             var src = null;
             for (var i = 0; i < items.length; i++) {
                 if (items[i].name === name) { src = items[i]; break; }
@@ -105,6 +108,8 @@
                 openRunsModal(name);
             } else if (action === 'trigger-scrape') {
                 triggerScrape(target, name);
+            } else if (action === 'trigger-all-scrape') {
+                triggerAllScrape(target);
             } else if (action === 'toggle-enabled') {
                 toggleEnabled(target, name);
             } else if (action === 'toggle-run-detail') {
@@ -143,6 +148,7 @@
                 return;
             }
             renderSources(items);
+            refreshRunAllStateFromSources(items);
             if (!alreadyShowing) { showState('table'); }
             document.getElementById('showing-text').textContent =
                 'Showing ' + items.length + ' source' + (items.length === 1 ? '' : 's');
@@ -285,6 +291,92 @@
     }
 
     // -------------------------------------------------------------------------
+    // Trigger all scrape (srv-x7oba)
+    // -------------------------------------------------------------------------
+
+    async function triggerAllScrape(btn) {
+        setRunAllButtonState(_runAllActiveCount, true);
+        try {
+            var respectAutoScrape = document.getElementById('respect-auto-scrape')?.checked ?? true;
+            var skipUpToDate = document.getElementById('skip-up-to-date')?.checked ?? true;
+            var result = await API.scraper.triggerAll({
+                respect_auto_scrape: respectAutoScrape,
+                skip_up_to_date: skipUpToDate
+            });
+            if (result.status === 'skipped') {
+                showToast('Auto-scrape is disabled — serial run skipped', 'info');
+                setRunAllButtonState(0, false);
+            } else {
+                showToast('Serial scrape triggered: ' + result.status, 'success');
+                var active = typeof result.running_sources === 'number' ? result.running_sources : 1;
+                if (active < 1) active = 1;
+                setRunAllButtonState(active, false);
+                setTimeout(loadSources, 1200);
+            }
+        } catch (err) {
+            if (err && err.status === 409) {
+                var running = parseRunningSourcesFromError(err);
+                if (running > 0) {
+                    showToast('Run already in progress (' + running + ' source' + (running === 1 ? '' : 's') + ' running)', 'warning');
+                    setRunAllButtonState(running, false);
+                } else {
+                    showToast('Run already in progress — wait for current run to finish', 'warning');
+                    setRunAllButtonState(1, false);
+                }
+            } else {
+                showToast('Failed to trigger serial scrape: ' + err.message, 'error');
+                setRunAllButtonState(_runAllActiveCount, false);
+            }
+        } finally {
+            // Final state is controlled above based on API result and live source state.
+        }
+    }
+
+    function parseRunningSourcesFromError(err) {
+        if (!err) return 0;
+        if (err.body && typeof err.body.running_sources === 'number') {
+            return err.body.running_sources;
+        }
+        var m = String(err.message || '').match(/\((\d+) source/);
+        if (!m) return 0;
+        var n = parseInt(m[1], 10);
+        return Number.isFinite(n) ? n : 0;
+    }
+
+    function refreshRunAllStateFromSources(items) {
+        var running = 0;
+        for (var i = 0; i < items.length; i++) {
+            if (items[i].last_run_status === 'running') {
+                running++;
+            }
+        }
+        setRunAllButtonState(running, false);
+    }
+
+    function setRunAllButtonState(runningCount, loading) {
+        var btn = document.getElementById('trigger-all-btn');
+        if (!btn) return;
+        if (!btn.dataset.baseText) {
+            btn.dataset.baseText = btn.textContent.trim() || 'Run All';
+        }
+        _runAllActiveCount = runningCount > 0 ? runningCount : 0;
+
+        if (loading) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
+            return;
+        }
+
+        if (_runAllActiveCount > 0) {
+            btn.disabled = true;
+            btn.textContent = btn.dataset.baseText + ' (' + _runAllActiveCount + ' running)';
+        } else {
+            btn.disabled = false;
+            btn.textContent = btn.dataset.baseText;
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Auto-scrape config toggle (srv-pfeud)
     // -------------------------------------------------------------------------
 
@@ -293,9 +385,17 @@
             var cfg = await API.scraper.getConfig();
             var toggle = document.getElementById('auto-scrape-toggle');
             var wrap = document.getElementById('auto-scrape-toggle-wrap');
+            var triggerAllBtn = document.getElementById('trigger-all-btn');
+            var orchestratorOptions = document.getElementById('orchestrator-options');
             if (toggle && wrap) {
                 toggle.checked = cfg.auto_scrape === true;
                 wrap.classList.remove('d-none');
+            }
+            if (triggerAllBtn) {
+                triggerAllBtn.classList.remove('d-none');
+            }
+            if (orchestratorOptions) {
+                orchestratorOptions.classList.remove('d-none');
             }
         } catch (err) {
             // Config endpoint may not exist in older deployments — fail silently.

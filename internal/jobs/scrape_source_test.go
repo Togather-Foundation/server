@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -544,5 +545,228 @@ func TestScrapeSourceWorker_Work_ConfigTunablesWired(t *testing.T) {
 				t.Errorf("RateLimitMs: got %d, want %d", got.RateLimitMs, tt.wantRateMs)
 			}
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Chaining behavior tests
+// ---------------------------------------------------------------------------
+
+func TestScrapeSourceArgs_IsChained(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty source names is not chained", func(t *testing.T) {
+		t.Parallel()
+		args := ScrapeSourceArgs{SourceName: "test"}
+		if args.IsChained() {
+			t.Error("expected IsChained()=false for empty SourceNames")
+		}
+	})
+
+	t.Run("non-empty source names is chained", func(t *testing.T) {
+		t.Parallel()
+		args := ScrapeSourceArgs{
+			SourceName:  "test",
+			SourceNames: []string{"a", "b", "c"},
+		}
+		if !args.IsChained() {
+			t.Error("expected IsChained()=true for non-empty SourceNames")
+		}
+	})
+}
+
+func TestScrapeSourceWorker_RespectAutoScrapeFalseBypassesConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockScraperConfig{
+		cfg: postgres.ScraperConfig{AutoScrape: false}, // global auto_scrape is FALSE
+	}
+	ms := &mockScraper{
+		result: scraper.ScrapeResult{
+			SourceName:      "test-source",
+			EventsFound:     10,
+			EventsCreated:   7,
+			EventsDuplicate: 3,
+		},
+	}
+
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: cfg,
+		Logger:        nil,
+		Slot:          "test",
+	}
+
+	job := &river.Job[ScrapeSourceArgs]{
+		JobRow: &rivertype.JobRow{
+			Kind:        JobKindScrapeSource,
+			EncodedArgs: []byte(`{"source_name":"test-source"}`),
+			Attempt:     1,
+			CreatedAt:   time.Now(),
+		},
+		Args: ScrapeSourceArgs{
+			SourceName:        "test-source",
+			SourceNames:       []string{"test-source"},
+			CurrentIndex:      0,
+			RespectAutoScrape: false, // bypass global check
+			SkipUpToDate:      false,
+		},
+	}
+
+	err := w.Work(context.Background(), job)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Should still scrape even though global auto_scrape=false
+	if !ms.called {
+		t.Error("expected ScrapeSource to be called when RespectAutoScrape=false")
+	}
+}
+
+func TestScrapeSourceWorker_RespectAutoScrapeTrueChecksConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockScraperConfig{
+		cfg: postgres.ScraperConfig{AutoScrape: false}, // global auto_scrape is FALSE
+	}
+	ms := &mockScraper{}
+
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: cfg,
+		Logger:        nil,
+		Slot:          "test",
+	}
+
+	job := &river.Job[ScrapeSourceArgs]{
+		JobRow: &rivertype.JobRow{
+			Kind:        JobKindScrapeSource,
+			EncodedArgs: []byte(`{"source_name":"test-source"}`),
+			Attempt:     1,
+			CreatedAt:   time.Now(),
+		},
+		Args: ScrapeSourceArgs{
+			SourceName:        "test-source",
+			SourceNames:       []string{"test-source"},
+			CurrentIndex:      0,
+			RespectAutoScrape: true, // respect global check
+			SkipUpToDate:      false,
+		},
+	}
+
+	err := w.Work(context.Background(), job)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Should NOT scrape because RespectAutoScrape=true AND global auto_scrape=false
+	if ms.called {
+		t.Error("expected ScrapeSource NOT to be called when RespectAutoScrape=true and auto_scrape=false")
+	}
+}
+
+func TestScrapeSourceWorker_ChainedScraperError_BestEffortContinues(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockScraperConfig{
+		cfg: postgres.ScraperConfig{AutoScrape: true},
+	}
+	scrapeErr := errors.New("network timeout")
+	ms := &mockScraper{err: scrapeErr}
+
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: cfg,
+		Logger:        nil,
+		Slot:          "test",
+	}
+
+	job := &river.Job[ScrapeSourceArgs]{
+		JobRow: &rivertype.JobRow{
+			Kind:        JobKindScrapeSource,
+			EncodedArgs: []byte(`{"source_name":"first-source"}`),
+			Attempt:     1,
+			CreatedAt:   time.Now(),
+		},
+		Args: ScrapeSourceArgs{
+			SourceName:        "first-source",
+			SourceNames:       []string{"first-source", "second-source"},
+			CurrentIndex:      0,
+			RespectAutoScrape: false,
+			SkipUpToDate:      false,
+		},
+	}
+
+	err := w.Work(context.Background(), job)
+	if err != nil {
+		if strings.Contains(err.Error(), "scrape_source first-source") {
+			t.Errorf("chained job should NOT return scrape_source error format, got: %v", err)
+		}
+	}
+}
+
+func TestScrapeSourceWorker_TimeoutOverride(t *testing.T) {
+	t.Parallel()
+
+	w := ScrapeSourceWorker{JobTimeout: 5 * time.Minute}
+	job := newTestJob("any")
+
+	got := w.Timeout(job)
+	if got != 5*time.Minute {
+		t.Fatalf("expected timeout 5m, got %v", got)
+	}
+}
+
+func TestScrapeSourceWorker_TimeoutZeroUsesClientDefault(t *testing.T) {
+	t.Parallel()
+
+	w := ScrapeSourceWorker{}
+	job := newTestJob("any")
+
+	got := w.Timeout(job)
+	if got != 0 {
+		t.Fatalf("expected timeout 0 (client default), got %v", got)
+	}
+}
+
+func TestScrapeSourceWorker_StandaloneScraperError_PropagatesWithName(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockScraperConfig{
+		cfg: postgres.ScraperConfig{AutoScrape: true},
+	}
+	scrapeErr := errors.New("network timeout")
+	ms := &mockScraper{err: scrapeErr}
+
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: cfg,
+		Logger:        nil,
+		Slot:          "test",
+	}
+
+	job := &river.Job[ScrapeSourceArgs]{
+		JobRow: &rivertype.JobRow{
+			Kind:        JobKindScrapeSource,
+			EncodedArgs: []byte(`{"source_name":"standalone-source"}`),
+			Attempt:     1,
+			CreatedAt:   time.Now(),
+		},
+		Args: ScrapeSourceArgs{
+			SourceName:        "standalone-source",
+			SourceNames:       nil,
+			CurrentIndex:      0,
+			RespectAutoScrape: false,
+			SkipUpToDate:      false,
+		},
+	}
+
+	err := w.Work(context.Background(), job)
+	if err == nil {
+		t.Fatal("expected error for standalone job with scrape failure")
+	}
+	if !strings.Contains(err.Error(), "standalone-source") {
+		t.Errorf("expected error containing source name, got %v", err)
 	}
 }

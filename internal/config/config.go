@@ -46,6 +46,37 @@ type ScraperConfig struct {
 	// HeadlessMaxConc is the maximum number of concurrent browser sessions.
 	// Environment variable: SCRAPER_HEADLESS_MAX_CONC (default: 2)
 	HeadlessMaxConc int
+
+	// PollBackoffStart is the initial delay before the first batch-status poll.
+	// Environment variable: SCRAPER_POLL_BACKOFF_START_MS (default: 200)
+	PollBackoffStart int
+
+	// PollBackoffMax is the maximum delay between batch-status polls.
+	// Environment variable: SCRAPER_POLL_BACKOFF_MAX_MS (default: 2000)
+	PollBackoffMax int
+
+	// PollTimeout is the maximum total time spent polling for a batch result.
+	// Environment variable: SCRAPER_POLL_TIMEOUT_MS (default: 30000)
+	PollTimeout int
+
+	// HTTPClientTimeout is the HTTP client timeout for scraper requests.
+	// Environment variable: SCRAPER_HTTP_CLIENT_TIMEOUT_MS (default: 30000)
+	HTTPClientTimeout int
+
+	// SourceJobTimeoutSeconds is the maximum runtime for a single scrape_source
+	// worker job before River cancels its context.
+	// Environment variable: SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS (default: 300)
+	SourceJobTimeoutSeconds int
+
+	// ChainEnqueueTimeoutMs is the timeout used when enqueueing the next source
+	// in a serial chain.
+	// Environment variable: SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS (default: 5000)
+	ChainEnqueueTimeoutMs int
+
+	// ChainEnqueueRetries is the number of retries for enqueueing the next source
+	// in a serial chain when transient errors occur.
+	// Environment variable: SCRAPER_CHAIN_ENQUEUE_RETRIES (default: 3)
+	ChainEnqueueRetries int
 }
 
 type ServerConfig struct {
@@ -457,9 +488,16 @@ func Load() (Config, error) {
 			FailureTTLDays:  getEnvInt("ARTSDATA_FAILURE_TTL_DAYS", 7),
 		},
 		Scraper: ScraperConfig{
-			HeadlessEnabled: getEnvBool("SCRAPER_HEADLESS_ENABLED", false),
-			ChromePath:      getEnv("SCRAPER_CHROME_PATH", ""),
-			HeadlessMaxConc: getEnvInt("SCRAPER_HEADLESS_MAX_CONC", 2),
+			HeadlessEnabled:         getEnvBool("SCRAPER_HEADLESS_ENABLED", false),
+			ChromePath:              getEnv("SCRAPER_CHROME_PATH", ""),
+			HeadlessMaxConc:         getEnvInt("SCRAPER_HEADLESS_MAX_CONC", 2),
+			PollBackoffStart:        getEnvInt("SCRAPER_POLL_BACKOFF_START_MS", 200),
+			PollBackoffMax:          getEnvInt("SCRAPER_POLL_BACKOFF_MAX_MS", 2000),
+			PollTimeout:             getEnvInt("SCRAPER_POLL_TIMEOUT_MS", 30000),
+			HTTPClientTimeout:       getEnvInt("SCRAPER_HTTP_CLIENT_TIMEOUT_MS", 30000),
+			SourceJobTimeoutSeconds: getEnvInt("SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS", 300),
+			ChainEnqueueTimeoutMs:   getEnvInt("SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS", 5000),
+			ChainEnqueueRetries:     getEnvInt("SCRAPER_CHAIN_ENQUEUE_RETRIES", 3),
 		},
 		Developer: DeveloperConfig{
 			PasswordMinLength:        getEnvInt("DEVELOPER_PASSWORD_MIN_LENGTH", 8),
@@ -472,6 +510,11 @@ func Load() (Config, error) {
 		},
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "America/Toronto"),
 		Environment:     getEnv("ENVIRONMENT", "development"),
+	}
+
+	// Validate scraper polling configuration
+	if err := validateScraperPollingConfig(cfg.Scraper); err != nil {
+		return Config{}, err
 	}
 
 	// CORS configuration
@@ -626,4 +669,35 @@ func LoadEnvFile(path string) {
 			_ = os.Setenv(key, value)
 		}
 	}
+}
+
+func validateScraperPollingConfig(scraper ScraperConfig) error {
+	if scraper.PollBackoffStart <= 0 {
+		return fmt.Errorf("SCRAPER_POLL_BACKOFF_START_MS must be positive, got %d", scraper.PollBackoffStart)
+	}
+	if scraper.PollBackoffMax <= 0 {
+		return fmt.Errorf("SCRAPER_POLL_BACKOFF_MAX_MS must be positive, got %d", scraper.PollBackoffMax)
+	}
+	if scraper.PollTimeout <= 0 {
+		return fmt.Errorf("SCRAPER_POLL_TIMEOUT_MS must be positive, got %d", scraper.PollTimeout)
+	}
+	if scraper.HTTPClientTimeout <= 0 {
+		return fmt.Errorf("SCRAPER_HTTP_CLIENT_TIMEOUT_MS must be positive, got %d", scraper.HTTPClientTimeout)
+	}
+	if scraper.PollBackoffMax < scraper.PollBackoffStart {
+		return fmt.Errorf("SCRAPER_POLL_BACKOFF_MAX_MS (%d) must be >= SCRAPER_POLL_BACKOFF_START_MS (%d)", scraper.PollBackoffMax, scraper.PollBackoffStart)
+	}
+	if scraper.PollTimeout < scraper.PollBackoffMax {
+		return fmt.Errorf("SCRAPER_POLL_TIMEOUT_MS (%d) must be >= SCRAPER_POLL_BACKOFF_MAX_MS (%d)", scraper.PollTimeout, scraper.PollBackoffMax)
+	}
+	if scraper.SourceJobTimeoutSeconds <= 0 {
+		return fmt.Errorf("SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS must be positive, got %d", scraper.SourceJobTimeoutSeconds)
+	}
+	if scraper.ChainEnqueueTimeoutMs <= 0 {
+		return fmt.Errorf("SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS must be positive, got %d", scraper.ChainEnqueueTimeoutMs)
+	}
+	if scraper.ChainEnqueueRetries < 0 {
+		return fmt.Errorf("SCRAPER_CHAIN_ENQUEUE_RETRIES must be >= 0, got %d", scraper.ChainEnqueueRetries)
+	}
+	return nil
 }

@@ -221,9 +221,17 @@ awkward abstractions, package boundaries, tech debt, performance concerns,
 test coverage gaps, missing docs, confusing or missing instructions, etc, 
 and evaluate your workflow for actionable improvements.
 
-- Present a brief summary to the user (not a file).
+- Present a **human-readable reflection report** to the user (not a file). Do not
+  reduce this to one sentence.
+- Use this structure:
+  1. **What changed and why** (decision-level, not commit log)
+  2. **What was hard/surprising** (including near-misses)
+  3. **Tradeoffs and accepted debt** (what you intentionally did not do)
+  4. **Quality gaps** (tests/docs/observability still missing)
+  5. **Actionable follow-ups** (what should happen next and why)
 - Create follow-up beads for actionable items:
   `bd create --title="<improvement>" --description="Discovered during <bead-id>: <context>" --type=task --priority=3`
+- Include created follow-up bead IDs in the report so the user can track them.
 - Do not block on these, except for critical tests that are missing, which should be done now.
 
 ---
@@ -236,9 +244,29 @@ If behavior changed, delegate to `@general`: update `docs/`, subdirectory AGENTS
 `contexts/`/`shapes/` if JSON-LD changed, API docs if endpoints changed. Capture
 non-obvious learnings (gotchas, patterns) in relevant AGENTS.md files.
 
+### Documentation delegation requirements (important)
+
+When delegating docs work, provide a **Docs Brief** so the doc agent has strong
+context but still performs a fresh-eyes verification against code.
+
+Your prompt should include:
+- Bead ID(s) and one-line intent for each
+- `Reference Docs` paths from Phase 1
+- **Code paths changed** (exact file paths)
+- **Behavior deltas to verify** (runtime behavior, deploy behavior, env vars,
+  endpoint/schema changes, defaults)
+- What to check for consistency: code vs docs, docs vs openapi, docs vs tests
+- Explicit instruction to verify claims against current code (not assumptions)
+- Expected output sections: changed docs, contradictions found, open questions,
+  and whether `docs/api/openapi.yaml` must be updated
+
+Ask the doc agent to propose updates only when confirmed by code/tests, and to
+call out uncertainty explicitly.
+
 Include the no-commit instruction in the delegation prompt (see Delegation Principle).
 
-After: review changes, `make sqlc` if needed, commit.
+After: review changes against code, run relevant docs/openapi lint checks, `make sqlc`
+if needed, commit.
 
 ---
 

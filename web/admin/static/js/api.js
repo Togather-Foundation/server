@@ -133,6 +133,7 @@ const API = {
             }
             const err = new Error(message);
             err.status = response.status; // Preserve status code for error handling
+            err.body = error; // Preserve parsed response payload for callers needing details
             throw err;
         }
         
@@ -417,6 +418,11 @@ const API = {
 
         triggerScrape: (name) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}/trigger`, {
             method: 'POST'
+        }),
+
+        triggerAll: (options = {}) => API.request('/api/v1/admin/scraper/trigger-all', {
+            method: 'POST',
+            body: JSON.stringify(options)
         }),
 
         setEnabled: (name, enabled) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}`, {

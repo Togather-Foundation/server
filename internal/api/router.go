@@ -169,9 +169,17 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	if ingestAPIKey == "" {
 		ingestAPIKey = os.Getenv("SEL_INGEST_KEY")
 	}
+	var scraperSourceRepo *postgres.ScraperSourceRepository
 	if ingestAPIKey != "" {
-		scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
-		ingestClient := scraper.NewIngestClient(cfg.Server.BaseURL, ingestAPIKey)
+		scraperSourceRepo = postgres.NewScraperSourceRepository(pool)
+		ingestClient := scraper.NewIngestClient(
+			cfg.Server.BaseURL,
+			ingestAPIKey,
+			scraper.WithPollBackoffStart(time.Duration(cfg.Scraper.PollBackoffStart)*time.Millisecond),
+			scraper.WithPollBackoffMax(time.Duration(cfg.Scraper.PollBackoffMax)*time.Millisecond),
+			scraper.WithPollTimeout(time.Duration(cfg.Scraper.PollTimeout)*time.Millisecond),
+			scraper.WithHTTPClientTimeout(time.Duration(cfg.Scraper.HTTPClientTimeout)*time.Millisecond),
+		)
 		scraperSvc = scraper.NewScraperWithSourceRepoAndSlot(ingestClient, queries, scraperSourceRepo, logger, slot)
 		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
 
@@ -191,20 +199,48 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	// Load source configs for periodic job registration.
-	// TODO(srv-ephoo): Load sources from DB (with YAML fallback) so dynamically
-	// added/removed sources are picked up without a server restart.
+	// Try DB first (sources added/removed via admin API are picked up without restart).
+	// YAML fallback only happens on DB error (not on empty result - empty is authoritative).
 	var sourceCfgs []scraper.SourceConfig
+	var loadErr error
 	if scraperSvc != nil {
-		var loadErr error
-		sourceCfgs, loadErr = scraper.LoadSourceConfigs("configs/sources")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		sourceCfgs, loadErr = jobs.LoadSourcesForPeriodicJobs(ctx, scraperSourceRepo, logger)
+		cancel()
 		if loadErr != nil {
-			logger.Warn().Err(loadErr).Msg("router: failed to load source configs for periodic jobs (non-fatal)")
+			// DB error - fall back to YAML
+			logger.Warn().Err(loadErr).Msg("router: DB sources unavailable for periodic jobs, falling back to YAML")
+			sourceCfgs, loadErr = scraper.LoadSourceConfigs("configs/sources")
+			if loadErr != nil {
+				logger.Warn().Err(loadErr).Msg("router: YAML fallback also failed for periodic jobs (non-fatal)")
+			}
+		} else if len(sourceCfgs) == 0 {
+			// DB succeeded but returned no eligible sources - this is authoritative, no YAML fallback
+			logger.Info().Msg("router: no enabled daily/weekly sources in DB (empty result is authoritative)")
+		} else {
+			logger.Info().Int("count", len(sourceCfgs)).Msg("router: loaded periodic sources from DB")
 		}
 	}
 
 	// Register scrape worker when scraper is available.
 	if scraperSvc != nil {
-		workers = jobs.NewWorkersWithScraper(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, scraperSvc, queries, submissionRepo)
+		workers = jobs.NewWorkersWithScraper(
+			pool,
+			ingestService,
+			repo.Events(),
+			geocodingService,
+			reconciliationService,
+			placesService,
+			orgService,
+			slogLogger,
+			slot,
+			scraperSvc,
+			queries,
+			submissionRepo,
+			time.Duration(cfg.Scraper.SourceJobTimeoutSeconds)*time.Second,
+			time.Duration(cfg.Scraper.ChainEnqueueTimeoutMs)*time.Millisecond,
+			cfg.Scraper.ChainEnqueueRetries,
+		)
 	}
 
 	// Configure periodic cleanup jobs and per-source scrape jobs.
@@ -257,7 +293,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	orgHandler.Loc = loc
 
 	// Wire scraper source repo into org/place handlers for sel:scraperSource linkage (best-effort).
-	scraperSourceRepo := postgres.NewScraperSourceRepository(pool)
+	scraperSourceRepo = postgres.NewScraperSourceRepository(pool)
 	placesHandler = placesHandler.WithScraperSourceRepo(scraperSourceRepo)
 	orgHandler = orgHandler.WithScraperSourceRepo(scraperSourceRepo)
 
@@ -380,11 +416,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create Admin Scraper handler (srv-5127b)
 	// TriggerScrape enqueues a River ScrapeSourceJob — same path as scheduled scrapes.
+	// OrchestratorReady is true when scraper worker was registered (scraperSvc != nil means
+	// NewWorkersWithScraper was called which registers ScrapeOrchestratorWorker with ConfigQueries/SourcesReader).
 	adminScraperHandler := &handlers.AdminScraperHandler{
-		Queries:     queries,
-		Logger:      logger.With().Str("component", "scraper").Logger(),
-		Env:         cfg.Environment,
-		RiverClient: riverClient,
+		Queries:           queries,
+		Logger:            logger.With().Str("component", "scraper").Logger(),
+		Env:               cfg.Environment,
+		RiverClient:       riverClient,
+		OrchestratorReady: scraperSvc != nil,
 	}
 
 	// Create Admin Geocoding handler (srv-qq7o1)
@@ -692,6 +731,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminScraperListSources := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.ListSources))))
 	adminScraperListRuns := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.ListSourceRuns))))
 	adminScraperTrigger := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.TriggerScrape))))
+	adminScraperTriggerAll := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.TriggerAllScrape))))
 	adminScraperSetEnabled := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.SetSourceEnabled))))
 	adminScraperGetConfig := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.GetConfig))))
 	adminScraperPatchConfig := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.PatchConfig))))
@@ -699,6 +739,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("GET /api/v1/admin/scraper/sources", adminScraperListSources)
 	mux.Handle("GET /api/v1/admin/scraper/sources/{name}/runs", adminScraperListRuns)
 	mux.Handle("POST /api/v1/admin/scraper/sources/{name}/trigger", adminScraperTrigger)
+	mux.Handle("POST /api/v1/admin/scraper/trigger-all", adminScraperTriggerAll)
 	mux.Handle("PATCH /api/v1/admin/scraper/sources/{name}", adminScraperSetEnabled)
 	mux.Handle("GET /api/v1/admin/scraper/config", adminScraperGetConfig)
 	mux.Handle("PATCH /api/v1/admin/scraper/config", adminScraperPatchConfig)

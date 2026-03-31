@@ -206,6 +206,41 @@ func TestSubmitBatch_ContextCancelDuringPoll(t *testing.T) {
 	_ = err
 }
 
+// TestSubmitBatch_ContextCancelBeforePoll verifies that caller context cancellation
+// (not internal poll timeout) is propagated as an error.
+func TestSubmitBatch_ContextCancelBeforePoll(t *testing.T) {
+	handler := &batchHandlerPair{
+		batchID: "batch-cancel-before",
+		// Return "still processing" - would timeout if we let it run
+		statusFn: func(_ int32) (int, any) {
+			return http.StatusNotFound, map[string]string{"title": "still processing"}
+		},
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	handler.srvURL = srv.URL
+
+	// Use very short backoff so we can test the pre-poll context check
+	client := NewIngestClient(srv.URL, "test-api-key",
+		WithPollBackoffStart(500*time.Millisecond),
+		WithPollBackoffMax(500*time.Millisecond),
+		WithPollTimeout(10*time.Second),
+	)
+
+	// Create context that's already cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	_, err := client.SubmitBatch(ctx, sampleEvts(1))
+	// Should get a context cancelled error, not a silent partial result
+	if err == nil {
+		t.Fatal("Expected error for cancelled caller context, got nil")
+	}
+	if !containsString(err.Error(), "cancelled") && !containsString(err.Error(), "context") {
+		t.Errorf("Expected error message to mention context cancellation, got: %v", err)
+	}
+}
+
 // TestSubmitBatch_ErrorOnNon2xx verifies that non-2xx responses from the
 // initial POST are returned as errors.
 func TestSubmitBatch_ErrorOnNon2xx(t *testing.T) {
@@ -354,4 +389,171 @@ func containsString(s, substr string) bool {
 			}
 			return false
 		}())
+}
+
+// TestSubmitBatch_PollingTimeout verifies that when the batch status endpoint
+// is slow to respond (always returns 404/not found), the client times out
+// after the configured pollTimeout and returns a partial result rather than
+// hanging forever.
+func TestSubmitBatch_PollingTimeout(t *testing.T) {
+	handler := &batchHandlerPair{
+		batchID: "batch-timeout",
+		// Always return "still processing" - simulate slow backend
+		statusFn: func(_ int32) (int, any) {
+			return http.StatusNotFound, map[string]string{"title": "still processing"}
+		},
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	handler.srvURL = srv.URL
+
+	// Create client with short timeout for test
+	client := NewIngestClient(srv.URL, "test-api-key", WithPollTimeout(500*time.Millisecond), WithPollBackoffStart(50*time.Millisecond))
+
+	ctx := context.Background()
+	result, err := client.SubmitBatch(ctx, sampleEvts(1))
+	// Should not error on timeout, should return partial result
+	if err != nil {
+		t.Fatalf("expected no error on timeout, got: %v", err)
+	}
+	if result.BatchID != "batch-timeout" {
+		t.Errorf("BatchID = %q, want %q", result.BatchID, "batch-timeout")
+	}
+	// EventsCreated should be 0 since we timed out before getting a result
+	if result.EventsCreated != 0 {
+		t.Errorf("EventsCreated = %d, want 0 on timeout", result.EventsCreated)
+	}
+}
+
+// TestSubmitBatch_PollingTimeoutWithCustomConfig verifies that custom polling
+// configuration is respected.
+func TestSubmitBatch_PollingTimeoutWithCustomConfig(t *testing.T) {
+	// Server that responds immediately with completion
+	handler := &batchHandlerPair{
+		batchID: "batch-fast",
+		statusFn: func(_ int32) (int, any) {
+			return http.StatusOK, completedStatusBody("batch-fast", 1, 0, 0)
+		},
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	handler.srvURL = srv.URL
+
+	// Client with custom backoff that would be too slow if not respected
+	client := NewIngestClient(srv.URL, "test-api-key",
+		WithPollBackoffStart(10*time.Second), // Intentionally high
+		WithPollBackoffMax(10*time.Second),
+	)
+
+	result, err := client.SubmitBatch(context.Background(), sampleEvts(1))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Should complete immediately since first poll succeeds
+	if result.EventsCreated != 1 {
+		t.Errorf("EventsCreated = %d, want 1", result.EventsCreated)
+	}
+}
+
+// TestSubmitBatch_PollBackoffExponential verifies that the backoff grows
+// exponentially and is capped at max.
+func TestSubmitBatch_PollBackoffExponential(t *testing.T) {
+	var pollIntervals []time.Duration
+	var lastPoll time.Time
+
+	handler := &batchHandlerPair{
+		batchID: "batch-backoff",
+		statusFn: func(n int32) (int, any) {
+			now := time.Now()
+			if !lastPoll.IsZero() {
+				pollIntervals = append(pollIntervals, now.Sub(lastPoll))
+			}
+			lastPoll = now
+
+			if n < 3 {
+				return http.StatusNotFound, map[string]string{"title": "still processing"}
+			}
+			return http.StatusOK, completedStatusBody("batch-backoff", 1, 0, 0)
+		},
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	handler.srvURL = srv.URL
+
+	// Use small starting backoff to see exponential growth in test
+	client := NewIngestClient(srv.URL, "test-api-key",
+		WithPollBackoffStart(50*time.Millisecond),
+		WithPollBackoffMax(200*time.Millisecond),
+	)
+
+	result, err := client.SubmitBatch(context.Background(), sampleEvts(1))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.EventsCreated != 1 {
+		t.Errorf("EventsCreated = %d, want 1", result.EventsCreated)
+	}
+
+	// We expect at least 3 polls (fail, fail, success)
+	// Intervals should show exponential growth: ~50ms, ~100ms, ~200ms (capped)
+	if len(pollIntervals) < 2 {
+		t.Errorf("expected at least 2 poll intervals, got %d", len(pollIntervals))
+	}
+	// First interval should be >= backoffStart (50ms)
+	if len(pollIntervals) > 0 && pollIntervals[0] < 40*time.Millisecond {
+		t.Errorf("first poll interval = %v, expected >= 40ms", pollIntervals[0])
+	}
+}
+
+// TestSubmitBatch_CallerDeadlineDuringInFlightPoll verifies that when the caller's
+// context deadline expires while an HTTP request is in-flight (during fetchBatchStatus),
+// the error is propagated as a context deadline error, not treated as a soft timeout.
+func TestSubmitBatch_CallerDeadlineDuringInFlightPoll(t *testing.T) {
+	var callCount int32
+	var srvURL string
+
+	// Handler that blocks for a while on the status endpoint to simulate slow response
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/events:batch":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id":   "batch-inflight",
+				"status_url": srvURL + "/api/v1/batch-status/batch-inflight",
+			})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/batch-status/batch-inflight":
+			atomic.AddInt32(&callCount, 1)
+			// Block for longer than the caller's deadline
+			time.Sleep(200 * time.Millisecond)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status":  "completed",
+				"created": 1,
+			})
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+
+	// Create a context with a short deadline that will expire during the in-flight HTTP request
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	result, err := client.SubmitBatch(ctx, sampleEvts(1))
+
+	// Caller deadline expiry during in-flight request must be propagated as error.
+	if err == nil {
+		t.Fatalf("expected caller deadline error, got nil (result=%+v)", result)
+	}
+	if !containsString(err.Error(), "deadline") && !containsString(err.Error(), "cancelled") {
+		t.Errorf("Expected context deadline/cancelled error, got: %v", err)
+	}
 }

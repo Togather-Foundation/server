@@ -113,6 +113,9 @@ COPY --from=builder /build/contexts /app/contexts
 # Copy OpenAPI specification from build stage (for /api/v1/openapi.json endpoint)
 COPY --from=builder /build/docs/api /app/docs/api
 
+# Copy scraper source configs for 'server scrape sync' command
+COPY --from=builder /build/configs/sources /app/configs/sources
+
 # Set ownership to non-root user
 RUN chown -R togather:togather /app
 
