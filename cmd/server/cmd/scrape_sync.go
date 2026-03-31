@@ -101,7 +101,7 @@ Examples:
 			}
 		}
 
-		total := len(configs) - warnings
+		total := created + updated
 
 		if syncJSON {
 			jsonOut, jsonErr := json.Marshal(syncResult{

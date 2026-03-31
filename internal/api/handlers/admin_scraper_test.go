@@ -56,9 +56,11 @@ type fakeScraperQueries struct {
 type fakeRiverInserter struct {
 	err         error
 	insertedArg jobs.ScrapeOrchestratorArgs
+	called      bool
 }
 
 func (f *fakeRiverInserter) Insert(_ context.Context, args river.JobArgs, _ *river.InsertOpts) (*rivertype.JobInsertResult, error) {
+	f.called = true
 	if argsTyped, ok := args.(jobs.ScrapeOrchestratorArgs); ok {
 		f.insertedArg = argsTyped
 	}
@@ -385,7 +387,7 @@ func TestAdminScraperHandler_TriggerScrape_WithRiver(t *testing.T) {
 		h.TriggerScrape(w, req)
 
 		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
-		require.NotNil(t, inserter.insertedArg, "Insert should have been called")
+		require.True(t, inserter.called, "Insert should have been called")
 	})
 
 	t.Run("returns 500 when River Insert fails", func(t *testing.T) {
@@ -717,7 +719,7 @@ func TestAdminScraperHandler_TriggerAllScrape_WithRiver(t *testing.T) {
 		h.TriggerAllScrape(w, req)
 
 		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
-		require.NotNil(t, inserter.insertedArg, "Insert should have been called")
+		require.True(t, inserter.called, "Insert should have been called")
 	})
 
 	t.Run("empty request body uses defaults and does not 400", func(t *testing.T) {
@@ -743,7 +745,7 @@ func TestAdminScraperHandler_TriggerAllScrape_WithRiver(t *testing.T) {
 		resp := w.Result()
 		assert.Equal(t, http.StatusAccepted, resp.StatusCode, "empty body should use defaults (respect_auto_scrape=true, skip_up_to_date=true) and not 400")
 
-		require.NotNil(t, inserter.insertedArg, "Insert should have been called with default args")
+		require.True(t, inserter.called, "Insert should have been called with default args")
 		assert.True(t, inserter.insertedArg.RespectAutoScrape, "default RespectAutoScrape should be true")
 		assert.True(t, inserter.insertedArg.SkipUpToDate, "default SkipUpToDate should be true")
 	})

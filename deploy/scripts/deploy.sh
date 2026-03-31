@@ -1739,26 +1739,26 @@ sync_sources() {
     fi
     
     # Parse JSON output to get source counts
-    local sources_found total
+    local sources_found total created updated
     sources_found=$(echo "${sync_output}" | jq -r '.sources_found // 0' 2>/dev/null || echo "0")
-    total=$(echo "${sync_output}" | jq -r '.total // 0' 2>/dev/null || echo "0")
+    total=$(echo "${sync_output}" | jq -r '.total // -1' 2>/dev/null || echo "-1")
+    created=$(echo "${sync_output}" | jq -r '.created // 0' 2>/dev/null || echo "0")
+    updated=$(echo "${sync_output}" | jq -r '.updated // 0' 2>/dev/null || echo "0")
     
-    # Verify sync actually processed sources
-    # For staging/production, missing configs is a failure (not just a warning)
-    if [[ "$sources_found" == "0" || "$total" == "0" ]]; then
+    # Validate JSON parsing succeeded - check for non-numeric or sentinel values
+    if [[ ! "$total" =~ ^-?[0-9]+$ ]] || [[ "$total" -le 0 ]]; then
         if [[ "$env" == "staging" || "$env" == "production" ]]; then
-            log "ERROR" "No source configs found in container (sources_found=${sources_found}, total=${total})"
-            log "ERROR" "This indicates configs/sources is missing from the Docker image"
-            log "ERROR" "Deployment aborted: scraper configs must be present in container"
+            log "ERROR" "Failed to parse sync output or no sources processed (total=${total}, created=${created}, updated=${updated})"
+            log "ERROR" "Raw output: ${sync_output}"
+            log "ERROR" "Deployment aborted: scraper config sync failed"
             return 1
         else
-            # For local/development, just warn
-            log "WARN" "No source configs found in container (sources_found=${sources_found}, total=${total})"
-            log "WARN" "This may indicate configs/sources is missing from the Docker image"
+            log "WARN" "Failed to parse sync output or no sources processed (total=${total})"
+            log "WARN" "Raw output: ${sync_output}"
             log "WARN" "Scraper will fall back to database configs (if any exist)"
         fi
     else
-        log "SUCCESS" "Scraper source configs synced successfully (${total} sources)"
+        log "SUCCESS" "Scraper source configs synced successfully (${total} sources: ${created} created, ${updated} updated)"
     fi
     
     return 0

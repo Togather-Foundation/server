@@ -109,8 +109,8 @@ git pull origin main
 - Creates database snapshot
 - Runs database migrations
 - Deploys to inactive slot
-- Syncs scraper source configs to database (before traffic switch)
 - Runs health checks on new slot
+- Syncs scraper source configs to database (before traffic switch)
 - Switches Caddy traffic to new slot
 - Updates deployment state
 
@@ -353,11 +353,11 @@ git pull origin main
 # [4/9] Deploying to green slot...
 # ✓ Container started: togather-green
 # 
-# [5/9] Syncing scraper source configs to database...
-# ✓ Sync complete: N created, M updated (total X sources)
-# 
-# [6/9] Running health checks...
+# [5/9] Running health checks...
 # ✓ Health check passed
+# 
+# [6/9] Syncing scraper source configs to database...
+# ✓ Sync complete: N created, M updated (total X sources)
 # 
 # [7/9] Switching traffic to green...
 # ✓ Caddy configuration updated

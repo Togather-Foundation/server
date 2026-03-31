@@ -1008,12 +1008,15 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 	// Orchestrator worker (srv-x7oba)
 	// cfgQueries is *postgres.Queries which implements both scraperConfigReader and
 	// scrapeOrchestratorSourcesReader interfaces (GetScraperConfig and ListScraperSourcesWithLatestRun).
-	river.AddWorker[ScrapeOrchestratorArgs](workers, &ScrapeOrchestratorWorker{
-		ConfigQueries: cfgQueries,
-		SourcesReader: cfgQueries,
-		Logger:        logger,
-		Slot:          slot,
-	})
+	// Only register if cfgQueries is non-nil to avoid nil pointer dereference.
+	if cfgQueries != nil {
+		river.AddWorker[ScrapeOrchestratorArgs](workers, &ScrapeOrchestratorWorker{
+			ConfigQueries: cfgQueries,
+			SourcesReader: cfgQueries,
+			Logger:        logger,
+			Slot:          slot,
+		})
+	}
 
 	// URL submission validation workers (srv-m9bja)
 	river.AddWorker[ValidateSubmissionsSchedulerArgs](workers, ValidateSubmissionsSchedulerWorker{

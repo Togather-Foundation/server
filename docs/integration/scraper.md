@@ -800,7 +800,7 @@ at debug level and the URL is left empty.
 | `wait_network_idle` | bool | `false` | After `wait_selector` resolves, additionally wait for in-flight XHR/fetch requests to settle (500 ms idle window). Use for pages that load content via async requests after the DOM is ready (e.g. third-party event widget embeds). |
 | `undetected` | bool | `false` | Launch page with stealth evasions (patches `navigator.webdriver`, fake plugins, etc.) to reduce bot-detection by sites that check for headless Chrome fingerprints. |
 | `pagination_button` | string | — | CSS selector for a JS "next page" / "load more" button. For URL-based pagination use `selectors.pagination` instead. |
-| `rate_limit_ms` | int | `1000` | Delay between page loads in ms. |
+| `rate_limit_ms` | int | `0` | Delay between page loads in ms. |
 | `headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
 | `iframe.selector` | string | — | CSS selector for the target cross-origin iframe element. When set, the scraper enters the iframe's execution context via CDP frame navigation and extracts HTML from inside the iframe. |
 | `iframe.wait_selector` | string | — | CSS selector to wait for inside the iframe DOM before extracting. |
@@ -990,8 +990,9 @@ by a River background worker (`ScrapeSourceWorker`) registered at server startup
 
 Periodic jobs are registered via `NewPeriodicJobsFromSources(sources)` during
 `server serve` startup. Sources are loaded from the database first (for dynamic
-source management without restart); if the DB is unavailable or returns empty,
-YAML configs are used as fallback. Only sources where `enabled: true` and
+source management without restart); if the DB is unavailable, YAML configs are
+used as fallback. An empty DB result is authoritative — no YAML fallback is used
+in this case. Only sources where `enabled: true` and
 `schedule` is `daily` or `weekly` are registered.
 Job runs are recorded in `scraper_runs` (same as manual scrapes).
 
@@ -1008,18 +1009,18 @@ that apply to all scrape runs.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `auto_scrape` | bool | `false` | Enable/disable periodic River job scheduling |
+| `auto_scrape` | bool | `true` | Enable/disable periodic River job scheduling |
 | `max_concurrent_sources` | int | `3` | Max sources scraped in parallel during `scrape all` |
 | `request_timeout_seconds` | int | `30` | HTTP request timeout per page fetch |
 | `retry_max_attempts` | int | `3` | Retries on transient network errors |
 | `max_batch_size` | int | `100` | Max events per ingest batch POST |
-| `rate_limit_ms` | int | `1000` | Minimum ms between requests to the same domain |
+| `rate_limit_ms` | int | `0` | Minimum ms between requests to the same domain |
 
 ### Admin API
 
 ```
-GET  /api/admin/scraper/config   — Read current config
-PATCH /api/admin/scraper/config  — Update one or more fields (partial JSON body)
+GET  /api/v1/admin/scraper/config   — Read current config
+PATCH /api/v1/admin/scraper/config  — Update one or more fields (partial JSON body)
 ```
 
 Both endpoints require an admin API key (`Authorization: Bearer <key>`).
