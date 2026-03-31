@@ -84,7 +84,8 @@ func TestScraperSourceRepositoryUpsert(t *testing.T) {
 	require.Equal(t, 1, updated.Tier)
 	require.Equal(t, "weekly", updated.Schedule)
 	require.Equal(t, 8, updated.TrustLevel)
-	require.False(t, updated.Enabled)
+	// enabled is preserved on update — original was true, upsert params say false
+	require.True(t, updated.Enabled)
 	require.Equal(t, 20, updated.MaxPages)
 	require.Equal(t, "updated feed", updated.Notes)
 	// created_at is preserved; updated_at advances
@@ -92,6 +93,68 @@ func TestScraperSourceRepositoryUpsert(t *testing.T) {
 		updated.CreatedAt.UTC().Truncate(time.Millisecond))
 	// updated_at is set to NOW() on update — it must be >= created_at
 	require.False(t, updated.UpdatedAt.Before(updated.CreatedAt))
+}
+
+func TestScraperSourceRepositoryUpsertEnabledPreserved(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+	repo := NewScraperSourceRepository(pool)
+
+	// Insert a source with enabled=true
+	src, err := repo.Upsert(ctx, scraper.UpsertParams{
+		Name:       "enabled-preserve-test",
+		URL:        "https://example.org/enabled-test",
+		Tier:       0,
+		Schedule:   "daily",
+		TrustLevel: 5,
+		License:    "CC0-1.0",
+		Enabled:    true,
+		MaxPages:   10,
+	})
+	require.NoError(t, err)
+	require.True(t, src.Enabled)
+
+	// Upsert with enabled=false — should NOT change the DB value
+	updated, err := repo.Upsert(ctx, scraper.UpsertParams{
+		Name:       "enabled-preserve-test",
+		URL:        "https://example.org/enabled-test-v2",
+		Tier:       1,
+		Schedule:   "weekly",
+		TrustLevel: 6,
+		License:    "CC0-1.0",
+		Enabled:    false,
+		MaxPages:   20,
+	})
+	require.NoError(t, err)
+	require.True(t, updated.Enabled, "enabled should remain true after upsert with enabled=false")
+
+	// Insert a source with enabled=false
+	src2, err := repo.Upsert(ctx, scraper.UpsertParams{
+		Name:       "disabled-preserve-test",
+		URL:        "https://example.org/disabled-test",
+		Tier:       0,
+		Schedule:   "daily",
+		TrustLevel: 5,
+		License:    "CC0-1.0",
+		Enabled:    false,
+		MaxPages:   10,
+	})
+	require.NoError(t, err)
+	require.False(t, src2.Enabled)
+
+	// Upsert with enabled=true — should NOT change the DB value
+	updated2, err := repo.Upsert(ctx, scraper.UpsertParams{
+		Name:       "disabled-preserve-test",
+		URL:        "https://example.org/disabled-test-v2",
+		Tier:       1,
+		Schedule:   "weekly",
+		TrustLevel: 6,
+		License:    "CC0-1.0",
+		Enabled:    true,
+		MaxPages:   20,
+	})
+	require.NoError(t, err)
+	require.False(t, updated2.Enabled, "enabled should remain false after upsert with enabled=true")
 }
 
 func TestScraperSourceRepositoryUpsertWithLastScrapedAt(t *testing.T) {
