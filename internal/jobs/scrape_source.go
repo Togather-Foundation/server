@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 
 	"github.com/Togather-Foundation/server/internal/scraper"
@@ -21,9 +22,21 @@ const (
 // ScrapeSourceArgs holds the job arguments for a periodic source scrape.
 type ScrapeSourceArgs struct {
 	SourceName string `json:"source_name"`
+
+	// Chain metadata for serial chaining:
+	// When set, the worker will enqueue the next source after completion.
+	SourceNames       []string `json:"source_names"`
+	CurrentIndex      int      `json:"current_index"`
+	RespectAutoScrape bool     `json:"respect_auto_scrape"`
+	SkipUpToDate      bool     `json:"skip_up_to_date"`
 }
 
 func (ScrapeSourceArgs) Kind() string { return JobKindScrapeSource }
+
+// IsChained returns true if this job is part of a chain (has chain metadata).
+func (a ScrapeSourceArgs) IsChained() bool {
+	return len(a.SourceNames) > 0
+}
 
 // scraperConfigReader is the subset of postgres.Queries used by ScrapeSourceWorker.
 type scraperConfigReader interface {
@@ -61,8 +74,16 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 
 	// Read global scraper config. Proceed on read error (log only); fall back to
 	// zero-value ScrapeOptions which use package-level defaults everywhere.
+	// For chained jobs, respect RespectAutoScrape flag to bypass global check.
 	opts := scraper.ScrapeOptions{}
-	if w.ConfigQueries != nil {
+	shouldCheckAutoScrape := true
+
+	if job.Args.IsChained() && !job.Args.RespectAutoScrape {
+		shouldCheckAutoScrape = false
+		logger.DebugContext(ctx, "scrape_source: chained job bypassing auto_scrape check", "source", sourceName)
+	}
+
+	if shouldCheckAutoScrape && w.ConfigQueries != nil {
 		cfg, err := w.ConfigQueries.GetScraperConfig(ctx)
 		if err != nil {
 			logger.WarnContext(ctx, "scrape_source: failed to read scraper config, proceeding with defaults", "source", sourceName, "error", err)
@@ -80,10 +101,6 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 			if cfg.RateLimitMs > 0 {
 				opts.RateLimitMs = cfg.RateLimitMs
 			}
-			// TODO: cfg.RetryMaxAttempts — wire into retry logic when a retry
-			// wrapper is added to ScrapeSource (srv-ephoo follow-up).
-			// TODO: cfg.MaxConcurrentSources — wire into ScrapeAll fan-out
-			// concurrency when a semaphore is added there (srv-ephoo follow-up).
 		}
 	}
 
@@ -102,6 +119,47 @@ func (w ScrapeSourceWorker) Work(ctx context.Context, job *river.Job[ScrapeSourc
 		"events_duplicate", result.EventsDuplicate,
 		"duration", time.Since(start),
 	)
+
+	// Chain to next source if this is a chained job and there are remaining sources
+	if job.Args.IsChained() {
+		nextIndex := job.Args.CurrentIndex + 1
+		if nextIndex < len(job.Args.SourceNames) {
+			nextSourceName := job.Args.SourceNames[nextIndex]
+			logger.InfoContext(ctx, "scrape_source: enqueuing next chained source",
+				"current", sourceName,
+				"next", nextSourceName,
+				"next_index", nextIndex,
+				"total", len(job.Args.SourceNames),
+			)
+
+			riverClient, err := river.ClientFromContextSafely[pgx.Tx](ctx)
+			if err != nil {
+				logger.ErrorContext(ctx, "scrape_source: river client unavailable for chaining", "error", err)
+				return fmt.Errorf("scrape_source: river client unavailable for chaining: %w", err)
+			}
+
+			_, err = riverClient.Insert(ctx, ScrapeSourceArgs{
+				SourceName:        nextSourceName,
+				SourceNames:       job.Args.SourceNames,
+				CurrentIndex:      nextIndex,
+				RespectAutoScrape: job.Args.RespectAutoScrape,
+				SkipUpToDate:      job.Args.SkipUpToDate,
+			}, nil)
+			if err != nil {
+				logger.ErrorContext(ctx, "scrape_source: failed to enqueue next chained source",
+					"next_source", nextSourceName, "error", err)
+				return fmt.Errorf("scrape_source: insert next chained job: %w", err)
+			}
+
+			logger.InfoContext(ctx, "scrape_source: chained next source",
+				"next_source", nextSourceName,
+				"next_index", nextIndex,
+				"total", len(job.Args.SourceNames))
+		} else {
+			logger.InfoContext(ctx, "scrape_source: chain complete, no more sources",
+				"total", len(job.Args.SourceNames))
+		}
+	}
 
 	return nil
 }

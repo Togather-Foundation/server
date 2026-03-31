@@ -456,3 +456,97 @@ func (h *AdminScraperHandler) PatchConfig(w http.ResponseWriter, r *http.Request
 		RateLimitMs:           params.RateLimitMs,
 	}, "application/json")
 }
+
+type triggerAllRequest struct {
+	RespectAutoScrape *bool `json:"respect_auto_scrape"`
+	SkipUpToDate      *bool `json:"skip_up_to_date"`
+}
+
+type triggerAllResponse struct {
+	Status            string `json:"status"`
+	RespectAutoScrape bool   `json:"respect_auto_scrape"`
+	SkipUpToDate      bool   `json:"skip_up_to_date"`
+	OrchestratorJobID int64  `json:"orchestrator_job_id,omitempty"`
+}
+
+func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Request) {
+	if h.RiverClient == nil {
+		problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/not-available", "Job queue not available on this node", nil, h.Env)
+		return
+	}
+
+	var req triggerAllRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request body", err, h.Env)
+		return
+	}
+
+	respectAutoScrape := true
+	if req.RespectAutoScrape != nil {
+		respectAutoScrape = *req.RespectAutoScrape
+	}
+
+	skipUpToDate := true
+	if req.SkipUpToDate != nil {
+		skipUpToDate = *req.SkipUpToDate
+	}
+
+	if respectAutoScrape {
+		cfg, err := h.Queries.GetScraperConfig(r.Context())
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+			} else {
+				h.Logger.Error().Err(err).Msg("admin scraper: trigger-all read config")
+				problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to read scraper config", fmt.Errorf("get scraper config: %w", err), h.Env)
+				return
+			}
+		} else if !cfg.AutoScrape {
+			sources, listErr := h.Queries.ListScraperSourcesWithLatestRun(r.Context(), pgtype.Bool{Valid: true, Bool: true})
+			var enabledCount int
+			if listErr == nil {
+				for _, s := range sources {
+					if s.Enabled && (s.Schedule == "daily" || s.Schedule == "weekly") {
+						enabledCount++
+					}
+				}
+				_ = enabledCount
+			}
+			writeJSON(w, http.StatusOK, triggerAllResponse{
+				Status:            "skipped",
+				RespectAutoScrape: respectAutoScrape,
+				SkipUpToDate:      skipUpToDate,
+			}, "application/json")
+			return
+		}
+	}
+
+	insertResult, err := h.RiverClient.Insert(r.Context(), jobs.ScrapeOrchestratorArgs{
+		RespectAutoScrape: respectAutoScrape,
+		SkipUpToDate:      skipUpToDate,
+		SourceNames:       nil,
+		CurrentIndex:      0,
+	}, &river.InsertOpts{
+		UniqueOpts: river.UniqueOpts{
+			ByArgs: false,
+			ByState: []rivertype.JobState{
+				rivertype.JobStateAvailable,
+				rivertype.JobStateRunning,
+				rivertype.JobStateScheduled,
+				rivertype.JobStatePending,
+				rivertype.JobStateRetryable,
+			},
+		},
+	})
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("admin scraper: trigger-all enqueue")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to enqueue orchestrator job", fmt.Errorf("insert orchestrator job: %w", err), h.Env)
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, triggerAllResponse{
+		Status:            "triggered",
+		RespectAutoScrape: respectAutoScrape,
+		SkipUpToDate:      skipUpToDate,
+		OrchestratorJobID: insertResult.Job.ID,
+	}, "application/json")
+}

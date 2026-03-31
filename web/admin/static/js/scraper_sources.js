@@ -105,6 +105,8 @@
                 openRunsModal(name);
             } else if (action === 'trigger-scrape') {
                 triggerScrape(target, name);
+            } else if (action === 'trigger-all-scrape') {
+                triggerAllScrape(target);
             } else if (action === 'toggle-enabled') {
                 toggleEnabled(target, name);
             } else if (action === 'toggle-run-detail') {
@@ -285,6 +287,31 @@
     }
 
     // -------------------------------------------------------------------------
+    // Trigger all scrape (srv-x7oba)
+    // -------------------------------------------------------------------------
+
+    async function triggerAllScrape(btn) {
+        setLoading(btn, true);
+        try {
+            var respectAutoScrape = document.getElementById('respect-auto-scrape')?.checked ?? true;
+            var skipUpToDate = document.getElementById('skip-up-to-date')?.checked ?? true;
+            var result = await API.scraper.triggerAll({
+                respect_auto_scrape: respectAutoScrape,
+                skip_up_to_date: skipUpToDate
+            });
+            if (result.status === 'skipped') {
+                showToast('Auto-scrape is disabled — serial run skipped', 'info');
+            } else {
+                showToast('Serial scrape triggered: ' + result.status, 'success');
+            }
+        } catch (err) {
+            showToast('Failed to trigger serial scrape: ' + err.message, 'error');
+        } finally {
+            setLoading(btn, false);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Auto-scrape config toggle (srv-pfeud)
     // -------------------------------------------------------------------------
 
@@ -293,9 +320,17 @@
             var cfg = await API.scraper.getConfig();
             var toggle = document.getElementById('auto-scrape-toggle');
             var wrap = document.getElementById('auto-scrape-toggle-wrap');
+            var triggerAllBtn = document.getElementById('trigger-all-btn');
+            var orchestratorOptions = document.getElementById('orchestrator-options');
             if (toggle && wrap) {
                 toggle.checked = cfg.auto_scrape === true;
                 wrap.classList.remove('d-none');
+            }
+            if (triggerAllBtn) {
+                triggerAllBtn.classList.remove('d-none');
+            }
+            if (orchestratorOptions) {
+                orchestratorOptions.classList.remove('d-none');
             }
         } catch (err) {
             // Config endpoint may not exist in older deployments — fail silently.

@@ -60,7 +60,9 @@ func (f *fakeRiverInserter) Insert(_ context.Context, args river.JobArgs, _ *riv
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &rivertype.JobInsertResult{}, nil
+	return &rivertype.JobInsertResult{
+		Job: &rivertype.JobRow{ID: 12345},
+	}, nil
 }
 
 func (f *fakeScraperQueries) ListScraperSourcesWithLatestRun(_ context.Context, _ pgtype.Bool) ([]postgres.ListScraperSourcesWithLatestRunRow, error) {
@@ -531,4 +533,182 @@ func TestAdminScraperHandler_SetSourceEnabled(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ----------------------------------------------------------------------------
+// TestAdminScraperHandler_TriggerAllScrape
+// ----------------------------------------------------------------------------
+
+func TestAdminScraperHandler_TriggerAllScrape(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns 503 when RiverClient is nil", func(t *testing.T) {
+		t.Parallel()
+
+		q := &fakeScraperQueries{}
+		h := &AdminScraperHandler{
+			Queries:     q,
+			Logger:      zerolog.Nop(),
+			Env:         "test",
+			RiverClient: nil,
+		}
+
+		bodyBytes, err := json.Marshal(map[string]any{"respect_auto_scrape": false})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/trigger-all", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.TriggerAllScrape(w, req)
+
+		resp := w.Result()
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+	})
+
+	tests := []struct {
+		name           string
+		body           any
+		configRow      postgres.ScraperConfig
+		configGetErr   error
+		wantStatus     int
+		wantStatusText string
+	}{
+		{
+			name:           "returns 400 for invalid JSON body",
+			body:           "not-json",
+			wantStatus:     http.StatusBadRequest,
+			wantStatusText: "",
+		},
+		{
+			name: "respect_auto_scrape false triggers even when config is disabled",
+			body: map[string]any{"respect_auto_scrape": false},
+			configRow: postgres.ScraperConfig{
+				AutoScrape: false,
+			},
+			wantStatus:     http.StatusAccepted,
+			wantStatusText: "triggered",
+		},
+		{
+			name: "returns skipped when respect_auto_scrape true and auto_scrape disabled",
+			body: map[string]any{"respect_auto_scrape": true},
+			configRow: postgres.ScraperConfig{
+				AutoScrape: false,
+			},
+			wantStatus:     http.StatusOK,
+			wantStatusText: "skipped",
+		},
+		{
+			name:           "defaults respect_auto_scrape to true",
+			body:           map[string]any{},
+			configRow:      postgres.ScraperConfig{AutoScrape: false},
+			wantStatus:     http.StatusOK,
+			wantStatusText: "skipped",
+		},
+		{
+			name:           "defaults skip_up_to_date to true",
+			body:           map[string]any{"respect_auto_scrape": false},
+			configRow:      postgres.ScraperConfig{AutoScrape: true},
+			wantStatus:     http.StatusAccepted,
+			wantStatusText: "triggered",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			inserter := &fakeRiverInserter{}
+			q := &fakeScraperQueries{
+				configRow:    tc.configRow,
+				configGetErr: tc.configGetErr,
+			}
+			h := &AdminScraperHandler{
+				Queries:     q,
+				Logger:      zerolog.Nop(),
+				Env:         "test",
+				RiverClient: inserter,
+			}
+
+			var bodyBytes []byte
+			var err error
+			if s, ok := tc.body.(string); ok {
+				bodyBytes = []byte(s)
+			} else {
+				bodyBytes, err = json.Marshal(tc.body)
+				require.NoError(t, err)
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/trigger-all", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			h.TriggerAllScrape(w, req)
+
+			resp := w.Result()
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+
+			if tc.wantStatusText != "" && tc.wantStatus != http.StatusServiceUnavailable {
+				var body struct {
+					Status string `json:"status"`
+				}
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+				assert.Equal(t, tc.wantStatusText, body.Status)
+			}
+		})
+	}
+}
+
+func TestAdminScraperHandler_TriggerAllScrape_WithRiver(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns 202 and enqueues orchestrator job on success", func(t *testing.T) {
+		t.Parallel()
+
+		inserter := &fakeRiverInserter{}
+		q := &fakeScraperQueries{
+			configRow: postgres.ScraperConfig{AutoScrape: true},
+		}
+		h := &AdminScraperHandler{
+			Queries:     q,
+			Logger:      zerolog.Nop(),
+			Env:         "test",
+			RiverClient: inserter,
+		}
+
+		bodyBytes, err := json.Marshal(map[string]any{"respect_auto_scrape": false})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/trigger-all", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.TriggerAllScrape(w, req)
+
+		assert.Equal(t, http.StatusAccepted, w.Result().StatusCode)
+		require.NotNil(t, inserter.insertedArg, "Insert should have been called")
+	})
+
+	t.Run("returns 500 when River Insert fails", func(t *testing.T) {
+		t.Parallel()
+
+		inserter := &fakeRiverInserter{err: errStubNotImplemented}
+		q := &fakeScraperQueries{
+			configRow: postgres.ScraperConfig{AutoScrape: true},
+		}
+		h := &AdminScraperHandler{
+			Queries:     q,
+			Logger:      zerolog.Nop(),
+			Env:         "test",
+			RiverClient: inserter,
+		}
+
+		bodyBytes, err := json.Marshal(map[string]any{"respect_auto_scrape": false})
+		require.NoError(t, err)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/scraper/trigger-all", bytes.NewReader(bodyBytes))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.TriggerAllScrape(w, req)
+
+		assert.Equal(t, http.StatusInternalServerError, w.Result().StatusCode)
+	})
 }

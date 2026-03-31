@@ -919,12 +919,18 @@ func NewWorkers() *river.Workers {
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
 func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, submissionRepo domainScraper.SubmissionRepository) *river.Workers {
-	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, nil, submissionRepo)
+	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, (*postgres.Queries)(nil), submissionRepo)
+}
+
+// scraperQueries combines both config and sources queries needed by scrape workers.
+type scraperQueries interface {
+	GetScraperConfig(ctx context.Context) (postgres.ScraperConfig, error)
+	ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]postgres.ListScraperSourcesWithLatestRunRow, error)
 }
 
 // NewWorkersWithScraper creates workers like NewWorkersWithPool but also
 // registers ScrapeSourceWorker when a non-nil scraper is provided.
-func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperConfigReader, submissionRepo domainScraper.SubmissionRepository) *river.Workers {
+func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperQueries, submissionRepo domainScraper.SubmissionRepository) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -998,6 +1004,16 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 			Slot:          slot,
 		})
 	}
+
+	// Orchestrator worker (srv-x7oba)
+	// cfgQueries is *postgres.Queries which implements both scraperConfigReader and
+	// scrapeOrchestratorSourcesReader interfaces (GetScraperConfig and ListScraperSourcesWithLatestRun).
+	river.AddWorker[ScrapeOrchestratorArgs](workers, &ScrapeOrchestratorWorker{
+		ConfigQueries: cfgQueries,
+		SourcesReader: cfgQueries,
+		Logger:        logger,
+		Slot:          slot,
+	})
 
 	// URL submission validation workers (srv-m9bja)
 	river.AddWorker[ValidateSubmissionsSchedulerArgs](workers, ValidateSubmissionsSchedulerWorker{

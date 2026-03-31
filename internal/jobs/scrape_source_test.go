@@ -546,3 +546,121 @@ func TestScrapeSourceWorker_Work_ConfigTunablesWired(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Chaining behavior tests
+// ---------------------------------------------------------------------------
+
+func TestScrapeSourceArgs_IsChained(t *testing.T) {
+	t.Parallel()
+
+	t.Run("empty source names is not chained", func(t *testing.T) {
+		t.Parallel()
+		args := ScrapeSourceArgs{SourceName: "test"}
+		if args.IsChained() {
+			t.Error("expected IsChained()=false for empty SourceNames")
+		}
+	})
+
+	t.Run("non-empty source names is chained", func(t *testing.T) {
+		t.Parallel()
+		args := ScrapeSourceArgs{
+			SourceName:  "test",
+			SourceNames: []string{"a", "b", "c"},
+		}
+		if !args.IsChained() {
+			t.Error("expected IsChained()=true for non-empty SourceNames")
+		}
+	})
+}
+
+func TestScrapeSourceWorker_RespectAutoScrapeFalseBypassesConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockScraperConfig{
+		cfg: postgres.ScraperConfig{AutoScrape: false}, // global auto_scrape is FALSE
+	}
+	ms := &mockScraper{
+		result: scraper.ScrapeResult{
+			SourceName:      "test-source",
+			EventsFound:     10,
+			EventsCreated:   7,
+			EventsDuplicate: 3,
+		},
+	}
+
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: cfg,
+		Logger:        nil,
+		Slot:          "test",
+	}
+
+	job := &river.Job[ScrapeSourceArgs]{
+		JobRow: &rivertype.JobRow{
+			Kind:        JobKindScrapeSource,
+			EncodedArgs: []byte(`{"source_name":"test-source"}`),
+			Attempt:     1,
+			CreatedAt:   time.Now(),
+		},
+		Args: ScrapeSourceArgs{
+			SourceName:        "test-source",
+			SourceNames:       []string{"test-source"},
+			CurrentIndex:      0,
+			RespectAutoScrape: false, // bypass global check
+			SkipUpToDate:      false,
+		},
+	}
+
+	err := w.Work(context.Background(), job)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Should still scrape even though global auto_scrape=false
+	if !ms.called {
+		t.Error("expected ScrapeSource to be called when RespectAutoScrape=false")
+	}
+}
+
+func TestScrapeSourceWorker_RespectAutoScrapeTrueChecksConfig(t *testing.T) {
+	t.Parallel()
+
+	cfg := &mockScraperConfig{
+		cfg: postgres.ScraperConfig{AutoScrape: false}, // global auto_scrape is FALSE
+	}
+	ms := &mockScraper{}
+
+	w := ScrapeSourceWorker{
+		Scraper:       ms,
+		ConfigQueries: cfg,
+		Logger:        nil,
+		Slot:          "test",
+	}
+
+	job := &river.Job[ScrapeSourceArgs]{
+		JobRow: &rivertype.JobRow{
+			Kind:        JobKindScrapeSource,
+			EncodedArgs: []byte(`{"source_name":"test-source"}`),
+			Attempt:     1,
+			CreatedAt:   time.Now(),
+		},
+		Args: ScrapeSourceArgs{
+			SourceName:        "test-source",
+			SourceNames:       []string{"test-source"},
+			CurrentIndex:      0,
+			RespectAutoScrape: true, // respect global check
+			SkipUpToDate:      false,
+		},
+	}
+
+	err := w.Work(context.Background(), job)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	// Should NOT scrape because RespectAutoScrape=true AND global auto_scrape=false
+	if ms.called {
+		t.Error("expected ScrapeSource NOT to be called when RespectAutoScrape=true and auto_scrape=false")
+	}
+}

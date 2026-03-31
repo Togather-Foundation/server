@@ -419,6 +419,11 @@ const API = {
             method: 'POST'
         }),
 
+        triggerAll: (options = {}) => API.request('/api/v1/admin/scraper/trigger-all', {
+            method: 'POST',
+            body: JSON.stringify(options)
+        }),
+
         setEnabled: (name, enabled) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}`, {
             method: 'PATCH',
             body: JSON.stringify({ enabled })
