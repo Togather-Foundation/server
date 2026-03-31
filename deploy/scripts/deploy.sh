@@ -1697,7 +1697,7 @@ validate_health() {
 # Returns:
 #   0 on success, 1 on sync failure (deployment fails)
 # Side effects:
-#   - Runs 'server scrape sync' inside the container
+#   - Runs 'server scrape sync --json' inside the container
 #   - Logs sync output for debugging
 sync_sources() {
     local env="$1"
@@ -1715,17 +1715,16 @@ sync_sources() {
         return 1
     fi
     
-    # Run sync inside the container
-    # The container has configs/sources mounted at /app/configs/sources from the image
-    log "INFO" "Running 'server scrape sync' in ${container_name}"
+    # Run sync inside the container using JSON output for robust parsing
+    log "INFO" "Running 'server scrape sync --json' in ${container_name}"
     
     local sync_output
     local sync_status=0
     
-    # Run sync command and capture output
-    sync_output=$(docker exec "${container_name}" /app/server scrape sync 2>&1) || sync_status=$?
+    # Run sync command with JSON output and capture output
+    sync_output=$(docker exec "${container_name}" /app/server scrape sync --json 2>&1) || sync_status=$?
     
-    # Log the output
+    # Log the output for debugging
     while IFS= read -r line; do
         log "INFO" "  ${line}"
     done <<< "${sync_output}"
@@ -1739,22 +1738,27 @@ sync_sources() {
         return 1
     fi
     
-    # Verify sync actually processed sources (not just "no sources found")
-    if echo "${sync_output}" | grep -q "No source configs found"; then
-        # For staging/production, missing configs is a failure (not just a warning)
+    # Parse JSON output to get source counts
+    local sources_found total
+    sources_found=$(echo "${sync_output}" | jq -r '.sources_found // 0' 2>/dev/null || echo "0")
+    total=$(echo "${sync_output}" | jq -r '.total // 0' 2>/dev/null || echo "0")
+    
+    # Verify sync actually processed sources
+    # For staging/production, missing configs is a failure (not just a warning)
+    if [[ "$sources_found" == "0" || "$total" == "0" ]]; then
         if [[ "$env" == "staging" || "$env" == "production" ]]; then
-            log "ERROR" "No source configs found in container"
+            log "ERROR" "No source configs found in container (sources_found=${sources_found}, total=${total})"
             log "ERROR" "This indicates configs/sources is missing from the Docker image"
             log "ERROR" "Deployment aborted: scraper configs must be present in container"
             return 1
         else
             # For local/development, just warn
-            log "WARN" "No source configs found in container"
+            log "WARN" "No source configs found in container (sources_found=${sources_found}, total=${total})"
             log "WARN" "This may indicate configs/sources is missing from the Docker image"
             log "WARN" "Scraper will fall back to database configs (if any exist)"
         fi
     else
-        log "SUCCESS" "Scraper source configs synced successfully"
+        log "SUCCESS" "Scraper source configs synced successfully (${total} sources)"
     fi
     
     return 0

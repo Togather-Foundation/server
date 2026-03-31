@@ -156,8 +156,8 @@ test_sync_sources_calls_scrape_sync() {
     local sync_func
     sync_func=$(sed -n '/^sync_sources()/,/^}$/p' "$DEPLOY_SCRIPT")
     
-    # Should run scrape sync inside container
-    echo "$sync_func" | grep -q 'scrape sync'
+    # Should run scrape sync with JSON flag inside container
+    echo "$sync_func" | grep -q 'scrape sync --json'
 }
 
 test_sync_sources_handles_failure() {
@@ -186,8 +186,8 @@ test_sync_sources_checks_no_sources_warning() {
     local sync_func
     sync_func=$(sed -n '/^sync_sources()/,/^}$/p' "$DEPLOY_SCRIPT")
     
-    # Should warn if no sources found
-    echo "$sync_func" | grep -q 'No source configs found'
+    # Should check sources_found/total from JSON output
+    echo "$sync_func" | grep -q 'jq.*sources_found'
 }
 
 # ============================================================================
