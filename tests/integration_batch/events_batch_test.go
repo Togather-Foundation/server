@@ -77,35 +77,21 @@ func TestBatchEventSubmission_Success(t *testing.T) {
 	require.True(t, ok, "batch_id should be a string")
 	require.NotEmpty(t, batchID)
 
-	// Wait for batch processing to complete (with timeout)
-	maxWait := 30 * time.Second
-	pollInterval := 500 * time.Millisecond
-	deadline := time.Now().Add(maxWait)
+	// Wait for batch processing to complete via River events
+	awaitBatchCompletion(t, batchID, 30*time.Second)
 
-	var statusResp *http.Response
+	// Make single GET request to verify final state
+	statusReq, err := http.NewRequestWithContext(env.Context, http.MethodGet, env.Server.URL+"/api/v1/batch-status/"+batchID, nil)
+	require.NoError(t, err)
+
+	statusResp, err := http.DefaultClient.Do(statusReq)
+	require.NoError(t, err)
+	defer func() { _ = statusResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, statusResp.StatusCode)
+
 	var batchStatus map[string]any
-
-	for time.Now().Before(deadline) {
-		statusReq, err := http.NewRequestWithContext(env.Context, http.MethodGet, env.Server.URL+"/api/v1/batch-status/"+batchID, nil)
-		require.NoError(t, err)
-
-		statusResp, err = http.DefaultClient.Do(statusReq)
-		require.NoError(t, err)
-
-		if statusResp.StatusCode == http.StatusOK {
-			err = json.NewDecoder(statusResp.Body).Decode(&batchStatus)
-			_ = statusResp.Body.Close()
-			require.NoError(t, err)
-
-			if batchStatus["status"] == "completed" {
-				break
-			}
-		} else {
-			_ = statusResp.Body.Close()
-		}
-
-		time.Sleep(pollInterval)
-	}
+	err = json.NewDecoder(statusResp.Body).Decode(&batchStatus)
+	require.NoError(t, err)
 
 	// Verify batch completed successfully
 	require.Equal(t, "completed", batchStatus["status"], "Batch should complete within timeout")
@@ -269,32 +255,21 @@ func TestBatchEventSubmission_PartialFailure(t *testing.T) {
 	batchID, ok := result["batch_id"].(string)
 	require.True(t, ok)
 
-	// Wait for processing
-	maxWait := 30 * time.Second
-	deadline := time.Now().Add(maxWait)
+	// Wait for batch processing to complete via River events
+	awaitBatchCompletion(t, batchID, 30*time.Second)
+
+	// Make single GET request to verify final state
+	statusReq, err := http.NewRequestWithContext(env.Context, http.MethodGet, env.Server.URL+"/api/v1/batch-status/"+batchID, nil)
+	require.NoError(t, err)
+
+	statusResp, err := http.DefaultClient.Do(statusReq)
+	require.NoError(t, err)
+	defer func() { _ = statusResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, statusResp.StatusCode)
+
 	var batchStatus map[string]any
-
-	for time.Now().Before(deadline) {
-		statusReq, err := http.NewRequestWithContext(env.Context, http.MethodGet, env.Server.URL+"/api/v1/batch-status/"+batchID, nil)
-		require.NoError(t, err)
-
-		statusResp, err := http.DefaultClient.Do(statusReq)
-		require.NoError(t, err)
-
-		if statusResp.StatusCode == http.StatusOK {
-			err = json.NewDecoder(statusResp.Body).Decode(&batchStatus)
-			_ = statusResp.Body.Close()
-			require.NoError(t, err)
-
-			if batchStatus["status"] == "completed" {
-				break
-			}
-		} else {
-			_ = statusResp.Body.Close()
-		}
-
-		time.Sleep(500 * time.Millisecond)
-	}
+	err = json.NewDecoder(statusResp.Body).Decode(&batchStatus)
+	require.NoError(t, err)
 
 	// Verify batch shows partial success and partial failure
 	require.Equal(t, "completed", batchStatus["status"])
@@ -367,32 +342,21 @@ func TestBatchEventSubmission_Idempotency(t *testing.T) {
 	batchID1, ok := result1["batch_id"].(string)
 	require.True(t, ok)
 
-	// Wait for first batch to complete
-	maxWait := 30 * time.Second
-	deadline := time.Now().Add(maxWait)
+	// Wait for first batch to complete via River events
+	awaitBatchCompletion(t, batchID1, 30*time.Second)
+
+	// Make single GET request to verify final state
+	statusReq, err := http.NewRequestWithContext(env.Context, http.MethodGet, env.Server.URL+"/api/v1/batch-status/"+batchID1, nil)
+	require.NoError(t, err)
+
+	statusResp, err := http.DefaultClient.Do(statusReq)
+	require.NoError(t, err)
+	defer func() { _ = statusResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, statusResp.StatusCode)
+
 	var batchStatus1 map[string]any
-
-	for time.Now().Before(deadline) {
-		statusReq, err := http.NewRequestWithContext(env.Context, http.MethodGet, env.Server.URL+"/api/v1/batch-status/"+batchID1, nil)
-		require.NoError(t, err)
-
-		statusResp, err := http.DefaultClient.Do(statusReq)
-		require.NoError(t, err)
-
-		if statusResp.StatusCode == http.StatusOK {
-			err = json.NewDecoder(statusResp.Body).Decode(&batchStatus1)
-			_ = statusResp.Body.Close()
-			require.NoError(t, err)
-
-			if batchStatus1["status"] == "completed" {
-				break
-			}
-		} else {
-			_ = statusResp.Body.Close()
-		}
-
-		time.Sleep(500 * time.Millisecond)
-	}
+	err = json.NewDecoder(statusResp.Body).Decode(&batchStatus1)
+	require.NoError(t, err)
 
 	// Verify first batch completed successfully with one event created
 	require.Equal(t, "completed", batchStatus1["status"])
