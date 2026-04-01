@@ -735,9 +735,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	adminScraperSetEnabled := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.SetSourceEnabled))))
 	adminScraperGetConfig := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.GetConfig))))
 	adminScraperPatchConfig := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.PatchConfig))))
+	adminScraperDiagnostics := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.GetSourceDiagnostics))))
+	adminScraperAllDiagnostics := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.GetAllDiagnostics))))
 
 	mux.Handle("GET /api/v1/admin/scraper/sources", adminScraperListSources)
 	mux.Handle("GET /api/v1/admin/scraper/sources/{name}/runs", adminScraperListRuns)
+	mux.Handle("GET /api/v1/admin/scraper/sources/{name}/diagnostics", adminScraperDiagnostics)
+	mux.Handle("GET /api/v1/admin/scraper/diagnostics", adminScraperAllDiagnostics)
 	mux.Handle("POST /api/v1/admin/scraper/sources/{name}/trigger", adminScraperTrigger)
 	mux.Handle("POST /api/v1/admin/scraper/trigger-all", adminScraperTriggerAll)
 	mux.Handle("PATCH /api/v1/admin/scraper/sources/{name}", adminScraperSetEnabled)

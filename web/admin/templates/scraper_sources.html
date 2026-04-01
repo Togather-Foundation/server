@@ -77,16 +77,28 @@
                     <!-- Sources table -->
                     <div id="sources-container" class="card" style="display: none;">
                         <div class="table-responsive">
-                            <table class="table table-vcenter card-table table-hover">
+                            <table class="table table-vcenter card-table table-hover" style="table-layout:fixed">
+                                <colgroup>
+                                    <col>
+                                    <col style="width:40px">
+                                    <col style="width:60px">
+                                    <col style="width:120px">
+                                    <col style="width:80px">
+                                    <col style="width:80px">
+                                    <col style="width:60px">
+                                    <col style="width:50px">
+                                    <col style="width:40px">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th>Source</th>
                                         <th>Tier</th>
                                         <th>Schedule</th>
                                         <th>Last Run</th>
-                                        <th>Events (new / dup / failed)</th>
+                                        <th class="w-1" title="Events: new / duplicates / failed">NEW/DUP/FAIL</th>
                                         <th>Status</th>
                                         <th>Enabled</th>
+                                        <th class="w-1"></th>
                                         <th class="w-1"></th>
                                     </tr>
                                 </thead>
@@ -102,55 +114,6 @@
                         </div>
                     </div>
 
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Run History Modal -->
-    <div class="modal fade" id="runs-modal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Run History: <span id="runs-modal-source-name"></span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body p-0">
-                    <!-- Loading -->
-                    <div id="runs-loading" class="text-center py-4">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                    </div>
-                    <!-- Empty -->
-                    <div id="runs-empty" class="empty text-center py-4" style="display: none;">
-                        <p class="empty-title">No Runs Yet</p>
-                        <p class="empty-subtitle text-muted">This source has not been run yet.</p>
-                    </div>
-                    <!-- Table -->
-                    <div id="runs-table-container" style="display: none;">
-                        <div class="table-responsive">
-                            <table class="table table-vcenter card-table">
-                                <thead>
-                                     <tr>
-                                         <th>Started</th>
-                                         <th>Completed</th>
-                                         <th>Status</th>
-                                         <th>Found</th>
-                                         <th>New</th>
-                                         <th>Dup</th>
-                                         <th>Failed</th>
-                                     </tr>
-                                </thead>
-                                <tbody id="runs-table">
-                                    <!-- Populated via JavaScript -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>

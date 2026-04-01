@@ -27,6 +27,38 @@ func (q *Queries) CountRunningScraperRuns(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const getLastSuccessfulRunBySource = `-- name: GetLastSuccessfulRunBySource :one
+SELECT id, source_name, source_url, tier, started_at, completed_at, status,
+       events_found, events_new, events_dup, events_failed, error_message, metadata
+  FROM scraper_runs
+ WHERE source_name = $1
+   AND status = 'completed'
+ ORDER BY started_at DESC
+ LIMIT 1
+`
+
+// Get the most recent successful (completed) scraper run for a given source_name.
+func (q *Queries) GetLastSuccessfulRunBySource(ctx context.Context, sourceName string) (ScraperRun, error) {
+	row := q.db.QueryRow(ctx, getLastSuccessfulRunBySource, sourceName)
+	var i ScraperRun
+	err := row.Scan(
+		&i.ID,
+		&i.SourceName,
+		&i.SourceUrl,
+		&i.Tier,
+		&i.StartedAt,
+		&i.CompletedAt,
+		&i.Status,
+		&i.EventsFound,
+		&i.EventsNew,
+		&i.EventsDup,
+		&i.EventsFailed,
+		&i.ErrorMessage,
+		&i.Metadata,
+	)
+	return i, err
+}
+
 const getLatestScraperRunBySource = `-- name: GetLatestScraperRunBySource :one
 SELECT id, source_name, source_url, tier, started_at, completed_at, status,
        events_found, events_new, events_dup, events_failed, error_message, metadata
@@ -91,6 +123,57 @@ SELECT id, source_name, source_url, tier, started_at, completed_at, status,
 // List the N most recent scraper runs ordered by started_at DESC.
 func (q *Queries) ListRecentScraperRuns(ctx context.Context, limit int32) ([]ScraperRun, error) {
 	rows, err := q.db.Query(ctx, listRecentScraperRuns, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ScraperRun{}
+	for rows.Next() {
+		var i ScraperRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceName,
+			&i.SourceUrl,
+			&i.Tier,
+			&i.StartedAt,
+			&i.CompletedAt,
+			&i.Status,
+			&i.EventsFound,
+			&i.EventsNew,
+			&i.EventsDup,
+			&i.EventsFailed,
+			&i.ErrorMessage,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRecentScraperRunsFiltered = `-- name: ListRecentScraperRunsFiltered :many
+SELECT id, source_name, source_url, tier, started_at, completed_at, status,
+       events_found, events_new, events_dup, events_failed, error_message, metadata
+  FROM scraper_runs
+ WHERE ($1::text IS NULL OR status = $1)
+   AND ($2::text IS NULL OR source_name = $2)
+ ORDER BY started_at DESC
+ LIMIT $3
+`
+
+type ListRecentScraperRunsFilteredParams struct {
+	StatusFilter pgtype.Text `json:"status_filter"`
+	SourceFilter pgtype.Text `json:"source_filter"`
+	Limit        int32       `json:"limit"`
+}
+
+// List recent scraper runs with optional status and source_name filters.
+func (q *Queries) ListRecentScraperRunsFiltered(ctx context.Context, arg ListRecentScraperRunsFilteredParams) ([]ScraperRun, error) {
+	rows, err := q.db.Query(ctx, listRecentScraperRunsFiltered, arg.StatusFilter, arg.SourceFilter, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

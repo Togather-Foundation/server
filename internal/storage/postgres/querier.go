@@ -157,6 +157,8 @@ type Querier interface {
 	// Retrieves field-level provenance for specific field paths on an event
 	GetFieldProvenanceForPaths(ctx context.Context, arg GetFieldProvenanceForPathsParams) ([]GetFieldProvenanceForPathsRow, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
+	// Get the most recent successful (completed) scraper run for a given source_name.
+	GetLastSuccessfulRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
 	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
 	// Get the most recent scraper run for a given source_name.
 	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
@@ -248,6 +250,8 @@ type Querier interface {
 	ListPlacesByNameDesc(ctx context.Context, arg ListPlacesByNameDescParams) ([]ListPlacesByNameDescRow, error)
 	// List the N most recent scraper runs ordered by started_at DESC.
 	ListRecentScraperRuns(ctx context.Context, limit int32) ([]ScraperRun, error)
+	// List recent scraper runs with optional status and source_name filters.
+	ListRecentScraperRunsFiltered(ctx context.Context, arg ListRecentScraperRunsFilteredParams) ([]ScraperRun, error)
 	// List reviews with pagination and status filter
 	ListReviewQueue(ctx context.Context, arg ListReviewQueueParams) ([]ListReviewQueueRow, error)
 	// List recent scraper runs for a specific source, ordered newest first.
