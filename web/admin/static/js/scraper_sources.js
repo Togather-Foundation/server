@@ -92,27 +92,40 @@
 
     function setupEventHandlers() {
         document.addEventListener('click', function (e) {
-            var target = e.target.closest('[data-action]');
-            if (!target) return;
+            // Check for data-action clicks first (buttons, links, etc.)
+            var actionTarget = e.target.closest('[data-action]');
+            if (actionTarget) {
+                var action = actionTarget.dataset.action;
+                var name = actionTarget.dataset.name;
 
-            var action = target.dataset.action;
-            var name = target.dataset.name;
+                if (action === 'toggle-diagnostics') {
+                    toggleDiagnostics(name);
+                } else if (action === 'trigger-scrape') {
+                    triggerScrape(actionTarget, name);
+                } else if (action === 'trigger-all-scrape') {
+                    triggerAllScrape(actionTarget);
+                } else if (action === 'toggle-enabled') {
+                    toggleEnabled(actionTarget, name);
+                } else if (action === 'toggle-run-detail') {
+                    var detailRow = document.getElementById(actionTarget.dataset.target);
+                    if (detailRow) {
+                        var isHidden = detailRow.style.display === 'none';
+                        detailRow.style.display = isHidden ? '' : 'none';
+                        var arrow = actionTarget.querySelector('[data-arrow]');
+                        if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
+                    }
+                }
+                return;
+            }
 
-            if (action === 'toggle-diagnostics') {
-                toggleDiagnostics(name);
-            } else if (action === 'trigger-scrape') {
-                triggerScrape(target, name);
-            } else if (action === 'trigger-all-scrape') {
-                triggerAllScrape(target);
-            } else if (action === 'toggle-enabled') {
-                toggleEnabled(target, name);
-            } else if (action === 'toggle-run-detail') {
-                var detailRow = document.getElementById(target.dataset.target);
-                if (detailRow) {
-                    var isHidden = detailRow.style.display === 'none';
-                    detailRow.style.display = isHidden ? '' : 'none';
-                    var arrow = target.querySelector('[data-arrow]');
-                    if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
+            // Row click to expand/collapse diagnostics (like review queue)
+            var row = e.target.closest('tr[data-source-name]');
+            if (row) {
+                var sourceName = row.dataset.sourceName;
+                if (_expandedSource === sourceName) {
+                    closeDiagnostics(sourceName);
+                } else {
+                    toggleDiagnostics(sourceName);
                 }
             }
         });
@@ -211,7 +224,7 @@
         var enabledToggleLabel = src.enabled ? 'Disable' : 'Enable';
         var enabledBtnClass = src.enabled ? 'btn-success' : 'btn-outline-secondary';
 
-        return '<tr data-source-name="' + escapeHtml(src.name) + '">' +
+        return '<tr data-source-name="' + escapeHtml(src.name) + '" class="cursor-pointer">' +
             '<td>' +
                 '<div class="font-weight-medium">' + escapeHtml(src.name) + '</div>' +
                 '<div class="text-muted small">' + escapeHtml(src.url) + '</div>' +
@@ -228,12 +241,17 @@
                     enabledToggleLabel +
                 '</button>' +
             '</td>' +
-            '<td>' +
-                '<div class="btn-group">' +
-                    '<button class="btn btn-sm btn-outline-primary" data-action="trigger-scrape" data-name="' + escapeHtml(src.name) + '"' +
-                        (!src.enabled ? ' disabled title="Enable this source before running"' : '') + '>Run</button>' +
-                    '<button class="btn btn-sm btn-outline-secondary" data-action="toggle-diagnostics" data-name="' + escapeHtml(src.name) + '">Diagnostics</button>' +
-                '</div>' +
+            '<td class="w-1">' +
+                '<button class="btn btn-sm btn-outline-primary" data-action="trigger-scrape" data-name="' + escapeHtml(src.name) + '"' +
+                    (!src.enabled ? ' disabled title="Enable this source before running"' : '') + '>Run</button>' +
+            '</td>' +
+            '<td class="w-1">' +
+                '<button class="btn btn-sm btn-ghost-primary expand-arrow">' +
+                    '<svg xmlns="http://www.w3.org/2000/svg" class="icon" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none">' +
+                    '<path stroke="none" d="M0 0h24v24H0z" fill="none"/>' +
+                    '<polyline points="6 9 12 15 18 9"></polyline>' +
+                    '</svg>' +
+                '</button>' +
             '</td>' +
             '</tr>';
     }
@@ -411,6 +429,17 @@
         var sourceRow = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
         if (!sourceRow) return;
 
+        _expandedSource = name;
+
+        // Flip arrow direction (like review queue)
+        var arrowButton = sourceRow.querySelector('.expand-arrow');
+        if (arrowButton) {
+            var arrowPolyline = arrowButton.querySelector('polyline');
+            if (arrowPolyline) {
+                arrowPolyline.setAttribute('points', '6 15 12 9 18 15'); // up arrow
+            }
+        }
+
         var colspan = sourceRow.cells.length;
 
         // Insert loading row
@@ -423,11 +452,6 @@
             '<span class="spinner-border spinner-border-sm me-2"></span>Loading diagnostics...' +
             '</div></td>';
         sourceRow.parentNode.insertBefore(loadingRow, sourceRow.nextSibling);
-        _expandedSource = name;
-
-        // Update button state
-        var diagBtn = sourceRow.querySelector('[data-action="toggle-diagnostics"]');
-        if (diagBtn) diagBtn.textContent = 'Close';
 
         try {
             var data = await API.scraper.getDiagnostics(name);
@@ -435,10 +459,10 @@
         } catch (err) {
             var errorRow = document.getElementById(detailId);
             if (errorRow) {
-                var tbody = document.getElementById('sources-table');
-                var sourceRow = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
-                var colspan = sourceRow ? sourceRow.cells.length : 8;
-                errorRow.innerHTML = '<td colspan="' + colspan + '" class="p-0">' +
+                var tbody2 = document.getElementById('sources-table');
+                var sourceRow2 = tbody2 ? tbody2.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
+                var colspan2 = sourceRow2 ? sourceRow2.cells.length : 8;
+                errorRow.innerHTML = '<td colspan="' + colspan2 + '" class="p-0">' +
                     '<div class="p-3 text-center text-danger">Failed to load diagnostics: ' + escapeHtml(err.message) + '</div></td>';
             }
         }
@@ -452,8 +476,14 @@
         var tbody = document.getElementById('sources-table');
         var sourceRow = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
         if (sourceRow) {
-            var diagBtn = sourceRow.querySelector('[data-action="toggle-diagnostics"]');
-            if (diagBtn) diagBtn.textContent = 'Diagnostics';
+            // Reset arrow direction
+            var arrowButton = sourceRow.querySelector('.expand-arrow');
+            if (arrowButton) {
+                var arrowPolyline = arrowButton.querySelector('polyline');
+                if (arrowPolyline) {
+                    arrowPolyline.setAttribute('points', '6 9 12 15 18 9'); // down arrow
+                }
+            }
         }
         _expandedSource = null;
     }
@@ -562,6 +592,7 @@
                 '<td>' + (run.events_failed > 0
                     ? '<span class="badge bg-danger-lt">' + escapeHtml(String(run.events_failed)) + '</span>'
                     : escapeHtml(String(run.events_failed))) + '</td>' +
+                '<td></td>' +
                 '</tr>');
 
             if (hasError) {
@@ -572,10 +603,20 @@
             }
         });
 
-        return '<table class="table table-sm table-vcenter mb-0">' +
+        return '<table class="table table-sm table-vcenter mb-0" style="table-layout:fixed">' +
+            '<colgroup>' +
+            '<col style="width:100px">' +
+            '<col style="width:100px">' +
+            '<col style="width:60px">' +
+            '<col style="width:30px">' +
+            '<col style="width:30px">' +
+            '<col style="width:30px">' +
+            '<col style="width:30px">' +
+            '<col>' +
+            '</colgroup>' +
             '<thead><tr>' +
             '<th class="small">Started</th><th class="small">Completed</th><th class="small">Status</th>' +
-            '<th class="small">Found</th><th class="small">New</th><th class="small">Dup</th><th class="small">Failed</th>' +
+            '<th class="small">Found</th><th class="small">New</th><th class="small">Dup</th><th class="small">Failed</th><th></th>' +
             '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
     }
 

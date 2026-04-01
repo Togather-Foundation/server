@@ -77,7 +77,18 @@
                     <!-- Sources table -->
                     <div id="sources-container" class="card" style="display: none;">
                         <div class="table-responsive">
-                            <table class="table table-vcenter card-table table-hover">
+                            <table class="table table-vcenter card-table table-hover" style="table-layout:fixed">
+                                <colgroup>
+                                    <col>
+                                    <col style="width:40px">
+                                    <col style="width:60px">
+                                    <col style="width:120px">
+                                    <col style="width:80px">
+                                    <col style="width:80px">
+                                    <col style="width:60px">
+                                    <col style="width:50px">
+                                    <col style="width:40px">
+                                </colgroup>
                                 <thead>
                                     <tr>
                                         <th>Source</th>
@@ -87,6 +98,7 @@
                                         <th class="w-1" title="Events: new / duplicates / failed">NEW/DUP/FAIL</th>
                                         <th>Status</th>
                                         <th>Enabled</th>
+                                        <th class="w-1"></th>
                                         <th class="w-1"></th>
                                     </tr>
                                 </thead>
