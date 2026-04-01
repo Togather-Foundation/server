@@ -51,6 +51,26 @@ SELECT id, source_name, source_url, tier, started_at, completed_at, status,
  ORDER BY started_at DESC
  LIMIT sqlc.arg('limit');
 
+-- name: GetLastSuccessfulRunBySource :one
+-- Get the most recent successful (completed) scraper run for a given source_name.
+SELECT id, source_name, source_url, tier, started_at, completed_at, status,
+       events_found, events_new, events_dup, events_failed, error_message, metadata
+  FROM scraper_runs
+ WHERE source_name = sqlc.arg('source_name')
+   AND status = 'completed'
+ ORDER BY started_at DESC
+ LIMIT 1;
+
+-- name: ListRecentScraperRunsFiltered :many
+-- List recent scraper runs with optional status and source_name filters.
+SELECT id, source_name, source_url, tier, started_at, completed_at, status,
+       events_found, events_new, events_dup, events_failed, error_message, metadata
+  FROM scraper_runs
+ WHERE (sqlc.narg('status_filter')::text IS NULL OR status = sqlc.narg('status_filter'))
+   AND (sqlc.narg('source_filter')::text IS NULL OR source_name = sqlc.narg('source_filter'))
+ ORDER BY started_at DESC
+ LIMIT sqlc.arg('limit');
+
 -- name: CountRunningScraperRuns :one
 -- Count scraper runs currently marked as running within a recent window.
 -- The time window avoids stale rows permanently blocking new run-all attempts.

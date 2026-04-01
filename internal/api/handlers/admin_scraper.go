@@ -29,6 +29,9 @@ type scraperQueriesIface interface {
 	GetScraperConfig(ctx context.Context) (postgres.ScraperConfig, error)
 	SetScraperConfig(ctx context.Context, arg postgres.SetScraperConfigParams) error
 	CountRunningScraperRuns(ctx context.Context) (int64, error)
+	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (postgres.ScraperRun, error)
+	GetLastSuccessfulRunBySource(ctx context.Context, sourceName string) (postgres.ScraperRun, error)
+	ListRecentScraperRunsFiltered(ctx context.Context, arg postgres.ListRecentScraperRunsFilteredParams) ([]postgres.ScraperRun, error)
 }
 
 // scraperJobInserter is the River client method subset used by AdminScraperHandler.
@@ -560,4 +563,132 @@ func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Re
 		OrchestratorJobID: insertResult.Job.ID,
 		RunningSources:    runningSources,
 	}, "application/json")
+}
+
+// diagnosticsResponse is the JSON response for source diagnostics.
+type diagnosticsResponse struct {
+	SourceName        string               `json:"source_name"`
+	LatestRun         *scraperRunResponse  `json:"latest_run"`
+	LastSuccessfulRun *scraperRunResponse  `json:"last_successful_run,omitempty"`
+	RecentRuns        []scraperRunResponse `json:"recent_runs"`
+}
+
+// GetSourceDiagnostics handles GET /api/v1/admin/scraper/sources/{name}/diagnostics.
+// Returns the latest run, last successful run (for comparison when latest failed),
+// and a configurable list of recent runs.
+func (h *AdminScraperHandler) GetSourceDiagnostics(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if name == "" {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Missing source name", nil, h.Env)
+		return
+	}
+
+	limitParam := r.URL.Query().Get("limit")
+	limit := int32(10)
+	if limitParam != "" {
+		var parsed int64
+		if _, err := fmt.Sscanf(limitParam, "%d", &parsed); err == nil && parsed > 0 && parsed <= 100 {
+			limit = int32(parsed)
+		}
+	}
+
+	latest, err := h.Queries.GetLatestScraperRunBySource(r.Context(), name)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeJSON(w, http.StatusOK, diagnosticsResponse{
+				SourceName: name,
+				RecentRuns: []scraperRunResponse{},
+			}, "application/json")
+			return
+		}
+		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: get latest run for diagnostics")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to get latest run", fmt.Errorf("get latest run source=%s: %w", name, err), h.Env)
+		return
+	}
+
+	resp := diagnosticsResponse{
+		SourceName: name,
+		LatestRun:  runPtr(toScraperRunResponse(latest)),
+		RecentRuns: make([]scraperRunResponse, 0),
+	}
+
+	if latest.Status == "failed" {
+		lastSuccess, err := h.Queries.GetLastSuccessfulRunBySource(r.Context(), name)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: get last successful run")
+			problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to get last successful run", fmt.Errorf("get last successful run source=%s: %w", name, err), h.Env)
+			return
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			resp.LastSuccessfulRun = runPtr(toScraperRunResponse(lastSuccess))
+		}
+	}
+
+	runs, err := h.Queries.ListScraperRunsBySource(r.Context(), postgres.ListScraperRunsBySourceParams{
+		SourceName: name,
+		Limit:      limit,
+	})
+	if err != nil {
+		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: list recent runs for diagnostics")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to list recent runs", fmt.Errorf("list recent runs source=%s: %w", name, err), h.Env)
+		return
+	}
+	for _, run := range runs {
+		resp.RecentRuns = append(resp.RecentRuns, toScraperRunResponse(run))
+	}
+
+	writeJSON(w, http.StatusOK, resp, "application/json")
+}
+
+// allDiagnosticsResponse is the JSON response for cross-source diagnostics.
+type allDiagnosticsResponse struct {
+	Items []scraperRunResponse `json:"items"`
+	Total int                  `json:"total"`
+}
+
+// GetAllDiagnostics handles GET /api/v1/admin/scraper/diagnostics.
+// Returns recent scraper runs across all sources with optional filters.
+func (h *AdminScraperHandler) GetAllDiagnostics(w http.ResponseWriter, r *http.Request) {
+	limitParam := r.URL.Query().Get("limit")
+	limit := int32(20)
+	if limitParam != "" {
+		var parsed int64
+		if _, err := fmt.Sscanf(limitParam, "%d", &parsed); err == nil && parsed > 0 && parsed <= 100 {
+			limit = int32(parsed)
+		}
+	}
+
+	statusFilter := r.URL.Query().Get("status")
+	sourceFilter := r.URL.Query().Get("source_name")
+
+	params := postgres.ListRecentScraperRunsFilteredParams{
+		Limit: limit,
+	}
+	if statusFilter != "" {
+		params.StatusFilter = pgtype.Text{String: statusFilter, Valid: true}
+	}
+	if sourceFilter != "" {
+		params.SourceFilter = pgtype.Text{String: sourceFilter, Valid: true}
+	}
+
+	runs, err := h.Queries.ListRecentScraperRunsFiltered(r.Context(), params)
+	if err != nil {
+		h.Logger.Error().Err(err).Msg("admin scraper: list filtered runs")
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to list runs", fmt.Errorf("list filtered runs: %w", err), h.Env)
+		return
+	}
+
+	items := make([]scraperRunResponse, 0, len(runs))
+	for _, run := range runs {
+		items = append(items, toScraperRunResponse(run))
+	}
+
+	writeJSON(w, http.StatusOK, allDiagnosticsResponse{
+		Items: items,
+		Total: len(items),
+	}, "application/json")
+}
+
+func runPtr(r scraperRunResponse) *scraperRunResponse {
+	return &r
 }

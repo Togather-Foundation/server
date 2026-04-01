@@ -416,6 +416,8 @@ const API = {
 
         listRuns: (name) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}/runs`),
 
+        getDiagnostics: (name) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}/diagnostics`),
+
         triggerScrape: (name) => API.request(`/api/v1/admin/scraper/sources/${encodeURIComponent(name)}/trigger`, {
             method: 'POST'
         }),

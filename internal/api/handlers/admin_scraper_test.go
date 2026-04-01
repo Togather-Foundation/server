@@ -53,6 +53,18 @@ type fakeScraperQueries struct {
 
 	countRunningScraperRunsValue int64
 	countRunningScraperRunsErr   error
+
+	// GetLatestScraperRunBySource
+	latestRunRow postgres.ScraperRun
+	latestRunErr error
+
+	// GetLastSuccessfulRunBySource
+	lastSuccessRow postgres.ScraperRun
+	lastSuccessErr error
+
+	// ListRecentScraperRunsFiltered
+	filteredRunsRows []postgres.ScraperRun
+	filteredRunsErr  error
 }
 
 // fakeRiverInserter is a test double for scraperJobInserter.
@@ -106,6 +118,20 @@ func (f *fakeScraperQueries) CountRunningScraperRuns(_ context.Context) (int64, 
 	return f.countRunningScraperRunsValue, nil
 }
 
+func (f *fakeScraperQueries) GetLatestScraperRunBySource(_ context.Context, _ string) (postgres.ScraperRun, error) {
+	return f.latestRunRow, f.latestRunErr
+}
+
+func (f *fakeScraperQueries) GetLastSuccessfulRunBySource(_ context.Context, _ string) (postgres.ScraperRun, error) {
+	return f.lastSuccessRow, f.lastSuccessErr
+}
+
+func (f *fakeScraperQueries) ListRecentScraperRunsFiltered(_ context.Context, _ postgres.ListRecentScraperRunsFilteredParams) ([]postgres.ScraperRun, error) {
+	return f.filteredRunsRows, f.filteredRunsErr
+}
+
+// ----------------------------------------------------------------------------
+// Helper to build a handler under test
 // ----------------------------------------------------------------------------
 // Helper to build a handler under test
 // ----------------------------------------------------------------------------
@@ -1002,4 +1028,216 @@ func boolPtr(b bool) *bool {
 
 func int32Ptr(i int32) *int32 {
 	return &i
+}
+
+// ----------------------------------------------------------------------------
+// TestAdminScraperHandler_GetSourceDiagnostics
+// ----------------------------------------------------------------------------
+
+func TestAdminScraperHandler_GetSourceDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	makeRun := func(status string, id int64) postgres.ScraperRun {
+		return postgres.ScraperRun{
+			ID:           id,
+			SourceName:   "test-source",
+			SourceUrl:    "https://example.com",
+			Tier:         1,
+			StartedAt:    nowTs(),
+			CompletedAt:  nowTs(),
+			Status:       status,
+			EventsFound:  10,
+			EventsNew:    5,
+			EventsDup:    3,
+			EventsFailed: 2,
+		}
+	}
+
+	tests := []struct {
+		name            string
+		sourceName      string
+		latestRunRow    postgres.ScraperRun
+		latestRunErr    error
+		lastSuccessRow  postgres.ScraperRun
+		lastSuccessErr  error
+		runsRows        []postgres.ScraperRun
+		wantStatus      int
+		wantLatest      bool
+		wantLastSuccess bool
+		wantRecentLen   int
+	}{
+		{
+			name:            "returns latest run only when completed",
+			sourceName:      "test-source",
+			latestRunRow:    makeRun("completed", 1),
+			runsRows:        []postgres.ScraperRun{makeRun("completed", 1)},
+			wantStatus:      http.StatusOK,
+			wantLatest:      true,
+			wantLastSuccess: false,
+			wantRecentLen:   1,
+		},
+		{
+			name:            "returns latest and last success when latest failed",
+			sourceName:      "test-source",
+			latestRunRow:    makeRun("failed", 2),
+			lastSuccessRow:  makeRun("completed", 1),
+			runsRows:        []postgres.ScraperRun{makeRun("failed", 2), makeRun("completed", 1)},
+			wantStatus:      http.StatusOK,
+			wantLatest:      true,
+			wantLastSuccess: true,
+			wantRecentLen:   2,
+		},
+		{
+			name:            "returns null last_success when no successful runs exist",
+			sourceName:      "test-source",
+			latestRunRow:    makeRun("failed", 1),
+			lastSuccessErr:  pgx.ErrNoRows,
+			runsRows:        []postgres.ScraperRun{makeRun("failed", 1)},
+			wantStatus:      http.StatusOK,
+			wantLatest:      true,
+			wantLastSuccess: false,
+			wantRecentLen:   1,
+		},
+		{
+			name:          "returns empty when no runs exist",
+			sourceName:    "test-source",
+			latestRunErr:  pgx.ErrNoRows,
+			wantStatus:    http.StatusOK,
+			wantLatest:    false,
+			wantRecentLen: 0,
+		},
+		{
+			name:         "returns 500 on db error",
+			sourceName:   "test-source",
+			latestRunErr: errStubNotImplemented,
+			wantStatus:   http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			q := &fakeScraperQueries{
+				latestRunRow:   tc.latestRunRow,
+				latestRunErr:   tc.latestRunErr,
+				lastSuccessRow: tc.lastSuccessRow,
+				lastSuccessErr: tc.lastSuccessErr,
+				runsRows:       tc.runsRows,
+			}
+			h := newTestScraperHandler(q)
+
+			path := "/api/v1/admin/scraper/sources/" + tc.sourceName + "/diagnostics"
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.SetPathValue("name", tc.sourceName)
+			w := httptest.NewRecorder()
+			h.GetSourceDiagnostics(w, req)
+
+			resp := w.Result()
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+
+			if tc.wantStatus == http.StatusOK {
+				var body diagnosticsResponse
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+				assert.Equal(t, tc.sourceName, body.SourceName)
+				if tc.wantLatest {
+					assert.NotNil(t, body.LatestRun)
+				} else {
+					assert.Nil(t, body.LatestRun)
+				}
+				if tc.wantLastSuccess {
+					assert.NotNil(t, body.LastSuccessfulRun)
+				} else {
+					assert.Nil(t, body.LastSuccessfulRun)
+				}
+				assert.Len(t, body.RecentRuns, tc.wantRecentLen)
+			}
+		})
+	}
+}
+
+// ----------------------------------------------------------------------------
+// TestAdminScraperHandler_GetAllDiagnostics
+// ----------------------------------------------------------------------------
+
+func TestAdminScraperHandler_GetAllDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	makeRun := func(source, status string) postgres.ScraperRun {
+		return postgres.ScraperRun{
+			ID:           1,
+			SourceName:   source,
+			SourceUrl:    "https://example.com",
+			Tier:         1,
+			StartedAt:    nowTs(),
+			CompletedAt:  nowTs(),
+			Status:       status,
+			EventsFound:  10,
+			EventsNew:    5,
+			EventsDup:    3,
+			EventsFailed: 2,
+		}
+	}
+
+	tests := []struct {
+		name         string
+		filteredRows []postgres.ScraperRun
+		filteredErr  error
+		query        string
+		wantStatus   int
+		wantItemsLen int
+	}{
+		{
+			name:         "returns recent runs across all sources",
+			filteredRows: []postgres.ScraperRun{makeRun("source-a", "completed"), makeRun("source-b", "failed")},
+			query:        "",
+			wantStatus:   http.StatusOK,
+			wantItemsLen: 2,
+		},
+		{
+			name:         "returns empty list when no runs",
+			filteredRows: []postgres.ScraperRun{},
+			query:        "",
+			wantStatus:   http.StatusOK,
+			wantItemsLen: 0,
+		},
+		{
+			name:        "returns 500 on db error",
+			filteredErr: errStubNotImplemented,
+			query:       "",
+			wantStatus:  http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			q := &fakeScraperQueries{
+				filteredRunsRows: tc.filteredRows,
+				filteredRunsErr:  tc.filteredErr,
+			}
+			h := newTestScraperHandler(q)
+
+			path := "/api/v1/admin/scraper/diagnostics"
+			if tc.query != "" {
+				path += "?" + tc.query
+			}
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			w := httptest.NewRecorder()
+			h.GetAllDiagnostics(w, req)
+
+			resp := w.Result()
+			assert.Equal(t, tc.wantStatus, resp.StatusCode)
+
+			if tc.wantStatus == http.StatusOK {
+				var body allDiagnosticsResponse
+				require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+				assert.Len(t, body.Items, tc.wantItemsLen)
+				assert.Equal(t, tc.wantItemsLen, body.Total)
+			}
+		})
+	}
 }

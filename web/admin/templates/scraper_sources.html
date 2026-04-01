@@ -107,55 +107,6 @@
         </div>
     </div>
 
-    <!-- Run History Modal -->
-    <div class="modal fade" id="runs-modal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Run History: <span id="runs-modal-source-name"></span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body p-0">
-                    <!-- Loading -->
-                    <div id="runs-loading" class="text-center py-4">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                    </div>
-                    <!-- Empty -->
-                    <div id="runs-empty" class="empty text-center py-4" style="display: none;">
-                        <p class="empty-title">No Runs Yet</p>
-                        <p class="empty-subtitle text-muted">This source has not been run yet.</p>
-                    </div>
-                    <!-- Table -->
-                    <div id="runs-table-container" style="display: none;">
-                        <div class="table-responsive">
-                            <table class="table table-vcenter card-table">
-                                <thead>
-                                     <tr>
-                                         <th>Started</th>
-                                         <th>Completed</th>
-                                         <th>Status</th>
-                                         <th>Found</th>
-                                         <th>New</th>
-                                         <th>Dup</th>
-                                         <th>Failed</th>
-                                     </tr>
-                                </thead>
-                                <tbody id="runs-table">
-                                    <!-- Populated via JavaScript -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     {{ template "_footer.html" . }}
     <script src="/admin/static/js/scraper_sources.js?v={{ assetVersion }}"></script>
 </body>

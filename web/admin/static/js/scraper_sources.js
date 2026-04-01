@@ -1,5 +1,5 @@
-// Scraper Sources Admin Page (srv-5127b, srv-pfeud)
-// Manages scraper source listing, enable/disable, trigger, run history, and auto-scrape toggle.
+// Scraper Sources Admin Page (srv-5127b, srv-pfeud, srv-opp9d)
+// Manages scraper source listing, enable/disable, trigger, diagnostics fold-down, and auto-scrape toggle.
 
 (function () {
     'use strict';
@@ -8,6 +8,7 @@
 
     var _sseConn = null;
     var _runAllActiveCount = 0;
+    var _expandedSource = null; // track which source's diagnostics panel is open
 
     function init() {
         setupEventHandlers();
@@ -24,7 +25,6 @@
 
     function connectSSE() {
         if (!window.EventSource) {
-            // Graceful degradation: browser doesn't support SSE
             return;
         }
         _sseConn = new EventSource('/api/v1/admin/scraper/events');
@@ -34,10 +34,12 @@
                 var ev = JSON.parse(e.data);
                 if (ev.kind === 'job_completed' || ev.kind === 'job_failed' || ev.kind === 'job_cancelled') {
                     if (ev.source_name) {
-                        // Fast path: update just the one row that changed.
                         updateSourceRow(ev.source_name);
+                        // Close diagnostics panel for this source so it can be reopened with fresh data
+                        if (_expandedSource === ev.source_name) {
+                            closeDiagnostics(ev.source_name);
+                        }
                     } else {
-                        // Fallback: no source name in event — reload whole table (debounced).
                         if (fallbackTimer) { clearTimeout(fallbackTimer); }
                         fallbackTimer = setTimeout(loadSources, 500);
                     }
@@ -45,14 +47,10 @@
             } catch (_) {}
         };
         _sseConn.onerror = function () {
-            // Browser handles auto-reconnect; log for debugging only
             console.debug('scraper SSE: connection error, browser will retry');
         };
     }
 
-    // Fetch latest data for a single source and patch its <tr> in place.
-    // Falls back to a full loadSources() if the row isn't in the DOM yet
-    // (e.g., a new source was added while the page was open).
     async function updateSourceRow(name) {
         try {
             var data = await API.scraper.listSources();
@@ -62,25 +60,21 @@
             for (var i = 0; i < items.length; i++) {
                 if (items[i].name === name) { src = items[i]; break; }
             }
-            if (!src) return; // source removed — leave table as-is
+            if (!src) return;
 
             var tbody = document.getElementById('sources-table');
             var existing = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
             if (!existing) {
-                // Row not present — fall back to full reload so new rows appear.
                 loadSources();
                 return;
             }
-            // Replace only the relevant cells (status, last run, event counts).
-            // We leave name/tier/schedule/buttons alone to avoid flicker on those cells.
             var newHtml = renderSourceRow(src);
             var tmp = document.createElement('tbody');
             tmp.innerHTML = newHtml;
             var newRow = tmp.firstElementChild;
             if (!newRow) return;
 
-            // Cells: 0=source, 1=tier, 2=schedule, 3=lastRun, 4=eventCounts, 5=status, 6=enabled, 7=actions
-            var UPDATE_CELLS = [3, 4, 5, 6, 7]; // last run, event counts, status badge, enabled button, actions
+            var UPDATE_CELLS = [3, 4, 5, 6, 7];
             UPDATE_CELLS.forEach(function (idx) {
                 if (existing.cells[idx] && newRow.cells[idx]) {
                     existing.cells[idx].innerHTML = newRow.cells[idx].innerHTML;
@@ -104,8 +98,8 @@
             var action = target.dataset.action;
             var name = target.dataset.name;
 
-            if (action === 'view-runs') {
-                openRunsModal(name);
+            if (action === 'toggle-diagnostics') {
+                toggleDiagnostics(name);
             } else if (action === 'trigger-scrape') {
                 triggerScrape(target, name);
             } else if (action === 'trigger-all-scrape') {
@@ -117,8 +111,7 @@
                 if (detailRow) {
                     var isHidden = detailRow.style.display === 'none';
                     detailRow.style.display = isHidden ? '' : 'none';
-                    // Flip the arrow indicator
-                    var arrow = target.querySelector('[title="Click row for details"]');
+                    var arrow = target.querySelector('[data-arrow]');
                     if (arrow) arrow.textContent = isHidden ? '▾' : '▸';
                 }
             }
@@ -136,8 +129,6 @@
     // -------------------------------------------------------------------------
 
     async function loadSources() {
-        // Only show the loading spinner on the initial load (table not yet visible).
-        // Subsequent refreshes update in place to avoid hiding/showing the table.
         var alreadyShowing = document.getElementById('sources-container').style.display !== 'none';
         if (!alreadyShowing) { showState('loading'); }
         try {
@@ -160,14 +151,11 @@
 
     function renderSources(items) {
         var tbody = document.getElementById('sources-table');
-        // If the table is already populated, patch rows in place rather than
-        // replacing the entire innerHTML (which causes column-width reflow).
         var existing = tbody.querySelectorAll('tr[data-source-name]');
         if (existing.length > 0) {
             items.forEach(function (src) {
                 var row = tbody.querySelector('tr[data-source-name="' + CSS.escape(src.name) + '"]');
                 if (row) {
-                    // Patch only mutable cells: lastRun(3), eventCounts(4), status(5), enabled(6), actions(7)
                     var tmp = document.createElement('tbody');
                     tmp.innerHTML = renderSourceRow(src);
                     var newRow = tmp.firstElementChild;
@@ -178,13 +166,11 @@
                         }
                     });
                 } else {
-                    // New row — append it
                     var tmp2 = document.createElement('tbody');
                     tmp2.innerHTML = renderSourceRow(src);
                     if (tmp2.firstElementChild) { tbody.appendChild(tmp2.firstElementChild); }
                 }
             });
-            // Remove rows for sources that no longer exist
             existing.forEach(function (row) {
                 var stillExists = items.some(function (s) { return s.name === row.dataset.sourceName; });
                 if (!stillExists) { row.parentNode.removeChild(row); }
@@ -246,7 +232,7 @@
                 '<div class="btn-group">' +
                     '<button class="btn btn-sm btn-outline-primary" data-action="trigger-scrape" data-name="' + escapeHtml(src.name) + '"' +
                         (!src.enabled ? ' disabled title="Enable this source before running"' : '') + '>Run</button>' +
-                    '<button class="btn btn-sm btn-outline-secondary" data-action="view-runs" data-name="' + escapeHtml(src.name) + '">History</button>' +
+                    '<button class="btn btn-sm btn-outline-secondary" data-action="toggle-diagnostics" data-name="' + escapeHtml(src.name) + '">Diagnostics</button>' +
                 '</div>' +
             '</td>' +
             '</tr>';
@@ -263,8 +249,6 @@
             await API.scraper.setEnabled(name, enabled);
             showToast('Source ' + (enabled ? 'enabled' : 'disabled') + ': ' + name, 'success');
             await updateSourceRow(name);
-            // updateSourceRow replaces cell 6 with a fresh button, so the old
-            // btn reference is gone — no need to call setLoading on it.
         } catch (err) {
             showToast('Failed to update source: ' + err.message, 'error');
             setLoading(btn, false);
@@ -280,8 +264,6 @@
         try {
             await API.scraper.triggerScrape(name);
             showToast('Scrape triggered for: ' + name, 'success');
-            // Show "running" status immediately via targeted row update.
-            // SSE will handle the final completed/failed state.
             setTimeout(function () { updateSourceRow(name); }, 1000);
         } catch (err) {
             showToast('Failed to trigger scrape: ' + err.message, 'error');
@@ -327,8 +309,6 @@
                 showToast('Failed to trigger serial scrape: ' + err.message, 'error');
                 setRunAllButtonState(_runAllActiveCount, false);
             }
-        } finally {
-            // Final state is controlled above based on API result and live source state.
         }
     }
 
@@ -398,7 +378,6 @@
                 orchestratorOptions.classList.remove('d-none');
             }
         } catch (err) {
-            // Config endpoint may not exist in older deployments — fail silently.
             console.warn('scraper config unavailable:', err.message);
         }
     }
@@ -409,89 +388,184 @@
             showToast('Auto-scrape ' + (enabled ? 'enabled' : 'disabled'), 'success');
         } catch (err) {
             showToast('Failed to update auto-scrape setting: ' + err.message, 'error');
-            // Revert checkbox on failure.
             var toggle = document.getElementById('auto-scrape-toggle');
             if (toggle) toggle.checked = !enabled;
         }
     }
 
     // -------------------------------------------------------------------------
-    // Run history modal
+    // Diagnostics fold-down panel (srv-opp9d)
     // -------------------------------------------------------------------------
 
-    async function openRunsModal(name) {
-        document.getElementById('runs-modal-source-name').textContent = name;
-        showRunsState('loading');
+    async function toggleDiagnostics(name) {
+        if (_expandedSource === name) {
+            closeDiagnostics(name);
+            return;
+        }
+        // Close any currently open panel first
+        if (_expandedSource) {
+            closeDiagnostics(_expandedSource);
+        }
 
-        var modalEl = document.getElementById('runs-modal');
-        var modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-        modal.show();
+        var tbody = document.getElementById('sources-table');
+        var sourceRow = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
+        if (!sourceRow) return;
+
+        // Insert loading row
+        var detailId = 'diagnostics-' + name;
+        var loadingRow = document.createElement('tr');
+        loadingRow.id = detailId;
+        loadingRow.setAttribute('data-diagnostics-for', name);
+        loadingRow.innerHTML = '<td colspan="8" class="p-0">' +
+            '<div class="p-3 text-center text-muted">' +
+            '<span class="spinner-border spinner-border-sm me-2"></span>Loading diagnostics...' +
+            '</div></td>';
+        sourceRow.parentNode.insertBefore(loadingRow, sourceRow.nextSibling);
+        _expandedSource = name;
+
+        // Update button state
+        var diagBtn = sourceRow.querySelector('[data-action="toggle-diagnostics"]');
+        if (diagBtn) diagBtn.textContent = 'Close';
 
         try {
-            var data = await API.scraper.listRuns(name);
-            var runs = data.items || [];
-            if (runs.length === 0) {
-                showRunsState('empty');
-                return;
-            }
-            renderRuns(runs);
-            showRunsState('table');
+            var data = await API.scraper.getDiagnostics(name);
+            renderDiagnostics(detailId, data);
         } catch (err) {
-            showRunsState('empty');
-            showToast('Failed to load run history: ' + err.message, 'error');
+            var errorRow = document.getElementById(detailId);
+            if (errorRow) {
+                errorRow.innerHTML = '<td colspan="8" class="p-0">' +
+                    '<div class="p-3 text-center text-danger">Failed to load diagnostics: ' + escapeHtml(err.message) + '</div></td>';
+            }
         }
     }
 
-    function renderRuns(runs) {
-        var tbody = document.getElementById('runs-table');
+    function closeDiagnostics(name) {
+        var detailId = 'diagnostics-' + name;
+        var detailRow = document.getElementById(detailId);
+        if (detailRow) detailRow.remove();
+
+        var tbody = document.getElementById('sources-table');
+        var sourceRow = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
+        if (sourceRow) {
+            var diagBtn = sourceRow.querySelector('[data-action="toggle-diagnostics"]');
+            if (diagBtn) diagBtn.textContent = 'Diagnostics';
+        }
+        _expandedSource = null;
+    }
+
+    function renderDiagnostics(detailId, data) {
+        var container = document.getElementById(detailId);
+        if (!container) return;
+
+        var sections = [];
+
+        // Section 1: Last Run
+        if (data.latest_run) {
+            sections.push(renderDiagnosticsSection('Last Run', renderRunDetails(data.latest_run), true));
+        }
+
+        // Section 2: Last Successful Run
+        if (data.last_successful_run) {
+            sections.push(renderDiagnosticsSection('Last Successful Run', renderRunDetails(data.last_successful_run), false));
+        }
+
+        // Section 3: Run History
+        if (data.recent_runs && data.recent_runs.length > 0) {
+            sections.push(renderDiagnosticsSection('Run History (' + data.recent_runs.length + ')', renderRunHistoryTable(data.recent_runs), false));
+        }
+
+        if (sections.length === 0) {
+            container.innerHTML = '<td colspan="8" class="p-0">' +
+                '<div class="p-3 text-center text-muted">No run history yet.</div></td>';
+            return;
+        }
+
+        container.innerHTML = '<td colspan="8" class="p-0">' + sections.join('') + '</td>';
+    }
+
+    function renderDiagnosticsSection(title, content, defaultOpen) {
+        var sectionId = 'diag-section-' + Math.random().toString(36).substr(2, 9);
+        return '<div class="border-bottom">' +
+            '<div class="d-flex align-items-center px-3 py-2 bg-muted-lt cursor-pointer" ' +
+                'data-action="toggle-run-detail" data-target="' + sectionId + '">' +
+            '<span class="me-2" data-arrow>' + (defaultOpen ? '▾' : '▸') + '</span>' +
+            '<strong class="small">' + escapeHtml(title) + '</strong>' +
+            '</div>' +
+            '<div id="' + sectionId + '" style="display:' + (defaultOpen ? '' : 'none') + ';">' +
+            '<div class="px-3 py-2">' + content + '</div>' +
+            '</div></div>';
+    }
+
+    function renderRunDetails(run) {
+        var statusCls = run.status === 'completed' ? 'text-success'
+            : run.status === 'failed' ? 'text-danger'
+            : run.status === 'running' ? 'text-warning'
+            : 'text-muted';
+
+        var html = '<div class="row small">' +
+            '<div class="col-auto"><strong>Status:</strong></div>' +
+            '<div class="col ' + statusCls + '">' + escapeHtml(run.status) + '</div>' +
+            '<div class="col-auto"><strong>Started:</strong></div>' +
+            '<div class="col-auto">' + (run.started_at ? formatDate(run.started_at) : '—') + '</div>' +
+            '<div class="col-auto"><strong>Completed:</strong></div>' +
+            '<div class="col-auto">' + (run.completed_at ? formatDate(run.completed_at) : '—') + '</div>' +
+            '</div>' +
+            '<div class="row small mt-1">' +
+            '<div class="col-auto"><strong>Events:</strong></div>' +
+            '<div class="col">' +
+                escapeHtml(String(run.events_found)) + ' found / ' +
+                escapeHtml(String(run.events_new)) + ' new / ' +
+                escapeHtml(String(run.events_dup)) + ' dup / ' +
+                (run.events_failed > 0
+                    ? '<span class="badge bg-danger-lt">' + escapeHtml(String(run.events_failed)) + ' failed</span>'
+                    : escapeHtml(String(run.events_failed)) + ' failed') +
+            '</div></div>';
+
+        if (run.error_message) {
+            html += '<div class="row small mt-1">' +
+                '<div class="col-auto"><strong>Error:</strong></div>' +
+                '<div class="col"><span class="text-danger font-monospace">' + escapeHtml(run.error_message) + '</span></div></div>';
+        }
+
+        return html;
+    }
+
+    function renderRunHistoryTable(runs) {
         var rows = [];
-        runs.forEach(function (run, i) {
+        runs.forEach(function (run) {
             var cls = run.status === 'completed' ? 'bg-success-lt'
                 : run.status === 'failed' ? 'bg-danger-lt'
                 : run.status === 'running' ? 'bg-warning-lt'
                 : 'bg-secondary-lt';
             var hasError = run.error_message && run.error_message.length > 0;
-            var detailId = 'run-detail-' + i;
+            var detailId = 'run-detail-' + Math.random().toString(36).substr(2, 9);
 
-            // Main row — if there's an error, clicking the row expands it
-            var rowAttrs = hasError
-                ? ' class="cursor-pointer" data-action="toggle-run-detail" data-target="' + detailId + '"'
-                : '';
-            var statusCell = hasError
-                ? '<span class="badge ' + cls + '">' + escapeHtml(run.status) + '</span>' +
-                  ' <span class="text-muted small" title="Click row for details">▸</span>'
-                : '<span class="badge ' + cls + '">' + escapeHtml(run.status) + '</span>';
-
-            rows.push(
-                '<tr' + rowAttrs + '>' +
+            rows.push('<tr' + (hasError ? ' class="cursor-pointer" data-action="toggle-run-detail" data-target="' + detailId + '"' : '') + '>' +
                 '<td class="text-muted small">' + escapeHtml(run.started_at ? formatDate(run.started_at) : '—') + '</td>' +
                 '<td class="text-muted small">' + escapeHtml(run.completed_at ? formatDate(run.completed_at) : '—') + '</td>' +
-                '<td>' + statusCell + '</td>' +
+                '<td><span class="badge ' + cls + '">' + escapeHtml(run.status) + '</span>' +
+                    (hasError ? ' <span class="text-muted small" data-arrow>▸</span>' : '') + '</td>' +
                 '<td>' + escapeHtml(String(run.events_found)) + '</td>' +
                 '<td>' + escapeHtml(String(run.events_new)) + '</td>' +
                 '<td>' + escapeHtml(String(run.events_dup)) + '</td>' +
-                '<td>' +
-                    (run.events_failed > 0
-                        ? '<span class="badge bg-danger-lt">' + escapeHtml(String(run.events_failed)) + '</span>'
-                        : escapeHtml(String(run.events_failed))) +
-                '</td>' +
-                '</tr>'
-            );
+                '<td>' + (run.events_failed > 0
+                    ? '<span class="badge bg-danger-lt">' + escapeHtml(String(run.events_failed)) + '</span>'
+                    : escapeHtml(String(run.events_failed))) + '</td>' +
+                '</tr>');
 
-            // Collapsible detail row for error message
             if (hasError) {
-                rows.push(
-                    '<tr id="' + detailId + '" style="display:none;">' +
+                rows.push('<tr id="' + detailId + '" style="display:none;">' +
                     '<td colspan="7" class="bg-danger-lt">' +
                     '<div class="small text-danger"><strong>Error:</strong> <span class="font-monospace">' +
-                    escapeHtml(run.error_message) +
-                    '</span></div>' +
-                    '</td>' +
-                    '</tr>'
-                );
+                    escapeHtml(run.error_message) + '</span></div></td></tr>');
             }
         });
-        tbody.innerHTML = rows.join('');
+
+        return '<table class="table table-sm table-vcenter mb-0">' +
+            '<thead><tr>' +
+            '<th class="small">Started</th><th class="small">Completed</th><th class="small">Status</th>' +
+            '<th class="small">Found</th><th class="small">New</th><th class="small">Dup</th><th class="small">Failed</th>' +
+            '</tr></thead><tbody>' + rows.join('') + '</tbody></table>';
     }
 
     // -------------------------------------------------------------------------
@@ -502,12 +576,6 @@
         document.getElementById('loading-state').style.display = state === 'loading' ? '' : 'none';
         document.getElementById('empty-state').style.display = state === 'empty' ? '' : 'none';
         document.getElementById('sources-container').style.display = state === 'table' ? '' : 'none';
-    }
-
-    function showRunsState(state) {
-        document.getElementById('runs-loading').style.display = state === 'loading' ? '' : 'none';
-        document.getElementById('runs-empty').style.display = state === 'empty' ? '' : 'none';
-        document.getElementById('runs-table-container').style.display = state === 'table' ? '' : 'none';
     }
 
 })();
