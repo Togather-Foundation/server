@@ -411,12 +411,14 @@
         var sourceRow = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
         if (!sourceRow) return;
 
+        var colspan = sourceRow.cells.length;
+
         // Insert loading row
         var detailId = 'diagnostics-' + name;
         var loadingRow = document.createElement('tr');
         loadingRow.id = detailId;
         loadingRow.setAttribute('data-diagnostics-for', name);
-        loadingRow.innerHTML = '<td colspan="8" class="p-0">' +
+        loadingRow.innerHTML = '<td colspan="' + colspan + '" class="p-0">' +
             '<div class="p-3 text-center text-muted">' +
             '<span class="spinner-border spinner-border-sm me-2"></span>Loading diagnostics...' +
             '</div></td>';
@@ -433,7 +435,10 @@
         } catch (err) {
             var errorRow = document.getElementById(detailId);
             if (errorRow) {
-                errorRow.innerHTML = '<td colspan="8" class="p-0">' +
+                var tbody = document.getElementById('sources-table');
+                var sourceRow = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(name) + '"]') : null;
+                var colspan = sourceRow ? sourceRow.cells.length : 8;
+                errorRow.innerHTML = '<td colspan="' + colspan + '" class="p-0">' +
                     '<div class="p-3 text-center text-danger">Failed to load diagnostics: ' + escapeHtml(err.message) + '</div></td>';
             }
         }
@@ -475,12 +480,18 @@
         }
 
         if (sections.length === 0) {
-            container.innerHTML = '<td colspan="8" class="p-0">' +
+            var tbody = document.getElementById('sources-table');
+            var sourceRow = tbody ? tbody.querySelector('tr[data-source-name="' + CSS.escape(data.source_name) + '"]') : null;
+            var colspan = sourceRow ? sourceRow.cells.length : 8;
+            container.innerHTML = '<td colspan="' + colspan + '" class="p-0">' +
                 '<div class="p-3 text-center text-muted">No run history yet.</div></td>';
             return;
         }
 
-        container.innerHTML = '<td colspan="8" class="p-0">' + sections.join('') + '</td>';
+        var tbody2 = document.getElementById('sources-table');
+        var sourceRow2 = tbody2 ? tbody2.querySelector('tr[data-source-name="' + CSS.escape(data.source_name) + '"]') : null;
+        var colspan2 = sourceRow2 ? sourceRow2.cells.length : 8;
+        container.innerHTML = '<td colspan="' + colspan2 + '" class="p-0">' + sections.join('') + '</td>';
     }
 
     function renderDiagnosticsSection(title, content, defaultOpen) {

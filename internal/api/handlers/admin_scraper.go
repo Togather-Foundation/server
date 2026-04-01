@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -586,8 +587,7 @@ func (h *AdminScraperHandler) GetSourceDiagnostics(w http.ResponseWriter, r *htt
 	limitParam := r.URL.Query().Get("limit")
 	limit := int32(10)
 	if limitParam != "" {
-		var parsed int64
-		if _, err := fmt.Sscanf(limitParam, "%d", &parsed); err == nil && parsed > 0 && parsed <= 100 {
+		if parsed, err := strconv.ParseInt(limitParam, 10, 32); err == nil && parsed > 0 && parsed <= 100 {
 			limit = int32(parsed)
 		}
 	}
@@ -652,8 +652,7 @@ func (h *AdminScraperHandler) GetAllDiagnostics(w http.ResponseWriter, r *http.R
 	limitParam := r.URL.Query().Get("limit")
 	limit := int32(20)
 	if limitParam != "" {
-		var parsed int64
-		if _, err := fmt.Sscanf(limitParam, "%d", &parsed); err == nil && parsed > 0 && parsed <= 100 {
+		if parsed, err := strconv.ParseInt(limitParam, 10, 32); err == nil && parsed > 0 && parsed <= 100 {
 			limit = int32(parsed)
 		}
 	}
