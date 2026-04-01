@@ -2034,6 +2034,114 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
+  /admin/scraper/sources/{name}/diagnostics:
+    get:
+      operationId: getSourceDiagnostics
+      summary: Get diagnostics for a scraper source
+      description: |
+        Returns the latest run, last successful run (for comparison when latest failed),
+        and a configurable list of recent runs for the named scraper source.
+
+        Smart default behavior:
+        - Always includes the latest run
+        - When the latest run failed, includes the last successful run for comparison
+        - Returns empty response (200) if the source has no runs yet
+
+        Query parameters:
+        - `limit`: Number of recent runs to return (1–100, default 10)
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          description: Scraper source name
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Number of recent runs to return (1–100, default 10)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: Source diagnostics with latest run, last success, and recent runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceDiagnostics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/scraper/diagnostics:
+    get:
+      operationId: getAllDiagnostics
+      summary: Get cross-source scraper diagnostics
+      description: |
+        Returns recent scraper runs across all sources with optional filters.
+        Useful for troubleshooting failures across multiple sources at once.
+
+        Query parameters:
+        - `limit`: Number of runs to return (1–100, default 20)
+        - `status`: Filter by run status (failed, completed, running)
+        - `source_name`: Filter by specific source name
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Number of runs to return (1–100, default 20)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: status
+          in: query
+          description: Filter by run status
+          schema:
+            type: string
+            enum: [failed, completed, running]
+        - name: source_name
+          in: query
+          description: Filter by source name
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Filtered list of recent scraper runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllDiagnostics'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
   /admin/scraper/sources/{name}/trigger:
     post:
       operationId: triggerScraperSource
@@ -2931,6 +3039,40 @@ components:
           type: integer
         error_message:
           type: string
+
+    SourceDiagnostics:
+      type: object
+      description: Diagnostics for a single scraper source including latest run, last successful run, and recent history
+      properties:
+        source_name:
+          type: string
+        latest_run:
+          oneOf:
+            - $ref: '#/components/schemas/ScraperRunDetail'
+            - type: 'null'
+          description: The most recent run for this source (null if no runs exist)
+        last_successful_run:
+          oneOf:
+            - $ref: '#/components/schemas/ScraperRunDetail'
+            - type: 'null'
+          description: The most recent completed run (included when latest_run failed, for comparison)
+        recent_runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScraperRunDetail'
+          description: Recent runs ordered newest first (limited by query param)
+
+    AllDiagnostics:
+      type: object
+      description: Cross-source diagnostics with filtered recent runs
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScraperRunDetail'
+        total:
+          type: integer
+          description: Total number of runs returned
 
     Event:
       type: object
