@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/rs/zerolog"
 )
 
@@ -414,5 +415,118 @@ schedule: manual
 	}
 	if results[0].EventsFound != 1 {
 		t.Errorf("EventsFound = %d, want 1", results[0].EventsFound)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// buildRunMetadata tests (srv-b5pdv)
+// ---------------------------------------------------------------------------
+
+// makeTestEvents returns n EventInput values with sequential URLs like
+// https://example.com/event/0, https://example.com/event/1, ...
+func makeTestEvents(n int) []events.EventInput {
+	out := make([]events.EventInput, n)
+	for i := range out {
+		out[i] = events.EventInput{
+			URL: fmt.Sprintf("https://example.com/event/%d", i),
+		}
+	}
+	return out
+}
+
+func TestBuildRunMetadata_NoFailures(t *testing.T) {
+	data, err := buildRunMetadata(nil, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data != nil {
+		t.Errorf("expected nil for empty failures, got %s", data)
+	}
+}
+
+func TestBuildRunMetadata_WithURLs(t *testing.T) {
+	failures := []IngestError{
+		{Index: 0, Message: "missing start date"},
+		{Index: 2, Message: "invalid location"},
+	}
+	validEvents := makeTestEvents(3)
+
+	data, err := buildRunMetadata(failures, validEvents)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data == nil {
+		t.Fatal("expected non-nil metadata")
+	}
+
+	var meta struct {
+		EventFailures []eventFailureRecord `json:"event_failures"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(meta.EventFailures) != 2 {
+		t.Fatalf("len(event_failures) = %d, want 2", len(meta.EventFailures))
+	}
+
+	got0 := meta.EventFailures[0]
+	if got0.Index != 0 || got0.URL != "https://example.com/event/0" || got0.Message != "missing start date" {
+		t.Errorf("failure[0] = %+v", got0)
+	}
+	got1 := meta.EventFailures[1]
+	if got1.Index != 2 || got1.URL != "https://example.com/event/2" || got1.Message != "invalid location" {
+		t.Errorf("failure[1] = %+v", got1)
+	}
+}
+
+func TestBuildRunMetadata_OutOfBoundsIndex(t *testing.T) {
+	failures := []IngestError{
+		{Index: 99, Message: "out of range"},
+		{Index: -1, Message: "negative index"},
+	}
+	validEvents := makeTestEvents(3)
+
+	data, err := buildRunMetadata(failures, validEvents)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data == nil {
+		t.Fatal("expected non-nil metadata")
+	}
+
+	var meta struct {
+		EventFailures []eventFailureRecord `json:"event_failures"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, f := range meta.EventFailures {
+		if f.URL != "" {
+			t.Errorf("expected empty URL for out-of-bounds index %d, got %q", f.Index, f.URL)
+		}
+	}
+}
+
+func TestBuildRunMetadata_EmptyURLInEvent(t *testing.T) {
+	failures := []IngestError{{Index: 0, Message: "bad event"}}
+	validEvents := makeTestEvents(1)
+	validEvents[0].URL = "" // explicitly no URL
+
+	data, err := buildRunMetadata(failures, validEvents)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var meta struct {
+		EventFailures []eventFailureRecord `json:"event_failures"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(meta.EventFailures) != 1 {
+		t.Fatalf("expected 1 failure, got %d", len(meta.EventFailures))
+	}
+	if meta.EventFailures[0].URL != "" {
+		t.Errorf("expected empty URL, got %q", meta.EventFailures[0].URL)
 	}
 }

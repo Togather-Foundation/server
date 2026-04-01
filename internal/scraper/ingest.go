@@ -90,14 +90,22 @@ type batchAcceptedResponse struct {
 	StatusURL string `json:"status_url"`
 }
 
+// batchStatusResult is a single per-event result entry within the batch status response.
+type batchStatusResult struct {
+	Index  int    `json:"index"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
+}
+
 // batchStatusResponse is the response from GET /api/v1/batch-status/<id>
 // when the job has completed.
 type batchStatusResponse struct {
-	BatchID    string `json:"batch_id"`
-	Status     string `json:"status"`
-	Created    int    `json:"created"`
-	Duplicates int    `json:"duplicates"`
-	Failed     int    `json:"failed"`
+	BatchID    string              `json:"batch_id"`
+	Status     string              `json:"status"`
+	Created    int                 `json:"created"`
+	Duplicates int                 `json:"duplicates"`
+	Failed     int                 `json:"failed"`
+	Results    []batchStatusResult `json:"results,omitempty"`
 }
 
 // NewIngestClient constructs an IngestClient targeting baseURL with the given
@@ -171,7 +179,11 @@ func (c *IngestClient) SubmitBatch(ctx context.Context, evts []events.EventInput
 		combined.EventsCreated += result.EventsCreated
 		combined.EventsDuplicate += result.EventsDuplicate
 		combined.EventsFailed += result.EventsFailed
-		combined.Errors = append(combined.Errors, result.Errors...)
+		// Adjust chunk-relative indices to global indices before appending.
+		for _, ie := range result.Errors {
+			ie.Index += i
+			combined.Errors = append(combined.Errors, ie)
+		}
 		if combined.BatchID == "" {
 			combined.BatchID = result.BatchID
 		}
@@ -372,7 +384,23 @@ func (c *IngestClient) fetchBatchStatus(ctx context.Context, batchID, statusURL 
 		EventsCreated:   status.Created,
 		EventsDuplicate: status.Duplicates,
 		EventsFailed:    status.Failed,
+		Errors:          batchStatusErrors(status.Results),
 	}, true, nil
+}
+
+// batchStatusErrors extracts IngestError values from a batch status results
+// slice, returning only entries whose Status is "failed" and Error is non-empty.
+func batchStatusErrors(results []batchStatusResult) []IngestError {
+	if len(results) == 0 {
+		return nil
+	}
+	var errs []IngestError
+	for _, r := range results {
+		if r.Status == "failed" && r.Error != "" {
+			errs = append(errs, IngestError{Index: r.Index, Message: r.Error})
+		}
+	}
+	return errs
 }
 
 // SubmitBatchDryRun returns a synthetic IngestResult without making any HTTP

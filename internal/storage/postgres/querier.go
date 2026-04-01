@@ -324,7 +324,7 @@ type Querier interface {
 	UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQueueEntryParams) (EventReviewQueue, error)
 	// Update only the warnings JSON of a review queue entry (used for companion warning dismissal).
 	UpdateReviewWarnings(ctx context.Context, arg UpdateReviewWarningsParams) error
-	// Mark a scraper run as completed with event counts.
+	// Mark a scraper run as completed with event counts and optional per-event failure metadata.
 	UpdateScraperRunCompleted(ctx context.Context, arg UpdateScraperRunCompletedParams) error
 	// Mark a scraper run as failed with an error message.
 	UpdateScraperRunFailed(ctx context.Context, arg UpdateScraperRunFailedParams) error

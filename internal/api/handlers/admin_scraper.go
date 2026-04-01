@@ -68,20 +68,28 @@ type scraperSourceResponse struct {
 	LastRunErrorMessage string     `json:"last_run_error_message,omitempty"`
 }
 
+// eventFailureResponse is a single per-event ingest failure within a scraper run.
+type eventFailureResponse struct {
+	Index   int    `json:"index"`
+	URL     string `json:"url,omitempty"`
+	Message string `json:"message"`
+}
+
 // scraperRunResponse is the JSON representation of a single scraper run.
 type scraperRunResponse struct {
-	ID           int64      `json:"id"`
-	SourceName   string     `json:"source_name"`
-	SourceURL    string     `json:"source_url"`
-	Tier         int32      `json:"tier"`
-	Status       string     `json:"status"`
-	StartedAt    *time.Time `json:"started_at,omitempty"`
-	CompletedAt  *time.Time `json:"completed_at,omitempty"`
-	EventsFound  int32      `json:"events_found"`
-	EventsNew    int32      `json:"events_new"`
-	EventsDup    int32      `json:"events_dup"`
-	EventsFailed int32      `json:"events_failed"`
-	ErrorMessage string     `json:"error_message,omitempty"`
+	ID            int64                  `json:"id"`
+	SourceName    string                 `json:"source_name"`
+	SourceURL     string                 `json:"source_url"`
+	Tier          int32                  `json:"tier"`
+	Status        string                 `json:"status"`
+	StartedAt     *time.Time             `json:"started_at,omitempty"`
+	CompletedAt   *time.Time             `json:"completed_at,omitempty"`
+	EventsFound   int32                  `json:"events_found"`
+	EventsNew     int32                  `json:"events_new"`
+	EventsDup     int32                  `json:"events_dup"`
+	EventsFailed  int32                  `json:"events_failed"`
+	ErrorMessage  string                 `json:"error_message,omitempty"`
+	EventFailures []eventFailureResponse `json:"event_failures,omitempty"`
 }
 
 // toScraperSourceResponse converts a ListScraperSourcesWithLatestRunRow to a scraperSourceResponse.
@@ -150,6 +158,15 @@ func toScraperRunResponse(run postgres.ScraperRun) scraperRunResponse {
 	}
 	if run.ErrorMessage.Valid {
 		resp.ErrorMessage = run.ErrorMessage.String
+	}
+	// Unmarshal per-event failure details from the metadata JSONB column.
+	if len(run.Metadata) > 0 {
+		var meta struct {
+			EventFailures []eventFailureResponse `json:"event_failures"`
+		}
+		if err := json.Unmarshal(run.Metadata, &meta); err == nil && len(meta.EventFailures) > 0 {
+			resp.EventFailures = meta.EventFailures
+		}
 	}
 	return resp
 }

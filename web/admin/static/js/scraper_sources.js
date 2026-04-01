@@ -568,6 +568,30 @@
                 '<div class="col"><span class="text-danger font-monospace">' + escapeHtml(run.error_message) + '</span></div></div>';
         }
 
+        if (run.event_failures && run.event_failures.length > 0) {
+            html += '<div class="row small mt-2">' +
+                '<div class="col"><strong>Event Failures (' + run.event_failures.length + '):</strong></div></div>' +
+                '<div class="mt-1" style="max-height:200px;overflow-y:auto;border:1px solid var(--tblr-border-color,#e6e7e9);border-radius:4px;">' +
+                '<table class="table table-sm table-vcenter mb-0">' +
+                '<thead><tr>' +
+                '<th class="small" style="width:40px">#</th>' +
+                '<th class="small">URL</th>' +
+                '<th class="small">Reason</th>' +
+                '</tr></thead><tbody>';
+            run.event_failures.forEach(function (f) {
+                html += '<tr>' +
+                    '<td class="text-muted small">' + escapeHtml(String(f.index)) + '</td>' +
+                    '<td class="small" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+                        (f.url
+                            ? '<a href="' + escapeHtml(f.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(f.url) + '</a>'
+                            : '<span class="text-muted">—</span>') +
+                    '</td>' +
+                    '<td class="small font-monospace" style="word-break:break-word;">' + escapeHtml(f.message) + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table></div>';
+        }
+
         return html;
     }
 
@@ -579,13 +603,15 @@
                 : run.status === 'running' ? 'bg-warning-lt'
                 : 'bg-secondary-lt';
             var hasError = run.error_message && run.error_message.length > 0;
+            var hasFailures = run.event_failures && run.event_failures.length > 0;
+            var hasDetail = hasError || hasFailures;
             var detailId = 'run-detail-' + Math.random().toString(36).substr(2, 9);
 
-            rows.push('<tr' + (hasError ? ' class="cursor-pointer" data-action="toggle-run-detail" data-target="' + detailId + '"' : '') + '>' +
+            rows.push('<tr' + (hasDetail ? ' class="cursor-pointer" data-action="toggle-run-detail" data-target="' + detailId + '"' : '') + '>' +
                 '<td class="text-muted small">' + escapeHtml(run.started_at ? formatDate(run.started_at) : '—') + '</td>' +
                 '<td class="text-muted small">' + escapeHtml(run.completed_at ? formatDate(run.completed_at) : '—') + '</td>' +
                 '<td><span class="badge ' + cls + '">' + escapeHtml(run.status) + '</span>' +
-                    (hasError ? ' <span class="text-muted small" data-arrow>▸</span>' : '') + '</td>' +
+                    (hasDetail ? ' <span class="text-muted small" data-arrow>▸</span>' : '') + '</td>' +
                 '<td>' + escapeHtml(String(run.events_found)) + '</td>' +
                 '<td>' + escapeHtml(String(run.events_new)) + '</td>' +
                 '<td>' + escapeHtml(String(run.events_dup)) + '</td>' +
@@ -595,11 +621,28 @@
                 '<td></td>' +
                 '</tr>');
 
-            if (hasError) {
+            if (hasDetail) {
+                var detailHtml = '';
+                if (hasError) {
+                    detailHtml += '<div class="small text-danger mb-1"><strong>Error:</strong> <span class="font-monospace">' +
+                        escapeHtml(run.error_message) + '</span></div>';
+                }
+                if (hasFailures) {
+                    detailHtml += '<div class="small mb-1"><strong>Event Failures (' + run.event_failures.length + '):</strong></div>' +
+                        '<div style="max-height:200px;overflow-y:auto;">' +
+                        '<table class="table table-sm table-vcenter mb-0">' +
+                        '<thead><tr><th class="small">#</th><th class="small">URL</th><th class="small">Error</th></tr></thead><tbody>';
+                    run.event_failures.forEach(function (f) {
+                        detailHtml += '<tr>' +
+                            '<td class="small text-muted">' + escapeHtml(String(f.index)) + '</td>' +
+                            '<td class="small font-monospace">' + (f.url ? escapeHtml(f.url) : '<span class="text-muted">—</span>') + '</td>' +
+                            '<td class="small text-danger">' + escapeHtml(f.message) + '</td>' +
+                            '</tr>';
+                    });
+                    detailHtml += '</tbody></table></div>';
+                }
                 rows.push('<tr id="' + detailId + '" style="display:none;">' +
-                    '<td colspan="7" class="bg-danger-lt">' +
-                    '<div class="small text-danger"><strong>Error:</strong> <span class="font-monospace">' +
-                    escapeHtml(run.error_message) + '</span></div></td></tr>');
+                    '<td colspan="8" class="bg-danger-lt">' + detailHtml + '</td></tr>');
             }
         });
 

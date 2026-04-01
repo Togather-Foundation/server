@@ -1241,3 +1241,69 @@ func TestAdminScraperHandler_GetAllDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// toScraperRunResponse — metadata / event_failures tests (srv-b5pdv)
+// ---------------------------------------------------------------------------
+
+func TestToScraperRunResponse_NilMetadata(t *testing.T) {
+	run := postgres.ScraperRun{
+		ID:         1,
+		SourceName: "test-source",
+		Status:     "completed",
+		Metadata:   nil,
+	}
+	resp := toScraperRunResponse(run)
+	if resp.EventFailures != nil {
+		t.Errorf("expected nil EventFailures for nil metadata, got %v", resp.EventFailures)
+	}
+}
+
+func TestToScraperRunResponse_ValidMetadata(t *testing.T) {
+	metaJSON := []byte(`{"event_failures":[{"index":1,"url":"https://example.org/e/1","message":"bad date"},{"index":3,"url":"","message":"missing name"}]}`)
+	run := postgres.ScraperRun{
+		ID:         2,
+		SourceName: "test-source",
+		Status:     "completed",
+		Metadata:   metaJSON,
+	}
+	resp := toScraperRunResponse(run)
+	if len(resp.EventFailures) != 2 {
+		t.Fatalf("len(EventFailures) = %d, want 2", len(resp.EventFailures))
+	}
+	if resp.EventFailures[0].Index != 1 || resp.EventFailures[0].URL != "https://example.org/e/1" || resp.EventFailures[0].Message != "bad date" {
+		t.Errorf("EventFailures[0] = %+v", resp.EventFailures[0])
+	}
+	if resp.EventFailures[1].Index != 3 || resp.EventFailures[1].URL != "" || resp.EventFailures[1].Message != "missing name" {
+		t.Errorf("EventFailures[1] = %+v", resp.EventFailures[1])
+	}
+}
+
+func TestToScraperRunResponse_MalformedMetadata(t *testing.T) {
+	run := postgres.ScraperRun{
+		ID:         3,
+		SourceName: "test-source",
+		Status:     "completed",
+		Metadata:   []byte(`not valid json {`),
+	}
+	// Must not panic; malformed metadata silently produces no failures.
+	resp := toScraperRunResponse(run)
+	if resp.EventFailures != nil {
+		t.Errorf("expected nil EventFailures for malformed metadata, got %v", resp.EventFailures)
+	}
+}
+
+func TestToScraperRunResponse_EmptyEventFailuresArray(t *testing.T) {
+	metaJSON := []byte(`{"event_failures":[]}`)
+	run := postgres.ScraperRun{
+		ID:         4,
+		SourceName: "test-source",
+		Status:     "completed",
+		Metadata:   metaJSON,
+	}
+	resp := toScraperRunResponse(run)
+	// An empty array in metadata should not populate EventFailures (omitempty).
+	if resp.EventFailures != nil {
+		t.Errorf("expected nil EventFailures for empty array, got %v", resp.EventFailures)
+	}
+}

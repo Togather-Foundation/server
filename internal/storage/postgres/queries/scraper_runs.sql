@@ -7,14 +7,15 @@ VALUES (sqlc.arg('source_name'), sqlc.arg('source_url'), sqlc.arg('tier'))
 RETURNING id;
 
 -- name: UpdateScraperRunCompleted :exec
--- Mark a scraper run as completed with event counts.
+-- Mark a scraper run as completed with event counts and optional per-event failure metadata.
 UPDATE scraper_runs
    SET status        = 'completed',
        completed_at  = NOW(),
        events_found  = sqlc.arg('events_found'),
        events_new    = sqlc.arg('events_new'),
        events_dup    = sqlc.arg('events_dup'),
-       events_failed = sqlc.arg('events_failed')
+       events_failed = sqlc.arg('events_failed'),
+       metadata      = sqlc.arg('metadata')
  WHERE id = sqlc.arg('id');
 
 -- name: UpdateScraperRunFailed :exec
