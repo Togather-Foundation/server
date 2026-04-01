@@ -2070,11 +2070,14 @@ if [ ! -d "${REPO_DIR}/.git" ]; then
 else
     echo "→ Repository found, updating..."
     cd "${REPO_DIR}"
+    rm -f "${REPO_DIR}/.git/index.lock"
     git fetch origin
+    rm -f "${REPO_DIR}/.git/index.lock"
 fi
 
 # Checkout target commit
 echo "→ Checking out commit ${TARGET_COMMIT}..."
+rm -f "${REPO_DIR}/.git/index.lock"
 git checkout "${TARGET_COMMIT}"
 
 # Verify we're on the right commit
