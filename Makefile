@@ -296,11 +296,11 @@ e2e-pytest:
 lint:
 	@echo "Running linter..."
 	@if command -v golangci-lint > /dev/null 2>&1; then \
-		golangci-lint run ./...; \
+		golangci-lint run --allow-parallel-runners ./...; \
 	elif [ -f $(HOME)/go/bin/golangci-lint ]; then \
-		$(HOME)/go/bin/golangci-lint run ./...; \
+		$(HOME)/go/bin/golangci-lint run --allow-parallel-runners ./...; \
 	elif [ -f $(GOPATH)/bin/golangci-lint ]; then \
-		$(GOPATH)/bin/golangci-lint run ./...; \
+		$(GOPATH)/bin/golangci-lint run --allow-parallel-runners ./...; \
 	else \
 		echo "golangci-lint not found. Install with 'make install-tools'"; \
 		exit 1; \
@@ -310,11 +310,11 @@ lint:
 lint-ci:
 	@echo "Running linter as CI does (no cache, 5m timeout)..."
 	@if command -v golangci-lint > /dev/null 2>&1; then \
-		GOLANGCI_LINT_CACHE=$$(mktemp -d) golangci-lint run --timeout=5m ./...; \
+		GOLANGCI_LINT_CACHE=$$(mktemp -d) golangci-lint run --timeout=5m --allow-parallel-runners ./...; \
 	elif [ -f $(HOME)/go/bin/golangci-lint ]; then \
-		GOLANGCI_LINT_CACHE=$$(mktemp -d) $(HOME)/go/bin/golangci-lint run --timeout=5m ./...; \
+		GOLANGCI_LINT_CACHE=$$(mktemp -d) $(HOME)/go/bin/golangci-lint run --timeout=5m --allow-parallel-runners ./...; \
 	elif [ -f $(GOPATH)/bin/golangci-lint ]; then \
-		GOLANGCI_LINT_CACHE=$$(mktemp -d) $(GOPATH)/bin/golangci-lint run --timeout=5m ./...; \
+		GOLANGCI_LINT_CACHE=$$(mktemp -d) $(GOPATH)/bin/golangci-lint run --timeout=5m --allow-parallel-runners ./...; \
 	else \
 		echo "golangci-lint not found. Install with 'make install-tools'"; \
 		exit 1; \
