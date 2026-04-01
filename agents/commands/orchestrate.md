@@ -303,7 +303,6 @@ scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
 ```bash
 scripts/staging-reset.sh --yes          # wipe events, keep users/keys/sources
 scripts/staging-reset.sh --wipe-all     # full wipe (keeps only users)
-scripts/ingest-toronto-events.sh staging 50 300   # re-populate with test data
 ```
 
 Summarize what passed and failed.
