@@ -80,6 +80,41 @@ type ScrapeResult struct {
 	QualityWarnings []string
 }
 
+// eventFailureRecord captures per-event ingest failure details stored in the
+// scraper_run metadata JSONB column for diagnostic display.
+type eventFailureRecord struct {
+	Index   int    `json:"index"`
+	URL     string `json:"url,omitempty"`
+	Message string `json:"message"`
+}
+
+// buildRunMetadata serialises per-event ingest failures into the JSONB payload
+// stored in scraper_runs.metadata. Returns nil if there are no failures.
+// validEvents is used to correlate an IngestError.Index to the event URL.
+func buildRunMetadata(failures []IngestError, validEvents []events.EventInput) ([]byte, error) {
+	if len(failures) == 0 {
+		return nil, nil
+	}
+	records := make([]eventFailureRecord, 0, len(failures))
+	for _, ie := range failures {
+		rec := eventFailureRecord{
+			Index:   ie.Index,
+			Message: ie.Message,
+		}
+		// Correlate index → source URL. Guard against out-of-bounds indices
+		// (chunked submission can theoretically shift indices; be safe).
+		if ie.Index >= 0 && ie.Index < len(validEvents) {
+			rec.URL = validEvents[ie.Index].URL
+		}
+		records = append(records, rec)
+	}
+	data, err := json.Marshal(map[string]any{"event_failures": records})
+	if err != nil {
+		return nil, fmt.Errorf("marshal run metadata: %w", err)
+	}
+	return data, nil
+}
+
 // Scraper orchestrates fetching, normalising, and ingesting events from
 // configured sources.
 type Scraper struct {
@@ -954,7 +989,7 @@ func (s *Scraper) runWithTracking(
 	}
 
 	if len(validEvents) == 0 {
-		s.updateRunCompleted(ctx, runID, result)
+		s.updateRunCompleted(ctx, runID, result, validEvents)
 		s.recordMetrics(*result, time.Since(start))
 		return *result
 	}
@@ -982,7 +1017,7 @@ func (s *Scraper) runWithTracking(
 		}
 	}
 
-	s.updateRunCompleted(ctx, runID, result)
+	s.updateRunCompleted(ctx, runID, result, validEvents)
 	s.recordMetrics(*result, time.Since(start))
 	return *result
 }
@@ -1044,8 +1079,9 @@ func (s *Scraper) updateRunFailed(ctx context.Context, runID int64, err error) {
 	}
 }
 
-// updateRunCompleted updates the scraper_run record with completion counts.
-func (s *Scraper) updateRunCompleted(ctx context.Context, runID int64, result *ScrapeResult) {
+// updateRunCompleted updates the scraper_run record with completion counts and
+// per-event failure metadata (if any ingest errors occurred).
+func (s *Scraper) updateRunCompleted(ctx context.Context, runID int64, result *ScrapeResult, validEvents []events.EventInput) {
 	if s.queries == nil || runID == 0 {
 		return
 	}
@@ -1055,6 +1091,14 @@ func (s *Scraper) updateRunCompleted(ctx context.Context, runID int64, result *S
 		EventsNew:    int32(result.EventsCreated),
 		EventsDup:    int32(result.EventsDuplicate),
 		EventsFailed: int32(result.EventsFailed),
+	}
+	if len(result.IngestErrors) > 0 {
+		metaBytes, err := buildRunMetadata(result.IngestErrors, validEvents)
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("scraper: failed to build run metadata")
+		} else {
+			params.Metadata = metaBytes
+		}
 	}
 	if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
 		s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")

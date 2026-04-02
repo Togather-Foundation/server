@@ -262,25 +262,28 @@ UPDATE scraper_runs
        events_found  = $1,
        events_new    = $2,
        events_dup    = $3,
-       events_failed = $4
- WHERE id = $5
+       events_failed = $4,
+       metadata      = $5
+ WHERE id = $6
 `
 
 type UpdateScraperRunCompletedParams struct {
-	EventsFound  int32 `json:"events_found"`
-	EventsNew    int32 `json:"events_new"`
-	EventsDup    int32 `json:"events_dup"`
-	EventsFailed int32 `json:"events_failed"`
-	ID           int64 `json:"id"`
+	EventsFound  int32  `json:"events_found"`
+	EventsNew    int32  `json:"events_new"`
+	EventsDup    int32  `json:"events_dup"`
+	EventsFailed int32  `json:"events_failed"`
+	Metadata     []byte `json:"metadata"`
+	ID           int64  `json:"id"`
 }
 
-// Mark a scraper run as completed with event counts.
+// Mark a scraper run as completed with event counts and optional per-event failure metadata.
 func (q *Queries) UpdateScraperRunCompleted(ctx context.Context, arg UpdateScraperRunCompletedParams) error {
 	_, err := q.db.Exec(ctx, updateScraperRunCompleted,
 		arg.EventsFound,
 		arg.EventsNew,
 		arg.EventsDup,
 		arg.EventsFailed,
+		arg.Metadata,
 		arg.ID,
 	)
 	return err

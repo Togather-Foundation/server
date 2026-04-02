@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -555,5 +556,128 @@ func TestSubmitBatch_CallerDeadlineDuringInFlightPoll(t *testing.T) {
 	}
 	if !containsString(err.Error(), "deadline") && !containsString(err.Error(), "cancelled") {
 		t.Errorf("Expected context deadline/cancelled error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// batchStatusErrors tests (srv-yvuh0 / srv-b5pdv)
+// ---------------------------------------------------------------------------
+
+func TestBatchStatusErrors_NilResults(t *testing.T) {
+	errs := batchStatusErrors(nil)
+	if errs != nil {
+		t.Errorf("expected nil for nil results, got %v", errs)
+	}
+}
+
+func TestBatchStatusErrors_NoFailures(t *testing.T) {
+	results := []batchStatusResult{
+		{Index: 0, Status: "created"},
+		{Index: 1, Status: "duplicate"},
+	}
+	errs := batchStatusErrors(results)
+	if errs != nil {
+		t.Errorf("expected nil when no failures, got %v", errs)
+	}
+}
+
+func TestBatchStatusErrors_WithFailures(t *testing.T) {
+	results := []batchStatusResult{
+		{Index: 0, Status: "created"},
+		{Index: 1, Status: "failed", Error: "missing start date"},
+		{Index: 2, Status: "duplicate"},
+		{Index: 3, Status: "failed", Error: "invalid location"},
+	}
+	errs := batchStatusErrors(results)
+	if len(errs) != 2 {
+		t.Fatalf("len(errs) = %d, want 2", len(errs))
+	}
+	if errs[0].Index != 1 || errs[0].Message != "missing start date" {
+		t.Errorf("errs[0] = %+v", errs[0])
+	}
+	if errs[1].Index != 3 || errs[1].Message != "invalid location" {
+		t.Errorf("errs[1] = %+v", errs[1])
+	}
+}
+
+func TestBatchStatusErrors_FailedWithEmptyError(t *testing.T) {
+	// A "failed" entry with no error message should be skipped (no useful detail).
+	results := []batchStatusResult{
+		{Index: 0, Status: "failed", Error: ""},
+	}
+	errs := batchStatusErrors(results)
+	if errs != nil {
+		t.Errorf("expected nil for failed-with-no-error, got %v", errs)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// SubmitBatch chunk offset tests (srv-jxihm / srv-b5pdv)
+// ---------------------------------------------------------------------------
+
+// TestSubmitBatch_ChunkOffsetAdjustment verifies that IngestError indices from
+// the second chunk are adjusted by the chunk start offset (100) so that global
+// indices are correct.
+func TestSubmitBatch_ChunkOffsetAdjustment(t *testing.T) {
+	// Build 150 events so we get two chunks: [0..99] and [100..149].
+	// Simulate the server returning one failure in each chunk:
+	//   chunk 1 (offset 0): index 5 → global 5
+	//   chunk 2 (offset 100): index 7 → global 107
+	callCount := 0
+	var srvURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/events:batch":
+			callCount++
+			chunkID := callCount // 1 for first chunk, 2 for second
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"batch_id":   "batch-offset-" + fmt.Sprint(chunkID),
+				"status_url": srvURL + "/api/v1/batch-status/batch-offset-" + fmt.Sprint(chunkID),
+			})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/batch-status/batch-offset-1":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "completed", "created": 99, "failed": 1,
+				"results": []map[string]any{
+					{"index": 5, "status": "failed", "error": "bad date in chunk 1"},
+				},
+			})
+
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/batch-status/batch-offset-2":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"status": "completed", "created": 49, "failed": 1,
+				"results": []map[string]any{
+					{"index": 7, "status": "failed", "error": "bad name in chunk 2"},
+				},
+			})
+
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	srvURL = srv.URL
+
+	client := NewIngestClient(srv.URL, "test-api-key")
+	evts := sampleEvts(150)
+	result, err := client.SubmitBatch(context.Background(), evts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Errors) != 2 {
+		t.Fatalf("len(Errors) = %d, want 2; errors: %v", len(result.Errors), result.Errors)
+	}
+
+	// Chunk 1 error: chunk-relative index 5 → global 5 (offset 0).
+	if result.Errors[0].Index != 5 {
+		t.Errorf("Errors[0].Index = %d, want 5 (chunk 1, offset 0)", result.Errors[0].Index)
+	}
+	// Chunk 2 error: chunk-relative index 7 → global 107 (offset 100).
+	if result.Errors[1].Index != 107 {
+		t.Errorf("Errors[1].Index = %d, want 107 (chunk 2, offset 100)", result.Errors[1].Index)
 	}
 }
