@@ -134,6 +134,21 @@ UPDATE scraper_sources
        updated_at      = NOW()
  WHERE name = sqlc.arg('name');
 
+-- name: SetScraperSourceEnabled :one
+-- Enable or disable a scraper source by name. Returns the updated row.
+UPDATE scraper_sources
+   SET enabled    = sqlc.arg('enabled'),
+       updated_at = NOW()
+ WHERE name = sqlc.arg('name')
+RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
+          max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+          multi_session_duration_threshold, follow_event_urls, timezone,
+          last_scraped_at, created_at, updated_at,
+          headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+          headless_headers, headless_rate_limit_ms,
+          headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+          graphql_config, rest_config, sitemap_config, default_location;
+
 -- name: DeleteScraperSource :exec
 -- Delete a scraper source by name.
 DELETE FROM scraper_sources WHERE name = sqlc.arg('name');

@@ -27,6 +27,7 @@ type scraperQueriesIface interface {
 	ListScraperRunsBySource(ctx context.Context, arg postgres.ListScraperRunsBySourceParams) ([]postgres.ScraperRun, error)
 	GetScraperSourceByName(ctx context.Context, name string) (postgres.GetScraperSourceByNameRow, error)
 	UpsertScraperSource(ctx context.Context, arg postgres.UpsertScraperSourceParams) (postgres.UpsertScraperSourceRow, error)
+	SetScraperSourceEnabled(ctx context.Context, arg postgres.SetScraperSourceEnabledParams) (postgres.SetScraperSourceEnabledRow, error)
 	GetScraperConfig(ctx context.Context) (postgres.ScraperConfig, error)
 	SetScraperConfig(ctx context.Context, arg postgres.SetScraperConfigParams) error
 	CountRunningScraperRuns(ctx context.Context) (int64, error)
@@ -122,8 +123,8 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 	return resp
 }
 
-// scraperSourceFromDB converts a postgres.UpsertScraperSourceRow to a scraperSourceResponse.
-func scraperSourceFromDB(s postgres.UpsertScraperSourceRow) scraperSourceResponse {
+// scraperSourceFromSetEnabled converts a postgres.SetScraperSourceEnabledRow to a scraperSourceResponse.
+func scraperSourceFromSetEnabled(s postgres.SetScraperSourceEnabledRow) scraperSourceResponse {
 	return scraperSourceResponse{
 		ID:       s.ID,
 		Name:     s.Name,
@@ -285,55 +286,21 @@ func (h *AdminScraperHandler) SetSourceEnabled(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	existing, err := h.Queries.GetScraperSourceByName(r.Context(), name)
+	updated, err := h.Queries.SetScraperSourceEnabled(r.Context(), postgres.SetScraperSourceEnabledParams{
+		Name:    name,
+		Enabled: body.Enabled,
+	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Scraper source not found", nil, h.Env)
 			return
 		}
-		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: get source for enable toggle")
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to look up scraper source", fmt.Errorf("get scraper source name=%s: %w", name, err), h.Env)
-		return
-	}
-
-	updated, err := h.Queries.UpsertScraperSource(r.Context(), postgres.UpsertScraperSourceParams{
-		Name:                          existing.Name,
-		Url:                           existing.Url,
-		Urls:                          existing.Urls,
-		Tier:                          existing.Tier,
-		Schedule:                      existing.Schedule,
-		TrustLevel:                    existing.TrustLevel,
-		License:                       existing.License,
-		Enabled:                       body.Enabled,
-		MaxPages:                      existing.MaxPages,
-		Selectors:                     existing.Selectors,
-		Notes:                         existing.Notes,
-		EventUrlPattern:               existing.EventUrlPattern,
-		SkipMultiSessionCheck:         existing.SkipMultiSessionCheck,
-		MultiSessionDurationThreshold: existing.MultiSessionDurationThreshold,
-		FollowEventUrls:               existing.FollowEventUrls,
-		Timezone:                      existing.Timezone,
-		LastScrapedAt:                 existing.LastScrapedAt,
-		HeadlessWaitSelector:          existing.HeadlessWaitSelector,
-		HeadlessWaitTimeoutMs:         existing.HeadlessWaitTimeoutMs,
-		HeadlessPaginationBtn:         existing.HeadlessPaginationBtn,
-		HeadlessHeaders:               existing.HeadlessHeaders,
-		HeadlessRateLimitMs:           existing.HeadlessRateLimitMs,
-		HeadlessWaitNetworkIdle:       existing.HeadlessWaitNetworkIdle,
-		HeadlessUndetected:            existing.HeadlessUndetected,
-		HeadlessIframe:                existing.HeadlessIframe,
-		HeadlessIntercept:             existing.HeadlessIntercept,
-		GraphqlConfig:                 existing.GraphqlConfig,
-		RestConfig:                    existing.RestConfig,
-		SitemapConfig:                 existing.SitemapConfig,
-	})
-	if err != nil {
 		h.Logger.Error().Err(err).Str("source", name).Msg("admin scraper: set source enabled")
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to update scraper source", fmt.Errorf("upsert scraper source name=%s: %w", name, err), h.Env)
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to update scraper source", fmt.Errorf("set source enabled name=%s: %w", name, err), h.Env)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, scraperSourceFromDB(updated), "application/json")
+	writeJSON(w, http.StatusOK, scraperSourceFromSetEnabled(updated), "application/json")
 }
 
 // scraperConfigResponse is the JSON representation of the global scraper config.

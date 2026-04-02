@@ -695,6 +695,104 @@ func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled p
 	return items, nil
 }
 
+const setScraperSourceEnabled = `-- name: SetScraperSourceEnabled :one
+UPDATE scraper_sources
+   SET enabled    = $1,
+       updated_at = NOW()
+ WHERE name = $2
+RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
+          max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+          multi_session_duration_threshold, follow_event_urls, timezone,
+          last_scraped_at, created_at, updated_at,
+          headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+          headless_headers, headless_rate_limit_ms,
+          headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+          graphql_config, rest_config, sitemap_config, default_location
+`
+
+type SetScraperSourceEnabledParams struct {
+	Enabled bool   `json:"enabled"`
+	Name    string `json:"name"`
+}
+
+type SetScraperSourceEnabledRow struct {
+	ID                            int64              `json:"id"`
+	Name                          string             `json:"name"`
+	Url                           string             `json:"url"`
+	Urls                          []string           `json:"urls"`
+	Tier                          int32              `json:"tier"`
+	Schedule                      string             `json:"schedule"`
+	TrustLevel                    int32              `json:"trust_level"`
+	License                       string             `json:"license"`
+	Enabled                       bool               `json:"enabled"`
+	MaxPages                      int32              `json:"max_pages"`
+	Selectors                     []byte             `json:"selectors"`
+	Notes                         pgtype.Text        `json:"notes"`
+	EventUrlPattern               string             `json:"event_url_pattern"`
+	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
+	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
+	FollowEventUrls               bool               `json:"follow_event_urls"`
+	Timezone                      string             `json:"timezone"`
+	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
+	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
+	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
+	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
+	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
+	HeadlessHeaders               []byte             `json:"headless_headers"`
+	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
+	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
+	HeadlessUndetected            bool               `json:"headless_undetected"`
+	HeadlessIframe                []byte             `json:"headless_iframe"`
+	HeadlessIntercept             []byte             `json:"headless_intercept"`
+	GraphqlConfig                 []byte             `json:"graphql_config"`
+	RestConfig                    []byte             `json:"rest_config"`
+	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
+}
+
+// Enable or disable a scraper source by name. Returns the updated row.
+func (q *Queries) SetScraperSourceEnabled(ctx context.Context, arg SetScraperSourceEnabledParams) (SetScraperSourceEnabledRow, error) {
+	row := q.db.QueryRow(ctx, setScraperSourceEnabled, arg.Enabled, arg.Name)
+	var i SetScraperSourceEnabledRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Url,
+		&i.Urls,
+		&i.Tier,
+		&i.Schedule,
+		&i.TrustLevel,
+		&i.License,
+		&i.Enabled,
+		&i.MaxPages,
+		&i.Selectors,
+		&i.Notes,
+		&i.EventUrlPattern,
+		&i.SkipMultiSessionCheck,
+		&i.MultiSessionDurationThreshold,
+		&i.FollowEventUrls,
+		&i.Timezone,
+		&i.LastScrapedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.HeadlessWaitSelector,
+		&i.HeadlessWaitTimeoutMs,
+		&i.HeadlessPaginationBtn,
+		&i.HeadlessHeaders,
+		&i.HeadlessRateLimitMs,
+		&i.HeadlessWaitNetworkIdle,
+		&i.HeadlessUndetected,
+		&i.HeadlessIframe,
+		&i.HeadlessIntercept,
+		&i.GraphqlConfig,
+		&i.RestConfig,
+		&i.SitemapConfig,
+		&i.DefaultLocation,
+	)
+	return i, err
+}
+
 const unlinkOrgScraperSource = `-- name: UnlinkOrgScraperSource :exec
 DELETE FROM org_scraper_sources
  WHERE organization_id   = $1

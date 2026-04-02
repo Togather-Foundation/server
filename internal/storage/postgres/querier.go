@@ -287,6 +287,8 @@ type Querier interface {
 	ResolveCanonicalEventULID(ctx context.Context, ulid string) (string, error)
 	RevokeAllDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error)
 	SetScraperConfig(ctx context.Context, arg SetScraperConfigParams) error
+	// Enable or disable a scraper source by name. Returns the updated row.
+	SetScraperSourceEnabled(ctx context.Context, arg SetScraperSourceEnabledParams) (SetScraperSourceEnabledRow, error)
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
