@@ -7,7 +7,7 @@ tier: 1
 schedule: "weekly"
 trust_level: 4
 license: "CC0-1.0"
-enabled: true
+enabled: false
 max_pages: 2
 selectors:
   event_list: "article"
