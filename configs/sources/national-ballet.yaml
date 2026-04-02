@@ -11,6 +11,14 @@ max_pages: 1
 # The /performances path returns 404 — the correct path is /performances/<year-code>-season/.
 # Date is in .subtitle span as a <p> tag; name is in .accent span.
 # URLs point to /productions/ detail pages.
+# National Ballet performs at the Four Seasons Centre for the Performing Arts.
+default_location:
+  name: "Four Seasons Centre for the Performing Arts"
+  street_address: "145 Queen St W"
+  address_locality: "Toronto"
+  address_region: "ON"
+  postal_code: "M5H 4G1"
+  address_country: "CA"
 selectors:
   event_list: "li.upcoming-list-item"
   name: ".accent"

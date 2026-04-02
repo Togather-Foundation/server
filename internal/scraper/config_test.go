@@ -2391,6 +2391,7 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 				GraphQLConfig:                 params.GraphQLConfig,
 				RestConfig:                    params.RestConfig,
 				SitemapConfig:                 params.SitemapConfig,
+				DefaultLocation:               params.DefaultLocation,
 			}
 
 			// Exclude LastScrapedAt from comparison - it's set by the scraper at runtime.

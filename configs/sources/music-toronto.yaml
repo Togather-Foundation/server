@@ -8,6 +8,14 @@ trust_level: 7
 license: "CC0-1.0"
 enabled: true
 max_pages: 3
+# Music Toronto concerts are held at various Toronto venues; when the listing
+# page omits a venue (common for season preview pages) use Music Toronto's
+# home base as the fallback location.
+default_location:
+  name: "Music Toronto"
+  address_locality: "Toronto"
+  address_region: "ON"
+  address_country: "CA"
 selectors:
   event_list: "article.eventlist-event"
   name: "h1.eventlist-title"

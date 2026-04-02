@@ -10,6 +10,15 @@ trust_level: 8
 license: "CC0-1.0"
 enabled: true
 max_pages: 5
+# TSO performs at Roy Thomson Hall and Koerner Hall; the calendar listing does
+# not include structured location data, so use Roy Thomson Hall as the fallback.
+default_location:
+  name: "Roy Thomson Hall"
+  street_address: "60 Simcoe St"
+  address_locality: "Toronto"
+  address_region: "ON"
+  postal_code: "M5J 1W2"
+  address_country: "CA"
 headless:
   wait_selector: ".calendar-performance"
   wait_timeout_ms: 20000

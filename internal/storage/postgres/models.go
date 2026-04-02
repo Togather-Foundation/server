@@ -508,6 +508,7 @@ type ScraperSource struct {
 	HeadlessUndetected            bool               `json:"headless_undetected"`
 	HeadlessIframe                []byte             `json:"headless_iframe"`
 	HeadlessIntercept             []byte             `json:"headless_intercept"`
+	DefaultLocation               []byte             `json:"default_location"`
 }
 
 type ScraperSubmission struct {

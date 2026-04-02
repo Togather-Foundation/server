@@ -1756,3 +1756,175 @@ func TestNormalizeRawEvents_AllInvalidDatesGroup(t *testing.T) {
 		t.Errorf("expected surviving event to be 'Good Show', got %q", valid[0].Name)
 	}
 }
+
+// TestDefaultLocation_JSONLDFallback verifies that NormalizeJSONLDEvent uses
+// source.DefaultLocation when the JSON-LD event has no location field.
+func TestDefaultLocation_JSONLDFallback(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{
+		Name:    "Test",
+		URL:     "https://example.com",
+		License: "CC0-1.0",
+		DefaultLocation: &DefaultLocationConfig{
+			Name:            "Roy Thomson Hall",
+			StreetAddress:   "60 Simcoe St",
+			AddressLocality: "Toronto",
+			AddressRegion:   "ON",
+			PostalCode:      "M5J 1W2",
+			AddressCountry:  "CA",
+		},
+	}
+
+	raw := json.RawMessage(`{
+		"@type": "Event",
+		"@id": "https://example.com/events/1",
+		"name": "Symphony Night",
+		"startDate": "2026-05-01T20:00:00-04:00"
+	}`)
+
+	got, err := NormalizeJSONLDEvent(raw, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Location == nil {
+		t.Fatal("Location is nil; expected default_location fallback")
+	}
+	if got.Location.Name != "Roy Thomson Hall" {
+		t.Errorf("Location.Name = %q, want %q", got.Location.Name, "Roy Thomson Hall")
+	}
+	if got.Location.StreetAddress != "60 Simcoe St" {
+		t.Errorf("Location.StreetAddress = %q, want %q", got.Location.StreetAddress, "60 Simcoe St")
+	}
+}
+
+// TestDefaultLocation_JSONLDNotOverridden verifies that a non-nil location in
+// the JSON-LD data is NOT replaced by the default_location fallback.
+func TestDefaultLocation_JSONLDNotOverridden(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{
+		Name:    "Test",
+		URL:     "https://example.com",
+		License: "CC0-1.0",
+		DefaultLocation: &DefaultLocationConfig{
+			Name: "Default Venue",
+		},
+	}
+
+	raw := json.RawMessage(`{
+		"@type": "Event",
+		"@id": "https://example.com/events/2",
+		"name": "Special Event",
+		"startDate": "2026-06-01T19:00:00-04:00",
+		"location": {"@type": "Place", "name": "Massey Hall"}
+	}`)
+
+	got, err := NormalizeJSONLDEvent(raw, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Location == nil {
+		t.Fatal("Location is nil; expected scraped location")
+	}
+	if got.Location.Name != "Massey Hall" {
+		t.Errorf("Location.Name = %q, want %q (scraped location should not be overridden)", got.Location.Name, "Massey Hall")
+	}
+}
+
+// TestDefaultLocation_RawEventFallback verifies that NormalizeRawEvent uses
+// source.DefaultLocation when the RawEvent has no Location field.
+func TestDefaultLocation_RawEventFallback(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{
+		Name:    "Test",
+		URL:     "https://example.com",
+		License: "CC0-1.0",
+		DefaultLocation: &DefaultLocationConfig{
+			Name:            "Jazz Bistro",
+			StreetAddress:   "251 Victoria St",
+			AddressLocality: "Toronto",
+			AddressRegion:   "ON",
+			PostalCode:      "M5B 1V8",
+			AddressCountry:  "CA",
+		},
+	}
+
+	raw := RawEvent{
+		Name:      "Jazz Night",
+		StartDate: "2026-05-10T21:00:00-04:00",
+		URL:       "https://example.com/jazz-night",
+	}
+
+	got, err := NormalizeRawEvent(raw, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Location == nil {
+		t.Fatal("Location is nil; expected default_location fallback")
+	}
+	if got.Location.Name != "Jazz Bistro" {
+		t.Errorf("Location.Name = %q, want %q", got.Location.Name, "Jazz Bistro")
+	}
+}
+
+// TestDefaultLocation_RawEventNotOverridden verifies that a scraped location
+// in RawEvent is NOT replaced by the default_location fallback.
+func TestDefaultLocation_RawEventNotOverridden(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{
+		Name:    "Test",
+		URL:     "https://example.com",
+		License: "CC0-1.0",
+		DefaultLocation: &DefaultLocationConfig{
+			Name: "Default Venue",
+		},
+	}
+
+	raw := RawEvent{
+		Name:      "Concert",
+		StartDate: "2026-07-01T20:00:00-04:00",
+		Location:  "Harbourfront Centre",
+		URL:       "https://example.com/concert",
+	}
+
+	got, err := NormalizeRawEvent(raw, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Location == nil {
+		t.Fatal("Location is nil")
+	}
+	if got.Location.Name != "Harbourfront Centre" {
+		t.Errorf("Location.Name = %q, want %q (scraped location should not be overridden)", got.Location.Name, "Harbourfront Centre")
+	}
+}
+
+// TestDefaultLocation_NilDefaultLocation verifies that nil DefaultLocation
+// does not panic and leaves Location nil when there is no scraped location.
+func TestDefaultLocation_NilDefaultLocation(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{
+		Name:    "Test",
+		URL:     "https://example.com",
+		License: "CC0-1.0",
+		// DefaultLocation is nil (not set)
+	}
+
+	raw := RawEvent{
+		Name:      "No-Venue Event",
+		StartDate: "2026-08-01T18:00:00-04:00",
+		URL:       "https://example.com/event",
+	}
+
+	got, err := NormalizeRawEvent(raw, src)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Location != nil {
+		t.Errorf("expected nil Location when no scraped location and no DefaultLocation, got %+v", got.Location)
+	}
+}

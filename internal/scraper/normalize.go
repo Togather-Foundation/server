@@ -63,6 +63,11 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		return events.EventInput{}, err
 	}
 
+	loc := parseLocation(re.Location)
+	if loc == nil {
+		loc = source.DefaultLocation.ToPlaceInput()
+	}
+
 	evt := events.EventInput{
 		Type:                          eventType,
 		Name:                          name,
@@ -70,7 +75,7 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		StartDate:                     startDate,
 		EndDate:                       parseDate(re.EndDate),
 		DoorTime:                      parseDate(re.DoorTime),
-		Location:                      parseLocation(re.Location),
+		Location:                      loc,
 		Organizer:                     parseOrganizer(re.Organizer),
 		Image:                         parseImage(re.Image),
 		URL:                           urlStr,
@@ -222,6 +227,9 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig) (events.EventInput, er
 	if raw.Location != "" {
 		loc = &events.PlaceInput{Name: raw.Location}
 	}
+	if loc == nil {
+		loc = source.DefaultLocation.ToPlaceInput()
+	}
 
 	return events.EventInput{
 		Type:                          "Event",
@@ -294,6 +302,9 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig) (events.EventI
 	var loc *events.PlaceInput
 	if first.Location != "" {
 		loc = &events.PlaceInput{Name: first.Location}
+	}
+	if loc == nil {
+		loc = source.DefaultLocation.ToPlaceInput()
 	}
 
 	// Use the first occurrence's start date as the event's primary StartDate.

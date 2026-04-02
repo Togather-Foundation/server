@@ -7,3 +7,11 @@ trust_level: 7
 license: "CC0-1.0"
 enabled: true
 max_pages: 3
+# All Jazz Bistro events take place at the Jazz Bistro itself.
+default_location:
+  name: "Jazz Bistro"
+  street_address: "251 Victoria St"
+  address_locality: "Toronto"
+  address_region: "ON"
+  postal_code: "M5B 1V8"
+  address_country: "CA"

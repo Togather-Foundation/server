@@ -10,6 +10,13 @@ schedule: "daily"
 trust_level: 6
 license: "CC0-1.0"
 enabled: true
+# East End Arts programs are held at various East Toronto venues; the API
+# does not include structured location data so use the org as fallback.
+default_location:
+  name: "East End Arts"
+  address_locality: "Toronto"
+  address_region: "ON"
+  address_country: "CA"
 rest:
   endpoint: "https://eastendarts.ca/wp-json/wp/v2/posts?per_page=10"
   # WordPress returns pagination metadata in the response headers, not JSON body.

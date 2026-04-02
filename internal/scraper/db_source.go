@@ -110,6 +110,14 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		cfg.Sitemap = &sitemap
 	}
 
+	if len(src.DefaultLocation) > 0 && string(src.DefaultLocation) != "null" {
+		var dl DefaultLocationConfig
+		if err := json.Unmarshal(src.DefaultLocation, &dl); err != nil {
+			return SourceConfig{}, fmt.Errorf("decode default location for %q: %w", src.Name, err)
+		}
+		cfg.DefaultLocation = &dl
+	}
+
 	if src.LastScrapedAt != nil {
 		cfg.LastScrapedAt = src.LastScrapedAt
 	}

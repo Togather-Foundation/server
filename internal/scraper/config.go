@@ -12,6 +12,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/domain/events"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,6 +67,13 @@ type SourceConfig struct {
 	// node serves one geographic location). If that is also unset, defaults
 	// to "America/Toronto".
 	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
+	// DefaultLocation is a fallback venue used when the scraper extracts no
+	// location for an event. This is useful for single-venue sources (e.g. a
+	// concert hall or museum) where every event is at the same place and the
+	// site does not include structured location data in the event listing.
+	// When the scraper produces a location (via CSS selector, JSON-LD, or
+	// field_map), this default is ignored.
+	DefaultLocation *DefaultLocationConfig `yaml:"default_location,omitempty" json:"default_location,omitempty"`
 	// LastScrapedAt is populated from the DB when loading configs via the
 	// source repository. It is NOT read from YAML. Used by sitemap scraping
 	// to filter URLs by lastmod date.
@@ -103,6 +111,40 @@ type SitemapConfig struct {
 	// Set to 1 for minimal delay. A warning is emitted at load time when 0 is
 	// set explicitly, to avoid silent misconfigurations.
 	RateLimitMs int `yaml:"rate_limit_ms" json:"rate_limit_ms"`
+}
+
+// DefaultLocationConfig holds a fallback venue for sources where every event
+// occurs at the same physical location and the site does not emit structured
+// location data. All fields map directly to PlaceInput and are optional
+// individually, but at minimum Name should be set so that the ingest
+// validation (which requires location.name) passes.
+type DefaultLocationConfig struct {
+	Name            string  `yaml:"name"             json:"name"`
+	StreetAddress   string  `yaml:"street_address,omitempty" json:"street_address,omitempty"`
+	AddressLocality string  `yaml:"address_locality,omitempty" json:"address_locality,omitempty"`
+	AddressRegion   string  `yaml:"address_region,omitempty" json:"address_region,omitempty"`
+	PostalCode      string  `yaml:"postal_code,omitempty" json:"postal_code,omitempty"`
+	AddressCountry  string  `yaml:"address_country,omitempty" json:"address_country,omitempty"`
+	Latitude        float64 `yaml:"latitude,omitempty"  json:"latitude,omitempty"`
+	Longitude       float64 `yaml:"longitude,omitempty" json:"longitude,omitempty"`
+}
+
+// ToPlaceInput converts a DefaultLocationConfig to a PlaceInput suitable for
+// use as an event location. Returns nil if the receiver is nil.
+func (d *DefaultLocationConfig) ToPlaceInput() *events.PlaceInput {
+	if d == nil {
+		return nil
+	}
+	return &events.PlaceInput{
+		Name:            d.Name,
+		StreetAddress:   d.StreetAddress,
+		AddressLocality: d.AddressLocality,
+		AddressRegion:   d.AddressRegion,
+		PostalCode:      d.PostalCode,
+		AddressCountry:  d.AddressCountry,
+		Latitude:        d.Latitude,
+		Longitude:       d.Longitude,
+	}
 }
 
 // SelectorConfig holds CSS selectors used for Tier 1 (Colly) and Tier 2

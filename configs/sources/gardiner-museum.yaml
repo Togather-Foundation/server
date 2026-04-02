@@ -13,6 +13,14 @@ trust_level: 8
 license: "CC0-1.0"
 enabled: true
 max_pages: 3
+# All Gardiner Museum events take place at the Gardiner Museum itself.
+default_location:
+  name: "Gardiner Museum"
+  street_address: "111 Queens Park"
+  address_locality: "Toronto"
+  address_region: "ON"
+  postal_code: "M5S 2C7"
+  address_country: "CA"
 selectors:
   event_list: "article[role=item]"
   name: ".article-title h3"

@@ -8,3 +8,11 @@ license: "CC0-1.0"
 enabled: true
 max_pages: 3
 follow_event_urls: true
+# All events are at the Toronto Botanical Garden.
+default_location:
+  name: "Toronto Botanical Garden"
+  street_address: "777 Lawrence Ave E"
+  address_locality: "Toronto"
+  address_region: "ON"
+  postal_code: "M3C 1P2"
+  address_country: "CA"

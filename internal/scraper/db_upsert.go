@@ -69,6 +69,15 @@ func SourceConfigToUpsertParams(cfg SourceConfig) (domainScraper.UpsertParams, e
 		}
 	}
 
+	var defaultLocationJSON []byte
+	if cfg.DefaultLocation != nil {
+		var encErr error
+		defaultLocationJSON, encErr = json.Marshal(cfg.DefaultLocation)
+		if encErr != nil {
+			return domainScraper.UpsertParams{}, fmt.Errorf("encode default location: %w", encErr)
+		}
+	}
+
 	iframeJSON, err := marshalJSON(cfg.Headless.Iframe)
 	if err != nil {
 		return domainScraper.UpsertParams{}, fmt.Errorf("encode headless iframe: %w", err)
@@ -107,5 +116,6 @@ func SourceConfigToUpsertParams(cfg SourceConfig) (domainScraper.UpsertParams, e
 		GraphQLConfig:                 graphqlConfigJSON,
 		RestConfig:                    restConfigJSON,
 		SitemapConfig:                 sitemapConfigJSON,
+		DefaultLocation:               defaultLocationJSON,
 	}, nil
 }

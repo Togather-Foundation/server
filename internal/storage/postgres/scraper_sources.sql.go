@@ -29,7 +29,7 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config
+       graphql_config, rest_config, sitemap_config, default_location
   FROM scraper_sources
  WHERE id = $1
 `
@@ -67,6 +67,7 @@ type GetScraperSourceByIDRow struct {
 	GraphqlConfig                 []byte             `json:"graphql_config"`
 	RestConfig                    []byte             `json:"rest_config"`
 	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
 }
 
 // Get a single scraper source by primary key.
@@ -106,6 +107,7 @@ func (q *Queries) GetScraperSourceByID(ctx context.Context, id int64) (GetScrape
 		&i.GraphqlConfig,
 		&i.RestConfig,
 		&i.SitemapConfig,
+		&i.DefaultLocation,
 	)
 	return i, err
 }
@@ -118,7 +120,7 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config
+       graphql_config, rest_config, sitemap_config, default_location
   FROM scraper_sources
  WHERE name = $1
 `
@@ -156,6 +158,7 @@ type GetScraperSourceByNameRow struct {
 	GraphqlConfig                 []byte             `json:"graphql_config"`
 	RestConfig                    []byte             `json:"rest_config"`
 	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
 }
 
 // Get a single scraper source by unique name.
@@ -195,6 +198,7 @@ func (q *Queries) GetScraperSourceByName(ctx context.Context, name string) (GetS
 		&i.GraphqlConfig,
 		&i.RestConfig,
 		&i.SitemapConfig,
+		&i.DefaultLocation,
 	)
 	return i, err
 }
@@ -241,7 +245,7 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config
+       graphql_config, rest_config, sitemap_config, default_location
   FROM scraper_sources
  WHERE ($1::boolean IS NULL OR enabled = $1)
  ORDER BY name ASC
@@ -280,6 +284,7 @@ type ListScraperSourcesRow struct {
 	GraphqlConfig                 []byte             `json:"graphql_config"`
 	RestConfig                    []byte             `json:"rest_config"`
 	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
 }
 
 // List all scraper sources, optionally filtered by enabled flag.
@@ -325,6 +330,7 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 			&i.GraphqlConfig,
 			&i.RestConfig,
 			&i.SitemapConfig,
+			&i.DefaultLocation,
 		); err != nil {
 			return nil, err
 		}
@@ -344,7 +350,7 @@ SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license
        s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
        s.headless_headers, s.headless_rate_limit_ms,
        s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
-       s.graphql_config, s.rest_config, s.sitemap_config
+       s.graphql_config, s.rest_config, s.sitemap_config, s.default_location
   FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = $1
@@ -384,6 +390,7 @@ type ListScraperSourcesByOrgRow struct {
 	GraphqlConfig                 []byte             `json:"graphql_config"`
 	RestConfig                    []byte             `json:"rest_config"`
 	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
 }
 
 // List all scraper sources linked to a given organization.
@@ -429,6 +436,7 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 			&i.GraphqlConfig,
 			&i.RestConfig,
 			&i.SitemapConfig,
+			&i.DefaultLocation,
 		); err != nil {
 			return nil, err
 		}
@@ -448,7 +456,7 @@ SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license
        s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
        s.headless_headers, s.headless_rate_limit_ms,
        s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
-       s.graphql_config, s.rest_config, s.sitemap_config
+       s.graphql_config, s.rest_config, s.sitemap_config, s.default_location
   FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = $1
@@ -488,6 +496,7 @@ type ListScraperSourcesByPlaceRow struct {
 	GraphqlConfig                 []byte             `json:"graphql_config"`
 	RestConfig                    []byte             `json:"rest_config"`
 	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
 }
 
 // List all scraper sources linked to a given place.
@@ -533,6 +542,7 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 			&i.GraphqlConfig,
 			&i.RestConfig,
 			&i.SitemapConfig,
+			&i.DefaultLocation,
 		); err != nil {
 			return nil, err
 		}
@@ -553,7 +563,7 @@ SELECT
   s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
   s.headless_headers, s.headless_rate_limit_ms,
   s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
-  s.graphql_config, s.rest_config, s.sitemap_config,
+  s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,
@@ -608,6 +618,7 @@ type ListScraperSourcesWithLatestRunRow struct {
 	GraphqlConfig                 []byte             `json:"graphql_config"`
 	RestConfig                    []byte             `json:"rest_config"`
 	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
 	LastRunStartedAt              pgtype.Timestamptz `json:"last_run_started_at"`
 	LastRunCompletedAt            pgtype.Timestamptz `json:"last_run_completed_at"`
 	LastRunStatus                 string             `json:"last_run_status"`
@@ -664,6 +675,7 @@ func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled p
 			&i.GraphqlConfig,
 			&i.RestConfig,
 			&i.SitemapConfig,
+			&i.DefaultLocation,
 			&i.LastRunStartedAt,
 			&i.LastRunCompletedAt,
 			&i.LastRunStatus,
@@ -743,6 +755,7 @@ INSERT INTO scraper_sources (
   graphql_config,
   rest_config,
   sitemap_config,
+  default_location,
   updated_at
 ) VALUES (
   $1,
@@ -774,6 +787,7 @@ INSERT INTO scraper_sources (
   $27,
   $28,
   $29,
+  $30,
   NOW()
 )
 ON CONFLICT (name) DO UPDATE SET
@@ -804,6 +818,7 @@ ON CONFLICT (name) DO UPDATE SET
   graphql_config           = EXCLUDED.graphql_config,
   rest_config              = EXCLUDED.rest_config,
   sitemap_config           = EXCLUDED.sitemap_config,
+  default_location         = EXCLUDED.default_location,
   updated_at               = NOW()
 RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
@@ -812,7 +827,7 @@ RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
           headless_headers, headless_rate_limit_ms,
           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-          graphql_config, rest_config, sitemap_config
+          graphql_config, rest_config, sitemap_config, default_location
 `
 
 type UpsertScraperSourceParams struct {
@@ -845,6 +860,7 @@ type UpsertScraperSourceParams struct {
 	GraphqlConfig                 []byte             `json:"graphql_config"`
 	RestConfig                    []byte             `json:"rest_config"`
 	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
 }
 
 type UpsertScraperSourceRow struct {
@@ -880,6 +896,7 @@ type UpsertScraperSourceRow struct {
 	GraphqlConfig                 []byte             `json:"graphql_config"`
 	RestConfig                    []byte             `json:"rest_config"`
 	SitemapConfig                 []byte             `json:"sitemap_config"`
+	DefaultLocation               []byte             `json:"default_location"`
 }
 
 // SQLc queries for scraper_sources and linkage tables.
@@ -915,6 +932,7 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		arg.GraphqlConfig,
 		arg.RestConfig,
 		arg.SitemapConfig,
+		arg.DefaultLocation,
 	)
 	var i UpsertScraperSourceRow
 	err := row.Scan(
@@ -950,6 +968,7 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		&i.GraphqlConfig,
 		&i.RestConfig,
 		&i.SitemapConfig,
+		&i.DefaultLocation,
 	)
 	return i, err
 }
