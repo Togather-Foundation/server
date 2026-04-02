@@ -312,6 +312,55 @@ func TestAssembleDateTimeParts(t *testing.T) {
 	}
 }
 
+// ── applyTimezoneToPartialISO8601 ─────────────────────────────────────
+
+func TestApplyTimezoneToPartialISO8601(t *testing.T) {
+	t.Parallel()
+
+	tz := "America/Toronto"
+
+	tests := []struct {
+		name       string
+		s          string
+		wantPrefix string // prefix to match (timezone suffix varies with DST)
+	}{
+		{
+			name:       "date-only",
+			s:          "2026-03-05",
+			wantPrefix: "2026-03-05T00:00:00-",
+		},
+		{
+			name:       "datetime no seconds",
+			s:          "2026-03-05T19:00",
+			wantPrefix: "2026-03-05T19:00:00-",
+		},
+		{
+			name:       "datetime with seconds",
+			s:          "2026-03-05T19:00:00",
+			wantPrefix: "2026-03-05T19:00:00-",
+		},
+		{
+			name:       "summer datetime (EDT -04:00)",
+			s:          "2026-07-15T20:00:00",
+			wantPrefix: "2026-07-15T20:00:00-",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := applyTimezoneToPartialISO8601(tc.s, tz)
+			// Must be valid RFC 3339.
+			if _, err := time.Parse(time.RFC3339, got); err != nil {
+				t.Errorf("applyTimezoneToPartialISO8601(%q) = %q, not valid RFC 3339: %v", tc.s, got, err)
+			}
+			if !hasPrefix(got, tc.wantPrefix) {
+				t.Errorf("applyTimezoneToPartialISO8601(%q) = %q, want prefix %q", tc.s, got, tc.wantPrefix)
+			}
+		})
+	}
+}
+
 // ── normalizeDateToRFC3339 ────────────────────────────────────────────
 
 func TestNormalizeDateToRFC3339(t *testing.T) {
@@ -326,8 +375,9 @@ func TestNormalizeDateToRFC3339(t *testing.T) {
 	}{
 		{"RFC 3339 passthrough", "2026-03-05T21:30:00Z", "2026-03-05T21:30:00Z"},
 		{"RFC 3339 with offset", "2026-03-05T21:30:00-05:00", "2026-03-05T21:30:00-05:00"},
-		{"partial ISO date passthrough", "2026-03-05", "2026-03-05"},
-		{"partial ISO datetime passthrough", "2026-03-05T19:00:00", "2026-03-05T19:00:00"},
+		// Partial ISO 8601 inputs now get timezone applied to produce full RFC 3339.
+		{"partial ISO date", "2026-03-05", "2026-03-05T00:00:00-"},
+		{"partial ISO datetime", "2026-03-05T19:00:00", "2026-03-05T19:00:00-"},
 		{"human date", "Thu 5th March 9:30 PM", "2026-03-05T21:30:00-"},
 		{"empty", "", ""},
 	}
@@ -336,12 +386,12 @@ func TestNormalizeDateToRFC3339(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := normalizeDateToRFC3339(tc.s, tz)
-			// For passthrough cases, exact match. For fuzzy, prefix match.
-			if isPartialISO8601(tc.s) || tc.s == "" {
+			// Exact match for RFC 3339 passthroughs; prefix match for all others.
+			if _, err := time.Parse(time.RFC3339, tc.s); err == nil {
 				if got != tc.want {
 					t.Errorf("normalizeDateToRFC3339(%q) = %q, want %q", tc.s, got, tc.want)
 				}
-			} else if _, err := time.Parse(time.RFC3339, tc.s); err == nil {
+			} else if tc.s == "" {
 				if got != tc.want {
 					t.Errorf("normalizeDateToRFC3339(%q) = %q, want %q", tc.s, got, tc.want)
 				}
@@ -377,22 +427,23 @@ func TestNormalizeStartDate(t *testing.T) {
 			wantStart: "2026-03-05T21:30:00-",
 		},
 		{
-			name: "partial ISO StartDate passthrough",
+			name: "partial ISO StartDate gets timezone applied",
 			raw: RawEvent{
 				Name:      "Test Event",
 				StartDate: "2026-05-10T19:00:00",
 				EndDate:   "2026-05-10T21:00:00",
 			},
-			wantStart: "2026-05-10T19:00:00",
-			wantEnd:   "2026-05-10T21:00:00",
+			// Now produces full RFC 3339 with timezone offset.
+			wantStart: "2026-05-10T19:00:00-",
+			wantEnd:   "2026-05-10T21:00:00-",
 		},
 		{
-			name: "date-only passthrough",
+			name: "date-only gets timezone applied",
 			raw: RawEvent{
 				Name:      "Concert",
 				StartDate: "2026-06-01",
 			},
-			wantStart: "2026-06-01",
+			wantStart: "2026-06-01T00:00:00-",
 		},
 		{
 			name: "human-readable StartDate",
@@ -433,21 +484,12 @@ func TestNormalizeStartDate(t *testing.T) {
 				return
 			}
 
-			if isPartialISO8601(tc.wantStart) {
-				// Exact match for passthrough.
-				if start != tc.wantStart {
-					t.Errorf("start = %q, want %q", start, tc.wantStart)
-				}
-			} else if !hasPrefix(start, tc.wantStart) {
+			if !hasPrefix(start, tc.wantStart) {
 				t.Errorf("start = %q, want prefix %q", start, tc.wantStart)
 			}
 
 			if tc.wantEnd != "" {
-				if isPartialISO8601(tc.wantEnd) {
-					if end != tc.wantEnd {
-						t.Errorf("end = %q, want %q", end, tc.wantEnd)
-					}
-				} else if !hasPrefix(end, tc.wantEnd) {
+				if !hasPrefix(end, tc.wantEnd) {
 					t.Errorf("end = %q, want prefix %q", end, tc.wantEnd)
 				}
 			}

@@ -84,7 +84,7 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		MultiSessionDurationThreshold: multiSessionThreshold,
 		Source: &events.SourceInput{
 			URL:     source.URL,
-			EventID: extractEventID(raw),
+			EventID: eventIDForJSONLD(raw, urlStr, source.URL),
 			Name:    source.Name,
 			License: source.License,
 		},
@@ -324,6 +324,20 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig) (events.EventI
 	}
 
 	return input, nil
+}
+
+// eventIDForJSONLD returns a stable dedup key for a JSON-LD event.
+// Priority: @id (via extractEventID) → json-ld url field → page URL (source.URL fallback).
+// The page URL is always set for sitemap sources (clone.URL = pageURL) and
+// serves as a valid stable dedup key when no schema.org identifier is present.
+func eventIDForJSONLD(raw json.RawMessage, urlStr, pageURL string) string {
+	if id := extractEventID(raw); id != "" {
+		return id
+	}
+	if urlStr != "" {
+		return urlStr
+	}
+	return pageURL
 }
 
 // eventIDFromRaw returns a stable dedup key for a Tier 1 scraped event.

@@ -583,6 +583,28 @@ func TestNormalizeJSONLDEvent(t *testing.T) {
 			},
 		},
 		{
+			name: "event ID falls back to source.URL when no @id or url field",
+			raw: `{
+				"@type": "Event",
+				"name": "Second City Show",
+				"startDate": "2026-05-01T19:30:00"
+			}`,
+			source: SourceConfig{
+				Name:    "second-city-toronto",
+				URL:     "https://secondcity.com/shows/toronto/the-show",
+				License: "CC0-1.0",
+			},
+			check: func(t *testing.T, got events.EventInput) {
+				t.Helper()
+				if got.Source == nil {
+					t.Fatal("Source is nil")
+				}
+				if got.Source.EventID != "https://secondcity.com/shows/toronto/the-show" {
+					t.Errorf("Source.EventID = %q, want source.URL fallback", got.Source.EventID)
+				}
+			},
+		},
+		{
 			name: "image as ImageObject with contentUrl",
 			raw: `{
 				"@type": "Event",
@@ -884,11 +906,12 @@ func TestNormalizeRawEvent(t *testing.T) {
 				if got.Type != "Event" {
 					t.Errorf("Type = %q, want Event", got.Type)
 				}
-				if got.StartDate != "2026-05-10T19:00:00" {
-					t.Errorf("StartDate = %q", got.StartDate)
+				// Partial ISO 8601 inputs now get timezone applied; check prefix only.
+				if !hasPrefix(got.StartDate, "2026-05-10T19:00:00-") {
+					t.Errorf("StartDate = %q, want prefix 2026-05-10T19:00:00-", got.StartDate)
 				}
-				if got.EndDate != "2026-05-10T21:00:00" {
-					t.Errorf("EndDate = %q", got.EndDate)
+				if !hasPrefix(got.EndDate, "2026-05-10T21:00:00-") {
+					t.Errorf("EndDate = %q, want prefix 2026-05-10T21:00:00-", got.EndDate)
 				}
 				if got.Description != "An award-winning documentary" {
 					t.Errorf("Description = %q", got.Description)
@@ -1148,6 +1171,58 @@ func TestExtractEventID(t *testing.T) {
 			got := extractEventID(json.RawMessage(tc.raw))
 			if got != tc.want {
 				t.Errorf("extractEventID = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEventIDForJSONLD tests the eventIDForJSONLD fallback chain.
+func TestEventIDForJSONLD(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		raw     string
+		urlStr  string
+		pageURL string
+		want    string
+	}{
+		{
+			name:    "@id wins over urlStr and pageURL",
+			raw:     `{"@id":"https://ex.com/1","url":"https://ex.com/url"}`,
+			urlStr:  "https://ex.com/url",
+			pageURL: "https://ex.com/page",
+			want:    "https://ex.com/1",
+		},
+		{
+			name:    "falls back to urlStr when no @id",
+			raw:     `{"name":"Concert"}`,
+			urlStr:  "https://ex.com/url",
+			pageURL: "https://ex.com/page",
+			want:    "https://ex.com/url",
+		},
+		{
+			name:    "falls back to pageURL when no @id or urlStr",
+			raw:     `{"name":"Concert"}`,
+			urlStr:  "",
+			pageURL: "https://ex.com/page",
+			want:    "https://ex.com/page",
+		},
+		{
+			name:    "all empty returns empty",
+			raw:     `{}`,
+			urlStr:  "",
+			pageURL: "",
+			want:    "",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := eventIDForJSONLD(json.RawMessage(tc.raw), tc.urlStr, tc.pageURL)
+			if got != tc.want {
+				t.Errorf("eventIDForJSONLD = %q, want %q", got, tc.want)
 			}
 		})
 	}

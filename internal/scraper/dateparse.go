@@ -55,9 +55,11 @@ func assembleDateTimeParts(parts []string, timezone string) (startDate, endDate 
 			return strings.TrimSpace(part), ""
 		}
 
-		// Partial ISO 8601 passthrough (e.g. "2026-03-05T19:00:00", "2026-03-05").
+		// Partial ISO 8601 (e.g. "2026-03-05T19:00:00", "2026-03-05"):
+		// apply the source timezone to produce a full RFC 3339 string.
+		// Passing through bare would fail RFC 3339 validation downstream.
 		if isPartialISO8601(strings.TrimSpace(part)) {
-			return strings.TrimSpace(part), ""
+			return applyTimezoneToPartialISO8601(strings.TrimSpace(part), timezone), ""
 		}
 
 		// Try splitting date ranges ("Feb 3 - Mar 8, 2026", "March 5-7").
@@ -418,16 +420,16 @@ func normalizeWhitespace(s string) string {
 
 // normalizeDateToRFC3339 attempts to convert a human-readable date/time
 // string into RFC 3339 format. If the input is already valid RFC 3339, it
-// is returned as-is. Also handles common ISO 8601 variants that lack a
-// timezone suffix by appending the source timezone.
+// is returned as-is. Partial ISO 8601 strings (no timezone suffix) are
+// converted to full RFC 3339 by applying the source timezone.
 //
 // Examples:
 //
 //	"Thu 5th March 9:30 PM"      → "2026-03-05T21:30:00-05:00"
 //	"March 5, 2026"              → "2026-03-05T00:00:00-05:00"
 //	"2026-03-05T21:30:00Z"       → "2026-03-05T21:30:00Z" (passthrough)
-//	"2026-03-05T21:30:00"        → "2026-03-05T21:30:00" (passthrough, no tz appended)
-//	"2026-03-05"                 → "2026-03-05" (passthrough)
+//	"2026-03-05T21:30:00"        → "2026-03-05T21:30:00-05:00" (tz applied)
+//	"2026-03-05"                 → "2026-03-05T00:00:00-05:00" (tz applied)
 func normalizeDateToRFC3339(s string, timezone string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -439,14 +441,47 @@ func normalizeDateToRFC3339(s string, timezone string) string {
 	}
 
 	// ISO 8601 without timezone (e.g. "2026-03-05T19:00:00" or "2026-03-05")?
-	// Pass through as-is — the downstream pipeline already handles these.
+	// Apply the source timezone to produce a full RFC 3339 string — the
+	// downstream validation layer requires RFC 3339 with timezone.
 	if isPartialISO8601(s) {
-		return s
+		return applyTimezoneToPartialISO8601(s, timezone)
 	}
 
 	// Try to parse as combined date+time text.
 	result, _ := assembleDateTimeParts([]string{s}, timezone)
 	return result
+}
+
+// applyTimezoneToPartialISO8601 converts a partial ISO 8601 date or datetime
+// string (no timezone suffix) to a full RFC 3339 string by interpreting it in
+// the given IANA timezone. If timezone is empty, UTC is assumed.
+//
+// Examples (timezone = "America/Toronto"):
+//
+//	"2026-03-05"             → "2026-03-05T00:00:00-05:00"
+//	"2026-03-05T19:00:00"    → "2026-03-05T19:00:00-04:00" (EDT)
+//	"2026-03-05T19:00"       → "2026-03-05T19:00:00-05:00" (EST)
+func applyTimezoneToPartialISO8601(s string, timezone string) string {
+	loc := loadTimezone(timezone)
+
+	var t time.Time
+	var err error
+
+	switch len(s) {
+	case 10: // "2026-03-05"
+		t, err = time.ParseInLocation("2006-01-02", s, loc)
+	case 16: // "2026-03-05T19:00"
+		t, err = time.ParseInLocation("2006-01-02T15:04", s, loc)
+	case 19: // "2026-03-05T19:00:00"
+		t, err = time.ParseInLocation("2006-01-02T15:04:05", s, loc)
+	default:
+		return s // unexpected length; return unchanged
+	}
+
+	if err != nil {
+		return s // parse failed; return unchanged
+	}
+	return t.Format(time.RFC3339)
 }
 
 // combineAndNormalizeDateParts is called from NormalizeRawEvent when
