@@ -10,7 +10,7 @@ license: "CC0-1.0"
 enabled: true
 graphql:
   endpoint: "https://graphql.datocms.com/"
-  token: "553eb2d73268311308d1647a8ff60b"
+  token: "045a924c6d43923a1572e41cb866b0"
   query: |
     {
       allEvents {

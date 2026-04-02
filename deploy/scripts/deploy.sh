@@ -2192,10 +2192,12 @@ mint_agent_key() {
     # ------------------------------------------------------------------ #
     # 1. Admin JWT token (derived locally from remote JWT_SECRET)
     # ------------------------------------------------------------------ #
-    local jwt_secret admin_token=""
-    jwt_secret=$(ssh "${remote_host}" \
-        "grep '^JWT_SECRET=' /opt/togather/.env 2>/dev/null | head -1 | cut -d= -f2-" \
-        2>/dev/null | tr -d '\r\n')
+     # Try .env.<env> first (environment-specific, matches what the container loads),
+     # then fall back to the shared /opt/togather/.env.
+     local jwt_secret admin_token=""
+     jwt_secret=$(ssh "${remote_host}" \
+         "grep '^JWT_SECRET=' /opt/togather/.env.${env} /opt/togather/.env 2>/dev/null | head -1 | cut -d= -f2-" \
+         2>/dev/null | tr -d '\r\n')
 
     if [[ -z "${jwt_secret}" ]]; then
         log "WARN" "Could not read JWT_SECRET from remote — admin token will be empty"
