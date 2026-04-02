@@ -573,7 +573,7 @@
                 '<div class="col"><strong>Event Failures (' + run.event_failures.length + '):</strong></div></div>' +
                 '<div class="mt-1" style="max-height:200px;overflow-y:auto;border:1px solid var(--tblr-border-color,#e6e7e9);border-radius:4px;">' +
                 '<table class="table table-sm table-vcenter mb-0" style="table-layout:fixed;width:100%">' +
-                '<colgroup><col style="width:40px"><col style="width:45%"><col></colgroup>' +
+                '<colgroup><col style="width:5%"><col style="width:47.5%"><col style="width:47.5%"></colgroup>' +
                 '<thead><tr>' +
                 '<th class="small">#</th>' +
                 '<th class="small">URL</th>' +
@@ -581,13 +581,13 @@
                 '</tr></thead><tbody>';
             run.event_failures.forEach(function (f) {
                 html += '<tr>' +
-                    '<td class="text-muted small">' + escapeHtml(String(f.index)) + '</td>' +
-                    '<td class="small" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+                    '<td class="text-muted small" style="overflow:hidden;white-space:nowrap;">' + escapeHtml(String(f.index)) + '</td>' +
+                    '<td class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
                         (f.url
                             ? '<a href="' + escapeHtml(f.url) + '" target="_blank" rel="noopener noreferrer">' + escapeHtml(f.url) + '</a>'
                             : '<span class="text-muted">—</span>') +
                     '</td>' +
-                    '<td class="small font-monospace" style="word-break:break-word;">' + escapeHtml(f.message) + '</td>' +
+                    '<td class="small font-monospace" style="overflow:hidden;word-break:break-word;">' + escapeHtml(f.message) + '</td>' +
                     '</tr>';
             });
             html += '</tbody></table></div>';
@@ -631,13 +631,14 @@
                 if (hasFailures) {
                     detailHtml += '<div class="small mb-1"><strong>Event Failures (' + run.event_failures.length + '):</strong></div>' +
                         '<div style="max-height:200px;overflow-y:auto;">' +
-                        '<table class="table table-sm table-vcenter mb-0">' +
+                        '<table class="table table-sm table-vcenter mb-0" style="table-layout:fixed;width:100%">' +
+                        '<colgroup><col style="width:5%"><col style="width:47.5%"><col style="width:47.5%"></colgroup>' +
                         '<thead><tr><th class="small">#</th><th class="small">URL</th><th class="small">Error</th></tr></thead><tbody>';
                     run.event_failures.forEach(function (f) {
                         detailHtml += '<tr>' +
-                            '<td class="small text-muted">' + escapeHtml(String(f.index)) + '</td>' +
-                            '<td class="small font-monospace">' + (f.url ? escapeHtml(f.url) : '<span class="text-muted">—</span>') + '</td>' +
-                            '<td class="small text-danger">' + escapeHtml(f.message) + '</td>' +
+                            '<td class="small text-muted" style="overflow:hidden;white-space:nowrap;">' + escapeHtml(String(f.index)) + '</td>' +
+                            '<td class="small font-monospace" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (f.url ? escapeHtml(f.url) : '<span class="text-muted">—</span>') + '</td>' +
+                            '<td class="small text-danger" style="overflow:hidden;word-break:break-word;">' + escapeHtml(f.message) + '</td>' +
                             '</tr>';
                     });
                     detailHtml += '</tbody></table></div>';
