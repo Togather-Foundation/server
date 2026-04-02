@@ -572,9 +572,10 @@
             html += '<div class="row small mt-2">' +
                 '<div class="col"><strong>Event Failures (' + run.event_failures.length + '):</strong></div></div>' +
                 '<div class="mt-1" style="max-height:200px;overflow-y:auto;border:1px solid var(--tblr-border-color,#e6e7e9);border-radius:4px;">' +
-                '<table class="table table-sm table-vcenter mb-0">' +
+                '<table class="table table-sm table-vcenter mb-0" style="table-layout:fixed;width:100%">' +
+                '<colgroup><col style="width:40px"><col style="width:45%"><col></colgroup>' +
                 '<thead><tr>' +
-                '<th class="small" style="width:40px">#</th>' +
+                '<th class="small">#</th>' +
                 '<th class="small">URL</th>' +
                 '<th class="small">Reason</th>' +
                 '</tr></thead><tbody>';
