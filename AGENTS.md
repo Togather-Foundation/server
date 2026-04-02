@@ -50,6 +50,43 @@ make build
 
 **Always wrap build/test/lint/long output commands with `scripts/agent-run.sh`** — captures verbose output to `.agent-output/`, shows only summary. Alternatively: `AGENT=1 make test`.
 
+## Admin API Access
+
+After every successful `deploy.sh staging` run, credentials are automatically written to `.agent-keys/staging` (gitignored, chmod 600). Source it to get all keys:
+
+```bash
+source .agent-keys/staging
+# Provides:
+#   TOGATHER_BASE_URL       - e.g. https://staging.toronto.togather.foundation
+#   TOGATHER_ADMIN_TOKEN    - 8h JWT for admin routes (/api/v1/admin/...)
+#   TOGATHER_AGENT_API_KEY  - DB-backed agent key for public/agent routes
+
+# Admin API example
+curl -H "Authorization: Bearer $TOGATHER_ADMIN_TOKEN" \
+  "$TOGATHER_BASE_URL/api/v1/admin/scraper/diagnostics"
+
+# Agent API example
+curl -H "Authorization: Bearer $TOGATHER_AGENT_API_KEY" \
+  "$TOGATHER_BASE_URL/api/v1/events"
+```
+
+**Refreshing an expired admin token** (no deploy needed, just needs JWT_SECRET):
+
+```bash
+# From local .env
+server admin-token --duration 8h
+
+# From a specific secret
+JWT_SECRET=<value> server admin-token --duration 8h
+```
+
+**Creating a new agent API key manually** (if `.agent-keys` is missing or stale):
+
+```bash
+# On staging
+ssh togather "docker exec togather-server-blue /app/server api-key create my-key --role agent"
+```
+
 ## Repo-Specific Constraints
 
 **API changes — update the spec:**

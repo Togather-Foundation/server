@@ -2140,12 +2140,147 @@ REMOTE_EOF
     
     if ssh -t "${remote_host}" "${remote_cmd}"; then
         log "SUCCESS" "Remote deployment completed successfully"
+        # After a successful remote deployment, write a short-lived admin JWT token
+        # to .agent-keys/<env> so agents can authenticate to the admin API without
+        # needing credentials or a running server binary locally.
+        mint_agent_key "${env}" "${remote_host}"
         return 0
     else
         local exit_code=$?
         log "ERROR" "Remote deployment failed (exit code: ${exit_code})"
         return 1
     fi
+}
+
+# mint_agent_key - Mints all credentials needed for agent access after a remote deployment.
+#
+# Writes a sourceable .agent-keys/<env> file containing:
+#   TOGATHER_BASE_URL  - base URL of the deployed environment
+#   TOGATHER_ADMIN_TOKEN - short-lived admin JWT (8h) for admin API routes
+#   TOGATHER_AGENT_API_KEY - long-lived DB-backed agent API key for public/agent routes
+#
+# The admin token is derived locally from JWT_SECRET (no DB needed).
+# The agent API key is created by running 'server api-key create' inside the
+# active container on the remote (requires the container to be up).
+#
+# Args:
+#   $1 - environment (e.g., "staging")
+#   $2 - remote_host (e.g., "deploy@staging.example.com")
+# Returns:
+#   0 always (non-fatal — warns on failure but does not abort deployment)
+# Side effects:
+#   - Creates .agent-keys/ directory (chmod 700)
+#   - Writes .agent-keys/<env> as a sourceable shell env file (chmod 600)
+# Usage (after deploy):
+#   source .agent-keys/staging
+#   curl -H "Authorization: Bearer $TOGATHER_ADMIN_TOKEN" "$TOGATHER_BASE_URL/api/v1/admin/..."
+#   curl -H "Authorization: Bearer $TOGATHER_AGENT_API_KEY" "$TOGATHER_BASE_URL/api/v1/events"
+mint_agent_key() {
+    local env="$1"
+    local remote_host="$2"
+    local keys_dir="${PROJECT_ROOT}/.agent-keys"
+    local keys_file="${keys_dir}/${env}"
+    local base_url="https://${NODE_DOMAIN:-${env}.togather.foundation}"
+    local generated_at
+    generated_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+    log "INFO" "Minting agent keys for ${env}..."
+
+    mkdir -p "${keys_dir}"
+    chmod 700 "${keys_dir}"
+
+    # ------------------------------------------------------------------ #
+    # 1. Admin JWT token (derived locally from remote JWT_SECRET)
+    # ------------------------------------------------------------------ #
+    local jwt_secret admin_token=""
+    jwt_secret=$(ssh "${remote_host}" \
+        "grep '^JWT_SECRET=' /opt/togather/.env 2>/dev/null | head -1 | cut -d= -f2-" \
+        2>/dev/null | tr -d '\r\n')
+
+    if [[ -z "${jwt_secret}" ]]; then
+        log "WARN" "Could not read JWT_SECRET from remote — admin token will be empty"
+        log "WARN" "Mint manually: JWT_SECRET=<value> server admin-token --duration 8h"
+    else
+        # Build server binary if needed
+        if [[ ! -f "${PROJECT_ROOT}/server" ]]; then
+            log "INFO" "Building server binary for admin-token generation..."
+            (cd "${PROJECT_ROOT}" && make build 2>/dev/null) || true
+        fi
+
+        if [[ -f "${PROJECT_ROOT}/server" ]]; then
+            admin_token=$(JWT_SECRET="${jwt_secret}" "${PROJECT_ROOT}/server" admin-token --duration 8h 2>/dev/null || true)
+        fi
+
+        if [[ -z "${admin_token}" ]]; then
+            log "WARN" "admin-token generation failed — admin token will be empty"
+        else
+            log "SUCCESS" "Admin JWT token minted (valid 8h)"
+        fi
+    fi
+
+    # ------------------------------------------------------------------ #
+    # 2. Agent API key (created inside the running container on remote)
+    # ------------------------------------------------------------------ #
+    local agent_api_key=""
+    local key_name="deploy-agent-${env}-$(date +%Y%m%d)"
+
+    # Find the active slot container on the remote
+    local active_container
+    active_container=$(ssh "${remote_host}" \
+        "docker ps --format '{{.Names}}' 2>/dev/null | grep '^togather-server-' | head -1" \
+        2>/dev/null | tr -d '\r\n')
+
+    if [[ -z "${active_container}" ]]; then
+        log "WARN" "No running togather-server container found on remote — agent API key will be empty"
+    else
+        log "INFO" "Creating agent API key in container ${active_container}..."
+        # Run server api-key create inside the container; parse the key value from output
+        local create_output
+        create_output=$(ssh "${remote_host}" \
+            "docker exec '${active_container}' /app/server api-key create '${key_name}' --role agent 2>&1" \
+            2>/dev/null || true)
+
+        # Extract the key value — output line looks like: "Key:    01ARZ3...secret"
+        agent_api_key=$(printf '%s' "${create_output}" | grep -oP '(?<=Key:\s{4})\S+' | head -1 || true)
+
+        if [[ -z "${agent_api_key}" ]]; then
+            log "WARN" "Could not parse agent API key from output — agent key will be empty"
+            log "WARN" "Raw output: ${create_output}"
+        else
+            log "SUCCESS" "Agent API key created: ${key_name}"
+        fi
+    fi
+
+    # ------------------------------------------------------------------ #
+    # 3. Write sourceable env file
+    # ------------------------------------------------------------------ #
+    cat > "${keys_file}" <<KEYS_EOF
+# Togather agent keys — ${env}
+# Generated: ${generated_at}
+# Source this file: source .agent-keys/${env}
+#
+# Usage:
+#   source .agent-keys/${env}
+#   curl -H "Authorization: Bearer \$TOGATHER_ADMIN_TOKEN" "\$TOGATHER_BASE_URL/api/v1/admin/scraper/diagnostics"
+#   curl -H "Authorization: Bearer \$TOGATHER_AGENT_API_KEY" "\$TOGATHER_BASE_URL/api/v1/events"
+#
+# Refresh admin token (8h expiry):
+#   JWT_SECRET=<value> server admin-token --duration 8h
+# Create a new agent API key:
+#   docker exec togather-server-<slot> /app/server api-key create <name> --role agent
+
+export TOGATHER_BASE_URL="${base_url}"
+export TOGATHER_ADMIN_TOKEN="${admin_token}"
+export TOGATHER_AGENT_API_KEY="${agent_api_key}"
+KEYS_EOF
+    chmod 600 "${keys_file}"
+
+    log "SUCCESS" "Agent keys written: .agent-keys/${env}"
+    log "INFO" "  BASE_URL:      ${base_url}"
+    log "INFO" "  ADMIN_TOKEN:   $([ -n "${admin_token}" ] && echo "set (8h JWT)" || echo "EMPTY — mint manually")"
+    log "INFO" "  AGENT_API_KEY: $([ -n "${agent_api_key}" ] && echo "set (${key_name})" || echo "EMPTY — create manually")"
+    log "INFO" "Usage: source .agent-keys/${env}"
+    return 0
 }
 
 # ============================================================================
