@@ -1726,9 +1726,8 @@ func TestGroupJSONLDEvents_SingleEventWithSubEvents(t *testing.T) {
 }
 
 // TestNormalizeRawEvents_AllInvalidDatesGroup verifies that when ALL rows in a
-// multi-row group have unparseable/empty dates, consolidateOccurrences returns
-// an error ("no valid dates found") and normalizeRawEvents correctly increments
-// skipped and continues to the next group.
+// multi-row group have unparseable/empty dates, consolidateOccurrences creates
+// a placeholder occurrence (recurring/ongoing event pattern).
 func TestNormalizeRawEvents_AllInvalidDatesGroup(t *testing.T) {
 	t.Parallel()
 
@@ -1736,7 +1735,7 @@ func TestNormalizeRawEvents_AllInvalidDatesGroup(t *testing.T) {
 	logger := zerolog.Nop()
 
 	raws := []RawEvent{
-		// Group 1: all rows have no valid dates → should be skipped
+		// Group 1: all rows have no valid dates → should get placeholder occurrence
 		{Name: "Bad Show", URL: "https://example.com/bad"},
 		{Name: "Bad Show", URL: "https://example.com/bad"},
 		{Name: "Bad Show", URL: "https://example.com/bad"},
@@ -1746,14 +1745,24 @@ func TestNormalizeRawEvents_AllInvalidDatesGroup(t *testing.T) {
 
 	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
 
-	if skipped != 1 {
-		t.Errorf("expected 1 skipped group (all-invalid-dates), got %d", skipped)
+	// With placeholder occurrence for recurring events, no groups are skipped
+	if skipped != 0 {
+		t.Errorf("expected 0 skipped groups (placeholder created), got %d", skipped)
 	}
-	if len(valid) != 1 {
-		t.Fatalf("expected 1 valid EventInput, got %d", len(valid))
+	// Both groups should produce valid events
+	if len(valid) != 2 {
+		t.Fatalf("expected 2 valid EventInputs, got %d", len(valid))
 	}
-	if valid[0].Name != "Good Show" {
-		t.Errorf("expected surviving event to be 'Good Show', got %q", valid[0].Name)
+	// First should be the recurring event with placeholder
+	if valid[0].Name != "Bad Show" {
+		t.Errorf("expected first event to be 'Bad Show', got %q", valid[0].Name)
+	}
+	if len(valid[0].Occurrences) != 1 {
+		t.Errorf("expected 1 placeholder occurrence for recurring event, got %d", len(valid[0].Occurrences))
+	}
+	// Second should be the valid event
+	if valid[1].Name != "Good Show" {
+		t.Errorf("expected second event to be 'Good Show', got %q", valid[1].Name)
 	}
 }
 
