@@ -1,17 +1,17 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "plugin": ["opencode-beads"],
-  "model": "openrouter/qwen3.6-plus-preview-free",
+  "model": "opencode/big-pickle",
   "agent": {
     "general": {
       "description": "General-purpose agent implementing code and executing multi-step tasks",
       "mode": "subagent",
-      "model": "openrouter/qwen3.6-plus-preview-free"
+      "model": "opencode/big-pickle"
     },
     "explore": {
       "description": "Fast agent specialized for exploring codebases",
       "mode": "subagent",
-      "model": "openrouter/qwen3.6-plus-preview-free",
+      "model": "opencode/big-pickle",
       "permission": {
         "write": "deny",
         "edit": "deny",

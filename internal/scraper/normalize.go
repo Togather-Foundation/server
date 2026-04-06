@@ -281,11 +281,21 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig) (events.EventI
 		occ := events.OccurrenceInput{
 			StartDate: startDate,
 			EndDate:   endDate,
-			// Note: Timezone, DoorTime, VenueID, and VirtualURL would need additional
-			// extraction logic if the config provided selectors for them. For now,
-			// they remain empty.
 		}
 		occurrences = append(occurrences, occ)
+	}
+
+	if len(occurrences) == 0 && len(raws) > 0 {
+		// All rows have non-parseable dates (e.g., "Every Day •Hours Vary").
+		// This is a recurring/ongoing event — create a placeholder occurrence
+		// at midnight today so it's clear this is a placeholder (not a specific time).
+		loc := loadTimezone(tz)
+		now := time.Now().In(loc)
+		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+		placeholderStart := midnight.Format(time.RFC3339)
+		occurrences = append(occurrences, events.OccurrenceInput{
+			StartDate: placeholderStart,
+		})
 	}
 
 	if len(occurrences) == 0 {
