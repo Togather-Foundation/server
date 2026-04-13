@@ -126,11 +126,12 @@ internal/
     serialize_test.go
     rrule.go                  # RRULE parsing, expansion (teambition/rrule-go)
     rrule_test.go
-    testdata/                 # ICS fixture files for testing
+    testdata/                 # ICS fixture files (15 files; see spec-phase1.md for full list)
       basic-event.ics
-      recurring-event.ics
-      multi-event-feed.ics
-      community-calendar.ics  # Real community-calendar output
+      recurring-weekly.ics
+      multi-event.ics
+      malformed.ics
+      ...
   scraper/
     ics.go                    # ICS tier implementation (fetcher + mapper wiring)
     ics_test.go
@@ -208,8 +209,7 @@ type ParsedEvent struct {
     LastMod      time.Time        // LAST-MODIFIED
     Sequence     int              // SEQUENCE (change counter)
     Status       string           // STATUS: CONFIRMED, TENTATIVE, CANCELLED
-    XSource      string           // X-SOURCE (community-calendar provenance)
-    RawProps     map[string]string // Other properties for payload preservation
+    RawProps     map[string]string // Other properties for payload preservation (incl. X-SOURCE, X-GOOGLE-*, etc.)
 }
 ```
 

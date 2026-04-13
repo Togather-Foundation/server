@@ -279,6 +279,7 @@ internal/
       outlook-vtimezone.ics     # VTIMEZONE with Windows TZID (e.g. "Eastern Standard Time")
       duration-event.ics        # VEVENT with DURATION instead of DTEND
       recurrence-id.ics         # RRULE series with RECURRENCE-ID exception override
+      empty-calendar.ics        # VCALENDAR with zero VEVENTs
   scraper/
     ics.go                      # ICS extractor (fetch + parse + map)
     ics_test.go
@@ -538,7 +539,6 @@ func (s *Scraper) scrapeICS(ctx context.Context, cfg SourceConfig, opts ScrapeOp
 
 Note: `s.icsConfig` is an `ICSConfig` field added to the `Scraper` struct, wired from
 `config.ICSConfig` at construction time. See Configuration section below.
-```
 
 #### Migration (`000042_scraper_sources_source_type.up.sql`)
 
@@ -690,10 +690,11 @@ extraction, all-day detection (VALUE=DATE), GEO parsing, CATEGORIES splitting
 preservation, ORGANIZER CN + mailto extraction, lenient skip-on-error with warnings.
 Also handle: DTEND-before-DTSTART skip, SUMMARY length truncation (500 runes),
 duplicate UID detection.
-**Test**: `parse_test.go` with 14 fixture files in `testdata/`:
+**Test**: `parse_test.go` with 15 fixture files in `testdata/`:
 - `basic-event.ics` — single VEVENT, all fields populated
 - `multi-event.ics` — 5 VEVENTs, mixed field presence
 - `recurring-weekly.ics` — VEVENT with RRULE + EXDATE
+- `recurring-monthly.ics` — VEVENT with RRULE FREQ=MONTHLY + RDATE
 - `malformed.ics` — mix of valid and invalid VEVENTs (missing SUMMARY, bad DTSTART)
 - `floating-time.ics` — DTSTART without timezone suffix or VTIMEZONE
 - `all-day.ics` — VALUE=DATE DTSTART (whole-day events)
@@ -701,10 +702,10 @@ duplicate UID detection.
 - `empty-calendar.ics` — VCALENDAR with zero VEVENTs
 - `reversed-dates.ics` — VEVENT with DTEND before DTSTART
 - `duplicate-uids.ics` — two VEVENTs with same UID, no RECURRENCE-ID
-  - `infinite-rrule.ics` — RRULE with no COUNT and no UNTIL
-  - `outlook-vtimezone.ics` — VTIMEZONE with Windows TZID ("Eastern Standard Time")
-  - `duration-event.ics` — VEVENT with DURATION instead of DTEND
-  - `recurrence-id.ics` — RRULE series with RECURRENCE-ID exception override
+- `infinite-rrule.ics` — RRULE with no COUNT and no UNTIL
+- `outlook-vtimezone.ics` — VTIMEZONE with Windows TZID ("Eastern Standard Time")
+- `duration-event.ics` — VEVENT with DURATION instead of DTEND
+- `recurrence-id.ics` — RRULE series with RECURRENCE-ID exception override
 **Acceptance**: `go test ./internal/ical/...` passes with all fixtures.
 
 ### Task 3: Implement `internal/ical/mapper.go` — VEvent → EventInput
