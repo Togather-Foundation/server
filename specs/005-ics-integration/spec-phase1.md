@@ -21,7 +21,7 @@ source type roughly doubles our Toronto source coverage.
 | `SourceConfig` struct | Production | `internal/scraper/config.go:20-86` |
 | `EventInput` struct | Production | `internal/domain/events/validation.go:44-70` |
 | `IngestService.Ingest()` | Production | `internal/domain/events/ingest.go:74-76` |
-| Dedup (SHA-256 + trigram) | Production | `internal/domain/events/ingest.go:558-580` |
+| Dedup (SHA-256 + trigram) | Production | `internal/domain/events/dedup.go` |
 | Content negotiation (JSON-LD, JSON, HTML, Turtle) | Production | `internal/api/middleware/negotiate.go:14-19` |
 | Source types (Go validation) | Production | `internal/domain/provenance/validation.go:24-29` |
 | `scraper_sources` DB table | Production | `migrations/000032_scraper_sources.up.sql` |
@@ -107,7 +107,16 @@ are returned in the `ScrapeResult` with correct field mapping.
    **Then** it returns an error wrapping the HTTP status, and no events are ingested.
 
 6. **Given** an ICS feed larger than `MaxBodyBytes` (default 10 MB), **When** the
-   fetcher reads it, **Then** it truncates the read and returns an error.
+   fetcher reads it, **Then** it detects the overflow (reads limit+1 bytes) and
+   returns an error.
+
+7. **Given** an ICS feed URL that redirects (301/302), **When** `ScrapeSource()`
+   runs, **Then** it follows up to 10 redirects (same policy as Tier 3 REST)
+   and processes the final response.
+
+8. **Given** an ICS feed URL where the server returns `Content-Type: text/html`,
+   **When** `ScrapeSource()` runs, **Then** it logs a warning about unexpected
+   Content-Type and attempts to parse anyway (the parse will fail if not ICS).
 
 ---
 
@@ -148,6 +157,10 @@ times.
 6. **Given** a non-recurring VEVENT (no RRULE), **When** the mapper processes it,
    **Then** exactly one EventInput is produced with the literal DTSTART/DTEND values.
 
+7. **Given** a VEVENT with `RRULE:FREQ=DAILY` (no COUNT, no UNTIL — infinite),
+   **When** the mapper runs with `HorizonDays=90` and `MaxOccurrences=100`, **Then**
+   it produces occurrences only within the 90-day window, capped at 100.
+
 ---
 
 ### User Story 3 — Malformed ICS Is Handled Gracefully (Priority: P1)
@@ -175,8 +188,7 @@ SUMMARY, invalid DTSTART), when the parser runs, it returns 3 valid ParsedEvents
 
 4. **Given** a VEVENT with DESCRIPTION containing `<script>alert('xss')</script>`
    and HTML tags, **When** the mapper produces an EventInput, **Then** the
-   `Description` field has all HTML tags stripped (same sanitization as existing
-   scraper normalization).
+   `Description` field has all HTML tags stripped (via `sanitize.Text()`).
 
 5. **Given** a completely empty VCALENDAR (no VEVENTs), **When** the parser processes
    it, **Then** it returns an empty `ParsedCalendar` with 0 events and no error.
@@ -184,6 +196,18 @@ SUMMARY, invalid DTSTART), when the parser runs, it returns 3 valid ParsedEvents
 6. **Given** an ICS file that is not valid iCalendar at all (e.g. plain HTML),
    **When** the parser processes it, **Then** it returns an error wrapping the
    parse failure from `arran4/golang-ical`.
+
+7. **Given** a VEVENT with DTEND before DTSTART, **When** the parser processes it,
+   **Then** it is skipped with a warning "DTEND before DTSTART (UID: ...)" and
+   processing continues with the next VEVENT.
+
+8. **Given** a VEVENT with SUMMARY longer than 500 runes, **When** the parser
+   processes it, **Then** the SUMMARY is truncated to 500 runes and a warning
+   "SUMMARY truncated" is appended.
+
+9. **Given** two VEVENTs with the same UID and no RECURRENCE-ID, **When** the parser
+   processes them, **Then** the first is kept and the second is skipped with a
+   warning "duplicate UID".
 
 ---
 
@@ -242,6 +266,9 @@ internal/
       floating-time.ics         # VEVENTs with floating (no TZ) times
       all-day.ics               # DATE-only DTSTART (all-day events)
       html-description.ics      # DESCRIPTION with HTML content
+      reversed-dates.ics        # VEVENT with DTEND before DTSTART
+      duplicate-uids.ics        # Two VEVENTs with same UID, no RECURRENCE-ID
+      infinite-rrule.ics        # RRULE with no COUNT and no UNTIL
   scraper/
     ics.go                      # ICS extractor (fetch + parse + map)
     ics_test.go
@@ -411,7 +438,8 @@ type ICSExtractor struct {
     maxBodyBytes int64 // Default: 10 * 1024 * 1024 (10 MB)
 }
 
-// NewICSExtractor creates an ICS extractor using the provided HTTP client.
+// NewICSExtractor creates an ICS extractor with the given HTTP client.
+// maxBodyBytes defaults to 10 MB if <= 0.
 func NewICSExtractor(client *http.Client, maxBodyBytes int64) *ICSExtractor
 
 // Extract fetches the ICS feed and returns EventInputs.
@@ -421,12 +449,14 @@ func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig) ([]events.
 
 Implementation:
 1. `http.NewRequestWithContext(ctx, "GET", url, nil)` with `Accept: text/calendar`
-2. Read response body up to `maxBodyBytes` via `io.LimitReader`
-3. `ical.Parse(body)` → `ParsedCalendar`
-4. Build `MapperOptions` from `cfg` (SourceURL, SourceName, TrustLevel, License,
+2. Check response Content-Type: if `text/html`, log warning (likely error page)
+3. Read response body up to `maxBodyBytes + 1` via `io.LimitReader`; if all bytes
+   consumed, return body-too-large error (overflow detection)
+4. `ical.Parse(body)` → `ParsedCalendar`
+5. Build `MapperOptions` from `cfg` (SourceURL, SourceName, TrustLevel, License,
    Timezone, DefaultLocation)
-5. `ical.MapToEventInputs(cal, opts)` → `[]EventInput`
-6. Return events + collected warnings
+6. `ical.MapToEventInputs(cal, opts)` → `[]EventInput`
+7. Return events + collected warnings
 
 #### SourceConfig Changes (`internal/scraper/config.go`)
 
@@ -462,7 +492,7 @@ func (s *Scraper) scrapeICS(ctx context.Context, cfg SourceConfig, opts ScrapeOp
     }
 
     return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
-        extractor := NewICSExtractor(opts.HTTPClient(fetchTimeout))
+        extractor := NewICSExtractor(opts.HTTPClient(fetchTimeout), s.icsConfig.MaxBodyBytes)
         inputs, warnings, err := extractor.Extract(ctx, cfg)
         if err != nil {
             return 0, nil, nil, err
@@ -470,6 +500,10 @@ func (s *Scraper) scrapeICS(ctx context.Context, cfg SourceConfig, opts ScrapeOp
         return len(inputs), inputs, warnings, nil
     }), nil
 }
+```
+
+Note: `s.icsConfig` is an `ICSConfig` field added to the `Scraper` struct, wired from
+`config.ICSConfig` at construction time. See Configuration section below.
 ```
 
 #### Migration (`000042_scraper_sources_source_type.up.sql`)
@@ -491,16 +525,66 @@ ALTER TABLE scraper_sources DROP COLUMN source_type;
 
 ### Error Handling
 
+#### HTTP Fetch Errors
+
 | Error Condition | Behavior |
 |---|---|
-| HTTP fetch fails (network, timeout) | Return `fmt.Errorf("ics fetch %s: %w", url, err)` |
-| HTTP non-200 status | Return `fmt.Errorf("ics fetch %s: HTTP %d", url, status)` |
-| Body exceeds MaxBodyBytes | Return `fmt.Errorf("ics fetch %s: body exceeds %d bytes", url, max)` |
-| VCALENDAR unparseable | Return `fmt.Errorf("ics parse: %w", err)` |
-| Individual VEVENT malformed | Skip + append warning, continue |
-| RRULE unparseable | Skip recurrence, treat as single event + warning |
-| All VEVENTs skipped | Return empty result (not error), log warning |
+| Network error (DNS, TLS, connection refused) | Return `fmt.Errorf("ics fetch %s: %w", url, err)` |
+| HTTP timeout / context cancelled | Return `fmt.Errorf("ics fetch %s: %w", url, ctx.Err())` |
+| HTTP redirect | Follow up to 10 redirects (same policy as Tier 3 REST — `limitRedirects(10)` in `internal/scraper/rest.go:59`). ICS feeds legitimately redirect (Meetup 301→canonical). |
+| HTTP 404 | Return `fmt.Errorf("ics fetch %s: HTTP 404 (source not found)", url)` |
+| HTTP 5xx | Return `fmt.Errorf("ics fetch %s: HTTP %d (server error)", url, status)` |
+| HTTP 204 No Content | Return empty result (0 events), no error |
+| Other HTTP non-2xx | Return `fmt.Errorf("ics fetch %s: HTTP %d", url, status)` |
+| Body exceeds MaxBodyBytes | Read `MaxBodyBytes + 1` via `io.LimitReader`; if full buffer is consumed, return `fmt.Errorf("ics fetch %s: body exceeds %d bytes", url, max)`. This detects overflow vs exact fit. |
+| Response Content-Type is `text/html` | Log warning "expected text/calendar, got text/html — likely error page". Attempt parse anyway (some servers misreport Content-Type). If parse fails, the VCALENDAR unparseable error fires. |
+
+#### Parse Errors
+
+| Error Condition | Behavior |
+|---|---|
+| VCALENDAR unparseable (not valid iCal) | Return `fmt.Errorf("ics parse: %w", err)` |
+| Empty VCALENDAR (0 VEVENTs) | Return empty `ParsedCalendar` with 0 events, no error |
+| VEVENT missing SUMMARY | Skip + warning "missing SUMMARY (UID: %s)" |
+| VEVENT with unparseable DTSTART | Skip + warning "unparseable DTSTART (UID: %s)" |
+| VEVENT with DTSTART but no DTEND/DURATION | Accept: set End = Start (zero-duration, per RFC 5545 default) |
+| VEVENT with DTEND before DTSTART | Skip + warning "DTEND before DTSTART (UID: %s)" |
 | VEVENT with STATUS=CANCELLED | Skip silently (not a warning) |
+| Duplicate UIDs in feed | Accept both — each UID+RECURRENCE-ID pair is unique per RFC 5545. If same UID appears without RECURRENCE-ID, keep first, skip subsequent + warning. |
+| SUMMARY exceeds 500 runes | Truncate to 500 runes + warning "SUMMARY truncated" |
+| DESCRIPTION exceeds 100 KB | Truncate to 100 KB + warning "DESCRIPTION truncated" |
+| Non-UTF-8 encoding | `arran4/golang-ical` handles raw bytes; Go strings are UTF-8. Invalid byte sequences survive as replacement characters (U+FFFD). Log warning if detected. |
+
+#### RRULE Expansion Errors
+
+| Error Condition | Behavior |
+|---|---|
+| Unparseable RRULE string | Skip recurrence, treat as single non-recurring event + warning |
+| RRULE with no COUNT and no UNTIL | Expand within `HorizonDays` window only (implicit UNTIL = now + HorizonDays). The `MaxOccurrences` cap is a secondary safety limit. |
+| RRULE COUNT > MaxOccurrences | Expand up to MaxOccurrences, stop, append warning "RRULE capped at %d occurrences" |
+| All occurrences in the past (before now) | Return 0 occurrences for this event. Not an error — event series has ended. |
+| All occurrences excluded by EXDATE | Return 0 occurrences. Not an error — append warning for visibility. |
+| RRULE timezone mismatch with DTSTART | Use DTSTART's timezone for expansion (RRULE inherits DTSTART's TZ per RFC 5545). |
+
+#### Mapper Errors
+
+| Error Condition | Behavior |
+|---|---|
+| GEO with invalid format (not `lat;lon`) | Skip GEO data (leave Location coordinates zero), append warning |
+| GEO with out-of-range values (lat > 90, lon > 180) | Skip GEO data, append warning |
+| URL with non-http(s) scheme (webcal://, ftp://) | Skip URL field, append warning |
+| CATEGORIES with empty values after split | Filter out empty strings before assigning to Keywords |
+| ORGANIZER without CN param or mailto | Set Organizer.Name to raw ORGANIZER value (may be empty string) |
+| All VEVENTs skipped (none valid) | Return empty result (not error), log warning |
+
+#### Integration Errors
+
+| Error Condition | Behavior |
+|---|---|
+| Ingest rejects all events (validation) | `runWithTracking` records EventsFailed = N, IngestErrors populated. Not a scraper error — individual ingest rejections are logged per-event. |
+| All events deduped | Success result with EventsDuplicate = N, EventsCreated = 0. Not an error. |
+| Context cancelled mid-processing | `runWithTracking` returns partial result with error. Partially ingested events remain in DB (ingest is per-event, not transactional). |
+| source_type YAML/DB mismatch | DB value takes precedence (DB-first config loading). YAML `source_type` is synced to DB via `server scrape sync`. If DB says `ics` but YAML says `scraper`, DB wins at runtime. `server scrape sync` overwrites DB with YAML. |
 
 ### Security Model
 
@@ -509,17 +593,21 @@ untrusted input from external servers.
 
 **Input sanitization**:
 - DESCRIPTION: strip HTML tags via `sanitize.Text()` (`internal/sanitize` package)
-- URL/Source URLs: validate http(s) scheme
+- SUMMARY: strip HTML via `sanitize.Text()`, truncate to 500 runes
+- DESCRIPTION size: truncate to 100 KB before sanitization
+- URL/Source URLs: validate http(s) scheme, reject others
 - ATTACH properties: ignored entirely (no external fetches)
-- Body size: enforce `MaxBodyBytes` via `io.LimitReader`
+- Body size: enforce `MaxBodyBytes` via `io.LimitReader` (read limit+1 to detect overflow)
 - Property injection: `arran4/golang-ical` handles ICS escaping; we never
   concatenate raw ICS strings
 
-**Defense layers** (same as existing scraper):
-1. HTTP client: no-redirect, timeout, body size limit
-2. ICS parser: lenient mode, skip malformed events
-3. Mapper: validate required fields (summary, start date), strip HTML
-4. Ingest pipeline: existing validation, dedup, review queue (unchanged)
+**Defense layers**:
+1. HTTP client: redirect-limited (10 hops, same as Tier 3 REST), timeout, body size limit
+2. Content-Type check: warn on unexpected Content-Type (still attempt parse)
+3. ICS parser: lenient mode, skip malformed events, per-event field length limits
+4. Mapper: validate required fields (summary, start date), strip HTML, validate URLs
+5. RRULE expansion: HorizonDays window + MaxOccurrences cap (double protection)
+6. Ingest pipeline: existing validation, dedup, review queue (unchanged)
 
 ---
 
@@ -539,8 +627,9 @@ untrusted input from external servers.
 **What**: Implement `ParsedCalendar`, `ParsedEvent` structs, and `Parse()` function.
 Handle VEVENT extraction, timezone resolution (TZID parameter → `time.LoadLocation`),
 all-day detection (VALUE=DATE), GEO parsing, CATEGORIES splitting, RRULE/EXDATE/RDATE
-preservation, lenient skip-on-error with warnings.
-**Test**: `parse_test.go` with 8 fixture files in `testdata/`:
+preservation, lenient skip-on-error with warnings. Also handle: DTEND-before-DTSTART
+skip, SUMMARY length truncation (500 runes), duplicate UID detection.
+**Test**: `parse_test.go` with 11 fixture files in `testdata/`:
 - `basic-event.ics` — single VEVENT, all fields populated
 - `multi-event.ics` — 5 VEVENTs, mixed field presence
 - `recurring-weekly.ics` — VEVENT with RRULE + EXDATE
@@ -549,6 +638,9 @@ preservation, lenient skip-on-error with warnings.
 - `all-day.ics` — VALUE=DATE DTSTART (whole-day events)
 - `html-description.ics` — DESCRIPTION with HTML content
 - `empty-calendar.ics` — VCALENDAR with zero VEVENTs
+- `reversed-dates.ics` — VEVENT with DTEND before DTSTART
+- `duplicate-uids.ics` — two VEVENTs with same UID, no RECURRENCE-ID
+- `infinite-rrule.ics` — RRULE with no COUNT and no UNTIL
 **Acceptance**: `go test ./internal/ical/...` passes with all fixtures.
 
 ### Task 3: Implement `internal/ical/mapper.go` — VEvent → EventInput
@@ -558,16 +650,22 @@ preservation, lenient skip-on-error with warnings.
 Map VEVENT fields to EventInput fields per the field mapping table. Handle:
 timezone fallback for floating times, all-day event date conversion, HTML stripping
 from DESCRIPTION, GEO→Location, CATEGORIES→Keywords, UID→Source.EventID, STATUS=CANCELLED
-skip, DefaultLocation fallback, RRULE expansion via `ExpandRRule()`.
+skip, DefaultLocation fallback, RRULE expansion via `ExpandRRule()`. Also handle:
+GEO validation (lat/lon range), URL scheme validation (http(s) only), CATEGORIES
+empty-string filtering.
 **Test**: `mapper_test.go` covering:
 - Basic field mapping (SUMMARY→Name, DTSTART→StartDate, etc.)
 - Floating time with timezone fallback
 - All-day event produces date-only startDate
-- HTML stripping from description
+- HTML stripping from description (via `sanitize.Text()`)
 - GEO parsing to Location coordinates
+- GEO invalid format (not lat;lon) → skipped with warning
+- GEO out-of-range (lat > 90) → skipped with warning
 - CATEGORIES to Keywords
+- CATEGORIES with trailing comma → empty strings filtered
 - CANCELLED events skipped
 - DefaultLocation applied when LOCATION is empty
+- URL with non-http(s) scheme → skipped with warning
 - Recurring event produces multiple EventInputs
 **Acceptance**: `go test ./internal/ical/...` passes.
 
@@ -587,6 +685,8 @@ MaxOccurrences cap.
 - MaxOccurrences cap
 - HorizonDays window
 - Invalid RRULE string returns error
+- No COUNT and no UNTIL → bounded by HorizonDays
+- All occurrences in the past → returns empty slice
 - Empty RRULE returns just DTSTART
 **Acceptance**: `go test ./internal/ical/...` passes.
 
@@ -594,13 +694,17 @@ MaxOccurrences cap.
 
 **Bead**: `srv-c6hz3`
 **What**: Implement `ICSExtractor` struct with `Extract()` method. Wire HTTP fetch
-(existing scraper HTTP client), body size limit, `ical.Parse()`, `ical.MapToEventInputs()`.
-Add `scrapeICS()` method to `Scraper` struct. Wire dispatch in `ScrapeSource()` and
+using `limitRedirects(10)` (same as Tier 3 REST), body size limit with overflow
+detection (read limit+1 bytes), Content-Type warning, `ical.Parse()`,
+`ical.MapToEventInputs()`. Add `scrapeICS()` method to `Scraper` struct using the
+`runWithTracking` + `scrapeFunc` pattern. Wire dispatch in `ScrapeSource()` and
 `ScrapeAll()` — check `cfg.SourceType == "ics"` before sitemap check and tier switch.
 **Test**: `ics_test.go`:
 - Integration test: httptest server serves ICS fixture → `Extract()` returns correct
   EventInputs
 - HTTP error handling (404, timeout, body too large)
+- HTTP redirect (301 → follows to final URL)
+- Content-Type text/html → logs warning, parse fails with clear error
 - Empty feed returns empty result (no error)
 **Acceptance**: `go test ./internal/scraper/...` passes.
 

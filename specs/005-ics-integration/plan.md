@@ -219,10 +219,11 @@ type ParsedEvent struct {
 // Non-recurring events become a single EventInput.
 // Recurring events with RRULE expand occurrences within the horizon window
 // and produce one EventInput per occurrence (linked by series metadata).
-func MapToEventInputs(cal ParsedCalendar, opts MapperOptions) ([]events.EventInput, error)
+func MapToEventInputs(cal *ParsedCalendar, opts MapperOptions) ([]events.EventInput, []string, error)
 
 type MapperOptions struct {
     SourceURL       string        // Feed URL for provenance
+    SourceName      string        // Source config name (→ Source.Name)
     TrustLevel      int           // Assigned trust level
     License         string        // Default "CC0-1.0"
     Timezone        string        // Fallback timezone for floating times
@@ -259,7 +260,7 @@ type ICSExtractor struct {
 }
 
 // Extract fetches the ICS feed and returns EventInputs.
-func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig) ([]events.EventInput, error)
+func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig) ([]events.EventInput, []string, error)
 ```
 
 ### Source Type Column Addition
@@ -382,7 +383,7 @@ by community-calendar; ICS discovery patterns documented.
 
 ### Defense Layers
 
-1. HTTP client: no-redirect, timeout, body size limit (existing scraper client)
+1. HTTP client: redirect-limited (10 hops, same as Tier 3 REST), timeout, body size limit (existing scraper client)
 2. ICS parser: lenient mode, skip malformed events, count errors
 3. Mapper: validate required fields (summary, start date), reject incomplete events
 4. Ingest pipeline: existing validation, dedup, review queue (unchanged)
