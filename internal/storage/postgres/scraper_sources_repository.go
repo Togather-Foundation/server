@@ -76,6 +76,7 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		RestConfig:              params.RestConfig,
 		SitemapConfig:           params.SitemapConfig,
 		DefaultLocation:         params.DefaultLocation,
+		ExtractionMethod:        params.ExtractionMethod,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert scraper source %q: %w", params.Name, err)
@@ -263,6 +264,8 @@ func rowToSource(row ScraperSource) *scraper.Source {
 		SitemapConfig: row.SitemapConfig,
 		// Default location fallback
 		DefaultLocation: row.DefaultLocation,
+		// Extraction method
+		ExtractionMethod: row.ExtractionMethod,
 	}
 	if row.Notes.Valid {
 		s.Notes = row.Notes.String
@@ -300,7 +303,8 @@ func upsertRowToScraperSource(r UpsertScraperSourceRow) ScraperSource {
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation: r.DefaultLocation,
+		DefaultLocation:  r.DefaultLocation,
+		ExtractionMethod: r.ExtractionMethod,
 	}
 }
 
@@ -320,7 +324,8 @@ func getByNameRowToScraperSource(r GetScraperSourceByNameRow) ScraperSource {
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation: r.DefaultLocation,
+		DefaultLocation:  r.DefaultLocation,
+		ExtractionMethod: r.ExtractionMethod,
 	}
 }
 
@@ -340,7 +345,8 @@ func listRowToScraperSource(r ListScraperSourcesRow) ScraperSource {
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation: r.DefaultLocation,
+		DefaultLocation:  r.DefaultLocation,
+		ExtractionMethod: r.ExtractionMethod,
 	}
 }
 
@@ -360,7 +366,8 @@ func listByOrgRowToScraperSource(r ListScraperSourcesByOrgRow) ScraperSource {
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation: r.DefaultLocation,
+		DefaultLocation:  r.DefaultLocation,
+		ExtractionMethod: r.ExtractionMethod,
 	}
 }
 
@@ -380,6 +387,7 @@ func listByPlaceRowToScraperSource(r ListScraperSourcesByPlaceRow) ScraperSource
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation: r.DefaultLocation,
+		DefaultLocation:  r.DefaultLocation,
+		ExtractionMethod: r.ExtractionMethod,
 	}
 }

@@ -1,6 +1,6 @@
 # Plan: ICS/iCal Integration
 
-**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: Planning
+**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 1 Delivered)
 **Goal**: Make ICS (RFC 5545) a first-class ingest and output format — the SEL can
 consume ICS feeds from any source (including community-calendar) and produce
 subscribable ICS feeds that any calendar client or aggregator can consume.
@@ -33,7 +33,7 @@ fidelity with ICS sources.
 
 | Capability | Status | Location |
 |---|---|---|
-| ICS parsing | **None** | — |
+| ICS parsing | **Phase 1 Delivered** — `arran4/golang-ical` v0.3.5 | `internal/ical/parse.go` |
 | ICS serialization | **None** | — |
 | `text/calendar` content negotiation | **None** | `internal/api/middleware/negotiate.go:14-19` |
 | Scraper source types | `scraper`, `partner`, `user`, `federation` (Go); DB also allows `api`, `manual` | `internal/domain/provenance/validation.go:24-29` |
@@ -43,7 +43,8 @@ fidelity with ICS sources.
 | Content negotiation | `application/ld+json`, `application/json`, `text/html`, `text/turtle` | `internal/api/middleware/negotiate.go:14-19` |
 | Change feed | `GET /api/v1/feeds/changes` with cursor pagination | `internal/api/handlers/feeds.go:27`, `router.go:808` |
 | Scraper source configs | YAML files + `scraper_sources` DB table, `server scrape sync` | `configs/sources/*.yaml`, migration `000032` |
-| Latest migration | `000041_scraper_sources_default_location` | `internal/storage/postgres/migrations/` |
+| Latest migration | `000042_scraper_sources_extraction_method` | `internal/storage/postgres/migrations/` |
+| ICS extractor | **Phase 1 Delivered** — RRULE expansion via `teambition/rrule-go` v1.8.2 | `internal/scraper/ics.go`, `internal/ical/rrule.go` |
 | EventSeries handling in scraper | Detects `Event`/`EventSeries` in JSON-LD and unfolds `subEvent` into occurrences during normalization | `internal/scraper/jsonld.go:45,168,231,306`, `internal/scraper/normalize.go:98-161` |
 
 ## Architecture
@@ -296,7 +297,7 @@ ALTER TABLE scraper_sources
 | Phase 4 (Interop/Docs) | Phase 1-3 runtime behavior and contracts | Interop fixture corpus + validation contract, operations runbook |
 | Phase 5 (Inventory Rollout) | Phase 4 runbook + interop fixture expectations + Toronto inventory research | Cohort rollout manifest and execution/reporting contract |
 
-### Phase 1: ICS Ingest (Vertical Slice)
+### Phase 1: ICS Ingest (Vertical Slice) — **Delivered**
 
 **Goal**: `server scrape source <ics-source>` fetches an ICS feed, parses it, and
 ingests events through the existing pipeline. End-to-end from ICS URL to events in DB.
@@ -304,6 +305,8 @@ ingests events through the existing pipeline. End-to-end from ICS URL to events 
 **Entry criteria**: None (greenfield).
 **Exit criteria**: ICS source scraping works via CLI; 5+ real ICS feeds tested;
 unit tests for parser, mapper; integration test with httptest ICS server.
+**Status**: All 6 tasks completed. 7 P2 review issues fixed. See `spec-phase1.md`
+for implementation deviations.
 
 **Tasks** (6):
 1. Add `arran4/golang-ical` and `teambition/rrule-go` dependencies

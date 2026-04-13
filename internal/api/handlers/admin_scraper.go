@@ -59,6 +59,7 @@ type scraperSourceResponse struct {
 	Schedule            string     `json:"schedule"`
 	License             string     `json:"license"`
 	Enabled             bool       `json:"enabled"`
+	ExtractionMethod    string     `json:"extraction_method,omitempty"`
 	LastRunStatus       string     `json:"last_run_status,omitempty"`
 	LastRunStartedAt    *time.Time `json:"last_run_started_at,omitempty"`
 	LastRunCompletedAt  *time.Time `json:"last_run_completed_at,omitempty"`
@@ -103,6 +104,7 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 		Schedule:            row.Schedule,
 		License:             row.License,
 		Enabled:             row.Enabled,
+		ExtractionMethod:    row.ExtractionMethod,
 		LastRunStatus:       row.LastRunStatus,
 		LastRunEventsFound:  row.LastRunEventsFound,
 		LastRunEventsNew:    row.LastRunEventsNew,
@@ -126,13 +128,14 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 // scraperSourceFromSetEnabled converts a postgres.SetScraperSourceEnabledRow to a scraperSourceResponse.
 func scraperSourceFromSetEnabled(s postgres.SetScraperSourceEnabledRow) scraperSourceResponse {
 	return scraperSourceResponse{
-		ID:       s.ID,
-		Name:     s.Name,
-		URL:      s.Url,
-		Tier:     s.Tier,
-		Schedule: s.Schedule,
-		License:  s.License,
-		Enabled:  s.Enabled,
+		ID:               s.ID,
+		Name:             s.Name,
+		URL:              s.Url,
+		Tier:             s.Tier,
+		Schedule:         s.Schedule,
+		License:          s.License,
+		Enabled:          s.Enabled,
+		ExtractionMethod: s.ExtractionMethod,
 	}
 }
 

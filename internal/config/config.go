@@ -77,6 +77,24 @@ type ScraperConfig struct {
 	// in a serial chain when transient errors occur.
 	// Environment variable: SCRAPER_CHAIN_ENQUEUE_RETRIES (default: 3)
 	ChainEnqueueRetries int
+
+	// ICS holds defaults for ICS feed ingestion.
+	ICS ICSConfig
+}
+
+// ICSConfig holds defaults for ICS feed ingestion.
+type ICSConfig struct {
+	// HorizonDays is the RRULE expansion window in days.
+	// Environment variable: ICS_HORIZON_DAYS (default: 90)
+	HorizonDays int `json:"horizon_days"`
+
+	// MaxOccurrences is the RRULE expansion safety cap.
+	// Environment variable: ICS_MAX_OCCURRENCES (default: 100)
+	MaxOccurrences int `json:"max_occurrences"`
+
+	// MaxBodyBytes is the maximum ICS feed body size.
+	// Environment variable: ICS_MAX_BODY_BYTES (default: 10485760, 10 MB)
+	MaxBodyBytes int64 `json:"max_body_bytes"`
 }
 
 type ServerConfig struct {
@@ -498,6 +516,11 @@ func Load() (Config, error) {
 			SourceJobTimeoutSeconds: getEnvInt("SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS", 300),
 			ChainEnqueueTimeoutMs:   getEnvInt("SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS", 5000),
 			ChainEnqueueRetries:     getEnvInt("SCRAPER_CHAIN_ENQUEUE_RETRIES", 3),
+			ICS: ICSConfig{
+				HorizonDays:    getEnvInt("ICS_HORIZON_DAYS", 90),
+				MaxOccurrences: getEnvInt("ICS_MAX_OCCURRENCES", 100),
+				MaxBodyBytes:   int64(getEnvInt("ICS_MAX_BODY_BYTES", 10*1024*1024)),
+			},
 		},
 		Developer: DeveloperConfig{
 			PasswordMinLength:        getEnvInt("DEVELOPER_PASSWORD_MIN_LENGTH", 8),

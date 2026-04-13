@@ -52,6 +52,8 @@ type Source struct {
 	SitemapConfig []byte // JSONB-encoded SitemapConfig; nil for non-sitemap sources
 	// DefaultLocation fallback venue for single-venue sources
 	DefaultLocation []byte // JSONB-encoded DefaultLocationConfig; nil when not set
+	// ExtractionMethod selects the extraction pipeline: "" or "scraper" (default), "ics"
+	ExtractionMethod string
 }
 
 // UpsertParams contains the fields used to create or update a scraper source.
@@ -91,6 +93,8 @@ type UpsertParams struct {
 	SitemapConfig []byte // JSONB-encoded SitemapConfig; nil for non-sitemap sources
 	// DefaultLocation fallback venue for single-venue sources
 	DefaultLocation []byte // JSONB-encoded DefaultLocationConfig; nil when not set
+	// ExtractionMethod selects the extraction pipeline: "" or "scraper" (default), "ics"
+	ExtractionMethod string
 }
 
 // Repository defines the persistence interface for scraper sources.

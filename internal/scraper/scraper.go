@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/metrics"
@@ -125,6 +126,7 @@ type Scraper struct {
 	slot           string                  // deployment slot for Prometheus metrics labeling; empty = no metrics
 	scraperMetrics *metrics.ScraperMetrics // may be nil — falls back to package-level globals
 	rodExtractor   *RodExtractor           // nil when headless is disabled/unconfigured
+	icsConfig      config.ICSConfig        // ICS feed extraction defaults
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
@@ -191,6 +193,13 @@ func NewScraperWithSourceRepoAndSlot(
 // return an error describing that headless scraping is unconfigured.
 func (s *Scraper) SetRodExtractor(r *RodExtractor) {
 	s.rodExtractor = r
+}
+
+// SetICSConfig sets the ICS feed extraction defaults. Call after construction
+// to configure ICS horizon, max occurrences, and body size limits. When not
+// called, zero-value defaults apply (the ICSExtractor uses its own defaults).
+func (s *Scraper) SetICSConfig(cfg config.ICSConfig) {
+	s.icsConfig = cfg
 }
 
 // loadSourceConfigs returns the active SourceConfig slice. It tries the DB
@@ -341,6 +350,12 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 		}
 	}
 
+	// ICS extraction: dispatch before sitemap/tier since extraction_method
+	// is orthogonal to tier numbers.
+	if found.ExtractionMethod == "ics" {
+		return s.scrapeICS(ctx, *found, opts)
+	}
+
 	// Sitemap-based scraping: dispatch before the tier switch since sitemap
 	// is a URL discovery mechanism that delegates to the configured tier.
 	if found.Sitemap != nil {
@@ -401,8 +416,12 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 			res       ScrapeResult
 			scrapeErr error
 		)
-		// Sitemap-based scraping.
-		if cfg.Sitemap != nil {
+		// ICS extraction: dispatch before sitemap/tier since extraction_method
+		// is orthogonal to tier numbers.
+		if cfg.ExtractionMethod == "ics" {
+			res, scrapeErr = s.scrapeICS(ctx, cfg, opts)
+		} else if cfg.Sitemap != nil {
+			// Sitemap-based scraping.
 			res, scrapeErr = s.scrapeSitemap(ctx, cfg, opts)
 		} else {
 			switch cfg.Tier {
@@ -1079,6 +1098,10 @@ func (s *Scraper) updateRunFailed(ctx context.Context, runID int64, err error) {
 	}
 }
 
+// maxStoredWarnings is the maximum number of ICS quality warnings persisted
+// in scraper_runs.metadata. Warnings beyond this limit are counted but not stored.
+const maxStoredWarnings = 200
+
 // updateRunCompleted updates the scraper_run record with completion counts and
 // per-event failure metadata (if any ingest errors occurred).
 func (s *Scraper) updateRunCompleted(ctx context.Context, runID int64, result *ScrapeResult, validEvents []events.EventInput) {
@@ -1092,14 +1115,47 @@ func (s *Scraper) updateRunCompleted(ctx context.Context, runID int64, result *S
 		EventsDup:    int32(result.EventsDuplicate),
 		EventsFailed: int32(result.EventsFailed),
 	}
+
+	// Build metadata combining ingest errors and quality warnings.
+	meta := make(map[string]any)
+
 	if len(result.IngestErrors) > 0 {
 		metaBytes, err := buildRunMetadata(result.IngestErrors, validEvents)
 		if err != nil {
 			s.logger.Warn().Err(err).Msg("scraper: failed to build run metadata")
+		} else if metaBytes != nil {
+			// Merge event_failures into meta.
+			var failures map[string]any
+			if err := json.Unmarshal(metaBytes, &failures); err == nil {
+				for k, v := range failures {
+					meta[k] = v
+				}
+			}
+		}
+	}
+
+	// Persist ICS quality warnings (bounded).
+	if len(result.QualityWarnings) > 0 {
+		storedWarnings := result.QualityWarnings
+		truncated := false
+		if len(storedWarnings) > maxStoredWarnings {
+			storedWarnings = storedWarnings[:maxStoredWarnings]
+			truncated = true
+		}
+		meta["ics_warnings"] = storedWarnings
+		meta["ics_warning_count"] = len(result.QualityWarnings)
+		meta["ics_warning_truncated"] = truncated
+	}
+
+	if len(meta) > 0 {
+		metaBytes, err := json.Marshal(meta)
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("scraper: failed to marshal combined run metadata")
 		} else {
 			params.Metadata = metaBytes
 		}
 	}
+
 	if err2 := s.queries.UpdateScraperRunCompleted(ctx, params); err2 != nil {
 		s.logger.Warn().Err(err2).Msg("scraper: failed to update scraper run")
 	}

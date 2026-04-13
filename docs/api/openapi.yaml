@@ -2938,6 +2938,12 @@ components:
           type: string
         enabled:
           type: boolean
+        extraction_method:
+          type: string
+          description: >-
+            Extraction pipeline for this source. Empty or "scraper" for
+            default tier-based dispatch, "ics" for ICS feed extraction.
+          enum: ["", "scraper", "ics"]
         last_run_status:
           type: string
         last_run_started_at:

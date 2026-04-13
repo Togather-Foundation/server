@@ -4,6 +4,7 @@ go 1.25.8
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
+	github.com/arran4/golang-ical v0.3.5
 	github.com/docker/go-connections v0.6.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/go-rod/rod v0.116.2
@@ -27,6 +28,7 @@ require (
 	github.com/rs/zerolog v1.34.0
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	github.com/teambition/rrule-go v1.8.2
 	github.com/temoto/robotstxt v1.1.2
 	github.com/testcontainers/testcontainers-go v0.40.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.40.0

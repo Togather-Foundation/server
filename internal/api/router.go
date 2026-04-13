@@ -181,6 +181,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 			scraper.WithHTTPClientTimeout(time.Duration(cfg.Scraper.HTTPClientTimeout)*time.Millisecond),
 		)
 		scraperSvc = scraper.NewScraperWithSourceRepoAndSlot(ingestClient, queries, scraperSourceRepo, logger, slot)
+		scraperSvc.SetICSConfig(cfg.Scraper.ICS)
 		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
 
 		// Wire Tier 2 headless browser extractor when enabled (srv-1zrrt).

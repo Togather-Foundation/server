@@ -1,0 +1,11 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//HTMLDescription//EN
+BEGIN:VEVENT
+UID:html-001
+SUMMARY:HTML Description Event
+DESCRIPTION:<h1>Welcome</h1><p>This is a <strong>bold</strong> event.</p><script>alert('xss')</script>
+DTSTART:20260415T190000Z
+DTEND:20260415T210000Z
+END:VEVENT
+END:VCALENDAR

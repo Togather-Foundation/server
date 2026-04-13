@@ -509,6 +509,7 @@ type ScraperSource struct {
 	HeadlessIframe                []byte             `json:"headless_iframe"`
 	HeadlessIntercept             []byte             `json:"headless_intercept"`
 	DefaultLocation               []byte             `json:"default_location"`
+	ExtractionMethod              string             `json:"extraction_method"`
 }
 
 type ScraperSubmission struct {

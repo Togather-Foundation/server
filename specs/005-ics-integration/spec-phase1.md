@@ -1,6 +1,6 @@
 # Phase 1 Specification: ICS Ingest
 
-**Spec**: 005-ics-integration / Phase 1 | **Date**: 2026-04-13 | **Status**: Draft
+**Spec**: 005-ics-integration / Phase 1 | **Date**: 2026-04-13 | **Status**: Delivered
 **Parent**: `specs/005-ics-integration/plan.md`
 **Goal**: `server scrape source <ics-source>` fetches an ICS feed, parses it, and
 ingests events through the existing pipeline. End-to-end from ICS URL to events in DB.
@@ -966,6 +966,72 @@ exist for operator tuning if needed.
 3. **Tockify feed pagination**: The torevent Tockify feed has ~2,900 events. Does
    Tockify paginate ICS feeds or return the entire calendar? If paginated, we may
    need to handle `REFRESH-INTERVAL` or date-range parameters. Test with real feed.
+
+## Implementation Deviations
+
+The following deviations from the original spec were made during implementation.
+All are intentional design improvements discovered during development.
+
+### 1. `ExpandRRule` Returns `([]time.Time, bool, error)`
+
+The spec defined `ExpandRRule` as returning `([]time.Time, error)`. The implementation
+adds a `bool` return indicating whether the `MaxOccurrences` cap was applied
+(`capped=true` means the result was truncated). This lets callers emit a warning
+without re-checking slice length vs cap, and avoids ambiguity when the rule naturally
+produces exactly `MaxOccurrences` results.
+
+### 2. `HasGeo` Field Added to `ParsedEvent`
+
+`ParsedEvent` gains a `HasGeo bool` field not in the original spec. This distinguishes
+"GEO property was absent" from "GEO was explicitly 0,0" (the Null Island problem).
+The mapper checks `HasGeo` rather than `GeoLat != 0 || GeoLon != 0`.
+
+### 3. `RawProps` Populated via `collectRawProps()`
+
+The spec listed `RawProps map[string]string` but did not detail population logic.
+Implementation adds `collectRawProps()` which collects non-standard VEVENT properties
+(X-*, etc.) by excluding a `handledProperties` set of already-mapped RFC 5545
+properties. Returns `nil` (not empty map) when no extras exist.
+
+### 4. Migration 042 Uses `DEFAULT ''` and Three-Value CHECK
+
+The spec called for `DEFAULT 'scraper'` and `CHECK (extraction_method IN ('scraper', 'ics'))`.
+Implementation uses `DEFAULT ''` because existing rows were not created through
+explicit scraper extraction — labeling them `'scraper'` would be retrospectively
+inaccurate. The CHECK constraint is `CHECK (extraction_method IN ('', 'scraper', 'ics'))`.
+The down migration includes `DROP CONSTRAINT` for clean rollback.
+
+### 5. `SetICSConfig()` Setter Pattern Instead of Constructor Changes
+
+Rather than modifying all 4 `NewScraper*` constructor signatures (which would
+change every call site), the implementation adds a `SetICSConfig(config.ICSConfig)`
+method on `Scraper`, following the existing `SetRodExtractor()` pattern. This is
+backwards-compatible with zero call-site changes to existing constructors.
+
+### 6. `Extract()` Takes `config.ICSConfig` as Additional Parameter
+
+`ICSExtractor.Extract()` accepts `config.ICSConfig` alongside `SourceConfig` to
+receive runtime-configurable ICS settings (HorizonDays, MaxOccurrences, MaxBodyBytes).
+The spec showed `Extract(ctx, cfg SourceConfig)` only.
+
+### 7. `updateRunCompleted` Refactored for ICS Warnings
+
+`updateRunCompleted` in `scraper.go` was refactored to build a combined metadata
+JSON map that includes both `event_failures` (existing) and `ics_warnings` /
+`ics_warning_count` / `ics_warning_truncated` (new). Warnings are bounded at
+`maxStoredWarnings = 200` entries to keep metadata size manageable.
+
+### 8. Staticcheck Fix in `parseISO8601Duration`
+
+An if/else chain in `parseISO8601Duration` was rewritten as a switch statement to
+satisfy staticcheck linting. Additionally, bare "P" (no duration components) was
+not rejected by the original implementation — fixed to return error.
+
+### 9. Test Fixtures in `tests/testdata/ics/` (Not `internal/ical/testdata/`)
+
+The spec listed `testdata/` under `internal/ical/` as "legacy package-local fixtures
+(phase transition)". All 15 fixtures were placed directly in `tests/testdata/ics/`
+with a `README.md` documenting fixture ownership and naming conventions.
 
 ## Rollback Notes (Phase 1)
 
