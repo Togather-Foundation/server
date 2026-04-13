@@ -9,7 +9,7 @@ on:
   workflow_dispatch:  # Manual trigger for running full test suite
 
 env:
-  GO_VERSION: "1.25.8"
+  GO_VERSION: "1.25.9"
   COVERAGE_THRESHOLD: 35
 
 jobs:
