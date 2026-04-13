@@ -21,8 +21,8 @@ This integration adds two capabilities:
    existing ingest pipeline (dedup, validation, review queue).
 
 2. **ICS Export** — The API serves `text/calendar` responses: full event feeds at
-   `GET /api/v1/events.ics` (filterable, subscribable via `webcal://`) and per-event
-   downloads at `GET /events/{id}.ics`.
+   `GET /api/v1/events.ics` (filterable, paginated via `Link rel="next"`) and per-event
+   downloads at `GET /api/v1/events/{id}.ics`.
 
 A secondary goal is upgrading the recurrence model from the current ad-hoc columns
 (`repeat_frequency`, `repeat_on_days`, `repeat_on_dates`) to canonical RRULE
@@ -44,7 +44,7 @@ fidelity with ICS sources.
 | Change feed | `GET /api/v1/feeds/changes` with cursor pagination | `internal/api/handlers/feeds.go:27`, `router.go:808` |
 | Scraper source configs | YAML files + `scraper_sources` DB table, `server scrape sync` | `configs/sources/*.yaml`, migration `000032` |
 | Latest migration | `000041_scraper_sources_default_location` | `internal/storage/postgres/migrations/` |
-| EventSeries handling in scraper | Extracts `EventSeries` with `subEvent` → multiple occurrences | `internal/scraper/jsonld.go:45,168,231,306` |
+| EventSeries handling in scraper | Detects `Event`/`EventSeries` in JSON-LD and unfolds `subEvent` into occurrences during normalization | `internal/scraper/jsonld.go:45,168,231,306`, `internal/scraper/normalize.go:98-161` |
 
 ## Architecture
 
@@ -82,7 +82,7 @@ ICS Feed URL                    Existing SEL Pipeline
 ### Data Flow: ICS Export
 
 ```
-Calendar Client (webcal://, GET)
+Calendar Client (GET)
      │
      ▼
 ┌──────────────────────────┐
@@ -139,8 +139,8 @@ internal/
     middleware/
       negotiate.go            # MODIFIED — add text/calendar
     handlers/
-      events.go               # MODIFIED — ICS response path
-      feeds.go                # MODIFIED — ICS feed endpoint
+      ics.go                  # NEW — ICS feed + single-event download handlers
+      events.go               # MODIFIED — Link alternate headers
 ```
 
 ## Design Constraints
@@ -157,9 +157,9 @@ internal/
    - Produced ICS must validate against validators.icalendar.org
 
 3. **Scraper integration**: ICS sources use the existing `scraper_sources` table
-   and River job scheduling. `tier` value is repurposed: tier 0-3 are HTML scraping
-   tiers; ICS sources set `source_type = 'ics'` in a new column (not a new tier number)
-   to avoid conflating the tier concept.
+   and River job scheduling. `tier` remains 0-3 for the existing scraper tiers;
+   ICS sources set `extraction_method = 'ics'` in a new column (not a new tier number)
+   to avoid conflating extraction mode with tier semantics.
 
 4. **Content negotiation**: `text/calendar` added alongside existing types. The `.ics`
    URL extension is an alternative to `Accept` header negotiation (same pattern as
@@ -241,14 +241,22 @@ type MapperOptions struct {
 ```go
 // internal/ical/serialize.go
 
-// SerializeEvents converts SEL events to a VCALENDAR byte slice.
-func SerializeEvents(evts []events.Event, opts SerializeOptions) ([]byte, error)
+// SerializeEvents converts SEL events to a VCALENDAR payload.
+func SerializeEvents(evts []events.Event, opts SerializeOptions) (SerializeResult, error)
+
+// SerializeResult contains serialized bytes and derived metadata.
+type SerializeResult struct {
+    Content      []byte
+    EventCount   int
+    GeneratedAt  time.Time
+}
 
 type SerializeOptions struct {
-    CalendarName string // X-WR-CALNAME (default: "Togather Events")
-    ProdID       string // PRODID (default: "-//Togather//SEL//EN")
-    BaseURL      string // For SOURCE property
-    IncludeRRule bool   // If true, emit RRULE on series events
+    ProductID    string // e.g. "-//Togather Foundation//SEL//EN"
+    CalendarName string // feed title (default: "Togather Events")
+    CalendarURL  string // canonical feed URL for SOURCE property
+    Method       string // optional; default "PUBLISH"
+    // Phase 3 adds: IncludeRRule bool, Timezone string
 }
 ```
 
@@ -267,16 +275,26 @@ type ICSExtractor struct {
 func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig) ([]events.EventInput, []string, error)
 ```
 
-### Source Type Column Addition
+### Extraction Method Column Addition
 
 ```sql
--- Migration 000042_scraper_sources_source_type.up.sql
+-- Migration 000042_scraper_sources_extraction_method.up.sql
 ALTER TABLE scraper_sources
-  ADD COLUMN source_type TEXT NOT NULL DEFAULT 'scraper'
-    CHECK (source_type IN ('scraper', 'ics'));
+  ADD COLUMN extraction_method TEXT NOT NULL DEFAULT 'scraper'
+    CHECK (extraction_method IN ('scraper', 'ics'));
 ```
 
 ## Implementation Phases
+
+### Phase Dependency Table
+
+| Phase | Contract Consumed | Contract Produced |
+|---|---|---|
+| Phase 1 (Ingest) | Existing scraper dispatch + ingest pipeline + scraper source config model | ICS parse/map/extract path, `extraction_method` dispatch contract, stable `Source.EventID` derivation |
+| Phase 2 (Export) | Phase 1 parsed/mapped event identity contract + occurrence data model | ICS serialization contract, API export endpoints, `Link rel="next"` pagination, discovery headers |
+| Phase 3 (Recurrence) | Phase 2 serialization behavior + legacy `event_series` schema | Canonical recurrence persistence (`rrule/exdates/rdates`), recurrence projection contract |
+| Phase 4 (Interop/Docs) | Phase 1-3 runtime behavior and contracts | Interop fixture corpus + validation contract, operations runbook |
+| Phase 5 (Inventory Rollout) | Phase 4 runbook + interop fixture expectations + Toronto inventory research | Cohort rollout manifest and execution/reporting contract |
 
 ### Phase 1: ICS Ingest (Vertical Slice)
 
@@ -293,8 +311,10 @@ unit tests for parser, mapper; integration test with httptest ICS server.
 3. Implement `internal/ical/mapper.go` + `mapper_test.go` — VEvent → EventInput
 4. Implement `internal/ical/rrule.go` + `rrule_test.go` — RRULE expansion
 5. Implement `internal/scraper/ics.go` + `ics_test.go` — ICS extractor wired into scraper
-6. Add `source_type` column to `scraper_sources` (migration 000042), update `SourceConfig`,
-   wire ICS tier dispatch in `scraper.go`
+6. Add `extraction_method` column to `scraper_sources` (migration 000042), update `SourceConfig`,
+   wire ICS tier dispatch in `scraper.go`.
+   **Guardrail**: this is additive for `scraper_sources` only; do not rename or alter
+   provenance `sources.source_type` (migration 000002).
 
 **Interface contract (Phase 1 → Phase 2)**:
 - `ical.SerializeOptions` struct defined but `serialize.go` not implemented
@@ -302,58 +322,105 @@ unit tests for parser, mapper; integration test with httptest ICS server.
 
 ### Phase 2: ICS Export (Vertical Slice)
 
-**Goal**: `GET /api/v1/events.ics` returns a subscribable ICS feed; `GET /events/{id}.ics`
-returns a single-event download. Calendar apps can subscribe via `webcal://`.
+**Goal**: `GET /api/v1/events.ics` returns an agent/API-consumable ICS feed with
+cursor pagination; `GET /api/v1/events/{id}.ics` returns a single-event download.
 
 **Entry criteria**: Phase 1 delivered (parser/mapper stable).
-**Exit criteria**: `webcal://` subscription works in Apple Calendar and Google Calendar;
-per-event download produces valid ICS; content negotiation serves `text/calendar`.
+**Exit criteria**: feed pagination (`after`/`limit`) works for ICS via `Link rel="next"`; per-event download
+produces valid ICS; API endpoints expose `Link` alternates for ICS discovery; calendar
+compatibility validated (Apple/Google import/subscription smoke tests).
 
-**Tasks** (6):
+**Tasks** (7):
 1. Implement `internal/ical/serialize.go` + `serialize_test.go` — Event → VCALENDAR
 2. Add `text/calendar` to content negotiation middleware (`negotiate.go`)
 3. Add `GET /api/v1/events.ics` feed handler with same filters as JSON list endpoint
-4. Add `GET /events/{id}.ics` single-event download handler
-5. Add `webcal://` URL generation and `Link` header for feed auto-discovery
+   plus cursor pagination semantics (`after`, `limit`, `Link rel="next"` per RFC 8288)
+4. Add `GET /api/v1/events/{id}.ics` single-event download handler
+5. Add `Link` discovery headers with `rel="alternate"; type="text/calendar"` on
+   `/api/v1/events` and `/api/v1/events/{id}`
 6. Update `docs/api/openapi.yaml` with ICS endpoints
+7. Bind Phase 2 tests to `docs/integration/ics-compatibility-matrix.md`
 
 **Interface contract (Phase 2 → Phase 3)**:
 - `SerializeEvents` handles series events by emitting multiple VEVENTs
   (one per occurrence). Phase 3 upgrades this to emit RRULE on the series VEVENT.
+- Feed pagination uses `Link rel="next"` (RFC 8288), not custom headers.
 
 ### Phase 3: Recurrence Model Upgrade
 
 **Goal**: Replace `repeat_frequency`/`repeat_on_days`/`repeat_on_dates` with canonical
-RRULE storage. ICS round-trip for recurring events is lossless.
+RRULE storage and wire recurrence metadata through domain/query/serialization paths.
 
-**Entry criteria**: Phase 1-2 delivered. Existing series data audited.
-**Exit criteria**: `event_series.rrule` column populated; old columns dropped;
-JSON-LD export generates `Schedule` from RRULE; ICS export emits RRULE+EXDATE.
+**Entry criteria**: Phase 1-2 delivered.
+**Exit criteria**: `event_series.rrule` column populated (or confirmed unnecessary);
+old columns dropped;
+JSON-LD export projects recurrence from canonical RRULE while preserving `subEvent`
+compatibility; ICS export emits RRULE+EXDATE+RDATE.
 
-**Tasks** (5):
-1. Migration: add `rrule TEXT`, `exdates TIMESTAMPTZ[]`, `rdates TIMESTAMPTZ[]` to
-   `event_series`; data migration script for existing rows
-2. Update `EventSeries` Go struct and SQLc queries
-3. Update JSON-LD serialization: generate `Schedule` properties from RRULE on the fly
-4. Update ICS serializer to emit RRULE/EXDATE/RDATE on series events
-5. Migration: drop `repeat_frequency`, `repeat_on_days`, `repeat_on_dates` after
-   data migration verified
+**Tasks** (7):
+1. Check if legacy repeat columns have data; add `rrule TEXT`, `exdates TIMESTAMPTZ[]`,
+   `rdates TIMESTAMPTZ[]` to `event_series` (additive migration)
+2. Backfill legacy repeat columns to RRULE equivalents (skip if columns are empty)
+3. Update recurrence-aware repository/domain plumbing (SQLc queries + model wiring)
+4. Update JSON-LD serialization: generate `Schedule`-style recurrence projection
+   from RRULE while preserving existing `subEvent` responses
+5. Update ICS serializer to emit RRULE/EXDATE/RDATE on series events
+6. Drop `repeat_frequency`, `repeat_on_days`, `repeat_on_dates` after verification
+7. Preserve deterministic recurring export UID stability across Phase 2 -> 3 cutover
 
 ### Phase 4: Interop & Documentation
 
 **Goal**: Documented interop with community-calendar; platform discovery heuristics
-for ICS feeds; operational runbook.
+for ICS feeds; operational runbook and repeatable integration validation.
 
 **Entry criteria**: Phase 1-3 delivered.
-**Exit criteria**: community-calendar feed consumed successfully; SEL feed consumed
-by community-calendar; ICS discovery patterns documented.
+**Exit criteria**: representative external ICS fixtures ingest successfully into SEL;
+SEL ICS export passes community-calendar-style consumer checks; ICS discovery patterns
+and operations runbook are documented and executable.
 
-**Tasks** (4):
+**Tasks** (5):
 1. Test: consume community-calendar ICS output → SEL ingest (end-to-end)
 2. Test: SEL ICS feed → community-calendar consumption (validate format)
 3. Update `docs/integration/event-platforms.md` with ICS discovery heuristics
    (Tockify, Google Calendar, WordPress Tribe, LiveWhale, etc.)
 4. Write `docs/integration/ics-feeds.md` — operational guide for ICS sources
+5. Maintain and validate `docs/integration/ics-compatibility-matrix.md` coverage in
+   Phase 4 interop tests
+
+**Interface contract (Phase 4 → Phase 5)**:
+- Interop fixture corpus and validation scripts define accepted external ICS shapes.
+- Operational runbook defines safe onboarding/diagnostics workflow for source rollout.
+
+### Phase 5: Toronto ICS Source Inventory Rollout
+
+**Goal**: Operationalize the Toronto ICS inventory into prioritized, trackable source
+onboarding work and staged rollout metrics.
+
+**Entry criteria**: Phase 4 delivered (interop tests + runbook available).
+**Exit criteria**: inventory is converted into rollout cohorts with ownership,
+success/failure tracking, and documented decisions for overlap, net-new, and
+non-starter sources.
+
+**Tasks** (6):
+1. Convert inventory sections (overlap, SEL-only, net-new, non-starters) into a
+   machine-readable manifest (CSV/JSON) under `specs/005-ics-integration/`.
+2. Define rollout cohorts (e.g., high-value net-new first, overlap validation
+   second) with explicit acceptance targets per cohort.
+3. Create source-onboarding beads from the manifest (one bead per source or source
+   bundle) with priority and dependency metadata.
+4. Add outcome taxonomy (`onboarded`, `deferred`, `blocked`, `non-starter`) and
+   capture criteria to avoid ad-hoc status labels.
+5. Run a first staged cohort in staging and publish metrics (attempted, onboarded,
+   blocked reasons, median setup time) in a rollout report.
+6. Feed lessons back into `docs/integration/event-platforms.md` and
+   `docs/integration/ics-feeds.md` with concrete examples from Toronto sources.
+
+## Final Release Gate
+
+- Use `specs/005-ics-integration/release-gate-checklist.md` as the phase-agnostic
+  ship gate before feature release.
+- Compatibility verification must reference
+  `docs/integration/ics-compatibility-matrix.md`.
 
 ## Risks and Mitigations
 
@@ -363,7 +430,7 @@ by community-calendar; ICS discovery patterns documented.
 | RRULE expansion produces unbounded occurrences | High | `MaxOccurrences` cap (default 100); `HorizonDays` window (default 90 days) |
 | Timezone handling (floating times, VTIMEZONE definitions) | Medium | `time.LoadLocation` for IANA TZIDs; `WindowsTZIDAliases` map for Outlook/Exchange non-IANA TZIDs; fall back to source config timezone → UTC; log warning on ambiguous times |
 | ICS feeds change UID format between fetches → duplicate events | Medium | Dedup by content hash (name + venue + startDate) in addition to UID-based dedup |
-| Large ICS feeds (1000+ events) increase memory use | Low | `MaxBodyBytes` (10 MB) bounds raw input. Events are ingested individually through the existing per-event ingest pipeline (no batching in scraper→ingest path). A 6,558-event feed produces ~20-40 MB in memory — manageable. |
+| Large ICS feeds (1000+ events) increase memory use | Low | `MaxBodyBytes` (10 MB) bounds raw input. Scraper extraction is per-event, then submission uses the existing batch ingest client with chunking (up to 100 events per POST) to control payload size. A 6,558-event feed produces ~20-40 MB in memory — manageable. |
 | `arran4/golang-ical` doesn't handle edge case X | Medium | Library is actively maintained (last release 2025); can contribute fixes upstream or wrap/patch |
 
 ## Security
@@ -397,7 +464,7 @@ by community-calendar; ICS discovery patterns documented.
 
 1. **ETag/If-Modified-Since caching**: Should the ICS fetcher store ETags per source
    in `scraper_sources` for conditional GET? (Likely yes — reduces bandwidth for
-   hourly/daily polls. Can add a `last_etag TEXT` column in the `source_type` migration.)
+   hourly/daily polls. Can add a `last_etag TEXT` column alongside `extraction_method`.)
 
 2. **VALARM (reminders)**: Should exported ICS include VALARM components? Most
    aggregator feeds omit them. Recommendation: omit in Phase 2, add as opt-in later.

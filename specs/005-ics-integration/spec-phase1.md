@@ -25,8 +25,8 @@ source type roughly doubles our Toronto source coverage.
 | Content negotiation (JSON-LD, JSON, HTML, Turtle) | Production | `internal/api/middleware/negotiate.go:14-19` |
 | Source types (Go validation) | Production | `internal/domain/provenance/validation.go:24-29` |
 | `scraper_sources` DB table | Production | `migrations/000032_scraper_sources.up.sql` |
-| `server scrape source <name>` CLI | Production | `cmd/server/cmd/scrape.go` |
-| `server scrape sync` (YAML → DB) | Production | `cmd/server/cmd/scrape.go` |
+| `server scrape source <name>` CLI | Production | `cmd/server/cmd/scrape_cmd.go` |
+| `server scrape sync` (YAML → DB) | Production | `cmd/server/cmd/scrape_sync.go` |
 | Latest migration | `000041` | `migrations/000041_scraper_sources_default_location` |
 | ICS parsing library | **None** | — |
 | ICS source type | **None** | — |
@@ -37,16 +37,16 @@ source type roughly doubles our Toronto source coverage.
    expansion. New Go package with no SEL-domain dependencies except `events.EventInput`.
 2. **ICS extractor** — `internal/scraper/ics.go` wires `ical.Parse()` and
    `ical.MapToEventInputs()` into the scraper pipeline.
-3. **`source_type` column** — `scraper_sources.source_type` (`'scraper'` | `'ics'`)
+3. **`extraction_method` column** — `scraper_sources.extraction_method` (`'scraper'` | `'ics'`)
    enables the scraper dispatch to route ICS sources to the ICS extractor.
-4. **YAML config support** — `source_type: ics` in source YAML files, synced to DB
+4. **YAML config support** — `extraction_method: ics` in source YAML files, synced to DB
    via `server scrape sync`.
 5. **CLI integration** — `server scrape source <ics-source>` works end-to-end.
 
 ### Non-Goals (Phase 1)
 
 - **ICS export / `text/calendar` responses** — Phase 2
-- **`webcal://` subscription feeds** — Phase 2
+- **`webcal://` subscription support** — Deferred (not in any current phase; API-first approach uses HTTPS)
 - **Recurrence model upgrade (RRULE column in `event_series`)** — Phase 3
 - **Community-calendar interop testing** — Phase 4
 - **Platform discovery heuristics documentation** — Phase 4
@@ -65,9 +65,21 @@ source type roughly doubles our Toronto source coverage.
 - **SEL compliance**: CC0 license default, source provenance preserved, RFC 7807 errors,
   `fmt.Errorf("...: %w", err)` wrapping.
 - **Scraper integration**: ICS sources reuse the existing `scraper_sources` table and
-  River scheduling. No new tier number — `source_type = 'ics'` is orthogonal to tiers.
+  River scheduling. No new tier number — `extraction_method = 'ics'` is orthogonal to tiers.
 - **Ingest pipeline**: No changes to `IngestService`, validation, dedup, or review
   queue. ICS events enter through the same `EventInput` interface as all other sources.
+- **Phase 2 compatibility**: Preserve stable `Source.EventID` derivation for every
+  mapped ICS event/occurrence (including RRULE-expanded events) so Phase 2 export can
+  generate deterministic VEVENT UIDs across runs.
+
+### Out-of-Phase Guardrails
+
+- If implementation pressure suggests adding ICS HTTP export endpoints or
+  `text/calendar` response support, stop and create a Phase 2 follow-up bead.
+- If recurrence persistence schema changes are needed (`event_series` RRULE fields),
+  stop and create a Phase 3 follow-up bead.
+- If cross-consumer interop harness work grows beyond ingest validation, stop and
+  create a Phase 4 follow-up bead.
 
 ---
 
@@ -78,16 +90,16 @@ source type roughly doubles our Toronto source coverage.
 An operator configures an ICS source in YAML, syncs it, and runs the scraper. Events
 from the ICS feed appear in the database.
 
-**Independent Test**: Given a YAML config with `source_type: ics` pointing to an
+**Independent Test**: Given a YAML config with `extraction_method: ics` pointing to an
 httptest server serving a multi-event ICS file, when `ScrapeSource()` runs, events
 are returned in the `ScrapeResult` with correct field mapping.
 
 **Acceptance Scenarios**:
 
-1. **Given** a YAML config `configs/sources/test-ics.yaml` with `source_type: ics`,
+1. **Given** a YAML config `configs/sources/test-ics.yaml` with `extraction_method: ics`,
    `url: https://example.com/events.ics`, and `trust_level: 5`, **When**
    `server scrape sync` runs, **Then** the source appears in `scraper_sources` with
-   `source_type = 'ics'`.
+   `extraction_method = 'ics'`.
 
 2. **Given** an ICS feed with 3 VEVENTs (each with SUMMARY, DTSTART, DTEND,
    LOCATION, DESCRIPTION, URL), **When** `ScrapeSource()` processes the feed,
@@ -223,17 +235,17 @@ SUMMARY, invalid DTSTART), when the parser runs, it returns 3 valid ParsedEvents
 An operator creates a YAML config file for an ICS source, syncs it to the database,
 and the scraper dispatch routes it to the ICS extractor.
 
-**Independent Test**: Given a YAML file with `source_type: ics` and `tier: 0`, when
+**Independent Test**: Given a YAML file with `extraction_method: ics` and `tier: 0`, when
 loaded and validated, it passes validation. When synced and scraped, the ICS extractor
 is invoked (not the Tier 0 JSON-LD extractor).
 
 **Acceptance Scenarios**:
 
-1. **Given** a YAML config with `source_type: ics`, `tier: 0`, and valid fields,
+1. **Given** a YAML config with `extraction_method: ics`, `tier: 0`, and valid fields,
    **When** `ValidateConfig()` runs, **Then** it passes (tier is ignored for ICS
    sources; selectors are not required).
 
-2. **Given** a YAML config with `source_type: ics` and `selectors` populated,
+2. **Given** a YAML config with `extraction_method: ics` and `selectors` populated,
    **When** `ValidateConfig()` runs, **Then** it emits a warning "selectors ignored
    for ICS sources" but does not fail.
 
@@ -241,11 +253,11 @@ is invoked (not the Tier 0 JSON-LD extractor).
    **Then** the dispatch in `scraper.go` routes to the ICS extractor (before the
    tier switch), not to `scrapeTier0`.
 
-4. **Given** a YAML config with `source_type: ics` and `default_location` set,
+4. **Given** a YAML config with `extraction_method: ics` and `default_location` set,
    **When** the mapper produces EventInputs for VEVENTs with no LOCATION, **Then**
    the `default_location` is applied as fallback (same behavior as other source types).
 
-5. **Given** a YAML config with `source_type: ics` and `timezone: America/Toronto`,
+5. **Given** a YAML config with `extraction_method: ics` and `timezone: America/Toronto`,
    **When** a VEVENT has floating-time DTSTART (no timezone suffix, no VTIMEZONE),
    **Then** the mapper interprets it in `America/Toronto`.
 
@@ -264,27 +276,31 @@ internal/
     mapper_test.go
     rrule.go                    # RRULE string → []time.Time occurrences
     rrule_test.go
-    testdata/                   # ICS fixture files
-      basic-event.ics           # Single non-recurring VEVENT
-      multi-event.ics           # 5 VEVENTs, mixed fields
-      recurring-weekly.ics      # VEVENT with RRULE + EXDATE
-      recurring-monthly.ics     # VEVENT with RRULE + RDATE
-      malformed.ics             # Mix of valid + invalid VEVENTs
-      floating-time.ics         # VEVENTs with floating (no TZ) times
-      all-day.ics               # DATE-only DTSTART (all-day events)
-      html-description.ics      # DESCRIPTION with HTML content
-      reversed-dates.ics        # VEVENT with DTEND before DTSTART
-      duplicate-uids.ics        # Two VEVENTs with same UID, no RECURRENCE-ID
-      infinite-rrule.ics        # RRULE with no COUNT and no UNTIL
-      outlook-vtimezone.ics     # VTIMEZONE with Windows TZID (e.g. "Eastern Standard Time")
-      duration-event.ics        # VEVENT with DURATION instead of DTEND
-      recurrence-id.ics         # RRULE series with RECURRENCE-ID exception override
-      empty-calendar.ics        # VCALENDAR with zero VEVENTs
+    testdata/                   # legacy package-local fixtures (phase transition)
   scraper/
     ics.go                      # ICS extractor (fetch + parse + map)
     ics_test.go
-    config.go                   # MODIFIED — add SourceType field
+    config.go                   # MODIFIED — add ExtractionMethod field
     scraper.go                  # MODIFIED — add ICS dispatch before tier switch
+tests/
+  testdata/
+    ics/
+      README.md                 # NEW - fixture ownership + naming rules
+      parse-basic-event.ics
+      parse-multi-event.ics
+      parse-recurring-weekly.ics
+      parse-recurring-monthly.ics
+      parse-malformed.ics
+      parse-floating-time.ics
+      parse-all-day.ics
+      parse-html-description.ics
+      parse-reversed-dates.ics
+      parse-duplicate-uids.ics
+      parse-infinite-rrule.ics
+      parse-outlook-vtimezone.ics
+      parse-duration-event.ics
+      parse-recurrence-id.ics
+      parse-empty-calendar.ics
 ```
 
 ### Data Structures
@@ -375,6 +391,7 @@ type MapperOptions struct {
     TrustLevel     int    // Assigned trust level
     License        string // Default "CC0-1.0"
     Timezone       string // Fallback TZ for floating times (IANA name)
+    DefaultLocation *events.PlaceInput // Fallback location when VEVENT LOCATION is empty
     HorizonDays    int    // RRULE expansion window (default: 90)
     MaxOccurrences int    // Safety cap on expanded occurrences (default: 100)
 }
@@ -488,16 +505,16 @@ Implementation:
 **Memory note**: Large feeds (e.g., York University ~6,558 events) are parsed
 entirely in memory. The `MaxBodyBytes` limit (10 MB) bounds raw input. After RRULE
 expansion, the total `[]EventInput` slice could reach 10,000+ structs (~20-40 MB at
-~2 KB/struct). This is manageable for daily runs. The `runWithTracking` ingest loop
-processes events individually (there is no batch chunking in the scraper→ingest path
-— batching exists only in the HTTP API's `POST /api/v1/events` endpoint). No
-streaming parser is needed for Phase 1.
+~2 KB/struct). This is manageable for daily runs. `runWithTracking` produces one
+`[]EventInput` slice; submission then uses `IngestClient.SubmitBatch`, which chunks
+requests to `/api/v1/events:batch` at 100 events per POST. No streaming parser is
+needed for Phase 1.
 
 #### SourceConfig Changes (`internal/scraper/config.go`)
 
 ```go
 // Add to SourceConfig struct:
-SourceType string `yaml:"source_type,omitempty" json:"source_type,omitempty"`
+ExtractionMethod string `yaml:"extraction_method,omitempty" json:"extraction_method,omitempty"`
 ```
 
 Default value: empty string (treated as `"scraper"` for backward compatibility).
@@ -510,7 +527,7 @@ Insert ICS dispatch before the sitemap check and tier switch in both
 
 ```go
 // ICS source type: dispatch to ICS extractor (independent of tier).
-if found.SourceType == "ics" {
+if found.ExtractionMethod == "ics" {
     return s.scrapeICS(ctx, *found, opts)
 }
 ```
@@ -540,21 +557,25 @@ func (s *Scraper) scrapeICS(ctx context.Context, cfg SourceConfig, opts ScrapeOp
 Note: `s.icsConfig` is an `ICSConfig` field added to the `Scraper` struct, wired from
 `config.ICSConfig` at construction time. See Configuration section below.
 
-#### Migration (`000042_scraper_sources_source_type.up.sql`)
+#### Migration (`000042_scraper_sources_extraction_method.up.sql`)
 
 ```sql
 ALTER TABLE scraper_sources
-  ADD COLUMN source_type TEXT NOT NULL DEFAULT 'scraper'
-    CHECK (source_type IN ('scraper', 'ics'));
+  ADD COLUMN extraction_method TEXT NOT NULL DEFAULT 'scraper'
+    CHECK (extraction_method IN ('scraper', 'ics'));
 
-COMMENT ON COLUMN scraper_sources.source_type IS
-  'Source type: scraper (HTML/JSON-LD/CSS tiers 0-3) or ics (ICS feed)';
+COMMENT ON COLUMN scraper_sources.extraction_method IS
+  'Extraction method: scraper (HTML/JSON-LD/CSS tiers 0-3) or ics (ICS feed)';
+
+-- Guardrail: do NOT modify provenance sources.source_type in this migration.
+-- The provenance column (migration 000002) remains unchanged and serves a
+-- different purpose (attribution type, not scraper dispatch mode).
 ```
 
 Down migration:
 
 ```sql
-ALTER TABLE scraper_sources DROP COLUMN source_type;
+ALTER TABLE scraper_sources DROP COLUMN extraction_method;
 ```
 
 ### Error Handling
@@ -621,7 +642,7 @@ ALTER TABLE scraper_sources DROP COLUMN source_type;
 | Ingest rejects all events (validation) | `runWithTracking` records EventsFailed = N, IngestErrors populated. Not a scraper error — individual ingest rejections are logged per-event. |
 | All events deduped | Success result with EventsDuplicate = N, EventsCreated = 0. Not an error. |
 | Context cancelled mid-processing | `runWithTracking` returns partial result with error. Partially ingested events remain in DB (ingest is per-event, not transactional). |
-| source_type YAML/DB mismatch | DB value takes precedence (DB-first config loading). YAML `source_type` is synced to DB via `server scrape sync`. If DB says `ics` but YAML says `scraper`, DB wins at runtime. `server scrape sync` overwrites DB with YAML. |
+| extraction_method YAML/DB mismatch | DB value takes precedence (DB-first config loading). YAML `extraction_method` is synced to DB via `server scrape sync`. If DB says `ics` but YAML says `scraper`, DB wins at runtime. `server scrape sync` overwrites DB with YAML. |
 
 ### Security Model
 
@@ -653,6 +674,45 @@ the scraper's operator-configured source URLs (YAML/DB). The ICS fetcher uses
 blocking (unlike `validate_submissions.go` and `rod.go`). This is acceptable for
 trusted config URLs but should be revisited if user-submitted ICS URLs are ever
 supported.
+
+**Audit trail for parser/mapper warnings**: ICS parse/mapper warnings must be
+persisted in `scraper_runs.metadata` for every run (including successful runs),
+not just emitted to logs. `runWithTracking` already stores per-event ingest
+failures in metadata; extend this to store a bounded warning payload such as:
+
+```json
+{
+  "ics_warnings": [
+    "missing SUMMARY (UID: abc123)",
+    "unknown TZID \"Eastern Standard Time\", fell back to America/Toronto"
+  ],
+  "ics_warning_count": 12,
+  "ics_warning_truncated": true
+}
+```
+
+Cap stored warning strings (e.g., first 200) to keep metadata bounded, while
+always preserving full counts for auditability. This supports human/agent review
+workflows in admin tooling when feeds contain noisy or malformed data.
+
+### Phase 1 Audit Boundary (Vertical Slice)
+
+**In scope for Phase 1**:
+- Persist run-level ICS diagnostics in `scraper_runs.metadata` (warning count,
+  bounded warning samples, ingest error summary) for operator triage.
+- Ensure diagnostics are available through existing scraper run/admin endpoints,
+  without requiring new UI surfaces.
+- Keep using existing event/admin review queue flows for post-ingest correction
+  of confusing or low-quality data.
+
+**Explicitly out of scope for Phase 1** (later phases):
+- New dedicated audit tables for per-event parser/mapper forensic history.
+- Cross-run warning analytics (trend dashboards, search, filtering, alerting).
+- New remediation workflow UX beyond current admin review queue.
+
+**Acceptance intent**: Phase 1 is complete when operators can answer “what went
+wrong in this ICS run?” from persisted run metadata and existing admin tooling,
+without introducing a new audit subsystem.
 
 **ICS producer quirks** (tolerated by the lenient parser):
 - Google Calendar: `X-GOOGLE-*` extension properties — ignored by default
@@ -690,22 +750,22 @@ extraction, all-day detection (VALUE=DATE), GEO parsing, CATEGORIES splitting
 preservation, ORGANIZER CN + mailto extraction, lenient skip-on-error with warnings.
 Also handle: DTEND-before-DTSTART skip, SUMMARY length truncation (500 runes),
 duplicate UID detection.
-**Test**: `parse_test.go` with 15 fixture files in `testdata/`:
-- `basic-event.ics` — single VEVENT, all fields populated
-- `multi-event.ics` — 5 VEVENTs, mixed field presence
-- `recurring-weekly.ics` — VEVENT with RRULE + EXDATE
-- `recurring-monthly.ics` — VEVENT with RRULE FREQ=MONTHLY + RDATE
-- `malformed.ics` — mix of valid and invalid VEVENTs (missing SUMMARY, bad DTSTART)
-- `floating-time.ics` — DTSTART without timezone suffix or VTIMEZONE
-- `all-day.ics` — VALUE=DATE DTSTART (whole-day events)
-- `html-description.ics` — DESCRIPTION with HTML content
-- `empty-calendar.ics` — VCALENDAR with zero VEVENTs
-- `reversed-dates.ics` — VEVENT with DTEND before DTSTART
-- `duplicate-uids.ics` — two VEVENTs with same UID, no RECURRENCE-ID
-- `infinite-rrule.ics` — RRULE with no COUNT and no UNTIL
-- `outlook-vtimezone.ics` — VTIMEZONE with Windows TZID ("Eastern Standard Time")
-- `duration-event.ics` — VEVENT with DURATION instead of DTEND
-- `recurrence-id.ics` — RRULE series with RECURRENCE-ID exception override
+**Test**: `parse_test.go` with 15 fixtures under `tests/testdata/ics/`:
+- `parse-basic-event.ics` — single VEVENT, all fields populated
+- `parse-multi-event.ics` — 5 VEVENTs, mixed field presence
+- `parse-recurring-weekly.ics` — VEVENT with RRULE + EXDATE
+- `parse-recurring-monthly.ics` — VEVENT with RRULE FREQ=MONTHLY + RDATE
+- `parse-malformed.ics` — mix of valid and invalid VEVENTs (missing SUMMARY, bad DTSTART)
+- `parse-floating-time.ics` — DTSTART without timezone suffix or VTIMEZONE
+- `parse-all-day.ics` — VALUE=DATE DTSTART (whole-day events)
+- `parse-html-description.ics` — DESCRIPTION with HTML content
+- `parse-empty-calendar.ics` — VCALENDAR with zero VEVENTs
+- `parse-reversed-dates.ics` — VEVENT with DTEND before DTSTART
+- `parse-duplicate-uids.ics` — two VEVENTs with same UID, no RECURRENCE-ID
+- `parse-infinite-rrule.ics` — RRULE with no COUNT and no UNTIL
+- `parse-outlook-vtimezone.ics` — VTIMEZONE with Windows TZID ("Eastern Standard Time")
+- `parse-duration-event.ics` — VEVENT with DURATION instead of DTEND
+- `parse-recurrence-id.ics` — RRULE series with RECURRENCE-ID exception override
 **Acceptance**: `go test ./internal/ical/...` passes with all fixtures.
 
 ### Task 3: Implement `internal/ical/mapper.go` — VEvent → EventInput
@@ -772,13 +832,13 @@ using `limitRedirects(10)` (same as Tier 3 REST), body size limit with overflow
 detection (read limit+1 bytes), Content-Type warning, `ical.Parse()`,
 `ical.MapToEventInputs()`. Add `scrapeICS()` method to `Scraper` struct using the
 `runWithTracking` + `scrapeFunc` pattern. Wire dispatch in `ScrapeSource()` and
-`ScrapeAll()` — check `cfg.SourceType == "ics"` before sitemap check and tier switch.
+`ScrapeAll()` — check `cfg.ExtractionMethod == "ics"` before sitemap check and tier switch.
 Also:
 - Add `icsConfig config.ICSConfig` field to the `Scraper` struct
 - Update `NewScraper*` constructor functions to accept and wire `ICSConfig`
 - Add `ICS ICSConfig` field to `Config` struct in `internal/config/config.go`
 - Wire env vars `ICS_HORIZON_DAYS`, `ICS_MAX_OCCURRENCES`, `ICS_MAX_BODY_BYTES` via
-  `getEnvInt`/`getEnvInt64` in `config.Load()`
+  `getEnvInt` in `config.Load()` (`ICS_MAX_BODY_BYTES` parsed as int then cast to int64)
 **Test**: `ics_test.go`:
 - Integration test: httptest server serves ICS fixture → `Extract()` returns correct
   EventInputs
@@ -788,52 +848,60 @@ Also:
 - Empty feed returns empty result (no error)
 **Acceptance**: `go test ./internal/scraper/...` passes.
 
-### Task 6: Add `source_type` column migration + wire ICS dispatch
+### Task 6: Add `extraction_method` column migration + wire ICS dispatch
 
 **Bead**: `srv-1j6ng`
 **What**:
-1. Create `migrations/000042_scraper_sources_source_type.{up,down}.sql`
+1. Create `migrations/000042_scraper_sources_extraction_method.{up,down}.sql`
    (Migration number 000042 is provisional — verify availability at implementation
    time with `ls internal/storage/postgres/migrations/000042*`. If taken, use next.)
-2. Add `SourceType` field to `SourceConfig` struct with YAML/JSON tags
-3. Update `ValidateConfig()` — accept `source_type: ics`; skip selector validation
+2. Add `ExtractionMethod` field to `SourceConfig` struct with YAML/JSON tags
+3. Update `ValidateConfig()` — accept `extraction_method: ics`; skip selector validation
    for ICS sources; warn if selectors provided on ICS source
-4. Update `server scrape sync` — read/write `source_type` from YAML → DB
-5. Update SQLc queries if needed (add `source_type` to insert/update/select)
+4. Update `server scrape sync` — read/write `extraction_method` from YAML → DB
+5. Update SQLc queries if needed (add `extraction_method` to insert/update/select)
+
+**Breaking-change scope and safety**:
+- Treat this as an API/schema-visible additive change for scraper source payloads
+  (admin endpoints that serialize `scraper_sources` may expose a new field).
+- Do not rename, repurpose, or revalidate provenance `sources.source_type`; that
+  column remains owned by provenance flows and existing SEL semantics.
+- Add/keep tests that fail if provenance source-type behavior changes while adding
+  scraper extraction-method support.
 6. Run `make sqlc` to regenerate
 
-**Files affected** (the `source_type` field addition cascades through the full
+**Files affected** (the `extraction_method` field addition cascades through the full
 YAML→DB→Go→dispatch pipeline):
 - `internal/storage/postgres/migrations/000042_*` — new migration (up + down)
-- `internal/scraper/config.go` — add `SourceType string` to `SourceConfig`
-- `internal/domain/scraper/source.go` — add `SourceType string` to `Source` and
+- `internal/scraper/config.go` — add `ExtractionMethod string` to `SourceConfig`
+- `internal/domain/scraper/source.go` — add `ExtractionMethod string` to `Source` and
   `UpsertParams` structs
-- `internal/scraper/db_source.go` — map `SourceType` in `SourceConfigFromDomain()`
-- `internal/storage/postgres/queries/scraper_sources.sql` — add `source_type` to
+- `internal/scraper/db_source.go` — map `ExtractionMethod` in `SourceConfigFromDomain()`
+- `internal/storage/postgres/queries/scraper_sources.sql` — add `extraction_method` to
   INSERT/UPDATE/SELECT queries
-- `internal/scraper/sync.go` — wire `source_type` when building `UpsertParams` from
-  YAML config during `server scrape sync`
+- `internal/scraper/db_upsert.go` — wire `extraction_method` when building `UpsertParams`
+  from YAML config during `server scrape sync`
+- `cmd/server/cmd/scrape_sync.go` — sync command path that calls
+  `SourceConfigToUpsertParams`
 - SQLc regeneration (`make sqlc`) updates `querier.go` and `*.sql.go`
 
-**Note on naming**: The new `scraper_sources.source_type` column has different
-semantics from `sources.source_type` (provenance table, migration 000002). The
+**Note on naming**: The new `scraper_sources.extraction_method` column avoids
+semantic collision with `sources.source_type` (provenance table, migration 000002). The
 provenance column tracks *how data entered the SEL* (scraper/api/partner/user/etc.);
-the new column tracks *which extraction method the scraper uses* (scraper/ics). The
-`COMMENT ON COLUMN` in the migration distinguishes them. Consider renaming to
-`extraction_method` during implementation if the naming causes confusion in code
-review.
+the new column tracks *which extraction method the scraper uses* (scraper/ics).
+The `COMMENT ON COLUMN` in the migration should explicitly document this distinction.
 
 **OpenAPI/config lint note**: Evaluate whether `ICS_HORIZON_DAYS`,
 `ICS_MAX_OCCURRENCES`, `ICS_MAX_BODY_BYTES` need entries in
 `internal/config/openapi_lint_test.go`. Likely not — these control scraper internals
 and don't affect public API responses. If any admin API endpoint serializes
 `scraper_sources` rows (e.g., `/api/v1/admin/scraper/diagnostics`), update
-`docs/api/openapi.yaml` to include the `source_type` field in the response schema.
+`docs/api/openapi.yaml` to include the `extraction_method` field in the response schema.
 **Test**:
 - Migration up/down test (existing migration test pattern)
-- Config validation: `source_type: ics` passes without selectors
-- Config validation: `source_type: ics` with selectors emits warning
-- Sync: YAML with `source_type: ics` → DB row with `source_type = 'ics'`
+- Config validation: `extraction_method: ics` passes without selectors
+- Config validation: `extraction_method: ics` with selectors emits warning
+- Sync: YAML with `extraction_method: ics` → DB row with `extraction_method = 'ics'`
 **Acceptance**: `make sqlc && make build && go test ./internal/scraper/...` passes.
 Migration applies cleanly on local DB.
 
@@ -856,7 +924,7 @@ Source-level config (YAML):
 
 ```yaml
 name: "civic-tech-toronto"
-source_type: ics
+extraction_method: ics
 url: "https://www.meetup.com/Civic-Tech-Toronto/events/ical/"
 schedule: "daily"
 trust_level: 5
@@ -898,3 +966,13 @@ exist for operator tuning if needed.
 3. **Tockify feed pagination**: The torevent Tockify feed has ~2,900 events. Does
    Tockify paginate ICS feeds or return the entire calendar? If paginated, we may
    need to handle `REFRESH-INTERVAL` or date-range parameters. Test with real feed.
+
+## Rollback Notes (Phase 1)
+
+- If ICS ingest rollout causes regressions, disable affected sources or set
+  `extraction_method='scraper'` for impacted rows while preserving source records.
+- If the new migration is the latest applied migration and must be rolled back,
+  run `make migrate-down` once, then verify scrape commands still operate in
+  scraper-only mode.
+- Keep `tests/testdata/ics/` fixtures and parse/mapper tests intact during rollback;
+  they are required to validate re-apply safety.
