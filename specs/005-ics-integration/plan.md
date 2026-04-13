@@ -186,27 +186,30 @@ type ParsedCalendar struct {
 
 // ParsedEvent holds a single VEVENT extracted from a VCALENDAR.
 type ParsedEvent struct {
-    UID         string
-    Summary     string
-    Description string
-    Location    string
-    URL         string
-    Start       time.Time
-    End         time.Time
-    AllDay      bool
-    RRULE       string           // Raw RRULE string, empty if non-recurring
-    ExDates     []time.Time      // EXDATE values
-    RDates      []time.Time      // RDATE values
-    Organizer   string           // ORGANIZER value (often mailto:)
-    Categories  []string         // CATEGORIES values
-    GeoLat      float64          // GEO latitude (0 if absent)
-    GeoLon      float64          // GEO longitude (0 if absent)
-    Created     time.Time        // CREATED
-    LastMod     time.Time        // LAST-MODIFIED
-    Sequence    int              // SEQUENCE (change counter)
-    Status      string           // STATUS: CONFIRMED, TENTATIVE, CANCELLED
-    XSource     string           // X-SOURCE (community-calendar provenance)
-    RawProps    map[string]string // Other properties for payload preservation
+    UID          string
+    Summary      string
+    Description  string
+    Location     string
+    URL          string
+    Start        time.Time
+    End          time.Time
+    Duration     time.Duration    // DURATION property (zero if absent; used when DTEND missing)
+    AllDay       bool
+    RRULE        string           // Raw RRULE string, empty if non-recurring
+    RecurrenceID time.Time        // RECURRENCE-ID (zero if absent; exception to RRULE series)
+    ExDates      []time.Time      // EXDATE values
+    RDates       []time.Time      // RDATE values
+    Organizer    string           // ORGANIZER CN parameter (display name)
+    OrganizerEmail string         // ORGANIZER mailto: value (email)
+    Categories   []string         // CATEGORIES values (multi-value, multi-property)
+    GeoLat       float64          // GEO latitude (0 if absent)
+    GeoLon       float64          // GEO longitude (0 if absent)
+    Created      time.Time        // CREATED
+    LastMod      time.Time        // LAST-MODIFIED
+    Sequence     int              // SEQUENCE (change counter)
+    Status       string           // STATUS: CONFIRMED, TENTATIVE, CANCELLED
+    XSource      string           // X-SOURCE (community-calendar provenance)
+    RawProps     map[string]string // Other properties for payload preservation
 }
 ```
 
@@ -219,7 +222,8 @@ type ParsedEvent struct {
 // Non-recurring events become a single EventInput.
 // Recurring events with RRULE expand occurrences within the horizon window
 // and produce one EventInput per occurrence (linked by series metadata).
-func MapToEventInputs(cal *ParsedCalendar, opts MapperOptions) ([]events.EventInput, []string, error)
+// ctx enables cancellation during large RRULE expansions.
+func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptions) ([]events.EventInput, []string, error)
 
 type MapperOptions struct {
     SourceURL       string        // Feed URL for provenance
@@ -357,9 +361,9 @@ by community-calendar; ICS discovery patterns documented.
 |------|----------|------------|
 | Malformed ICS in the wild (missing required fields, wrong encodings) | High | Lenient parser with warnings; skip unparseable VEVENTs, don't fail the whole feed |
 | RRULE expansion produces unbounded occurrences | High | `MaxOccurrences` cap (default 100); `HorizonDays` window (default 90 days) |
-| Timezone handling (floating times, VTIMEZONE definitions) | Medium | Fall back to source config timezone → server default timezone; log warning on ambiguous times |
+| Timezone handling (floating times, VTIMEZONE definitions) | Medium | `time.LoadLocation` for IANA TZIDs; `WindowsTZIDAliases` map for Outlook/Exchange non-IANA TZIDs; fall back to source config timezone → UTC; log warning on ambiguous times |
 | ICS feeds change UID format between fetches → duplicate events | Medium | Dedup by content hash (name + venue + startDate) in addition to UID-based dedup |
-| Large ICS feeds (1000+ events) overwhelm batch ingest | Low | Chunk into batches of 50 events per ingest call (existing batch limit) |
+| Large ICS feeds (1000+ events) increase memory use | Low | `MaxBodyBytes` (10 MB) bounds raw input. Events are ingested individually through the existing per-event ingest pipeline (no batching in scraper→ingest path). A 6,558-event feed produces ~20-40 MB in memory — manageable. |
 | `arran4/golang-ical` doesn't handle edge case X | Medium | Library is actively maintained (last release 2025); can contribute fixes upstream or wrap/patch |
 
 ## Security
