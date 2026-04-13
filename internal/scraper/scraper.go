@@ -451,7 +451,7 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 // individually. Returns valid EventInputs and the count of skipped (failed) groups.
 //
 // A limit of 0 means no limit. The logger is used for per-group warning messages.
-func normalizeRawEvents(rawEvents []RawEvent, source SourceConfig, limit int, logger zerolog.Logger) ([]events.EventInput, int) {
+func normalizeRawEvents(rawEvents []RawEvent, source SourceConfig, limit int, logger zerolog.Logger, now time.Time) ([]events.EventInput, int) {
 	// Group RawEvents by (URL, Name) so we can detect multi-row cases.
 	// Map key: "url|||name" (using triple-pipe to avoid collisions).
 	// An ordered slice tracks insertion order so results are deterministic.
@@ -496,10 +496,10 @@ func normalizeRawEvents(rawEvents []RawEvent, source SourceConfig, limit int, lo
 
 		if len(g.rows) > 1 {
 			// Multi-row case: consolidate into a single EventInput with Occurrences.
-			input, normErr = consolidateOccurrences(g.rows, source)
+			input, normErr = consolidateOccurrences(g.rows, source, now)
 		} else {
 			// Single-row case: normalize as before.
-			input, normErr = NormalizeRawEvent(g.rows[0], source)
+			input, normErr = NormalizeRawEvent(g.rows[0], source, now)
 		}
 
 		if normErr != nil {
@@ -563,7 +563,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 		var warnings []string
 		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, firstProbes)...)
 
-		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger)
+		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger, time.Now())
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
 				Msg("scraper: tier 1 events skipped during normalisation")
@@ -621,7 +621,7 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 		var warnings []string
 		warnings = append(warnings, checkDateSelectorQuality(rawEvents, source, firstProbes)...)
 
-		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger)
+		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger, time.Now())
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
 				Msg("scraper: tier 2 events skipped during normalisation")
@@ -731,7 +731,7 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 			return 0, nil, nil, err
 		}
 
-		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger)
+		validEvents, skipped := normalizeRawEvents(rawEvents, source, opts.Limit, s.logger, time.Now())
 		if skipped > 0 {
 			s.logger.Warn().Str("source", source.Name).Int("skipped", skipped).
 				Msg("scraper: tier 3 events skipped during normalisation")
@@ -947,7 +947,7 @@ func (s *Scraper) scrapeSitemapSelectorPage(
 	warnings = checkDateSelectorQuality(rawEvts, clone, probes)
 	// Pass limit=0; the global limit is enforced after pageEvents are
 	// appended to allEvents in scrapeSitemap.
-	valid, skipped := normalizeRawEvents(rawEvts, clone, 0, s.logger)
+	valid, skipped := normalizeRawEvents(rawEvts, clone, 0, s.logger, time.Now())
 	if skipped > 0 {
 		s.logger.Warn().Str("source", clone.Name).Str("url", clone.URL).Int("skipped", skipped).
 			Msgf("scraper: sitemap %s events skipped during normalisation", tierLabel)
