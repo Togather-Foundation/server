@@ -1,0 +1,43 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+X-WR-CALNAME:Toronto Community Calendar
+X-WR-CALDESC:Events from the Toronto community calendar
+X-WR-TIMEZONE:America/Toronto
+BEGIN:VEVENT
+UID:tribe-1@example.org
+SUMMARY:Tribe Yoga Class
+DTSTART;TZID=America/Toronto:20260701T180000
+DTEND;TZID=America/Toronto:20260701T193000
+LOCATION:123 Main St\, Toronto\, ON
+DESCRIPTION:Weekly yoga class for all levels.
+ORGANIZER;CN=Toronto Yoga Studio:mailto:yoga@example.org
+CATEGORIES:Health,Community
+X-TRIBE-EVENT-ID:12345
+X-TRIBE-VENUE-NAME:Main Street Studio
+END:VEVENT
+BEGIN:VEVENT
+UID:tribe-2@example.org
+SUMMARY:Tribe Art Opening
+DTSTART;TZID=America/Toronto:20260705T190000
+DTEND;TZID=America/Toronto:20260705T220000
+LOCATION:456 Gallery Ave\, Toronto\, ON
+DESCRIPTION:Opening night for local artists.
+ORGANIZER;CN=Gallery Collective:mailto:gallery@example.org
+CATEGORIES:Arts
+X-TRIBE-EVENT-ID:12346
+X-TRIBE-VENUE-NAME:Downtown Gallery
+END:VEVENT
+BEGIN:VEVENT
+UID:tribe-3@example.org
+SUMMARY:Tribe Block Party
+DTSTART;TZID=America/Toronto:20260712T120000
+DTEND;TZID=America/Toronto:20260712T200000
+LOCATION:789 Neighbourhood Blvd\, Toronto\, ON
+DESCRIPTION:Annual neighbourhood block party with food and music.
+ORGANIZER;CN=Community Board:mailto:board@example.org
+CATEGORIES:Community,Music
+X-TRIBE-EVENT-ID:12347
+X-TRIBE-VENUE-NAME:Neighbourhood Park
+END:VEVENT
+END:VCALENDAR

@@ -1,0 +1,14 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:recurrence-exdate-1@example.org
+SUMMARY:Recurring Tuesday Workshop
+DTSTART;TZID=America/Toronto:20260706T190000
+DTEND;TZID=America/Toronto:20260706T210000
+LOCATION:Workshop Space 101
+DESCRIPTION:Weekly workshop covering various topics.
+RRULE:FREQ=WEEKLY;BYDAY=MO,WE
+EXDATE;TZID=America/Toronto:20260706T190000
+END:VEVENT
+END:VCALENDAR

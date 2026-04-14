@@ -1,0 +1,24 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:meetup-1@example.org
+SUMMARY:Meetup Toronto Tech Talk
+DTSTART:20260715T180000Z
+DTEND:20260715T210000Z
+LOCATION:100 King St W\, Toronto\, ON M5X 1A9
+DESCRIPTION:Monthly tech talk meetup.
+URL:https://www.meetup.com/toronto-tech/events/123456/
+ORGANIZER;CN=Toronto Tech Group:mailto:info@example.org
+END:VEVENT
+BEGIN:VEVENT
+UID:meetup-2@example.org
+SUMMARY:Meetup Toronto DevOps Coffee
+DTSTART:20260718T090000Z
+DTEND:20260718T100000Z
+LOCATION:200 Queen St W\, Toronto\, ON
+DESCRIPTION:Casual coffee chat about DevOps practices.
+URL:https://www.meetup.com/toronto-devops/events/234567/
+ORGANIZER;CN=Toronto DevOps Group:mailto:devops@example.org
+END:VEVENT
+END:VCALENDAR

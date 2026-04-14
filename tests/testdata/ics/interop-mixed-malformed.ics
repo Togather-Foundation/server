@@ -1,0 +1,26 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:malformed-valid-1@example.org
+SUMMARY:Well-Formed Event Alpha
+DTSTART:20260801T100000Z
+DTEND:20260801T120000Z
+DESCRIPTION:A properly formed event among malformed entries.
+LOCATION:Hall A
+END:VEVENT
+BEGIN:VEVENT
+UID:malformed-missing-dtstart@example.org
+SUMMARY:Missing DTSTART Event
+DESCRIPTION:This event has no DTSTART and should be skipped with a warning.
+LOCATION:Hall B
+END:VEVENT
+BEGIN:VEVENT
+UID:malformed-valid-2@example.org
+SUMMARY:Well-Formed Event Beta
+DTSTART:20260802T140000Z
+DTEND:20260802T160000Z
+DESCRIPTION:Another properly formed event.
+LOCATION:Hall C
+END:VEVENT
+END:VCALENDAR

@@ -1,0 +1,21 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+X-PUBLISHED-TTL:PT1H
+BEGIN:VEVENT
+UID:tockify-1@example.org
+SUMMARY:Tockify Book Club
+DTSTART:20260720T190000Z
+DTEND:20260720T210000Z
+LOCATION:Online via Zoom
+DESCRIPTION:<p>Join us for our monthly book club meeting.</p><p>Visit <a href="https://example.org/bookclub">our site</a> for the reading list.</p>
+END:VEVENT
+BEGIN:VEVENT
+UID:tockify-2@example.org
+SUMMARY:Tockify Wellness Wednesday
+DTSTART:20260722T060000Z
+DTEND:20260722T070000Z
+LOCATION:Riverside Park
+DESCRIPTION:<p>Outdoor wellness session with yoga and meditation.</p><p>All levels welcome. <b>Free event!</b></p>
+END:VEVENT
+END:VCALENDAR
