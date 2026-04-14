@@ -371,7 +371,7 @@ func TestEventsHandlerGetSuccess(t *testing.T) {
 	require.Contains(t, link, `rel="alternate"`)
 	require.Contains(t, link, `type="text/calendar"`)
 	require.Contains(t, link, "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
-	require.Contains(t, link, ".ics")
+	require.Contains(t, link, "/ics")
 }
 
 func TestEventsHandlerGetInvalidID(t *testing.T) {

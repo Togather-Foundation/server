@@ -195,7 +195,7 @@ func TestICSSingleEventHandler(t *testing.T) {
 			h := NewICSHandler(events.NewService(repo), "test", "https://example.org")
 			h.Loc = tz
 
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/events/"+tc.pathValue+".ics", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/events/"+tc.pathValue+"/ics", nil)
 			req.SetPathValue("id", tc.pathValue)
 			res := httptest.NewRecorder()
 

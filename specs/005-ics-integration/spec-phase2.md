@@ -2,7 +2,7 @@
 
 **Spec**: 005-ics-integration / Phase 2 | **Date**: 2026-04-13 | **Status**: Draft
 **Parent**: `specs/005-ics-integration/plan.md`
-**Goal**: `GET /api/v1/events.ics` and `GET /api/v1/events/{id}.ics` return valid iCalendar output optimized for agent/API consumers, while remaining compatible with calendar clients.
+**Goal**: `GET /api/v1/events.ics` and `GET /api/v1/events/{id}/ics` return valid iCalendar output optimized for agent/API consumers, while remaining compatible with calendar clients.
 
 ## Context
 
@@ -26,7 +26,7 @@ Phase 1 introduces ICS ingest (`extraction_method: ics`) and establishes parsing
 
 1. `internal/ical/serialize.go` with stable ICS serialization for single and multi-event output.
 2. `GET /api/v1/events.ics` feed endpoint (filter-aware) for subscription clients.
-3. `GET /api/v1/events/{id}.ics` single-event download endpoint.
+3. `GET /api/v1/events/{id}/ics` single-event download endpoint.
 4. `text/calendar` negotiation support wired into middleware and handlers where applicable.
 5. API-first discovery headers for ICS alternates (`Link` header with `rel="alternate"`).
 6. OpenAPI updates for ICS endpoints and response content types.
@@ -78,11 +78,11 @@ As an agent/integration client, I can pull ICS feed pages and ingest valid calen
 
 As a user, I can download one event as `.ics` for manual import.
 
-**Independent Test**: Given existing event ULID, request `GET /api/v1/events/{id}.ics`, then import into a desktop calendar app.
+**Independent Test**: Given existing event ULID, request `GET /api/v1/events/{id}/ics`, then import into a desktop calendar app.
 
 **Acceptance Scenarios**:
 
-1. **Given** an event with occurrences, **When** `GET /api/v1/events/{id}.ics` is requested, **Then** response is `200` and contains a `VCALENDAR` with event VEVENT(s) for that event only.
+1. **Given** an event with occurrences, **When** `GET /api/v1/events/{id}/ics` is requested, **Then** response is `200` and contains a `VCALENDAR` with event VEVENT(s) for that event only.
 2. **Given** a missing event ULID, **When** single-event ICS endpoint is requested, **Then** response is RFC 7807 `404` (JSON problem response).
 3. **Given** a deleted/tombstoned event, **When** single-event ICS endpoint is requested, **Then** response follows existing deleted-resource semantics (410 path).
 
@@ -95,7 +95,7 @@ As an API consumer, I can discover ICS alternate URLs from API responses without
 **Acceptance Scenarios**:
 
 1. **Given** `GET /api/v1/events` response, **When** request completes, **Then** it includes `Link: <.../api/v1/events.ics...>; rel="alternate"; type="text/calendar"`.
-2. **Given** API event detail response from `GET /api/v1/events/{id}`, **When** request completes, **Then** it includes `Link` alternate to `/api/v1/events/{id}.ics`.
+2. **Given** API event detail response from `GET /api/v1/events/{id}`, **When** request completes, **Then** it includes `Link` alternate to `/api/v1/events/{id}/ics`.
 
 ### User Story 4 — Stable Serialization Contract (Priority: P1)
 
@@ -122,7 +122,7 @@ internal/
     serialize_test.go         # NEW - unit + golden tests
   api/
     handlers/
-      ics.go                  # NEW - /api/v1/events.ics feed + /api/v1/events/{id}.ics download
+      ics.go                  # NEW - /api/v1/events.ics feed + /api/v1/events/{id}/ics download
       events.go               # MODIFIED - add Link alternate headers on list/get
     middleware/
       negotiate.go            # MODIFIED - add text/calendar negotiated type
@@ -186,7 +186,7 @@ func (s *Service) GetByULID(ctx context.Context, ulid string) (*Event, error)
 Handler strategy for feed endpoint:
 - Parse filters with existing `events.ParseFilters(...)` for semantic parity.
 - Use cursor pagination for feed generation (`limit`/`after`) with the same bounds as existing list APIs.
-- Use `List()` results directly for serialization — `ListResult.Events` already contains full `Event` objects with populated `Occurrences`. Do NOT call `GetByULID` per item (N+1 anti-pattern). `GetByULID` is used only by the single-event handler (`/events/{id}.ics`).
+- Use `List()` results directly for serialization — `ListResult.Events` already contains full `Event` objects with populated `Occurrences`. Do NOT call `GetByULID` per item (N+1 anti-pattern). `GetByULID` is used only by the single-event handler (`/events/{id}/ics`).
 
 ### Endpoint Contracts
 
@@ -203,7 +203,7 @@ Handler strategy for feed endpoint:
     token used by the JSON list endpoint)
   - `Link` alternates for JSON-LD endpoint
 
-2) **GET `/api/v1/events/{id}.ics`**
+2) **GET `/api/v1/events/{id}/ics`**
 - Auth: public
 - Response `200`: `text/calendar; charset=utf-8`
 - Headers:
@@ -262,7 +262,7 @@ Handler strategy for feed endpoint:
 
 **Acceptance**: Endpoint returns valid ICS, respects filter parser semantics from `events.ParseFilters`, and supports cursor continuation.
 
-### Task 4: Add single-event ICS handler `GET /api/v1/events/{id}.ics`
+### Task 4: Add single-event ICS handler `GET /api/v1/events/{id}/ics`
 
 **What**: Implement per-event download endpoint using `GetByULID` and serializer single-event path.
 
@@ -311,7 +311,7 @@ Serializer defaults:
 ## Success Criteria
 
 1. `GET /api/v1/events.ics` works end-to-end and is consumable by at least Apple Calendar + Google Calendar import tests.
-2. `GET /api/v1/events/{id}.ics` returns a valid single-event ICS artifact.
+2. `GET /api/v1/events/{id}/ics` returns a valid single-event ICS artifact.
 3. OpenAPI includes new ICS endpoints and `text/calendar` response media types.
 4. No regressions in existing JSON-LD/HTML/Turtle content negotiation tests.
 5. Phase 2 tests explicitly cover relevant rows in `docs/integration/ics-compatibility-matrix.md`.

@@ -562,7 +562,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}))
 	mux.Handle("/api/v1/batch-status/{id}", batchStatus)
 	mux.Handle("/api/v1/events/{id}", publicEventGet)
-	mux.Handle("/api/v1/events/{id}.ics", publicICSEvent)
+	mux.Handle("/api/v1/events/{id}/ics", publicICSEvent)
 	mux.Handle("/api/v1/places", publicPlaces)
 	mux.Handle("/api/v1/places/{id}", publicPlaceGet)
 	mux.Handle("/api/v1/organizations", publicOrgs)

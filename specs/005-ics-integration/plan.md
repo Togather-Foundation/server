@@ -22,7 +22,7 @@ This integration adds two capabilities:
 
 2. **ICS Export** — The API serves `text/calendar` responses: full event feeds at
    `GET /api/v1/events.ics` (filterable, paginated via `Link rel="next"`) and per-event
-   downloads at `GET /api/v1/events/{id}.ics`.
+   downloads at `GET /api/v1/events/{id}/ics`.
 
 A secondary goal is upgrading the recurrence model from the current ad-hoc columns
 (`repeat_frequency`, `repeat_on_days`, `repeat_on_dates`) to canonical RRULE
@@ -329,7 +329,7 @@ for implementation deviations.
 ### Phase 2: ICS Export (Vertical Slice)
 
 **Goal**: `GET /api/v1/events.ics` returns an agent/API-consumable ICS feed with
-cursor pagination; `GET /api/v1/events/{id}.ics` returns a single-event download.
+cursor pagination; `GET /api/v1/events/{id}/ics` returns a single-event download.
 
 **Entry criteria**: Phase 1 delivered (parser/mapper stable).
 **Exit criteria**: feed pagination (`after`/`limit`) works for ICS via `Link rel="next"`; per-event download
@@ -341,7 +341,7 @@ compatibility validated (Apple/Google import/subscription smoke tests).
 2. Add `text/calendar` to content negotiation middleware (`negotiate.go`)
 3. Add `GET /api/v1/events.ics` feed handler with same filters as JSON list endpoint
    plus cursor pagination semantics (`after`, `limit`, `Link rel="next"` per RFC 8288)
-4. Add `GET /api/v1/events/{id}.ics` single-event download handler
+4. Add `GET /api/v1/events/{id}/ics` single-event download handler
 5. Add `Link` discovery headers with `rel="alternate"; type="text/calendar"` on
    `/api/v1/events` and `/api/v1/events/{id}`
 6. Update `docs/api/openapi.yaml` with ICS endpoints

@@ -445,7 +445,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Link", icsAlternateLink(h.BaseURL, "/api/v1/events/"+ulidValue+".ics"))
+	w.Header().Set("Link", icsAlternateLink(h.BaseURL, "/api/v1/events/"+ulidValue+"/ics"))
 	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
 }
 
