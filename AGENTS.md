@@ -26,7 +26,11 @@ You MUST update docs as needed.
 ## Fast Path
 
 ```bash
-# test locally
+# start a background server for local API testing (survives across shell invocations)
+make serve          # builds, starts, waits until ready — PID in tmp/serve.pid, log in tmp/serve.log
+make serve-stop     # graceful shutdown via PID file
+
+# test locally (foreground, logs to tmp/server.log)
 make run
 
 # CI before pushing (required)

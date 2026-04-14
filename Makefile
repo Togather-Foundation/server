@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci fmt clean run dev install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
+.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -49,6 +49,8 @@ help:
 	@echo "  make fmt           - Format all Go files"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make run           - Build and run the server (kills existing first), log to temp/server.log"
+	@echo "  make serve         - Build and run the server in the background (PID file + log); for agents/scripts"
+	@echo "  make serve-stop    - Stop the background server started by 'make serve'"
 	@echo "  make dev           - Run in development mode with live reload (requires air from install-tools)"
 	@echo "  make stop          - Stop running server processes"
 	@echo "  make restart       - Restart the server (stop + run, full rebuild)"
@@ -543,6 +545,68 @@ stop:
 	@# Also try killing by binary name as backup
 	@-killall togather-server 2>/dev/null || true
 	@echo "✓ Server stopped"
+
+SERVE_PID_FILE := tmp/serve.pid
+SERVE_LOG_FILE := tmp/serve.log
+
+# Run the server in the background (for agents and scripts that need a live server).
+# Writes PID to tmp/serve.pid and logs to tmp/serve.log.
+# Use 'make serve-stop' to shut it down cleanly.
+# Waits up to 10 s for the server to become ready before returning.
+serve: build
+	@mkdir -p tmp
+	@# Stop any stale background server from a previous 'make serve'
+	@if [ -f $(SERVE_PID_FILE) ]; then \
+		OLD_PID=$$(cat $(SERVE_PID_FILE)); \
+		if kill -0 "$$OLD_PID" 2>/dev/null; then \
+			echo "Stopping stale background server (PID $$OLD_PID)..."; \
+			kill "$$OLD_PID" 2>/dev/null || true; \
+			sleep 1; \
+			kill -9 "$$OLD_PID" 2>/dev/null || true; \
+		fi; \
+		rm -f $(SERVE_PID_FILE); \
+	fi
+	@# Also clear any process on port 8080
+	@if lsof -ti:8080 > /dev/null 2>&1; then \
+		echo "Found process on port 8080, stopping it..."; \
+		lsof -ti:8080 | xargs -r kill 2>/dev/null || true; \
+		sleep 1; \
+		lsof -ti:8080 | xargs -r kill -9 2>/dev/null || true; \
+		sleep 0.5; \
+	fi
+	@echo "Starting background server (log: $(SERVE_LOG_FILE))..."
+	@nohup ./server serve > $(SERVE_LOG_FILE) 2>&1 & echo $$! > $(SERVE_PID_FILE)
+	@# Wait until port 8080 is accepting connections (up to 10 s)
+	@for i in $$(seq 1 20); do \
+		if lsof -ti:8080 > /dev/null 2>&1; then \
+			echo "✓ Server ready (PID $$(cat $(SERVE_PID_FILE))) — http://localhost:8080"; \
+			exit 0; \
+		fi; \
+		sleep 0.5; \
+	done; \
+	echo "ERROR: server did not become ready within 10 s"; \
+	cat $(SERVE_LOG_FILE) | tail -20; \
+	exit 1
+
+# Stop the background server started by 'make serve'.
+serve-stop:
+	@if [ -f $(SERVE_PID_FILE) ]; then \
+		PID=$$(cat $(SERVE_PID_FILE)); \
+		if kill -0 "$$PID" 2>/dev/null; then \
+			echo "Stopping background server (PID $$PID)..."; \
+			kill "$$PID" 2>/dev/null || true; \
+			sleep 1; \
+			if kill -0 "$$PID" 2>/dev/null; then \
+				kill -9 "$$PID" 2>/dev/null || true; \
+			fi; \
+		else \
+			echo "Background server (PID $$PID) is not running"; \
+		fi; \
+		rm -f $(SERVE_PID_FILE); \
+	else \
+		echo "No PID file found ($(SERVE_PID_FILE)) — nothing to stop"; \
+	fi
+	@echo "✓ Background server stopped"
 
 # Build and run the server (kills existing processes first)
 # Log to temp/server.log
