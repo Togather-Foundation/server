@@ -5,7 +5,7 @@ inspecting an unknown site's DOM, check the recognition cheatsheet below to iden
 the platform. If a match is found, use the known selectors and headless flags as a
 starting point rather than deriving everything from scratch.
 
-**Last updated:** 2026-03-05
+**Last updated:** 2026-04-14
 
 ---
 

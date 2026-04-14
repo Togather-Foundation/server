@@ -104,52 +104,51 @@ func TestICSInteropIngest(t *testing.T) {
 			require.GreaterOrEqual(t, len(results), tc.ExpectedMinEvents,
 				"expected at least %d events from %s, got %d", tc.ExpectedMinEvents, tc.FixturePath, len(results))
 
+			allWarnings := append([]string{}, cal.Warnings...)
+			allWarnings = append(allWarnings, warnings...)
 			if tc.ExpectWarnings {
-				allWarnings := append([]string{}, cal.Warnings...)
-				allWarnings = append(allWarnings, warnings...)
 				require.NotEmpty(t, allWarnings, "expected warnings for %s", tc.FixturePath)
+			} else {
+				require.Empty(t, allWarnings,
+					"unexpected warnings from %s: %v", tc.FixturePath, allWarnings)
 			}
 
 			if tc.ExpectRecurrence {
-				require.NotEmpty(t, results, "need at least one result to check recurrence")
-				var foundRRULE bool
+				require.NotEmpty(t, cal.Events, "fixture %s must have at least one parsed event", tc.FixturePath)
+
+				// Fixture: FREQ=WEEKLY;BYDAY=MO,WE starting 2026-07-06 with 90-day default horizon.
+				// The EXDATE removes 2026-07-06 (Monday); at least one occurrence (Wednesday 2026-07-08)
+				// must remain within the window.
+				require.GreaterOrEqual(t, len(results), 1,
+					"recurrence fixture %s should expand to at least one non-excluded occurrence", tc.FixturePath)
+
+				// Verify the EXDATE (2026-07-06T19:00:00 America/Toronto) is excluded:
+				// that specific datetime must NOT appear in the mapped results.
+				exdateParsed := cal.Events[0].ExDates
+				require.NotEmpty(t, exdateParsed,
+					"EXDATE should be parsed from %s", tc.FixturePath)
+
+				excludedDate := exdateParsed[0]
 				for _, ev := range results {
-					if ev.Source != nil && ev.Source.EventID != "" {
-						if len(cal.Events) > 0 && cal.Events[0].RRULE != "" {
-							foundRRULE = true
-						}
+					if ev.StartDate != "" {
+						require.NotEqual(t, excludedDate.Format(time.RFC3339), ev.StartDate,
+							"excluded date %s must not appear in mapped results from %s",
+							excludedDate.Format(time.RFC3339), tc.FixturePath)
 					}
 				}
-				if foundRRULE {
-					parsedRRULE := cal.Events[0].RRULE
-					require.NotEmpty(t, parsedRRULE, "RRULE should be parsed from %s", tc.FixturePath)
-				}
-
-				require.NotEmpty(t, cal.Events[0].ExDates,
-					"EXDATE should be parsed from %s", tc.FixturePath)
-			}
-
-			if tc.Name == "mixed-malformed" {
-				require.GreaterOrEqual(t, len(results), 2,
-					"at least 2 valid events should succeed from malformed mix")
-				allWarnings := append([]string{}, cal.Warnings...)
-				allWarnings = append(allWarnings, warnings...)
-				require.NotEmpty(t, allWarnings,
-					"malformed entries should produce warnings")
 			}
 		})
 	}
 }
 
 type exportExpectation struct {
-	Name                 string
-	IncludeRRule         bool
-	RequireRRULE         bool
-	ForbidRRULE          bool
-	RequireEXDATE        bool
-	EXDATENoTrailingZ    bool
-	RequireEventSchedule bool
-	MatrixRow            string
+	Name              string
+	IncludeRRule      bool
+	RequireRRULE      bool
+	ForbidRRULE       bool
+	RequireEXDATE     bool
+	EXDATENoTrailingZ bool
+	MatrixRow         string
 }
 
 func TestICSInteropExport(t *testing.T) {
@@ -218,19 +217,19 @@ func TestICSInteropExport(t *testing.T) {
 
 			if tc.EXDATENoTrailingZ {
 				// RFC 5545 §3.3.5: When TZID is set, EXDATE values must be local time (no trailing Z).
-				// Assert that the EXDATE line contains TZID and the datetime portion lacks a trailing Z.
+				// This is a regression guard — assert unconditionally that EXDATE is present.
 				exdateIdx := bytes.Index(body, []byte("EXDATE"))
-				if exdateIdx >= 0 {
-					lineEnd := bytes.IndexByte(body[exdateIdx:], '\n')
-					exdateLine := body[exdateIdx:]
-					if lineEnd >= 0 {
-						exdateLine = body[exdateIdx : exdateIdx+lineEnd]
-					}
-					require.Contains(t, string(exdateLine), "TZID=America/Toronto",
-						"EXDATE must include TZID when timezone is set")
-					require.NotContains(t, string(exdateLine), "T190000Z",
-						"EXDATE with TZID must not have trailing Z (RFC 5545 §3.3.5)")
+				require.GreaterOrEqual(t, exdateIdx, 0,
+					"EXDATENoTrailingZ=true but EXDATE not found in export body for %s", tc.Name)
+				lineEnd := bytes.IndexByte(body[exdateIdx:], '\n')
+				exdateLine := body[exdateIdx:]
+				if lineEnd >= 0 {
+					exdateLine = body[exdateIdx : exdateIdx+lineEnd]
 				}
+				require.Contains(t, string(exdateLine), "TZID=America/Toronto",
+					"EXDATE must include TZID when timezone is set")
+				require.NotContains(t, string(exdateLine), "T190000Z",
+					"EXDATE with TZID must not have trailing Z (RFC 5545 §3.3.5)")
 			}
 		})
 	}

@@ -3,7 +3,7 @@ VERSION:2.0
 PRODID:-//Test//Test//EN
 BEGIN:VEVENT
 UID:recurrence-exdate-1@example.org
-SUMMARY:Recurring Tuesday Workshop
+SUMMARY:Recurring Monday/Wednesday Workshop
 DTSTART;TZID=America/Toronto:20260706T190000
 DTEND;TZID=America/Toronto:20260706T210000
 LOCATION:Workshop Space 101

@@ -229,6 +229,31 @@ from the API response for a recurring event:
 3. If either is `NULL`, the `RecurrenceRule` struct will have nil `SeriesStart` or
    `SeriesEnd` fields, and the API omits `eventSchedule` from the response.
 
+**Why are these NULL after ICS ingest?** The ICS extraction pipeline stores the raw
+`RRULE` string and `EXDATE` list on the `event_series` row, but it does not parse the
+`DTSTART`/`UNTIL`/`COUNT` combination to compute series bounds. This is a known gap —
+the ingest pipeline intentionally avoids pre-computing derived dates to keep the mapper
+stateless.
+
+**Backfill when needed:** once you know the intended series bounds, set them directly:
+
+```sql
+UPDATE event_series SET
+  series_start_date = '2026-07-06',
+  series_end_date   = '2026-08-31'
+WHERE id = '<series-uuid>';
+```
+
+Find the `event_series` UUID for a given event:
+
+```sql
+SELECT e.ulid, es.id AS series_id, es.rrule,
+       es.series_start_date, es.series_end_date
+FROM events e
+JOIN event_series es ON es.id = e.series_id
+WHERE e.ulid = '<event-ulid>';
+```
+
 The relevant Go struct is `RecurrenceRule` (`internal/domain/events/repository.go`):
 ```go
 type RecurrenceRule struct {
