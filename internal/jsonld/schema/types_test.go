@@ -270,7 +270,7 @@ func TestOmitEmptyFields(t *testing.T) {
 		"@context", "@id", "description", "startDate", "endDate", "doorTime",
 		"location", "organizer", "image", "url", "keywords", "inLanguage",
 		"isAccessibleForFree", "eventStatus", "eventAttendanceMode",
-		"offers", "license", "sameAs", "subEvent",
+		"offers", "license", "sameAs", "subEvent", "eventSchedule",
 	}
 	for _, key := range omitted {
 		if _, ok := m[key]; ok {

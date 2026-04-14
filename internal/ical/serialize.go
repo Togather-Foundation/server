@@ -26,6 +26,11 @@ type SerializeOptions struct {
 	CalendarName string
 	// CalendarDescription is the X-WR-CALDESC property, shown by calendar clients.
 	CalendarDescription string
+	// IncludeRRule controls RRULE emission for recurring events.
+	// When true and an event has Recurrence != nil, a single VEVENT is emitted
+	// with RRULE/EXDATE/RDATE properties instead of one VEVENT per occurrence.
+	// Default false preserves Phase 2 wire compatibility.
+	IncludeRRule bool
 }
 
 // SerializeResult contains the serialized ICS calendar and any warnings encountered.
@@ -87,18 +92,18 @@ func serializeEventsCore(evts []events.Event, opts SerializeOptions) (SerializeR
 			continue
 		}
 
-		for _, occ := range occurrences {
-			uid := buildUID(evt.ULID, occ)
-			ve := cal.AddEvent(uid)
+		if opts.IncludeRRule && evt.Recurrence != nil {
+			ve := cal.AddEvent(fmt.Sprintf("%s@%s", evt.ULID, domainSuffix))
 
-			dtStart, warn := toUTCTime(occ.StartTime, occ.Timezone)
+			firstOcc := occurrences[0]
+			dtStart, warn := toUTCTime(firstOcc.StartTime, firstOcc.Timezone)
 			if warn != "" {
 				warnings = append(warnings, warn)
 			}
 			ve.SetStartAt(dtStart)
 
-			if occ.EndTime != nil {
-				dtEnd, warn := toUTCTime(*occ.EndTime, occ.Timezone)
+			if firstOcc.EndTime != nil {
+				dtEnd, warn := toUTCTime(*firstOcc.EndTime, firstOcc.Timezone)
 				if warn != "" {
 					warnings = append(warnings, warn)
 				}
@@ -106,20 +111,85 @@ func serializeEventsCore(evts []events.Event, opts SerializeOptions) (SerializeR
 			}
 
 			ve.SetDtStampTime(time.Now().UTC())
-
 			ve.SetSummary(evt.Name)
 
 			if evt.Description != "" {
 				ve.SetDescription(evt.Description)
 			}
 
-			location := buildEventLocation(evt, occ)
+			location := buildEventLocation(evt, firstOcc)
 			if location != "" {
 				ve.SetLocation(location)
 			}
 
-			if occ.TicketURL != "" {
-				ve.SetURL(occ.TicketURL)
+			if firstOcc.TicketURL != "" {
+				ve.SetURL(firstOcc.TicketURL)
+			}
+
+			ve.AddRrule(evt.Recurrence.RRule)
+
+			for _, exDate := range evt.Recurrence.ExDates {
+				if evt.Recurrence.TZID != "" {
+					// RFC 5545 §3.3.5: TZID= and trailing Z are mutually exclusive.
+					// When TZID is present, format as local time (no Z suffix).
+					loc, err := time.LoadLocation(evt.Recurrence.TZID)
+					if err != nil {
+						loc = time.UTC
+					}
+					ve.AddExdate(exDate.In(loc).Format("20060102T150405"), ics.WithTZID(evt.Recurrence.TZID))
+				} else {
+					ve.AddExdate(exDate.UTC().Format("20060102T150405Z"))
+				}
+			}
+
+			for _, rDate := range evt.Recurrence.RDates {
+				if evt.Recurrence.TZID != "" {
+					// RFC 5545 §3.3.5: TZID= and trailing Z are mutually exclusive.
+					// When TZID is present, format as local time (no Z suffix).
+					loc, err := time.LoadLocation(evt.Recurrence.TZID)
+					if err != nil {
+						loc = time.UTC
+					}
+					ve.AddRdate(rDate.In(loc).Format("20060102T150405"), ics.WithTZID(evt.Recurrence.TZID))
+				} else {
+					ve.AddRdate(rDate.UTC().Format("20060102T150405Z"))
+				}
+			}
+		} else {
+			for _, occ := range occurrences {
+				uid := buildUID(evt.ULID, occ)
+				ve := cal.AddEvent(uid)
+
+				dtStart, warn := toUTCTime(occ.StartTime, occ.Timezone)
+				if warn != "" {
+					warnings = append(warnings, warn)
+				}
+				ve.SetStartAt(dtStart)
+
+				if occ.EndTime != nil {
+					dtEnd, warn := toUTCTime(*occ.EndTime, occ.Timezone)
+					if warn != "" {
+						warnings = append(warnings, warn)
+					}
+					ve.SetEndAt(dtEnd)
+				}
+
+				ve.SetDtStampTime(time.Now().UTC())
+
+				ve.SetSummary(evt.Name)
+
+				if evt.Description != "" {
+					ve.SetDescription(evt.Description)
+				}
+
+				location := buildEventLocation(evt, occ)
+				if location != "" {
+					ve.SetLocation(location)
+				}
+
+				if occ.TicketURL != "" {
+					ve.SetURL(occ.TicketURL)
+				}
 			}
 		}
 	}

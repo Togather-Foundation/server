@@ -26,6 +26,7 @@ type Event struct {
 	License             string         `json:"license,omitempty"`
 	SameAs              []string       `json:"sameAs,omitempty"`
 	SubEvents           []EventSummary `json:"subEvent,omitempty"`
+	EventSchedule       *Schedule      `json:"eventSchedule,omitempty"`
 }
 
 // NewEvent creates an Event with @type pre-set.
@@ -170,6 +171,17 @@ func NewOffer() *Offer {
 	return &Offer{
 		Type: "Offer",
 	}
+}
+
+// Schedule represents schema.org/Schedule for recurring event recurrence metadata.
+type Schedule struct {
+	AtType           string   `json:"@type"`
+	RepeatFrequency  string   `json:"repeatFrequency,omitempty"`
+	ByDay            []string `json:"byDay,omitempty"`
+	ByMonthDay       []int    `json:"byMonthDay,omitempty"`
+	StartDate        string   `json:"startDate,omitempty"`
+	EndDate          string   `json:"endDate,omitempty"`
+	ScheduleTimezone string   `json:"scheduleTimezone,omitempty"`
 }
 
 // ListResponse is a generic schema.org ItemList envelope for paginated responses.

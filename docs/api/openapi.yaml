@@ -3276,6 +3276,62 @@ components:
         license:
           type: string
           format: uri
+        eventSchedule:
+          $ref: '#/components/schemas/Schedule'
+          description: |
+            Recurrence schedule for recurring events. Present only when the event
+            belongs to a series with a canonical RRULE. Derived from the RRULE
+            FREQ/INTERVAL/BYDAY/BYMONTHDAY parameters mapped to ISO 8601 durations
+            and schema.org Schedule vocabulary.
+
+    Schedule:
+      type: object
+      description: |
+        schema.org Schedule type representing recurrence metadata for recurring events.
+        Derived from canonical RRULE data stored on the event series.
+      properties:
+        '@type':
+          type: string
+          enum: [Schedule]
+        repeatFrequency:
+          type: string
+          description: |
+            ISO 8601 duration for the recurrence frequency.
+            Derived from RRULE FREQ and INTERVAL:
+            DAILY → P1D (or P{N}D with INTERVAL=N),
+            WEEKLY → P1W (or P{N}W with INTERVAL=N),
+            MONTHLY → P1M (or P{N}M with INTERVAL=N),
+            YEARLY → P1Y (or P{N}Y with INTERVAL=N).
+            HOURLY/MINUTELY/SECONDLY are omitted with a warning log.
+          example: P1W
+        byDay:
+          type: array
+          items:
+            type: string
+            enum: [Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday]
+          description: |
+            Days of the week from RRULE BYDAY, mapped from two-letter codes
+            (MO→Monday, TU→Tuesday, etc.) to schema.org DayOfWeek full names.
+          example: [Monday, Wednesday]
+        byMonthDay:
+          type: array
+          items:
+            type: integer
+          description: |
+            Days of the month from RRULE BYMONTHDAY. Negative values count
+            backwards from month end (e.g. -1 is the last day).
+          example: [15, -15]
+        startDate:
+          type: string
+          format: date-time
+          description: Start date of the recurrence series (from first occurrence).
+        endDate:
+          type: string
+          format: date-time
+          description: End date of the recurrence series (from last occurrence end time, if available).
+        scheduleTimezone:
+          type: string
+          description: IANA timezone identifier (e.g. America/Toronto).
 
     EventInput:
       type: object

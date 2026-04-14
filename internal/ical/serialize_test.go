@@ -417,3 +417,291 @@ func stripDTSTAMP(data []byte) []byte {
 	}
 	return []byte(strings.Join(filtered, "\r\n"))
 }
+
+func TestSerializeRRuleMode_RecurringEvent(t *testing.T) {
+	recurrence := &events.RecurrenceRule{
+		RRule:   "FREQ=WEEKLY;BYDAY=MO,WE",
+		ExDates: []time.Time{time.Date(2026, 5, 4, 18, 0, 0, 0, time.UTC)},
+		RDates:  []time.Time{time.Date(2026, 6, 1, 19, 0, 0, 0, time.UTC)},
+		TZID:    "America/Toronto",
+	}
+
+	evt := events.Event{
+		ULID:        "01HYX7QVATM8PZK6J7X7PZK6J7",
+		Name:        "Weekly Meetup",
+		Description: "Recurring weekly meetup.",
+		Recurrence:  recurrence,
+		Occurrences: []events.Occurrence{
+			{
+				ID:        "occ1",
+				StartTime: time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+				EndTime:   ptr(time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC)),
+			},
+			{
+				ID:        "occ2",
+				StartTime: time.Date(2026, 4, 22, 19, 0, 0, 0, time.UTC),
+				EndTime:   ptr(time.Date(2026, 4, 22, 21, 0, 0, 0, time.UTC)),
+			},
+		},
+	}
+
+	result, err := SerializeEvents([]events.Event{evt}, SerializeOptions{
+		IncludeRRule: true,
+	})
+	if err != nil {
+		t.Fatalf("SerializeEvents() error = %v", err)
+	}
+
+	data := result.Data
+
+	eventCount := bytes.Count(data, []byte("BEGIN:VEVENT"))
+	if eventCount != 1 {
+		t.Errorf("expected 1 VEVENT in RRULE mode, got %d", eventCount)
+	}
+
+	if !bytes.Contains(data, []byte("RRULE:FREQ=WEEKLY;BYDAY=MO,WE")) {
+		t.Errorf("expected RRULE property in wire bytes, got:\n%s", data)
+	}
+
+	if !bytes.Contains(data, []byte("EXDATE;")) {
+		t.Errorf("expected EXDATE property in wire bytes, got:\n%s", data)
+	}
+
+	if !bytes.Contains(data, []byte("RDATE;")) {
+		t.Errorf("expected RDATE property in wire bytes, got:\n%s", data)
+	}
+
+	uidExpected := "01HYX7QVATM8PZK6J7X7PZK6J7@togather.foundation"
+	if !bytes.Contains(data, []byte("UID:"+uidExpected)) {
+		t.Errorf("expected UID %q in RRULE mode (no occurrence ID), got:\n%s", uidExpected, data)
+	}
+
+	parsed, err := Parse(result.Data)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(parsed.Events) != 1 {
+		t.Fatalf("expected 1 parsed event, got %d", len(parsed.Events))
+	}
+	if parsed.Events[0].RRULE == "" {
+		t.Error("expected RRULE in parsed event")
+	}
+}
+
+func TestSerializeRRuleMode_DefaultFalse_IsWireIdenticalToPhase2(t *testing.T) {
+	occurrences := []events.Occurrence{
+		{
+			ID:        "occ1",
+			StartTime: time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+			EndTime:   ptr(time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC)),
+		},
+		{
+			ID:        "occ2",
+			StartTime: time.Date(2026, 4, 22, 19, 0, 0, 0, time.UTC),
+			EndTime:   ptr(time.Date(2026, 4, 22, 21, 0, 0, 0, time.UTC)),
+		},
+	}
+
+	evtWithRecurrence := events.Event{
+		ULID:        "01HYX7QVATM8PZK6J7X7PZK6J7",
+		Name:        "Weekly Meetup",
+		Description: "Recurring weekly meetup.",
+		Recurrence: &events.RecurrenceRule{
+			RRule: "FREQ=WEEKLY;BYDAY=MO,WE",
+		},
+		Occurrences: occurrences,
+	}
+
+	evtWithoutRecurrence := events.Event{
+		ULID:        "01HYX7QVATM8PZK6J7X7PZK6J7",
+		Name:        "Weekly Meetup",
+		Description: "Recurring weekly meetup.",
+		Occurrences: occurrences,
+	}
+
+	resultWith, err := SerializeEvents([]events.Event{evtWithRecurrence}, SerializeOptions{})
+	if err != nil {
+		t.Fatalf("SerializeEvents(with Recurrence, default opts) error = %v", err)
+	}
+	resultWithout, err := SerializeEvents([]events.Event{evtWithoutRecurrence}, SerializeOptions{})
+	if err != nil {
+		t.Fatalf("SerializeEvents(without Recurrence, default opts) error = %v", err)
+	}
+
+	strippedWith := stripDTSTAMP(resultWith.Data)
+	strippedWithout := stripDTSTAMP(resultWithout.Data)
+
+	if !bytes.Equal(strippedWith, strippedWithout) {
+		t.Errorf("default IncludeRRule=false should produce wire-identical output regardless of Recurrence field\ngot (with Recurrence):\n%s\nexpected (without Recurrence):\n%s", strippedWith, strippedWithout)
+	}
+
+	if bytes.Contains(resultWith.Data, []byte("RRULE:")) {
+		t.Error("default IncludeRRule=false should not emit RRULE")
+	}
+
+	eventCount := bytes.Count(resultWith.Data, []byte("BEGIN:VEVENT"))
+	if eventCount != 2 {
+		t.Errorf("expected 2 VEVENTs in flattened mode, got %d", eventCount)
+	}
+}
+
+func TestSerializeRRuleMode_NonRecurringEvent(t *testing.T) {
+	evt := events.Event{
+		ULID:        "01HYX7QVATM8PZK6J7X7PZK6J7",
+		Name:        "One-off Event",
+		Description: "A non-recurring event.",
+		Occurrences: []events.Occurrence{
+			{
+				ID:        "occ1",
+				StartTime: time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+				EndTime:   ptr(time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC)),
+			},
+		},
+	}
+
+	result, err := SerializeEvents([]events.Event{evt}, SerializeOptions{
+		IncludeRRule: true,
+	})
+	if err != nil {
+		t.Fatalf("SerializeEvents() error = %v", err)
+	}
+
+	if bytes.Contains(result.Data, []byte("RRULE:")) {
+		t.Error("non-recurring event in RRULE mode should not emit RRULE")
+	}
+
+	eventCount := bytes.Count(result.Data, []byte("BEGIN:VEVENT"))
+	if eventCount != 1 {
+		t.Errorf("expected 1 VEVENT, got %d", eventCount)
+	}
+
+	parsed, err := Parse(result.Data)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(parsed.Events) != 1 {
+		t.Fatalf("expected 1 parsed event, got %d", len(parsed.Events))
+	}
+}
+
+func TestSerializeRRuleMode_RoundTripValidation(t *testing.T) {
+	recurrence := &events.RecurrenceRule{
+		RRule:   "FREQ=WEEKLY;BYDAY=TU",
+		ExDates: nil,
+		RDates:  nil,
+		TZID:    "",
+	}
+
+	evt := events.Event{
+		ULID:        "01HYX7QVATM8PZK6J7X7PZK6J7",
+		Name:        "Roundtrip RRULE Event",
+		Description: "Validates RRULE round-trip through parse.",
+		Recurrence:  recurrence,
+		Occurrences: []events.Occurrence{
+			{
+				ID:        "occ1",
+				StartTime: time.Date(2026, 4, 14, 10, 0, 0, 0, time.UTC),
+				EndTime:   ptr(time.Date(2026, 4, 14, 12, 0, 0, 0, time.UTC)),
+			},
+		},
+	}
+
+	result, err := SerializeEvents([]events.Event{evt}, SerializeOptions{
+		IncludeRRule: true,
+	})
+	if err != nil {
+		t.Fatalf("SerializeEvents() error = %v", err)
+	}
+
+	parsed, err := Parse(result.Data)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	if len(parsed.Events) != 1 {
+		t.Fatalf("expected 1 parsed event, got %d", len(parsed.Events))
+	}
+
+	if parsed.Events[0].RRULE != "FREQ=WEEKLY;BYDAY=TU" {
+		t.Errorf("expected RRULE 'FREQ=WEEKLY;BYDAY=TU', got %q", parsed.Events[0].RRULE)
+	}
+
+	if parsed.Events[0].Summary != "Roundtrip RRULE Event" {
+		t.Errorf("expected summary 'Roundtrip RRULE Event', got %q", parsed.Events[0].Summary)
+	}
+}
+
+func TestExportFixturesRRule(t *testing.T) {
+	recurrence := &events.RecurrenceRule{
+		RRule: "FREQ=WEEKLY;BYDAY=MO,WE",
+		ExDates: []time.Time{
+			time.Date(2026, 5, 4, 18, 0, 0, 0, time.UTC),
+		},
+		RDates: []time.Time{
+			time.Date(2026, 6, 1, 19, 0, 0, 0, time.UTC),
+		},
+		TZID: "America/Toronto",
+	}
+
+	venueName := "Community Center"
+	evt := events.Event{
+		ULID:             "01HYX7QVATM8PZK6J7X7PZK6J7",
+		Name:             "Weekly Meetup",
+		Description:      "A recurring community meetup with exceptions.",
+		Recurrence:       recurrence,
+		PrimaryVenueName: &venueName,
+		Occurrences: []events.Occurrence{
+			{
+				ID:        "occ1",
+				StartTime: time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+				EndTime:   ptr(time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC)),
+				VenueULID: ptr("01HYX7QVATM8PZK6J7X7PZK6J7"),
+			},
+		},
+	}
+
+	fixturePath := "../../tests/testdata/ics/export-recurring-rrule.ics"
+
+	result, err := SerializeEvents([]events.Event{evt}, SerializeOptions{
+		CalendarName: "Test Calendar",
+		IncludeRRule: true,
+	})
+	if err != nil {
+		t.Fatalf("SerializeEvents() error = %v", err)
+	}
+
+	parsed, err := Parse(result.Data)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	if len(parsed.Events) != 1 {
+		t.Fatalf("expected 1 parsed event from RRULE fixture, got %d", len(parsed.Events))
+	}
+
+	if *update {
+		if err := os.WriteFile(fixturePath, result.Data, 0644); err != nil {
+			t.Fatalf("failed to update fixture: %v", err)
+		}
+		t.Logf("updated fixture: %s", fixturePath)
+		return
+	}
+
+	expected, err := os.ReadFile(fixturePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if err := os.WriteFile(fixturePath, result.Data, 0644); err != nil {
+				t.Fatalf("failed to create fixture: %v", err)
+			}
+			t.Logf("created fixture: %s", fixturePath)
+			return
+		}
+		t.Fatalf("failed to read fixture: %v", err)
+	}
+
+	resultData := stripDTSTAMP(result.Data)
+	expectedData := stripDTSTAMP(expected)
+
+	if !bytes.Equal(resultData, expectedData) {
+		t.Errorf("fixture mismatch\ngot:\n%s\nexpected:\n%s", resultData, expectedData)
+	}
+}

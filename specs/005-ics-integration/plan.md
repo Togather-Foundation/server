@@ -1,6 +1,6 @@
 # Plan: ICS/iCal Integration
 
-**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 2 Delivered)
+**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 3 Delivered)
 **Goal**: Make ICS (RFC 5545) a first-class ingest and output format — the SEL can
 consume ICS feeds from any source (including community-calendar) and produce
 subscribable ICS feeds that any calendar client or aggregator can consume.
@@ -365,7 +365,7 @@ deviations.
   (one per occurrence). Phase 3 upgrades this to emit RRULE on the series VEVENT.
 - Feed pagination uses `Link rel="next"` (RFC 8288), not custom headers.
 
-### Phase 3: Recurrence Model Upgrade
+### Phase 3: Recurrence Model Upgrade — **Delivered**
 
 **Goal**: Replace `repeat_frequency`/`repeat_on_days`/`repeat_on_dates` with canonical
 RRULE storage and wire recurrence metadata through domain/query/serialization paths.
@@ -376,35 +376,52 @@ old columns dropped;
 JSON-LD export projects recurrence from canonical RRULE while preserving `subEvent`
 compatibility; ICS export emits RRULE+EXDATE+RDATE.
 
-**Tasks** (7):
+**Tasks** (7 planned → 6 implemented; Task 2 eliminated — legacy columns confirmed empty):
 1. Check if legacy repeat columns have data; add `rrule TEXT`, `exdates TIMESTAMPTZ[]`,
    `rdates TIMESTAMPTZ[]` to `event_series` (additive migration)
-2. Backfill legacy repeat columns to RRULE equivalents (skip if columns are empty)
-3. Update recurrence-aware repository/domain plumbing (SQLc queries + model wiring)
+2. ~~Backfill legacy repeat columns to RRULE equivalents~~ — **eliminated** (columns confirmed empty)
+3. Update recurrence-aware repository/domain plumbing (inline LEFT JOIN in `GetByULID`,
+   not a separate SQLc query file; `RecurrenceRule` type with `SeriesStart`/`SeriesEnd`)
 4. Update JSON-LD serialization: generate `Schedule`-style recurrence projection
    from RRULE while preserving existing `subEvent` responses
 5. Update ICS serializer to emit RRULE/EXDATE/RDATE on series events
 6. Drop `repeat_frequency`, `repeat_on_days`, `repeat_on_dates` after verification
 7. Preserve deterministic recurring export UID stability across Phase 2 -> 3 cutover
+**Status**: All 6 tasks completed. 4 post-review fixes (RFC 5545 format, dead code,
+`eventSchedule` date boundaries). See `spec-phase3.md` Delivery Reflection.
+
+**Interface contract (Phase 3 → Phase 4)**:
+- `RecurrenceRule` struct (domain) carries `RRule`, `ExDates`, `RDates`, `TZID`,
+  `SeriesStart`, `SeriesEnd` — stable shape for interop fixture validation.
+- `eventSchedule` JSON-LD field is `omitempty` — non-recurring events emit no
+  `eventSchedule`; consumers must handle both shapes.
+- `IncludeRRule = false` (default) ICS output is wire-identical to Phase 2.
+  `IncludeRRule = true` emits a single VEVENT with RRULE/EXDATE/RDATE.
 
 ### Phase 4: Interop & Documentation
 
-**Goal**: Documented interop with community-calendar; platform discovery heuristics
-for ICS feeds; operational runbook and repeatable integration validation.
+**Goal**: Validated interop with real external ICS feed shapes; platform discovery
+heuristics for ICS feeds; operational runbook and repeatable integration validation.
 
 **Entry criteria**: Phase 1-3 delivered.
-**Exit criteria**: representative external ICS fixtures ingest successfully into SEL;
-SEL ICS export passes community-calendar-style consumer checks; ICS discovery patterns
-and operations runbook are documented and executable.
+**Exit criteria**: 7 representative external ICS fixture shapes ingest successfully into
+SEL; SEL ICS export passes consumer checks in both `IncludeRRule=false` and
+`IncludeRRule=true` modes; ICS discovery heuristics for 8 platforms documented; runbook
+is executable.
 
-**Tasks** (5):
-1. Test: consume community-calendar ICS output → SEL ingest (end-to-end)
-2. Test: SEL ICS feed → community-calendar consumption (validate format)
-3. Update `docs/integration/event-platforms.md` with ICS discovery heuristics
-   (Tockify, Google Calendar, WordPress Tribe, LiveWhale, etc.)
-4. Write `docs/integration/ics-feeds.md` — operational guide for ICS sources
-5. Maintain and validate `docs/integration/ics-compatibility-matrix.md` coverage in
-   Phase 4 interop tests
+**Tasks** (4):
+1. Test: external ICS feed shapes → SEL ingest — 7 fixtures (Outlook VTIMEZONE,
+   WordPress Tribe, Google Calendar, Meetup, Tockify, RRULE+EXDATE TZID-local-time
+   regression, valid-mixed-with-malformed); all assertions map to compatibility matrix rows
+2. Test: SEL ICS feed → external consumer — both `IncludeRRule=false` (default) and
+   `IncludeRRule=true` modes; EXDATE TZID format (RFC 5545 §3.3.5); `eventSchedule`
+   JSON-LD; all assertions map to compatibility matrix rows
+3. Update `docs/integration/event-platforms.md` with ICS discovery heuristics for 8
+   platforms (WordPress Tribe `?ical=1`, MEC `?mec-ical-feed=1`, Events Manager,
+   Tockify, Google Calendar `basic.ics`, Meetup `events/ical/`, Eventbrite bridge,
+   static `<link rel="alternate" type="text/calendar">`) with fallback guidance
+4. Write `docs/integration/ics-feeds.md` — operational guide referencing
+   `extraction_method: ics`, `server scrape sync`, diagnostics paths
 
 **Interface contract (Phase 4 → Phase 5)**:
 - Interop fixture corpus and validation scripts define accepted external ICS shapes.

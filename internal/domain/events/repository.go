@@ -45,6 +45,19 @@ type MergeResult struct {
 	AlreadyMerged bool
 }
 
+// RecurrenceRule holds canonical recurrence data for an event series.
+// RRule is stored and exposed WITHOUT the "RRULE:" prefix — value only
+// (e.g. "FREQ=WEEKLY;BYDAY=MO,WE", not "RRULE:FREQ=WEEKLY;BYDAY=MO,WE").
+// The serializer adds the "RRULE:" property prefix on wire output.
+type RecurrenceRule struct {
+	RRule       string      // RFC 5545 RRULE value string (no "RRULE:" prefix)
+	ExDates     []time.Time // UTC timestamps excluded from recurrence set (EXDATE)
+	RDates      []time.Time // UTC timestamps added to recurrence set (RDATE)
+	TZID        string      // IANA timezone from event_series.schedule_timezone
+	SeriesStart *time.Time  // series_start_date from event_series (nil if absent)
+	SeriesEnd   *time.Time  // series_end_date from event_series (nil if absent)
+}
+
 type Event struct {
 	ID                  string
 	ULID                string
@@ -71,6 +84,8 @@ type Event struct {
 	InLanguage          []string
 	IsAccessibleForFree *bool
 	FederationURI       *string
+	SeriesID            *string         // non-nil when event belongs to a series
+	Recurrence          *RecurrenceRule // non-nil when series has a canonical RRULE
 	Occurrences         []Occurrence
 	CreatedAt           time.Time
 	UpdatedAt           time.Time

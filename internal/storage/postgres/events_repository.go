@@ -284,14 +284,18 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	   e.federation_uri, e.created_at, e.updated_at, e.published_at,
 	   o.id, o.start_time, o.end_time, o.timezone, o.door_time, o.venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url,
 	   o.ticket_url, o.price_min, o.price_max, o.price_currency, o.availability,
-	   org.ulid AS organizer_ulid
+	   org.ulid AS organizer_ulid,
+	   e.series_id::text AS series_id,
+	   es.rrule, es.exdates, es.rdates, es.schedule_timezone,
+	   es.series_start_date, es.series_end_date
 	  FROM events e
 	  LEFT JOIN event_occurrences o ON o.event_id = e.id
 	  LEFT JOIN places pv ON pv.id = e.primary_venue_id
 	  LEFT JOIN places ov ON ov.id = o.venue_id
 	  LEFT JOIN organizations org ON org.id = e.organizer_id
+	  LEFT JOIN event_series es ON es.id = e.series_id
 	 WHERE e.ulid = $1
-  ORDER BY o.start_time ASC
+   ORDER BY o.start_time ASC
 `, ulid)
 	if err != nil {
 		return nil, fmt.Errorf("get event: %w", err)
@@ -342,6 +346,13 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			priceCurrency       *string
 			availability        *string
 			organizerULID       *string
+			seriesID            *string
+			seriesRRule         *string
+			seriesExDates       []pgtype.Timestamptz
+			seriesRDates        []pgtype.Timestamptz
+			seriesTZID          *string
+			seriesStartDate     pgtype.Date
+			seriesEndDate       pgtype.Date
 		)
 		if err := rows.Scan(
 			&eventID,
@@ -385,6 +396,13 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&priceCurrency,
 			&availability,
 			&organizerULID,
+			&seriesID,
+			&seriesRRule,
+			&seriesExDates,
+			&seriesRDates,
+			&seriesTZID,
+			&seriesStartDate,
+			&seriesEndDate,
 		); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
@@ -416,6 +434,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 				InLanguage:          inLanguage,
 				IsAccessibleForFree: isAccessibleForFree,
 				FederationURI:       federationURI,
+				SeriesID:            seriesID,
 				CreatedAt:           time.Time{},
 				UpdatedAt:           time.Time{},
 			}
@@ -428,6 +447,33 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			if publishedAt.Valid {
 				value := publishedAt.Time
 				event.PublishedAt = &value
+			}
+			// Populate Recurrence only when the event belongs to a series with a canonical RRULE.
+			if seriesID != nil && seriesRRule != nil {
+				tzid := derefString(seriesTZID)
+				rr := &events.RecurrenceRule{
+					RRule: *seriesRRule,
+					TZID:  tzid,
+				}
+				for _, ts := range seriesExDates {
+					if ts.Valid {
+						rr.ExDates = append(rr.ExDates, ts.Time)
+					}
+				}
+				for _, ts := range seriesRDates {
+					if ts.Valid {
+						rr.RDates = append(rr.RDates, ts.Time)
+					}
+				}
+				if seriesStartDate.Valid {
+					t := seriesStartDate.Time
+					rr.SeriesStart = &t
+				}
+				if seriesEndDate.Valid {
+					t := seriesEndDate.Time
+					rr.SeriesEnd = &t
+				}
+				event.Recurrence = rr
 			}
 		}
 

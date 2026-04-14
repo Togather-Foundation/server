@@ -6,6 +6,7 @@ Shared fixture root for ICS-related phases: `tests/testdata/ics/`.
 
 - `parse-*.ics` -> Phase 1 ingest parser/mapper fixtures
 - `export-*.ics` -> Phase 2 serializer/export fixtures
+- `export-recurring-rrule.ics` -> Phase 3 RRULE-mode serializer/export fixture
 - `interop-*.ics` -> Phase 4 integration/interoperability fixtures
 
 Ownership means the phase maintains fixture intent and updates dependent specs/tests

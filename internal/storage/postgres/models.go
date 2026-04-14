@@ -185,21 +185,21 @@ type EventReviewQueue struct {
 }
 
 type EventSeries struct {
-	ID               pgtype.UUID        `json:"id"`
-	Name             string             `json:"name"`
-	Description      pgtype.Text        `json:"description"`
-	SeriesStartDate  pgtype.Date        `json:"series_start_date"`
-	SeriesEndDate    pgtype.Date        `json:"series_end_date"`
-	RepeatFrequency  pgtype.Text        `json:"repeat_frequency"`
-	RepeatOnDays     []string           `json:"repeat_on_days"`
-	RepeatOnDates    []int32            `json:"repeat_on_dates"`
-	ScheduleTimezone string             `json:"schedule_timezone"`
-	DefaultVenueID   pgtype.UUID        `json:"default_venue_id"`
-	DefaultStartTime pgtype.Time        `json:"default_start_time"`
-	DefaultEndTime   pgtype.Time        `json:"default_end_time"`
-	OrganizerID      pgtype.UUID        `json:"organizer_id"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	ID               pgtype.UUID          `json:"id"`
+	Name             string               `json:"name"`
+	Description      pgtype.Text          `json:"description"`
+	SeriesStartDate  pgtype.Date          `json:"series_start_date"`
+	SeriesEndDate    pgtype.Date          `json:"series_end_date"`
+	ScheduleTimezone string               `json:"schedule_timezone"`
+	DefaultVenueID   pgtype.UUID          `json:"default_venue_id"`
+	DefaultStartTime pgtype.Time          `json:"default_start_time"`
+	DefaultEndTime   pgtype.Time          `json:"default_end_time"`
+	OrganizerID      pgtype.UUID          `json:"organizer_id"`
+	CreatedAt        pgtype.Timestamptz   `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz   `json:"updated_at"`
+	Rrule            pgtype.Text          `json:"rrule"`
+	Exdates          []pgtype.Timestamptz `json:"exdates"`
+	Rdates           []pgtype.Timestamptz `json:"rdates"`
 }
 
 type EventSource struct {
