@@ -896,3 +896,168 @@ class on the element.
 - Very short prefixes (e.g. `a-`, `b-`) may cause false matches. Prefer the most
   specific prefix available.
 - Verify with `server scrape capture <URL> --format inspect` after writing selectors.
+
+## ICS Feed Discovery
+
+Many event platforms expose calendar data as ICS (iCalendar) feeds. When a valid ICS
+feed is available, `extraction_method: ics` bypasses the T0–T3 tier dispatch entirely
+and parses the feed directly. This section documents the detection heuristics and URL
+patterns for common platforms.
+
+### WordPress + The Events Calendar (Tribe)
+
+**Detection signal**: The Tribe plugin adds a "Subscribe to calendar" link that appends
+`?ical=1` to the events page URL. Also look for `class="tribe-events*"` elements or
+`/wp-json/tribe/events` API endpoints in HTML source (cross-reference with Platform
+Profile #2 in this document).
+
+**ICS URL pattern**: `https://example.com/events/?ical=1`
+(append `?ical=1` — or `&ical=1` if query params already exist — to the calendar page URL)
+
+**Verification step**: `curl -H "Accept: text/calendar" "https://example.com/events/?ical=1"`
+— should return `text/calendar` content starting with `BEGIN:VCALENDAR`.
+
+**Fallback**: When the ICS feed is incomplete or behind auth, use T0 JSON-LD (Tribe
+injects JSON-LD by default) or T1/T2 CSS selectors as documented in Platform Profile #2.
+
+**Config key**: `extraction_method: ics` — see [scraper.md](scraper.md) for full config details.
+
+### WordPress MEC (Modern Events Calendar)
+
+**Detection signal**: MEC adds a calendar export button on event pages. Look for
+`class="mec-*"` elements or `/wp-json/mec/` API endpoints in HTML source.
+
+**ICS URL pattern**: `https://example.com/events/?mec-ical-feed=1`
+
+**Verification step**: `curl -H "Accept: text/calendar" "https://example.com/events/?mec-ical-feed=1"`
+— should return `text/calendar` content starting with `BEGIN:VCALENDAR`.
+
+**Fallback**: MEC sometimes provides JSON-LD. Use T0 JSON-LD or T1 CSS selectors as
+fallback when the ICS feed is unavailable.
+
+**Config key**: `extraction_method: ics`
+
+### WordPress Events Manager
+
+**Detection signal**: Events Manager plugin adds `/feed/` endpoints. Look for
+`class="em-*"` elements or `/?ical=1` links in HTML source.
+
+**ICS URL pattern**: `https://example.com/?ical=1` or
+`https://example.com/events/feed/?ical=1`
+
+**Verification step**: `curl -H "Accept: text/calendar" "https://example.com/?ical=1"`
+— should return `text/calendar` content starting with `BEGIN:VCALENDAR`.
+
+**Fallback**: Use T0 JSON-LD or T1 CSS selectors when ICS is unavailable.
+
+**Config key**: `extraction_method: ics`
+
+### Tockify
+
+**Detection signal**: Tockify embeds a calendar widget via `<script src="*.tockify.com*>`.
+The calendar name appears in the embed URL or `data-tockify-calendar` attribute.
+
+**ICS URL pattern**: `https://tockify.com/api/feeds/ics/<calendar-name>`
+(replace `<calendar-name>` with the value from the embed attribute)
+
+**Verification step**: `curl -H "Accept: text/calendar" "https://tockify.com/api/feeds/ics/<calendar-name>"`
+— should return a valid ICS feed.
+
+**Fallback**: Use T2 headless scraping of the Tockify embed page when the API feed is
+unavailable or auth-protected.
+
+**Config key**: `extraction_method: ics`
+
+### Google Calendar
+
+**Detection signal**: Embedded Google Calendar iframes (`calendar.google.com/calendar/embed`)
+or links to `calendar.google.com` in page source. The calendar ID is typically the
+email address of the calendar owner.
+
+**ICS URL pattern**: `https://calendar.google.com/calendar/ical/<id>/public/basic.ics`
+(replace `<id>` with the calendar ID, URL-encoding any `@` symbols as `%40`)
+
+**Verification step**: `curl -H "Accept: text/calendar" "https://calendar.google.com/calendar/ical/<id>/public/basic.ics"`
+— should return `text/calendar` content. Calendars must be set to "Make available to
+public" for the ICS feed to work.
+
+**Fallback**: Public Google Calendars can also be scraped via T2 headless rendering of
+the embedded iframe, but ICS is strongly preferred when available.
+
+**Config key**: `extraction_method: ics`
+
+### Meetup
+
+**Detection signal**: Meetup event pages at `meetup.com/<group>/events/`. Meetup
+provides per-group ICS feeds linked from the group's calendar page.
+
+**ICS URL pattern**: `https://www.meetup.com/<group>/events/ical/`
+(replace `<group>` with the URL slug of the Meetup group)
+
+**Verification step**: `curl -H "Accept: text/calendar" "https://www.meetup.com/<group>/events/ical/"`
+— should return `text/calendar` content with upcoming events.
+
+**Fallback**: Meetup pages have JSON-LD but it can be sparse. Use T1/T2 selectors as
+supplement when ICS is incomplete.
+
+**Config key**: `extraction_method: ics`
+
+### Eventbrite
+
+**Detection signal**: Eventbrite event pages (`eventbrite.com/e/` URLs). Eventbrite
+does **not** expose a native ICS feed for organizers or events.
+
+**ICS URL pattern**: No native ICS feed available.
+
+**Verification step**: N/A — Eventbrite does not provide machine-readable calendar
+feeds without authentication (their API requires an OAuth token).
+
+**Fallback**: Use T1/T2 HTML scraping for Eventbrite organizer pages, or use third-party
+calendar export sites that can convert Eventbrite listings to ICS. When ICS is not an
+option, T1/T2 selectors on the Eventbrite organizer page are the primary approach.
+
+**Config key**: N/A — Eventbrite sources should use T1/T2 selectors, not
+`extraction_method: ics`.
+
+### Static HTML Link
+
+**Detection signal**: Some sites include a `<link rel="alternate" type="text/calendar">`
+tag in the `<head>` of their HTML. This is the standard way to advertise an ICS feed.
+Inspect the page source and look for:
+```html
+<link rel="alternate" type="text/calendar" href="/events.ics" title="Events">
+```
+The `href` attribute contains the ICS URL. It may be relative (resolve against the
+page's base URL) or absolute.
+
+**ICS URL pattern**: The value of the `href` attribute on the `<link>` element. Use
+the full resolved URL.
+
+**Verification step**: `curl -H "Accept: text/calendar" "<resolved-href-url>"`
+— should return `text/calendar` content starting with `BEGIN:VCALENDAR`.
+
+**Fallback**: If the ICS feed is incomplete or stale, use T0 JSON-LD or T1/T2 selectors
+on the site's HTML event listing.
+
+**Config key**: `extraction_method: ics`
+
+### ICS Mode Activation
+
+To enable ICS extraction for a source, set `extraction_method: ics` in the YAML config.
+This bypasses the T0–T3 tier dispatch entirely — the scraper fetches the URL as an ICS
+feed and uses the `ical` package for parsing and mapping. Tier and selector fields are
+ignored when `extraction_method: ics` is set. See [scraper.md](scraper.md) for full
+configuration details.
+
+After editing YAML configs, run `server scrape sync` to upsert changes into the
+`scraper_sources` database table. The scraper reads from the database at runtime, not
+from YAML files — syncing is required for config changes to take effect.
+
+### ICS vs Tier-Based Extraction Decision Guide
+
+| Condition | Recommendation |
+|---|---|
+| ICS feed exists and returns ≥ 2 events | Use `extraction_method: ics` |
+| ICS feed exists but incomplete or stale | Use T1/T2 selectors as primary, ICS as supplement |
+| ICS feed is behind authentication | Use T1/T2 or T3 headless scrape |
+| No ICS feed detected | Use T0 JSON-LD or T1/T2 CSS selectors |
