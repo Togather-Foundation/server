@@ -67,6 +67,13 @@ type eventRow struct {
 	OccVenueID          *string
 	OccVenueULID        *string
 	OccVirtualURL       *string
+	SeriesID            *string
+	SeriesRRule         *string
+	SeriesTZID          *string
+	SeriesExDates       []pgtype.Timestamptz
+	SeriesRDates        []pgtype.Timestamptz
+	SeriesStartDate     pgtype.Date
+	SeriesEndDate       pgtype.Date
 }
 
 func (r *EventRepository) List(ctx context.Context, filters events.Filters, paginationArgs events.Pagination) (events.ListResult, error) {
@@ -108,7 +115,9 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	   virtual_url, image_url, public_url, confidence, quality_score,
 	   keywords, in_language, is_accessible_for_free,
 	   created_at, updated_at, published_at,
-	   start_time, end_time, timezone, occ_venue_id, occ_venue_ulid, occ_virtual_url
+	   start_time, end_time, timezone, occ_venue_id, occ_venue_ulid, occ_virtual_url,
+	   series_id, series_rrule, series_tzid, series_exdates, series_rdates,
+	   series_start_date, series_end_date
   FROM (
     SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
 	       e.lifecycle_state, e.event_status, e.attendance_mode, e.event_domain,
@@ -119,6 +128,10 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	       e.created_at, e.updated_at, e.published_at,
 	       o.start_time, o.end_time, o.timezone,
 	       o.venue_id AS occ_venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url AS occ_virtual_url,
+	       e.series_id::text AS series_id,
+	       es.rrule AS series_rrule, es.schedule_timezone AS series_tzid,
+	       es.exdates AS series_exdates, es.rdates AS series_rdates,
+	       es.series_start_date, es.series_end_date,
 	       row_number() OVER (PARTITION BY e.id ORDER BY o.start_time ASC, e.ulid ASC) AS row_num
 	  FROM events e
   JOIN event_occurrences o ON o.event_id = e.id
@@ -126,6 +139,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
   LEFT JOIN places pv ON pv.id = e.primary_venue_id
   LEFT JOIN places ov ON ov.id = o.venue_id
   LEFT JOIN organizations org ON org.id = e.organizer_id
+  LEFT JOIN event_series es ON es.id = e.series_id
   WHERE e.deleted_at IS NULL
     AND ($1::timestamptz IS NULL OR o.start_time >= $1::timestamptz)
     AND ($2::timestamptz IS NULL OR o.start_time <= $2::timestamptz)
@@ -146,7 +160,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
  WHERE row_num = 1
  ORDER BY start_time ASC, ulid ASC
  LIMIT $13
-`,
+ `,
 		filters.StartDate,
 		filters.EndDate,
 		escapedCity,
@@ -201,6 +215,13 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			&row.OccVenueID,
 			&row.OccVenueULID,
 			&row.OccVirtualURL,
+			&row.SeriesID,
+			&row.SeriesRRule,
+			&row.SeriesTZID,
+			&row.SeriesExDates,
+			&row.SeriesRDates,
+			&row.SeriesStartDate,
+			&row.SeriesEndDate,
 		); err != nil {
 			return events.ListResult{}, fmt.Errorf("scan events: %w", err)
 		}
@@ -253,6 +274,31 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 				occ.EndTime = &value
 			}
 			event.Occurrences = []events.Occurrence{occ}
+		}
+		if row.SeriesID != nil && row.SeriesRRule != nil {
+			rr := &events.RecurrenceRule{
+				RRule: *row.SeriesRRule,
+				TZID:  derefString(row.SeriesTZID),
+			}
+			for _, ts := range row.SeriesExDates {
+				if ts.Valid {
+					rr.ExDates = append(rr.ExDates, ts.Time)
+				}
+			}
+			for _, ts := range row.SeriesRDates {
+				if ts.Valid {
+					rr.RDates = append(rr.RDates, ts.Time)
+				}
+			}
+			if row.SeriesStartDate.Valid {
+				t := row.SeriesStartDate.Time
+				rr.SeriesStart = &t
+			}
+			if row.SeriesEndDate.Valid {
+				t := row.SeriesEndDate.Time
+				rr.SeriesEnd = &t
+			}
+			event.Recurrence = rr
 		}
 		items = append(items, event)
 	}

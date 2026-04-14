@@ -43,8 +43,11 @@ func (h *ICSHandler) FeedHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	includeRRule := r.URL.Query().Get("include_rrule") == "true"
+
 	serializeResult, err := ical.SerializeEvents(result.Events, ical.SerializeOptions{
 		CalendarName: "Togather Events",
+		IncludeRRule: includeRRule,
 	})
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)

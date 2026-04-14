@@ -108,6 +108,81 @@ func TestICSFeedHandler(t *testing.T) {
 	}
 }
 
+func TestICSFeedHandler_IncludeRRule(t *testing.T) {
+	tz, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+
+	recurringEvent := events.Event{
+		ULID:           "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+		Name:           "Weekly Yoga",
+		LifecycleState: "active",
+		Occurrences: []events.Occurrence{
+			{StartTime: time.Date(2026, 5, 4, 10, 0, 0, 0, time.UTC), Timezone: "America/Toronto"},
+		},
+		Recurrence: &events.RecurrenceRule{
+			RRule:       "FREQ=WEEKLY;BYDAY=MO",
+			TZID:        "America/Toronto",
+			SeriesStart: func() *time.Time { t := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC); return &t }(),
+			SeriesEnd:   func() *time.Time { t := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC); return &t }(),
+		},
+	}
+
+	plainEvent := events.Event{
+		ULID:           "01J0KXMQZ8RPXJPN8J9Q6TK0WQ",
+		Name:           "Art Walk",
+		LifecycleState: "active",
+		Occurrences: []events.Occurrence{
+			{StartTime: time.Date(2026, 6, 1, 18, 0, 0, 0, time.UTC), Timezone: "America/Toronto"},
+		},
+	}
+
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			return events.ListResult{Events: []events.Event{recurringEvent, plainEvent}}, nil
+		},
+		getFn: func(_ string) (*events.Event, error) { return nil, nil },
+	}
+
+	t.Run("include_rrule=true emits RRULE for recurring events", func(t *testing.T) {
+		h := NewICSHandler(events.NewService(repo), "test", "https://example.org")
+		h.Loc = tz
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/events.ics?include_rrule=true", nil)
+		res := httptest.NewRecorder()
+		h.FeedHandler(res, req)
+
+		require.Equal(t, http.StatusOK, res.Code)
+		body := res.Body.String()
+		require.Contains(t, body, "RRULE:FREQ=WEEKLY;BYDAY=MO", "RRULE should be present when include_rrule=true")
+	})
+
+	t.Run("default (no include_rrule) omits RRULE", func(t *testing.T) {
+		h := NewICSHandler(events.NewService(repo), "test", "https://example.org")
+		h.Loc = tz
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/events.ics", nil)
+		res := httptest.NewRecorder()
+		h.FeedHandler(res, req)
+
+		require.Equal(t, http.StatusOK, res.Code)
+		body := res.Body.String()
+		require.NotContains(t, body, "RRULE:", "RRULE should not be present by default")
+	})
+
+	t.Run("include_rrule=false is same as default", func(t *testing.T) {
+		h := NewICSHandler(events.NewService(repo), "test", "https://example.org")
+		h.Loc = tz
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/events.ics?include_rrule=false", nil)
+		res := httptest.NewRecorder()
+		h.FeedHandler(res, req)
+
+		require.Equal(t, http.StatusOK, res.Code)
+		body := res.Body.String()
+		require.NotContains(t, body, "RRULE:", "RRULE should not be present when include_rrule=false")
+	})
+}
+
 func TestICSSingleEventHandler(t *testing.T) {
 	tz, err := time.LoadLocation("America/Toronto")
 	require.NoError(t, err)
