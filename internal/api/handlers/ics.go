@@ -60,7 +60,7 @@ func (h *ICSHandler) FeedHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	w.Write(serializeResult.Data)
+	_, _ = w.Write(serializeResult.Data)
 }
 
 func (h *ICSHandler) SingleEventHandler(w http.ResponseWriter, r *http.Request) {
@@ -118,5 +118,5 @@ func (h *ICSHandler) SingleEventHandler(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Disposition", "attachment; filename=\"event-"+ulidValue+".ics\"")
 
 	w.WriteHeader(http.StatusOK)
-	w.Write(serializeResult.Data)
+	_, _ = w.Write(serializeResult.Data)
 }
