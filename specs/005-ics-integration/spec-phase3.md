@@ -283,10 +283,10 @@ opt-in RRULE emission via `SerializeOptions.IncludeRRule`:
   one VEVENT per occurrence. Feed and single-event handlers keep existing behavior.
 - **`IncludeRRule = true`**: for events with a non-nil `Recurrence` field, emit one
   VEVENT with RRULE (+ EXDATE/RDATE where present) instead of one-per-occurrence.
-  Non-recurring events are unaffected. The feed handler passes `IncludeRRule = true`
-  when the request includes a future `?recurrence=rrule` query param (exact param name
-  TBD at implementation; leave as `false`-default to avoid changing the existing
-  stable ICS API contract).
+  Non-recurring events are unaffected. The feed handler reads `?include_rrule=true`
+  from the query string and passes it to `SerializeOptions`. The single-event download
+  endpoint (`/api/v1/events/{id}/ics`) always uses `IncludeRRule = false` (one
+  VEVENT per occurrence, no RRULE) — RRULE mode is a feed-level concept only.
 
 RRULE strings are passed as-is (no `RRULE:` prefix in storage; the library or
 serializer adds the property prefix on wire output). Use
@@ -488,5 +488,18 @@ fixes committed.
 
 ### Discovered Follow-up Work
 
-None arising from Phase 3 that requires a new bead. Phase 4 (Interop & Docs) is the
-natural next phase per `plan.md`.
+Two bugs were found during post-delivery live testing (commit `9558408`):
+
+1. **`include_rrule` query param not wired in `FeedHandler`** — the handler always
+   passed `IncludeRRule: false` to `SerializeOptions` regardless of the query param.
+   Fixed: `ics.go` now reads `r.URL.Query().Get("include_rrule") == "true"`.
+
+2. **`List()` query didn't JOIN `event_series`** — the paginated feed endpoint's SQL
+   query never joined the `event_series` table, so `Recurrence` was always nil in feed
+   responses even when events had series data. Fixed: added `LEFT JOIN event_series`
+   and series column scanning to the `List()` query and `eventRow` struct, mirroring
+   the `GetByULID()` approach.
+
+Both fixes include unit tests (`TestICSFeedHandler_IncludeRRule` and
+`TestList_RecurrenceRule`). No new spec tasks — these were implementation gaps in
+the original Phase 3 delivery.

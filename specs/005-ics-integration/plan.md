@@ -397,6 +397,12 @@ compatibility; ICS export emits RRULE+EXDATE+RDATE.
   `eventSchedule`; consumers must handle both shapes.
 - `IncludeRRule = false` (default) ICS output is wire-identical to Phase 2.
   `IncludeRRule = true` emits a single VEVENT with RRULE/EXDATE/RDATE.
+  The feed endpoint (`/api/v1/events.ics`) reads `?include_rrule=true` from the
+  query string to activate RRULE mode. The single-event endpoint always uses
+  `IncludeRRule = false`.
+- `List()` query populates `Recurrence` from `event_series` via LEFT JOIN (added
+  post-delivery; was missing from initial Phase 3 delivery — the `GetByULID()` path
+  had it but the paginated feed path did not).
 
 ### Phase 4: Interop & Documentation
 
