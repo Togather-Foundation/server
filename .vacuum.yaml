@@ -6,5 +6,4 @@ rules:
   # Disable camelCase rule - we use Schema.org vocabulary which uses camelCase
   # Properties like startDate, endDate, addressLocality are valid Schema.org terms
   camel-case-properties: off
-  # Disable schema validation for binary format - use string type for ICS responses
-  oas3-schema: off
+

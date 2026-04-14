@@ -374,7 +374,7 @@ paths:
             text/calendar:
               schema:
                 type: string
-              description: iCalendar feed
+                description: iCalendar (RFC 5545) calendar data
         '400':
           description: Invalid filter parameters
           content:
@@ -412,7 +412,7 @@ paths:
             text/calendar:
               schema:
                 type: string
-              description: iCalendar event
+                description: iCalendar (RFC 5545) calendar data
         '404':
           description: Event not found
           content:
