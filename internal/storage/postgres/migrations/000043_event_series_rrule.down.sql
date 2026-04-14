@@ -1,0 +1,4 @@
+ALTER TABLE event_series
+  DROP COLUMN IF EXISTS rdates,
+  DROP COLUMN IF EXISTS exdates,
+  DROP COLUMN IF EXISTS rrule;
