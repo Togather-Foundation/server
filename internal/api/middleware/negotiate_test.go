@@ -57,3 +57,35 @@ func TestContentNegotiation_MiddlewareSetsContext(t *testing.T) {
 
 	handler.ServeHTTP(res, req)
 }
+
+func TestContentNegotiation_CalendarAcceptHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/resource", nil)
+	req.Header.Set("Accept", "text/calendar")
+	if got := negotiateContentType(req); got != contentCalendar {
+		t.Fatalf("expected %s, got %s", contentCalendar, got)
+	}
+}
+
+func TestContentNegotiation_CalendarWithCharset(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/resource", nil)
+	req.Header.Set("Accept", "text/calendar; charset=utf-8")
+	if got := negotiateContentType(req); got != contentCalendar {
+		t.Fatalf("expected %s, got %s", contentCalendar, got)
+	}
+}
+
+func TestContentNegotiation_CalendarWinsOverJSON(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/resource", nil)
+	req.Header.Set("Accept", "text/calendar, application/json;q=0.9")
+	if got := negotiateContentType(req); got != contentCalendar {
+		t.Fatalf("expected %s, got %s", contentCalendar, got)
+	}
+}
+
+func TestContentNegotiation_JSONWinsOverLowerQCalendar(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/resource", nil)
+	req.Header.Set("Accept", "application/json, text/calendar;q=0.5")
+	if got := negotiateContentType(req); got != contentJSONLD {
+		t.Fatalf("expected %s, got %s", contentJSONLD, got)
+	}
+}
