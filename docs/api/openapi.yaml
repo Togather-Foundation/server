@@ -163,8 +163,9 @@ paths:
       summary: List events
       description: |
         Query events with optional filters. Returns paginated JSON-LD.
-        Supports content negotiation: pass `Accept: text/calendar` to receive an
-        iCalendar feed response.
+        For iCalendar output use `GET /api/v1/events.ics` (same filter params).
+        A `Link: rel=alternate; type=text/calendar` header is included in the response
+        pointing to the corresponding ICS feed URL.
       tags: [Events]
       security: []
       parameters:
@@ -184,7 +185,7 @@ paths:
           description: Paginated list of events
           headers:
             Link:
-              description: Pagination cursor for next page of results (RFC 8288) and alternate ICS feed URL
+              description: Pagination cursor (rel=next, RFC 8288) and alternate ICS feed URL (rel=alternate)
               schema:
                 type: string
               example: </api/v1/events?after=ABC123&limit=50>; rel="next"
@@ -192,10 +193,6 @@ paths:
             application/ld+json:
               schema:
                 $ref: '#/components/schemas/EventListResponse'
-            text/calendar:
-              schema:
-                type: string
-              description: iCalendar feed
         '400':
           $ref: '#/components/responses/BadRequest'
 
@@ -249,8 +246,10 @@ paths:
       operationId: getEvent
       summary: Get event by ID
       description: |
-        Retrieve a single event by its ULID. Supports content negotiation:
-        pass `Accept: text/calendar` to receive an iCalendar download.
+        Retrieve a single event by its ULID. Returns JSON-LD.
+        For iCalendar output use `GET /api/v1/events/{id}.ics`.
+        A `Link: rel=alternate; type=text/calendar` header is included in the response
+        pointing to the corresponding ICS download URL.
       tags: [Events]
       security: []
       parameters:
@@ -260,7 +259,7 @@ paths:
           description: Event details
           headers:
             Link:
-              description: Alternate ICS download URL for calendar clients
+              description: Alternate ICS download URL for calendar clients (rel=alternate)
               schema:
                 type: string
               example: </api/v1/events/{id}.ics>; rel="alternate"; type="text/calendar"
@@ -268,10 +267,6 @@ paths:
             application/ld+json:
               schema:
                 $ref: '#/components/schemas/Event'
-            text/calendar:
-              schema:
-                type: string
-              description: iCalendar event
         '404':
           $ref: '#/components/responses/NotFound'
 
