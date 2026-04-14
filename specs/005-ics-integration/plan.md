@@ -37,7 +37,7 @@ fidelity with ICS sources.
 | ICS serialization | **None** | — |
 | `text/calendar` content negotiation | **None** | `internal/api/middleware/negotiate.go:14-19` |
 | Scraper source types | `scraper`, `partner`, `user`, `federation` (Go); DB also allows `api`, `manual` | `internal/domain/provenance/validation.go:24-29` |
-| Scraper tiers | Tier 0 (JSON-LD), Tier 1 (Colly/CSS), Tier 2 (Rod/headless), Tier 3 (GraphQL/REST) | `internal/scraper/config.go:20-80` |
+| Scraper tiers | Tier 0 (JSON-LD), Tier 1 (Colly/CSS), Tier 2 (Rod/headless), Tier 3 (GraphQL/REST) | `internal/scraper/config.go:20-92` |
 | Event series recurrence | `repeat_frequency TEXT`, `repeat_on_days TEXT[]`, `repeat_on_dates INTEGER[]` | `migrations/000001_core.up.sql:112-114`, `models.go:193-195` |
 | Event occurrences | `event_occurrences` table (1:many from events) | `migrations/000001_core.up.sql` |
 | Content negotiation | `application/ld+json`, `application/json`, `text/html`, `text/turtle` | `internal/api/middleware/negotiate.go:14-19` |
@@ -118,30 +118,33 @@ Calendar Client (GET)
 
 ```
 internal/
-  ical/                       # NEW — ICS parsing and serialization
-    parse.go                  # VCALENDAR parsing → intermediate VEvent structs
+  ical/                       # Phase 1 delivered — ICS parsing and mapping
+    parse.go                  # VCALENDAR parsing → ParsedCalendar/ParsedEvent structs
     parse_test.go
-    mapper.go                 # VEvent → events.EventInput conversion
+    mapper.go                 # ParsedEvent → events.EventInput conversion
     mapper_test.go
-    serialize.go              # events.Event → VCALENDAR serialization
-    serialize_test.go
     rrule.go                  # RRULE parsing, expansion (teambition/rrule-go)
     rrule_test.go
-    testdata/                 # ICS fixture files (15 files; see spec-phase1.md for full list)
-      basic-event.ics
-      recurring-weekly.ics
-      multi-event.ics
-      malformed.ics
-      ...
+    doc.go                    # package doc
+    serialize.go              # Phase 2 — events.Event → VCALENDAR serialization
+    serialize_test.go         # Phase 2
   scraper/
-    ics.go                    # ICS tier implementation (fetcher + mapper wiring)
+    ics.go                    # Phase 1 delivered — ICS extractor (fetch + parse + map)
     ics_test.go
   api/
     middleware/
-      negotiate.go            # MODIFIED — add text/calendar
+      negotiate.go            # Phase 2 — MODIFIED to add text/calendar
     handlers/
-      ics.go                  # NEW — ICS feed + single-event download handlers
-      events.go               # MODIFIED — Link alternate headers
+      ics.go                  # Phase 2 — ICS feed + single-event download handlers
+      events.go               # Phase 2 — MODIFIED for Link alternate headers
+tests/
+  testdata/
+    ics/                      # Phase 1 delivered — ICS fixture files (15 .ics + README.md)
+      README.md               # Fixture ownership + naming rules (parse-*, export-*, interop-*)
+      parse-basic-event.ics
+      parse-multi-event.ics
+      parse-malformed.ics
+      ...                     # (see spec-phase1.md for full list)
 ```
 
 ## Design Constraints

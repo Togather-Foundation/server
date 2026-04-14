@@ -276,7 +276,7 @@ internal/
     mapper_test.go
     rrule.go                    # RRULE string → []time.Time occurrences
     rrule_test.go
-    testdata/                   # legacy package-local fixtures (phase transition)
+    doc.go                      # package doc
   scraper/
     ics.go                      # ICS extractor (fetch + parse + map)
     ics_test.go
@@ -285,7 +285,7 @@ internal/
 tests/
   testdata/
     ics/
-      README.md                 # NEW - fixture ownership + naming rules
+      README.md                 # Fixture ownership + naming rules (parse-*, export-*, interop-*)
       parse-basic-event.ics
       parse-multi-event.ics
       parse-recurring-weekly.ics
@@ -341,6 +341,7 @@ type ParsedEvent struct {
     Categories   []string     // CATEGORIES values (split on comma per value)
     GeoLat       float64      // GEO latitude (0 if absent)
     GeoLon       float64      // GEO longitude (0 if absent)
+    HasGeo       bool         // True when GEO property was present (distinguishes "absent" from 0,0/Null Island)
     Created      time.Time    // CREATED timestamp
     LastMod      time.Time    // LAST-MODIFIED timestamp
     Sequence     int          // SEQUENCE (change counter)
@@ -458,7 +459,10 @@ type RRuleOptions struct {
 // occurrence is dtstart itself (unless excluded by EXDATE).
 //
 // Uses teambition/rrule-go for RFC 5545 RRULE evaluation.
-func ExpandRRule(rruleStr string, dtstart time.Time, exdates, rdates []time.Time, opts RRuleOptions) ([]time.Time, error)
+//
+// The bool return is true if the MaxOccurrences cap was applied (result was
+// truncated), allowing callers to emit a warning without re-checking slice length.
+func ExpandRRule(rruleStr string, dtstart time.Time, exdates, rdates []time.Time, opts RRuleOptions) ([]time.Time, bool, error)
 ```
 
 #### ICS Extractor (`internal/scraper/ics.go`)
@@ -488,7 +492,9 @@ func NewICSExtractor(client *http.Client, maxBodyBytes int64) *ICSExtractor
 
 // Extract fetches the ICS feed and returns EventInputs.
 // Uses the scraper's existing HTTP client (timeout, redirect policy).
-func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig) ([]events.EventInput, []string, error)
+// icsConfig provides runtime-configurable ICS settings (HorizonDays, MaxOccurrences,
+// MaxBodyBytes) — these are read from the Scraper's icsConfig field, not from SourceConfig.
+func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig config.ICSConfig) ([]events.EventInput, []string, error)
 ```
 
 Implementation:
@@ -561,11 +567,14 @@ Note: `s.icsConfig` is an `ICSConfig` field added to the `Scraper` struct, wired
 
 ```sql
 ALTER TABLE scraper_sources
-  ADD COLUMN extraction_method TEXT NOT NULL DEFAULT 'scraper'
-    CHECK (extraction_method IN ('scraper', 'ics'));
+  ADD COLUMN IF NOT EXISTS extraction_method TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE scraper_sources
+  ADD CONSTRAINT scraper_sources_extraction_method_check
+  CHECK (extraction_method IN ('', 'scraper', 'ics'));
 
 COMMENT ON COLUMN scraper_sources.extraction_method IS
-  'Extraction method: scraper (HTML/JSON-LD/CSS tiers 0-3) or ics (ICS feed)';
+  'Extraction method: scraper (HTML/JSON-LD/CSS tiers 0-3) or ics (ICS feed). Empty string means default (same as scraper).';
 
 -- Guardrail: do NOT modify provenance sources.source_type in this migration.
 -- The provenance column (migration 000002) remains unchanged and serves a
@@ -575,6 +584,8 @@ COMMENT ON COLUMN scraper_sources.extraction_method IS
 Down migration:
 
 ```sql
+ALTER TABLE scraper_sources
+  DROP CONSTRAINT IF EXISTS scraper_sources_extraction_method_check;
 ALTER TABLE scraper_sources DROP COLUMN extraction_method;
 ```
 
