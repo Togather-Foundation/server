@@ -12,23 +12,25 @@ Phase 1 introduces ICS ingest and RRULE expansion into occurrence rows. Phase 2 
 
 | Component | Status | Relevant Code |
 |---|---|---|
-| `event_series` table exists with legacy repeat columns | Production | `internal/storage/postgres/migrations/000001_core.up.sql:104-115` |
-| Legacy recurrence columns (`repeat_frequency`, `repeat_on_days`, `repeat_on_dates`) | Production | `internal/storage/postgres/migrations/000001_core.up.sql:112-114` |
-| `events.series_id` FK exists | Production | `internal/storage/postgres/migrations/000001_core.up.sql:169` |
-| SQLc model still includes legacy repeat fields | Production | `internal/storage/postgres/models.go:187-203` |
-| Main event queries are occurrence-centric, not series-centric | Production | `internal/storage/postgres/queries/events.sql:3-25` |
-| JSON-LD event output uses `subEvent` occurrences | Production | `internal/jsonld/schema/types.go:28` |
-| Event detail repository path does not load series recurrence metadata | Production | `internal/storage/postgres/events_repository.go:278-295` |
-| ICS serializer package | Pending from Phase 2 | `internal/ical/serialize.go` (planned) |
+| `event_series` table | Schema exists, **dormant** — no SQLc queries defined, not joined in any event query | `internal/storage/postgres/migrations/000001_core.up.sql:104-129` |
+| Legacy repeat columns (`repeat_frequency TEXT`, `repeat_on_days TEXT[]`, `repeat_on_dates INTEGER[]`) | Schema + SQLc model only — **no domain code reads or writes them** | `internal/storage/postgres/migrations/000001_core.up.sql:112-114`, `models.go:193-195` |
+| `events.series_id` FK | Schema only — field is in the DB table but NOT loaded into the domain `Event` struct | `internal/storage/postgres/migrations/000001_core.up.sql:169` |
+| SQLc `EventSeries` model | Generated but unused — no query file references `event_series` | `internal/storage/postgres/models.go:187-203` |
+| Domain `Event` struct | Occurrence-centric: has `Occurrences []Occurrence` but no `SeriesID` or recurrence fields | `internal/domain/events/repository.go:48-78` |
+| JSON-LD `Event` type | Has `SubEvents []EventSummary` for occurrences — **no `eventSchedule`/`Schedule` field** | `internal/jsonld/schema/types.go:7-29` |
+| ICS serializer | Delivered (Phase 2) — occurrence-based only, no RRULE output | `internal/ical/serialize.go:50,64` |
+| RRULE expansion library | Available in `internal/ical/rrule.go`, **used only for parsing incoming ICS** | `internal/ical/rrule.go:27` |
+| Latest migration | `000042_scraper_sources_extraction_method` | `internal/storage/postgres/migrations/` |
 
 ### What Phase 3 Delivers
 
-1. Canonical recurrence columns on `event_series`: `rrule`, `exdates`, `rdates`.
-2. Migration/backfill strategy from legacy repeat columns to RRULE-based representation.
-3. Repository/domain wiring so recurrence metadata can be read with event/series payloads.
-4. JSON-LD recurrence projection from RRULE (Schedule-based output), while preserving occurrence compatibility.
-5. ICS export upgrade to emit RRULE/EXDATE/RDATE for recurring series.
-6. Legacy repeat columns removed after verification.
+1. Canonical recurrence columns on `event_series`: `rrule`, `exdates`, `rdates` (migration 000043).
+2. First SQLc queries for `event_series` — the table is dormant today with no query coverage.
+3. Domain `Event` struct gains `SeriesID` and optional `RecurrenceRule` fields.
+4. Repository/domain wiring so recurrence metadata is loaded with event detail payloads.
+5. JSON-LD recurrence projection from RRULE (`eventSchedule`/Schedule shape), while preserving existing `subEvent` compatibility.
+6. ICS export upgrade to emit RRULE/EXDATE/RDATE for recurring series (instead of flattened VEVENTs).
+7. Legacy repeat columns removed (migration 000044) — confirmed empty, no backfill needed.
 
 ### Non-Goals (Phase 3)
 
@@ -61,23 +63,26 @@ Phase 1 introduces ICS ingest and RRULE expansion into occurrence rows. Phase 2 
 
 As a maintainer, recurrence intent is stored in one canonical format.
 
-**Independent Test**: Migrate a fixture DB containing legacy repeat patterns and verify canonical RRULE fields are populated.
+**Independent Test**: After migration 000043 runs, create an `event_series` row with
+canonical RRULE fields, load it via the repository, and verify the domain struct has
+the correct values.
 
 **Acceptance Scenarios**:
 
-1. **Given** an `event_series` row with `repeat_frequency='weekly'` and `repeat_on_days=['MO','WE']`, **When** backfill runs, **Then** `rrule` is populated with equivalent RFC 5545 semantics.
-2. **Given** an `event_series` row with monthly day-of-month recurrence (`repeat_on_dates`), **When** backfill runs, **Then** `rrule` carries BYMONTHDAY entries and preserves interval semantics.
-3. **Given** unmappable/invalid legacy recurrence data, **When** backfill runs, **Then** row is marked for review and migration does not silently invent recurrence rules.
+1. **Given** migration 000043 has run, **When** an `event_series` row is inserted with
+   `rrule='FREQ=WEEKLY;BYDAY=MO,WE'` and `exdates='{2026-05-04T18:00:00Z}'`,
+   **Then** the repository returns `RecurrenceRule{RRule: "FREQ=WEEKLY;BYDAY=MO,WE",
+   ExDates: [2026-05-04T18:00:00Z]}`.
+2. **Given** migration 000044 (legacy column drop) has run, **When** `make sqlc` is
+   re-run, **Then** `RepeatFrequency`, `RepeatOnDays`, `RepeatOnDates` are removed from
+   the generated `EventSeries` model and all tests still pass.
+3. **Given** migration chain is applied then rolled back, **When** `make migrate-down`
+   runs migration 000044 down, **Then** legacy columns are restored; `make migrate-down`
+   again restores the pre-000043 schema.
 
-**Legacy column mapping reference** (audit existing `event_series` data before implementing — legacy columns may be unpopulated since no domain code reads/writes them):
-
-| Legacy Pattern | RRULE Equivalent |
-|---|---|
-| `repeat_frequency='daily'` | `FREQ=DAILY` |
-| `repeat_frequency='weekly'` + `repeat_on_days=['MO','WE']` | `FREQ=WEEKLY;BYDAY=MO,WE` |
-| `repeat_frequency='monthly'` + `repeat_on_dates=[1,15]` | `FREQ=MONTHLY;BYMONTHDAY=1,15` |
-| `repeat_frequency=NULL` + non-empty `repeat_on_*` | Unmappable (flag for review) |
-| Any + invalid values (e.g., `repeat_on_dates` outside 1-31) | Unmappable (flag for review) |
+> **Pre-confirmed**: `repeat_frequency`, `repeat_on_days`, `repeat_on_dates` have
+> never been written by any domain code — no backfill is needed. Task 2 from the
+> original plan (backfill) is eliminated. Proceed directly to additive migration + drop.
 
 ### User Story 2 — JSON-LD Recurrence Projection (Priority: P1)
 
@@ -107,12 +112,15 @@ As an integration consumer, exported ICS preserves recurrence intent without fla
 
 As an operator, schema cleanup does not break runtime behavior.
 
-**Independent Test**: Run migration sequence in staging copy with integration tests before/after drop.
+**Independent Test**: Apply migration 000044 in local DB and run full CI tests.
 
 **Acceptance Scenarios**:
 
-1. **Given** no domain code reads legacy repeat columns (verified: columns exist in schema/models only), **When** legacy columns are dropped, **Then** application tests continue passing.
-2. **Given** rollback scenario before drop migration is applied, **When** rollback runs, **Then** data remains recoverable from canonical columns and migration artifacts.
+1. **Given** legacy repeat columns are confirmed empty and no domain code reads them,
+   **When** migration 000044 drops `repeat_frequency`, `repeat_on_days`, `repeat_on_dates`,
+   **Then** `make sqlc` succeeds and all CI tests pass without modification.
+2. **Given** migration 000044 has been applied, **When** `make migrate-down` rolls it
+   back, **Then** legacy columns are restored to the schema (`.down.sql` is valid).
 
 ---
 
@@ -124,69 +132,111 @@ As an operator, schema cleanup does not break runtime behavior.
 internal/
   storage/postgres/
     migrations/
-      0000xx_event_series_rrule.up.sql      # NEW - add rrule/exdates/rdates (+ indexes)
-      0000xx_event_series_rrule.down.sql    # NEW
-      0000xy_event_series_drop_legacy_repeat.up.sql   # NEW - drop repeat_* columns after verification
-      0000xy_event_series_drop_legacy_repeat.down.sql # NEW
+      000043_event_series_rrule.up.sql      # NEW - add rrule/exdates/rdates
+      000043_event_series_rrule.down.sql    # NEW
+      000044_event_series_drop_legacy_repeat.up.sql   # NEW - drop repeat_* columns
+      000044_event_series_drop_legacy_repeat.down.sql # NEW
     queries/
-      events.sql                            # MODIFIED - series recurrence joins/queries as needed
-      ...                                   # MODIFIED - any recurrence-aware query set
+      event_series.sql                      # NEW - first queries for dormant table
+                                            # (get by ID, get by series_id for event join)
     models.go                               # GENERATED - picks up new columns after sqlc
   domain/events/
-    repository.go                           # MODIFIED - series recurrence model/types
-    service.go                              # MODIFIED - recurrence projection plumbing if needed
+    repository.go                           # MODIFIED - add SeriesID + RecurrenceRule
+                                            # to Event struct; add series load path
+    service.go                              # MODIFIED - plumb recurrence data through
+                                            # GetByULID / List where series is loaded
   jsonld/schema/
-    types.go                                # MODIFIED - recurrence projection type(s) (Schedule)
+    types.go                                # MODIFIED - add Schedule type +
+                                            # EventSchedule *Schedule on Event
   api/handlers/
-    events.go                               # MODIFIED - include recurrence projection in detail output
+    events.go                               # MODIFIED - include eventSchedule in
+                                            # JSON-LD detail responses when present
   ical/
-    serialize.go                            # MODIFIED - emit RRULE/EXDATE/RDATE
+    serialize.go                            # MODIFIED - add IncludeRRule to
+                                            # SerializeOptions; emit RRULE/EXDATE/RDATE
+                                            # when IncludeRRule=true and event has series
 docs/
-  api/openapi.yaml                          # MODIFIED - add eventSchedule recurrence projection to event detail schema
+  api/openapi.yaml                          # MODIFIED - add eventSchedule to event
+                                            # detail response schema
 ```
 
 ### Data Structures
 
 ```go
-// Domain-level recurrence representation attached to a series/event.
+// internal/domain/events/repository.go
+
+// RecurrenceRule holds canonical recurrence data for an event series.
+// RRULE is stored and exposed WITHOUT the "RRULE:" prefix — value only
+// (e.g. "FREQ=WEEKLY;BYDAY=MO,WE", not "RRULE:FREQ=WEEKLY;BYDAY=MO,WE").
 type RecurrenceRule struct {
-    RRule   string      // RFC 5545 RRULE string (without leading "RRULE:" prefix in storage)
+    RRule   string      // RFC 5545 RRULE value string (no "RRULE:" prefix)
     ExDates []time.Time // UTC timestamps excluded from recurrence set
-    RDates  []time.Time // UTC timestamps explicitly added to recurrence set
-    TZID    string      // loaded from existing event_series.schedule_timezone column
-                        // (migration 000001, line 115) — no new column needed
+    RDates  []time.Time // UTC timestamps added to recurrence set
+    TZID    string      // loaded from event_series.schedule_timezone — no new column needed
 }
 
-// EventSeriesRecurrence stores recurrence metadata loaded from event_series.
-type EventSeriesRecurrence struct {
-    SeriesID string
-    Rule     RecurrenceRule
+// Event — add these fields to the existing struct (internal/domain/events/repository.go:48-78)
+// alongside the existing Occurrences []Occurrence field:
+//
+//   SeriesID       *string          // non-nil when event belongs to a series
+//   Recurrence     *RecurrenceRule  // non-nil when series has a canonical RRULE
+```
+
+```go
+// internal/ical/serialize.go — add to existing SerializeOptions
+
+// SerializeOptions controls ICS output formatting and feed metadata.
+type SerializeOptions struct {
+    CalendarName        string // feed title (default: "Togather Events")
+    CalendarDescription string // optional feed description
+    // Phase 3:
+    IncludeRRule bool   // if true, emit RRULE/EXDATE/RDATE for series events
+                       // instead of flattening each occurrence to a VEVENT
 }
+```
+
+```go
+// internal/jsonld/schema/types.go — add Schedule type and eventSchedule field
+
+// Schedule represents schema.org/Schedule for recurring event recurrence metadata.
+type Schedule struct {
+    AtType          string   `json:"@type"`                    // "Schedule"
+    RepeatFrequency string   `json:"repeatFrequency,omitempty"` // ISO 8601 duration (P1W, P1M, etc.)
+    ByDay           []string `json:"byDay,omitempty"`           // RRULE BYDAY mapped values
+    ByMonthDay      []int    `json:"byMonthDay,omitempty"`      // RRULE BYMONTHDAY
+    StartDate       string   `json:"startDate,omitempty"`       // series_start_date
+    EndDate         string   `json:"endDate,omitempty"`         // series_end_date (if present)
+    ScheduleTimezone string  `json:"scheduleTimezone,omitempty"` // IANA timezone
+}
+
+// Add to Event type (internal/jsonld/schema/types.go:7-29):
+//   EventSchedule *Schedule `json:"eventSchedule,omitempty"`
 ```
 
 ### Migration Strategy
 
-**Pre-step: Verify legacy data exists.** Before building migration tooling, query
-`event_series` in staging to determine whether `repeat_frequency`, `repeat_on_days`,
-or `repeat_on_dates` have any non-null values. These columns exist in the schema and
-SQLc models but no domain code reads or writes them — they may be entirely empty. If
-empty, skip backfill entirely and proceed directly to additive migration + drop.
+**Pre-confirmed: legacy columns are empty.** No domain code has ever read or written
+`repeat_frequency`, `repeat_on_days`, or `repeat_on_dates`. These columns are confirmed
+dead — no backfill is needed. Proceed directly to additive migration then drop.
 
-1. **Additive migration**:
-   - add `rrule TEXT`
-   - add `exdates TIMESTAMPTZ[] NOT NULL DEFAULT '{}'`
-   - add `rdates TIMESTAMPTZ[] NOT NULL DEFAULT '{}'`
-2. **Backfill** (only if legacy columns have data):
-   - map legacy repeat columns to RRULE equivalents
-   - log unmappable rows to server stdout (no dedicated audit table — there are
-     likely zero or single-digit rows to handle)
-3. **Code cutover**:
-   - read canonical recurrence fields
-   - stop relying on legacy repeat columns
-4. **Cleanup migration**:
-   - drop `repeat_frequency`, `repeat_on_days`, `repeat_on_dates`
-   - can run immediately after backfill verification since this is pre-launch data
-     with no migration-gate ceremony needed
+**Migration 000043** — additive (run first):
+```sql
+ALTER TABLE event_series
+  ADD COLUMN rrule    TEXT,
+  ADD COLUMN exdates  TIMESTAMPTZ[] NOT NULL DEFAULT '{}',
+  ADD COLUMN rdates   TIMESTAMPTZ[] NOT NULL DEFAULT '{}';
+```
+
+**Migration 000044** — drop legacy columns (run after code cutover and tests pass):
+```sql
+ALTER TABLE event_series
+  DROP COLUMN repeat_frequency,
+  DROP COLUMN repeat_on_days,
+  DROP COLUMN repeat_on_dates;
+```
+
+No backfill step exists. The two migrations can run in sequence once the
+codebase is updated to use the canonical columns.
 
 ### JSON-LD Projection
 
@@ -212,9 +262,26 @@ empty, skip backfill entirely and proceed directly to additive migration + drop.
 
 ### ICS Serialization
 
-- For recurring series, serializer emits one VEVENT with RRULE (+ EXDATE/RDATE where present).
-- For non-recurring events, serializer behavior remains unchanged.
-- UID stability follows Phase 1/2 source-event identity constraints.
+Phase 2 serializer always flattens occurrences to individual VEVENTs. Phase 3 adds
+opt-in RRULE emission via `SerializeOptions.IncludeRRule`:
+
+- **`IncludeRRule = false` (default / backward compatible)**: behavior unchanged —
+  one VEVENT per occurrence. Feed and single-event handlers keep existing behavior.
+- **`IncludeRRule = true`**: for events with a non-nil `Recurrence` field, emit one
+  VEVENT with RRULE (+ EXDATE/RDATE where present) instead of one-per-occurrence.
+  Non-recurring events are unaffected. The feed handler passes `IncludeRRule = true`
+  when the request includes a future `?recurrence=rrule` query param (exact param name
+  TBD at implementation; leave as `false`-default to avoid changing the existing
+  stable ICS API contract).
+
+RRULE strings are passed as-is (no `RRULE:` prefix in storage; the library or
+serializer adds the property prefix on wire output). Use
+`internal/ical/rrule.go`'s `ExpandRRule` for any preview/projection operations — do
+not write a second RRULE parser.
+
+UID stability follows the Phase 2 contract:
+- Multi-occurrence (flattened): `{event.ULID}-{occurrence.ID}@togather.foundation`
+- RRULE-mode single VEVENT: `{event.ULID}@togather.foundation`
 
 ### Error Handling
 
@@ -234,67 +301,72 @@ empty, skip backfill entirely and proceed directly to additive migration + drop.
 
 ## Implementation Tasks
 
-### Task 1: Check legacy data + add canonical recurrence columns to `event_series`
+### Task 1: Add canonical recurrence columns to `event_series` (migration 000043)
 
-**What**: First, query staging/production `event_series` to determine if `repeat_*`
-columns have any non-null data. Then create additive migration for `rrule`, `exdates`,
-`rdates` on `event_series`. Regenerate SQLc models.
+**What**: Create `000043_event_series_rrule.up.sql` adding `rrule TEXT`, `exdates TIMESTAMPTZ[] NOT NULL DEFAULT '{}'`, `rdates TIMESTAMPTZ[] NOT NULL DEFAULT '{}'` to `event_series`. Create matching `.down.sql`. Run `make sqlc` to regenerate models.
 
-**Test**: migration up/down in local DB + `make sqlc` + compile.
+**Test**: `make migrate-up` + `make migrate-down` in local DB + `make sqlc` + `make build` (compile only).
 
-**Acceptance**: schema supports canonical recurrence fields without breaking existing
-runtime queries. If legacy columns are empty, document this and skip Task 2.
+**Acceptance**: Schema accepts canonical recurrence fields. `make sqlc` succeeds and `EventSeries` model gains the new fields.
 
-### Task 2: Implement legacy -> RRULE backfill path (if data exists)
+### Task 2: Wire event_series queries and load recurrence into domain `Event`
 
-**What**: Build deterministic conversion from `repeat_*` columns to RRULE/EXDATE/RDATE;
-log unmappable rows to stdout. Skip entirely if Task 1 found no legacy data.
+**What**: Create `internal/storage/postgres/queries/event_series.sql` with queries needed to join series recurrence data when loading events. Extend the domain `Event` struct (`internal/domain/events/repository.go`) with `SeriesID *string` and `Recurrence *RecurrenceRule` fields. Update `GetByULID` and the event list path in the repository to populate these fields when `series_id` is non-null. Add `RecurrenceRule` type definition.
 
-**Test**: migration fixture tests covering weekly/monthly/no-repeat and invalid legacy patterns.
+This is the first time `event_series` will have any SQLc queries. The `events` table already has a `series_id FK` (migration 000001 line 169) — the repository join simply needs to be written.
 
-**Acceptance**: mapped rows preserve recurrence semantics; unmappable rows are logged
-with enough detail to review manually (likely zero or single-digit count).
+**Test**: Repository unit tests for:
+- Event with no series → `SeriesID = nil`, `Recurrence = nil`
+- Event with series but no RRULE → `SeriesID` set, `Recurrence = nil`
+- Event with series + RRULE → both populated
 
-### Task 3: Wire recurrence through repository/domain models
+**Acceptance**: `GetByULID` returns `Recurrence` correctly for recurring events. Existing event query behavior unchanged for non-series events.
 
-**What**: Add recurrence-aware query/model plumbing so event detail paths can load canonical recurrence data.
+### Task 3: Add JSON-LD recurrence projection from RRULE
 
-**Test**: repository tests for recurring and non-recurring events.
+**What**: Add `Schedule` type and `EventSchedule *Schedule` field to `internal/jsonld/schema/types.go`. Implement FREQ → ISO 8601 duration mapping (see table below). Extend the events detail handler (`internal/api/handlers/events.go`) to populate `EventSchedule` when the domain `Event` carries a non-nil `Recurrence`. Update `docs/api/openapi.yaml` to document the `eventSchedule` property on the event detail schema.
 
-**Acceptance**: recurrence data available in domain models without regressing existing event reads.
+FREQ → `repeatFrequency` mapping:
 
-### Task 4: Add JSON-LD recurrence projection from RRULE
+| RRULE FREQ | ISO 8601 | With INTERVAL=N |
+|---|---|---|
+| DAILY | P1D | P{N}D |
+| WEEKLY | P1W | P{N}W |
+| MONTHLY | P1M | P{N}M |
+| YEARLY | P1Y | P{N}Y |
 
-**What**: Extend event detail serialization to include Schedule-style recurrence projection derived from canonical fields.
+HOURLY/MINUTELY/SECONDLY are not expected in event data — omit from projection with a `slog.Warn`.
 
-**Test**: handler/schema tests asserting recurrence projection + `subEvent` compatibility.
+**Test**: Handler tests asserting `eventSchedule` in JSON-LD response for recurring event; `subEvent` still present for compatibility; non-recurring event has no `eventSchedule`.
 
-**Acceptance**: recurring event responses include recurrence projection with correct timezone and exceptions. OpenAPI spec updated with `eventSchedule` property on event detail response schema.
+**Acceptance**: Recurring event detail includes `eventSchedule` with correct fields. OpenAPI lint passes.
 
-### Task 5: Upgrade ICS serializer to emit RRULE/EXDATE/RDATE
+### Task 4: Upgrade ICS serializer to emit RRULE/EXDATE/RDATE
 
-**What**: Update serializer to output recurrence properties for series events.
+**What**: Add `IncludeRRule bool` to `SerializeOptions`. When `IncludeRRule = true` and the event has `Recurrence != nil`, emit one VEVENT with `RRULE:` + `EXDATE:` + `RDATE:` properties instead of one-per-occurrence. Reuse `internal/ical/rrule.go`'s parser for any roundtrip validation. Golden fixture update: add an `export-recurring-rrule.ics` fixture and update `tests/testdata/ics/README.md`.
 
-**Test**: serializer golden tests and endpoint tests for recurring exports.
+**Test**: Serializer tests for:
+- RRULE-mode recurring event: single VEVENT with RRULE in wire bytes
+- Flattened-mode (default `IncludeRRule = false`): unchanged behavior
+- Non-recurring event in RRULE mode: no RRULE emitted
 
-**Acceptance**: recurring ICS exports preserve canonical rule + exception semantics.
+**Acceptance**: RRULE-mode output passes the ical library parse roundtrip and the compatibility matrix targets. `IncludeRRule = false` (default) is wire-identical to Phase 2 output.
 
-### Task 6: Drop legacy repeat columns
+### Task 5: Drop legacy repeat columns (migration 000044)
 
-**What**: Add cleanup migration removing `repeat_frequency`, `repeat_on_days`,
-`repeat_on_dates` after verifying backfill (or confirming columns were empty).
+**What**: Create `000044_event_series_drop_legacy_repeat.up.sql` dropping `repeat_frequency`, `repeat_on_days`, `repeat_on_dates`. Create matching `.down.sql`. Run `make sqlc`. Remove the now-absent fields from any test fixtures or integration test assertions that reference them.
 
-**Test**: full migration chain test + targeted regression tests for event read/export paths.
+**Test**: Full migration chain test (`make migrate-up` then `make migrate-down` × 2) + `scripts/agent-run.sh make test-ci`.
 
-**Acceptance**: application behavior unchanged after legacy columns are dropped.
+**Acceptance**: No test references `RepeatFrequency`, `RepeatOnDays`, `RepeatOnDates` after the sqlc regeneration. All CI tests pass.
 
-### Task 7: Preserve deterministic VEVENT UID stability across Phase 2 -> Phase 3 cutover
+### Task 6: Preserve deterministic VEVENT UID stability across Phase 2 → Phase 3 cutover
 
-**What**: Ensure Phase 2 UID determinism continues for recurring exports after RRULE cutover.
+**What**: Confirm UID derivation contract is unchanged when switching from flattened-occurrence mode to RRULE mode. Add a snapshot/contract test that exports the same recurring event in both modes and asserts: (a) flattened mode UIDs match Phase 2 golden format, (b) RRULE mode UID is `{event.ULID}@togather.foundation`.
 
-**Test**: snapshot test that compares VEVENT UID stability for same recurring source across repeated ingest/export cycles.
+**Test**: snapshot test covering both modes with fixed ULID input.
 
-**Acceptance**: UID generation remains stable across runs and unaffected by legacy-column removal.
+**Acceptance**: UID generation is stable and not accidentally changed by the Phase 3 serializer changes.
 
 ---
 
@@ -302,31 +374,36 @@ with enough detail to review manually (likely zero or single-digit count).
 
 No new environment variables are required by default in Phase 3.
 
-If RRULE preview/expansion endpoints are introduced during implementation, they must reuse existing recurrence safety limits (horizon and occurrence caps) instead of introducing hardcoded constants.
+If RRULE preview/expansion endpoints are introduced during implementation, they must reuse existing recurrence safety limits from `internal/ical/rrule.go` (`DefaultHorizonDays = 90`, `DefaultMaxOccurrences = 100`) instead of introducing hardcoded constants.
 
 ---
 
 ## Success Criteria
 
-1. Canonical recurrence fields are present and populated for migrated series rows (or confirmed empty).
-2. JSON-LD recurring event output includes recurrence projection derived from RRULE.
-3. ICS recurring export emits RRULE/EXDATE/RDATE accurately.
-4. Legacy repeat columns are removed without runtime regressions.
-5. Recurring export UID stability is preserved across Phase 2 -> Phase 3 transition.
+1. Canonical recurrence columns (`rrule`, `exdates`, `rdates`) are present on `event_series` and loadable via domain queries.
+2. Domain `Event` struct carries `SeriesID` and `Recurrence` fields populated by `GetByULID`.
+3. JSON-LD recurring event detail includes `eventSchedule` recurrence projection from RRULE.
+4. ICS export with `IncludeRRule = true` emits RRULE/EXDATE/RDATE; default mode (false) is wire-identical to Phase 2.
+5. Legacy repeat columns are removed without runtime regressions.
+6. Recurring export UID stability is preserved across Phase 2 → Phase 3 transition.
 
 ---
 
-## Open Questions
+## Resolved Decisions
 
-1. Should RRULE storage include the `RRULE:` prefix or store property value only (recommended: value only)?
+1. **RRULE prefix in storage**: store value only, no `RRULE:` prefix
+   (e.g. `FREQ=WEEKLY;BYDAY=MO,WE`). Serializer adds the `RRULE:` property
+   prefix on wire output.
+2. **Legacy column backfill**: eliminated — confirmed empty (no domain code
+   ever wrote these columns). Migration 000044 drops them directly.
+3. **`IncludeRRule` default**: `false` — existing ICS endpoints remain
+   wire-compatible with Phase 2. RRULE mode is opt-in.
+4. **`event_series` queries**: first queries for this dormant table are
+   introduced in Phase 3 Task 2 via a new `event_series.sql` query file.
 
 ## Rollback Notes (Phase 3)
 
-- Legacy repeat columns (`repeat_frequency`, `repeat_on_days`, `repeat_on_dates`)
-  exist in schema and SQLc models but are NOT actively read or written by any domain
-  code. There is no existing read path to "dual-read" from. The cutover is simply
-  "start reading canonical columns."
-- If canonical backfill misbehaves, roll back the additive migration. Since legacy
-  columns likely have no data (or single-digit rows), the risk is minimal.
-- The column-drop migration can follow immediately once tests pass — no elaborate
-  audit gate needed for pre-launch data with no active consumers.
+- Migration 000043 is additive (new nullable `rrule` column) — safe to roll back any time before 000044 is applied.
+- Migration 000044 drops legacy columns confirmed to be empty — minimal risk. The `.down.sql` restores them for safety.
+- If `IncludeRRule = true` causes unexpected client issues, set it back to `false` in the handler — no schema change required.
+- OpenAPI changes are additive (`eventSchedule` is `omitempty`) — no client breakage if the field is absent for non-recurring events.
