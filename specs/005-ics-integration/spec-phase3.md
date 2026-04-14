@@ -1,6 +1,6 @@
 # Phase 3 Specification: Recurrence Model Upgrade
 
-**Spec**: 005-ics-integration / Phase 3 | **Date**: 2026-04-13 | **Status**: Draft
+**Spec**: 005-ics-integration / Phase 3 | **Date**: 2026-04-13 | **Status**: Delivered
 **Parent**: `specs/005-ics-integration/plan.md`
 **Goal**: Replace legacy repeat fields with canonical RRULE storage so recurring events round-trip cleanly across ingest, JSON-LD, and ICS export.
 
@@ -407,3 +407,58 @@ If RRULE preview/expansion endpoints are introduced during implementation, they 
 - Migration 000044 drops legacy columns confirmed to be empty — minimal risk. The `.down.sql` restores them for safety.
 - If `IncludeRRule = true` causes unexpected client issues, set it back to `false` in the handler — no schema change required.
 - OpenAPI changes are additive (`eventSchedule` is `omitempty`) — no client breakage if the field is absent for non-recurring events.
+
+---
+
+## Delivery Reflection
+
+**Completed**: 2026-04-14 | **Branch**: `feat/srv-r71db-ics-phase3-recurrence`
+**Commits**: `273612a`, `751fb39`, `fa7164f`, `38b2192`, `8d05474`, `38e7746`
+
+### Success Criteria vs. Delivery
+
+| # | Criterion | Result |
+|---|-----------|--------|
+| 1 | Canonical `rrule`/`exdates`/`rdates` on `event_series`, loadable via domain queries | ✅ Migration 000043 adds columns; `GetByULID` LEFT JOINs and scans them |
+| 2 | `Event` struct carries `SeriesID` and `Recurrence` fields from `GetByULID` | ✅ Both fields added; nil for non-series events |
+| 3 | JSON-LD detail includes `eventSchedule` recurrence projection | ✅ `ScheduleFromRecurrence()` in `internal/jsonld/schema/recurrence.go`; 14 unit tests |
+| 4 | `IncludeRRule = true` emits RRULE/EXDATE/RDATE; default false is wire-identical to Phase 2 | ✅ 5 new serializer tests; golden fixture `export-recurring-rrule.ics` |
+| 5 | Legacy repeat columns removed without regressions | ✅ Migration 000044 drops them; all tests pass |
+| 6 | UID stability preserved across Phase 2 → Phase 3 | ✅ `uid_stability_test.go` covers both modes with fixed ULID inputs |
+
+All 6 success criteria met. All 6 spec tasks implemented and reviewed. 4 post-review
+fixes committed.
+
+### Deviations and Additions Beyond Spec
+
+1. **`RecurrenceRule` gained `SeriesStart`/`SeriesEnd *time.Time`** — not in spec.
+   Necessary to fix `eventSchedule.startDate`/`endDate` boundaries: the spec said
+   "series bounds where present" but the initial implementation incorrectly loaded
+   occurrence times. The authoritative bounds are `event_series.series_start_date`/
+   `series_end_date`; `RecurrenceRule` now carries them from the repository JOIN.
+
+2. **`event_series.sql` query file created then deleted** — the spec called for a
+   new `queries/event_series.sql` file to hold SQLc queries for the dormant table.
+   An initial `GetEventSeriesByID` query was created in Task 2 but was never called
+   (the code used an inline LEFT JOIN in `GetByULID`). Post-review, the dead query
+   file was removed and `sqlc` was re-run. The spec's intent — first queries for
+   the dormant table — was satisfied by the inline SQL in `GetByULID`.
+
+3. **`eventSchedule.startDate`/`endDate` is date-only format** — spec said "series
+   bounds where present" without specifying format. Date-only (`2006-01-02`) is
+   correct per schema.org/Schedule, not full RFC3339 timestamps.
+
+4. **RFC 5545 EXDATE/RDATE format bug fixed post-review** — initial T4 implementation
+   emitted `TZID=` parameter and trailing `Z` simultaneously (RFC 5545 §3.3.5
+   violation). Fixed in commit `8d05474`. Not anticipated in spec.
+
+5. **Dead `negative := true` variable in `recurrence.go`** — minor dead code from
+   `parseInt` helper; cleaned up in same fix commit.
+
+6. **Plan Task 2 (backfill) eliminated** — pre-confirmed before spec was written;
+   spec correctly excluded it. Delivery confirmed: legacy columns were empty.
+
+### Discovered Follow-up Work
+
+None arising from Phase 3 that requires a new bead. Phase 4 (Interop & Docs) is the
+natural next phase per `plan.md`.

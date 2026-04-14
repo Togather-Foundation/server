@@ -1,6 +1,6 @@
 # Plan: ICS/iCal Integration
 
-**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 2 Delivered)
+**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 3 Delivered)
 **Goal**: Make ICS (RFC 5545) a first-class ingest and output format — the SEL can
 consume ICS feeds from any source (including community-calendar) and produce
 subscribable ICS feeds that any calendar client or aggregator can consume.
@@ -365,7 +365,7 @@ deviations.
   (one per occurrence). Phase 3 upgrades this to emit RRULE on the series VEVENT.
 - Feed pagination uses `Link rel="next"` (RFC 8288), not custom headers.
 
-### Phase 3: Recurrence Model Upgrade
+### Phase 3: Recurrence Model Upgrade — **Delivered**
 
 **Goal**: Replace `repeat_frequency`/`repeat_on_days`/`repeat_on_dates` with canonical
 RRULE storage and wire recurrence metadata through domain/query/serialization paths.
@@ -376,16 +376,18 @@ old columns dropped;
 JSON-LD export projects recurrence from canonical RRULE while preserving `subEvent`
 compatibility; ICS export emits RRULE+EXDATE+RDATE.
 
-**Tasks** (7):
+**Tasks** (7 planned → 6 implemented; Task 2 eliminated — legacy columns confirmed empty):
 1. Check if legacy repeat columns have data; add `rrule TEXT`, `exdates TIMESTAMPTZ[]`,
    `rdates TIMESTAMPTZ[]` to `event_series` (additive migration)
-2. Backfill legacy repeat columns to RRULE equivalents (skip if columns are empty)
+2. ~~Backfill legacy repeat columns to RRULE equivalents~~ — **eliminated** (columns confirmed empty)
 3. Update recurrence-aware repository/domain plumbing (SQLc queries + model wiring)
 4. Update JSON-LD serialization: generate `Schedule`-style recurrence projection
    from RRULE while preserving existing `subEvent` responses
 5. Update ICS serializer to emit RRULE/EXDATE/RDATE on series events
 6. Drop `repeat_frequency`, `repeat_on_days`, `repeat_on_dates` after verification
 7. Preserve deterministic recurring export UID stability across Phase 2 -> 3 cutover
+**Status**: All 6 tasks completed. 4 post-review fixes (RFC 5545 format, dead code,
+`eventSchedule` date boundaries). See `spec-phase3.md` Delivery Reflection.
 
 ### Phase 4: Interop & Documentation
 
