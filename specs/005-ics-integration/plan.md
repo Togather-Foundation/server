@@ -400,22 +400,28 @@ compatibility; ICS export emits RRULE+EXDATE+RDATE.
 
 ### Phase 4: Interop & Documentation
 
-**Goal**: Documented interop with community-calendar; platform discovery heuristics
-for ICS feeds; operational runbook and repeatable integration validation.
+**Goal**: Validated interop with real external ICS feed shapes; platform discovery
+heuristics for ICS feeds; operational runbook and repeatable integration validation.
 
 **Entry criteria**: Phase 1-3 delivered.
-**Exit criteria**: representative external ICS fixtures ingest successfully into SEL;
-SEL ICS export passes community-calendar-style consumer checks; ICS discovery patterns
-and operations runbook are documented and executable.
+**Exit criteria**: 7 representative external ICS fixture shapes ingest successfully into
+SEL; SEL ICS export passes consumer checks in both `IncludeRRule=false` and
+`IncludeRRule=true` modes; ICS discovery heuristics for 8 platforms documented; runbook
+is executable.
 
-**Tasks** (5):
-1. Test: consume community-calendar ICS output → SEL ingest (end-to-end)
-2. Test: SEL ICS feed → community-calendar consumption (validate format)
-3. Update `docs/integration/event-platforms.md` with ICS discovery heuristics
-   (Tockify, Google Calendar, WordPress Tribe, LiveWhale, etc.)
-4. Write `docs/integration/ics-feeds.md` — operational guide for ICS sources
-5. Maintain and validate `docs/integration/ics-compatibility-matrix.md` coverage in
-   Phase 4 interop tests
+**Tasks** (4):
+1. Test: external ICS feed shapes → SEL ingest — 7 fixtures (Outlook VTIMEZONE,
+   WordPress Tribe, Google Calendar, Meetup, Tockify, RRULE+EXDATE TZID-local-time
+   regression, valid-mixed-with-malformed); all assertions map to compatibility matrix rows
+2. Test: SEL ICS feed → external consumer — both `IncludeRRule=false` (default) and
+   `IncludeRRule=true` modes; EXDATE TZID format (RFC 5545 §3.3.5); `eventSchedule`
+   JSON-LD; all assertions map to compatibility matrix rows
+3. Update `docs/integration/event-platforms.md` with ICS discovery heuristics for 8
+   platforms (WordPress Tribe `?ical=1`, MEC `?mec-ical-feed=1`, Events Manager,
+   Tockify, Google Calendar `basic.ics`, Meetup `events/ical/`, Eventbrite bridge,
+   static `<link rel="alternate" type="text/calendar">`) with fallback guidance
+4. Write `docs/integration/ics-feeds.md` — operational guide referencing
+   `extraction_method: ics`, `server scrape sync`, diagnostics paths
 
 **Interface contract (Phase 4 → Phase 5)**:
 - Interop fixture corpus and validation scripts define accepted external ICS shapes.

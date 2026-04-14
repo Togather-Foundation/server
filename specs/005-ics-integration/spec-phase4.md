@@ -1,15 +1,9 @@
 # Phase 4 Specification: Interop and Operations
 
-**Spec**: 005-ics-integration / Phase 4 | **Date**: 2026-04-13 | **Status**: Draft — PROVISIONAL
+**Spec**: 005-ics-integration / Phase 4 | **Date**: 2026-04-14 | **Status**: Draft
 **Parent**: `specs/005-ics-integration/plan.md`
 
-> **PROVISIONAL**: This spec captures current thinking but depends on learnings from
-> Phases 1-3. Task details and acceptance criteria will be revised when Phase 3 is
-> complete. The value of specifying Phase 4 now is to inform earlier phase design —
-> particularly: interop fixture shapes guide Phase 1 parser edge-case coverage, and
-> platform discovery heuristics may reveal `extraction_method` dispatch requirements
-> that should be wired in Phase 1 rather than patched later.
-**Goal**: Prove bidirectional ICS interoperability with community-calendar-style feeds and publish operational documentation/runbooks for reliable production use.
+**Goal**: Prove bidirectional ICS interoperability with real external feed shapes and publish operational documentation/runbooks for reliable production use.
 
 ## Context
 
@@ -27,17 +21,21 @@ root cause is a Phase 2/3 contract bug (file follow-up there) or an interop gap
 | Component | Status | Relevant Code/Docs |
 |---|---|---|
 | Scraper runtime and source workflow docs | Production | `docs/integration/scraper.md:35-100` |
-| Platform recognition knowledge base | Production | `docs/integration/event-platforms.md:12-42` |
+| Platform recognition knowledge base (scraper-focused, no ICS section) | Production | `docs/integration/event-platforms.md:12-42` |
 | Public events API baseline | Production | `internal/api/router.go:548-557`, `docs/api/openapi.yaml:158-251` |
 | Batch ingest endpoint used by scraper | Production | `internal/api/router.go:552-554`, `internal/api/handlers/events.go` |
 | Content negotiation behavior | Production | `internal/api/middleware/negotiate.go:21-64` |
+| `extraction_method: ics` dispatch in scraper | Production | `internal/scraper/config.go` — bypasses tier dispatch entirely |
+| ICS contract tests (Phase 2: content type, DTSTAMP, pagination, 404/410) | Production | `tests/integration/ics_test.go` |
+| ICS fixture library (20 files: `parse-*` and `export-*` shapes) | Production | `tests/testdata/ics/` — `README.md` reserves `interop-*.ics` prefix for Phase 4 |
+| ICS compatibility matrix (4 rows: strict parser, Apple, Google, community-calendar) | Production | `docs/integration/ics-compatibility-matrix.md` |
 | Dedicated ICS integration runbook doc | Missing (Phase 4 deliverable) | — |
-| Explicit community-calendar interop test suite | Missing (Phase 4 deliverable) | — |
+| Interop test suite (external feed shapes → SEL, SEL → consumer expectations) | Missing (Phase 4 deliverable) | — |
 
 ### What This Phase Delivers
 
-1. End-to-end interop test: community-calendar-style ICS -> SEL ingest.
-2. End-to-end interop test: SEL ICS export -> community-calendar-style consumer expectations.
+1. End-to-end interop test: real external ICS feed shapes → SEL ingest.
+2. End-to-end interop test: SEL ICS export → external consumer expectations, both `IncludeRRule=false` (default) and `IncludeRRule=true` modes.
 3. Updated ICS platform discovery heuristics in `docs/integration/event-platforms.md`.
 4. New operations guide: `docs/integration/ics-feeds.md`.
 
@@ -69,52 +67,58 @@ root cause is a Phase 2/3 contract bug (file follow-up there) or an interop gap
 
 ## User Scenarios & Testing
 
-### User Story 1 - Ingest Community Calendar Feeds (Priority: P1)
+### User Story 1 - Ingest External ICS Feed Shapes (Priority: P1)
 
-As an operator, I can ingest a representative community-calendar-style ICS feed and get expected events into SEL.
+As an operator, I can ingest representative real-world ICS feed shapes and get expected events into SEL.
 
-**Independent Test**: Run integration test with curated ICS fixtures matching common external feed patterns (Meetup, Google Calendar, WordPress Tribe, Tockify-like output).
+**Independent Test**: `scripts/agent-run.sh go test ./tests/integration/ -run ICSInterop` against curated fixtures covering Outlook VTIMEZONE, WordPress Tribe, Google Calendar, Meetup, Tockify, and a malformed-mix feed.
 
 **Acceptance Scenarios**:
 
-1. **Given** a valid external ICS fixture, **When** it is processed via configured `extraction_method: ics` source, **Then** events are ingested and visible through SEL events API.
-2. **Given** malformed entries mixed with valid entries, **When** ingest runs, **Then** valid entries succeed and malformed entries are captured in run diagnostics without aborting the full run.
-3. **Given** recurring feed items, **When** ingest + recurrence persistence complete, **Then** stored recurrence metadata and generated occurrences are consistent with phase rules.
+1. **Given** an Outlook/Exchange-style ICS with a VTIMEZONE block, **When** processed via `extraction_method: ics`, **Then** events parse with correct UTC times and no timezone-related warnings.
+2. **Given** a WordPress Tribe `?ical=1` fixture, **When** ingested, **Then** all valid VEVENTs succeed and the event count matches expected minimum.
+3. **Given** a Google Calendar `basic.ics` fixture, **When** ingested, **Then** all valid VEVENTs succeed.
+4. **Given** an ICS fixture with RRULE + EXDATE using TZID-local-time (RFC 5545 §3.3.5: no trailing `Z` when TZID is set), **When** ingested, **Then** recurrence metadata is stored and excluded dates are correct — this is a regression guard for the Phase 3 EXDATE format fix.
+5. **Given** malformed entries mixed with valid entries, **When** ingest runs, **Then** valid entries succeed and malformed entries are captured in run diagnostics without aborting the full run.
+6. **Given** each ingest fixture, **When** the test asserts, **Then** assertions explicitly map to at least one row in `docs/integration/ics-compatibility-matrix.md`.
 
 ### User Story 2 - Export SEL to External Consumers (Priority: P1)
 
-As an integrator, I can consume SEL ICS output in a community-calendar-style consumer pipeline.
+As an integrator, I can consume SEL ICS output in both default and recurrence-expanded modes.
 
-**Independent Test**: Run integration test that fetches SEL ICS endpoints and validates required ICS properties and recurrence semantics.
+**Independent Test**: Integration test fetches `/api/v1/events.ics` (default) and a recurrence-enabled variant, validating required ICS properties and recurrence semantics.
 
 **Acceptance Scenarios**:
 
-1. **Given** events in SEL, **When** `/api/v1/events.ics` is fetched, **Then** response is valid `text/calendar` and parseable by strict parser checks.
-2. **Given** a recurring event, **When** event ICS is exported, **Then** recurrence properties (`RRULE`, `EXDATE`, `RDATE` where applicable) match canonical storage.
-3. **Given** paginated feed export, **When** consumer follows continuation cursor metadata, **Then** all pages are retrievable without contract ambiguity.
+1. **Given** events in SEL, **When** `/api/v1/events.ics` is fetched (`IncludeRRule=false`, default), **Then** response is valid `text/calendar`, parseable by strict parser checks, and wire-identical to Phase 2 output (no RRULE/EXDATE/RDATE emitted).
+2. **Given** a recurring event with a fully populated `event_series` row (`series_start_date`, `series_end_date`), **When** ICS is exported with `IncludeRRule=true`, **Then** a single VEVENT is emitted with correct RRULE, and EXDATE uses TZID-local-time (no trailing `Z`) when TZID is set — RFC 5545 §3.3.5 regression guard.
+3. **Given** a recurring event with `IncludeRRule=true`, **When** the JSON-LD representation is fetched from `/api/v1/events`, **Then** `eventSchedule` fields (`startDate`, `endDate`, `repeatFrequency`) are present.
+4. **Given** paginated feed export, **When** consumer follows continuation cursor metadata, **Then** all pages are retrievable without contract ambiguity.
+5. **Given** each export assertion, **Then** it explicitly maps to at least one row in `docs/integration/ics-compatibility-matrix.md`.
 
 ### User Story 3 - ICS Source Discovery Guidance (Priority: P2)
 
 As a source-config author, I can identify ICS opportunities quickly and consistently.
 
-**Independent Test**: Review updated `event-platforms.md` with a checklist covering each targeted platform class.
+**Independent Test**: Review updated `event-platforms.md` — verify each of the 8 named platform patterns has: detection signal, ICS URL pattern, verification step, and fallback guidance.
 
 **Acceptance Scenarios**:
 
-1. **Given** a WordPress Tribe site, **When** consulting the guide, **Then** heuristics clearly indicate ICS URL patterns and verification steps.
-2. **Given** a Google Calendar or Meetup source, **When** consulting the guide, **Then** expected feed URL formats and caveats are documented.
-3. **Given** unsupported or brittle patterns, **When** consulting the guide, **Then** fallback behavior (T0-T3 scraping vs ICS) is explicit.
+1. **Given** a WordPress Tribe site, **When** consulting the guide, **Then** the `?ical=1` URL pattern, feed verification step, and T0-T3 fallback condition are explicit.
+2. **Given** a Google Calendar, Meetup, or Tockify source, **When** consulting the guide, **Then** the expected feed URL format, access requirements, and known caveats are documented.
+3. **Given** any of the 8 platform patterns (WordPress Tribe `?ical=1`, WordPress MEC `?mec-ical-feed=1`, WordPress Events Manager, Tockify `tockify.com/api/feeds/ics/<cal>`, Google Calendar `basic.ics`, Meetup `events/ical/`, Eventbrite bridge, static `<link rel="alternate" type="text/calendar">`), **Then** a source-config author can determine ICS viability without guesswork.
+4. **Given** a site where ICS is available but unreliable or incomplete, **When** consulting the guide, **Then** the fallback to T0-T3 scraping is explicitly described with decision criteria.
 
 ### User Story 4 - Operational Runbook for ICS Feeds (Priority: P1)
 
 As an operator, I can onboard, validate, monitor, and troubleshoot ICS sources in staging/production.
 
-**Independent Test**: Dry-run the runbook commands in staging against one known-good and one known-problem source.
+**Independent Test**: Trace each runbook command against the existing operational paths in `docs/integration/scraper.md` — verify no missing prerequisites or phantom commands.
 
 **Acceptance Scenarios**:
 
-1. **Given** a new ICS source YAML, **When** following runbook steps, **Then** source is synced, scraped, and verified in DB-backed runtime mode.
-2. **Given** parser warnings or partial failures, **When** following runbook diagnostics, **Then** operator can locate run metadata and determine next action.
+1. **Given** a new ICS source YAML, **When** following runbook steps, **Then** source is synced via `server scrape sync`, scraped, and verified — using the `extraction_method: ics` config key throughout.
+2. **Given** parser warnings or partial failures, **When** following runbook diagnostics, **Then** operator can locate run metadata via existing diagnostic paths (`/api/v1/admin/scraper/diagnostics`) and determine next action.
 3. **Given** cleanup/retry need, **When** following runbook, **Then** remediation path is documented and safe.
 
 ---
@@ -126,25 +130,31 @@ As an operator, I can onboard, validate, monitor, and troubleshoot ICS sources i
 ```text
 tests/
   integration/
-    ics_interop_ingest_test.go          # NEW - external ICS fixture -> SEL ingest checks
-    ics_interop_export_test.go          # NEW - SEL export -> external consumer checks
+    ics_interop_test.go               # NEW — all Phase 4 interop scenarios (ingest + export)
+                                      #   consistent with ics_test.go (one file per topic)
   testdata/
     ics/
-      README.md                         # SHARED - fixture ownership + naming rules
-      interop/
-        interop-community-meetup.ics     # NEW
-        interop-community-google-calendar.ics # NEW
-        interop-community-tribe.ics      # NEW
-        interop-community-mixed-malformed.ics # NEW
+      README.md                       # MODIFIED — add interop-*.ics naming entries
+      interop-outlook-vtimezone.ics   # NEW — Outlook/Exchange VTIMEZONE definition
+      interop-tribe-ical.ics          # NEW — WordPress Tribe ?ical=1 output shape
+      interop-google-basic.ics        # NEW — Google Calendar basic.ics shape
+      interop-meetup.ics              # NEW — Meetup ICS export shape
+      interop-tockify.ics             # NEW — Tockify feed shape
+      interop-recurrence-exdate.ics   # NEW — RRULE + EXDATE with TZID-local-time (RFC 5545 §3.3.5)
+      interop-mixed-malformed.ics     # NEW — valid VEVENTs mixed with malformed entries
 docs/
   integration/
-    event-platforms.md                  # MODIFIED - ICS discovery heuristics expansion
-    ics-compatibility-matrix.md         # SHARED - consumer/parser compatibility targets
-    ics-feeds.md                        # NEW - operational runbook
+    event-platforms.md                # MODIFIED — new ICS discovery heuristics section (~8 platforms)
+    ics-compatibility-matrix.md       # MODIFIED — add test references to each row
+    ics-feeds.md                      # NEW — operational runbook
 specs/
   005-ics-integration/
-    spec-phase4.md                      # THIS FILE
+    spec-phase4.md                    # THIS FILE
 ```
+
+**Fixture naming convention**: flat under `tests/testdata/ics/` with `interop-` prefix — consistent
+with the existing `README.md` reservation and the existing `parse-*` / `export-*` files. Do NOT
+create an `interop/` subdirectory.
 
 ### Data Structures
 
@@ -152,24 +162,48 @@ These are test-internal types used only in Go table-driven tests; JSON serializa
 tags are not needed.
 
 ```go
-// InteropCase defines one end-to-end ICS interop scenario.
-type InteropCase struct {
-    Name                string
-    FixturePath         string
-    ExpectedMinEvents   int
-    ExpectWarnings      bool
-    ExpectRecurrence    bool
+// InteropIngestCase defines one external-ICS → SEL ingest interop scenario.
+type InteropIngestCase struct {
+    Name              string
+    FixturePath       string    // relative to tests/testdata/ics/
+    ExpectedMinEvents int
+    ExpectWarnings    bool
+    ExpectRecurrence  bool
 }
 
 // ExportExpectation defines assertions against SEL ICS output.
+// IncludeRRule controls which serialization mode is exercised:
+//   false (default) → wire-identical to Phase 2 output (no RRULE/EXDATE/RDATE emitted)
+//   true            → single VEVENT with RRULE/EXDATE/RDATE where set on the event
+// Both modes must be tested for recurring events.
 type ExportExpectation struct {
-    RequireContentType  string
-    RequireCalendarMeta bool
-    RequireRRULE        bool
-    RequireEXDATE       bool
-    RequireRDATE        bool
+    IncludeRRule       bool   // SerializeOptions.IncludeRRule
+    RequireContentType string // must be "text/calendar"
+    RequireRRULE       bool   // only when IncludeRRule=true
+    RequireEXDATE      bool   // only when IncludeRRule=true and ExDates set
+    EXDATENoTrailingZ  bool   // when TZID set: EXDATE must use local time (no Z suffix)
+    RequireEventSchedule bool // JSON-LD eventSchedule field present in /events endpoint
 }
 ```
+
+**`RecurrenceRule` struct** (from `internal/domain/events/repository.go`) — used for
+fixture setup when testing export interop with recurring events:
+
+```go
+type RecurrenceRule struct {
+    RRule       string       // e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+    ExDates     []time.Time
+    RDates      []time.Time
+    TZID        string       // IANA timezone ID; empty → UTC
+    SeriesStart *time.Time   // maps to event_series.series_start_date
+    SeriesEnd   *time.Time   // maps to event_series.series_end_date
+}
+```
+
+**`eventSchedule` requirement**: export interop tests that assert the JSON-LD
+`eventSchedule` field (via `/api/v1/events`) must insert an `event_series` row with
+non-nil `series_start_date`/`series_end_date`. Without these, the API handler omits
+`eventSchedule` due to `omitempty`.
 
 ### Interfaces
 
@@ -202,58 +236,91 @@ Interop test contract focuses on observable outcomes:
 
 ## Implementation Tasks
 
-### Task 1: Add community-calendar -> SEL ingest interop tests
+### Task 1: Add external ICS feed shape → SEL ingest interop tests
 
-**What**: Build integration tests and representative fixtures to validate external ICS ingestion end-to-end.
+**What**: Build `tests/integration/ics_interop_test.go` and the 7 ICS fixtures listed in
+Package Layout. Fixtures must cover: Outlook VTIMEZONE block, WordPress Tribe `?ical=1`
+shape, Google Calendar `basic.ics` shape, Meetup export shape, Tockify feed shape,
+RRULE+EXDATE with TZID-local-time (RFC 5545 §3.3.5 regression guard), and
+valid-mixed-with-malformed. Do NOT duplicate scenarios already in `ics_test.go` (content
+type, DTSTAMP, 404/410, pagination — those are Phase 2 contract tests).
 
-**Test**: `scripts/agent-run.sh go test ./tests/integration/ -run ICSInterop` (development);
-`scripts/agent-run.sh make test-ci` (CI gate).
+Each test assertion must explicitly reference at least one row in
+`docs/integration/ics-compatibility-matrix.md`. Update the matrix with test references.
 
-**Acceptance**: Tests assert successful ingest, expected warnings, and non-fatal handling
-of malformed items. `tests/testdata/ics/README.md` updated with `interop/` subdirectory
-naming conventions.
+**Test**: `scripts/agent-run.sh go test ./tests/integration/ -run ICSInterop`
 
-### Task 2: Add SEL -> community-calendar export interop tests
+**Acceptance**: All 7 fixture shapes ingest cleanly (or assert expected partial-success
+for malformed mix). Malformed entries do not abort the run. Recurrence metadata stored
+correctly for RRULE+EXDATE fixture. `tests/testdata/ics/README.md` updated with
+`interop-*.ics` entries. Each assertion maps to a compatibility matrix row.
 
-**What**: Add export-focused integration tests validating parseability, recurrence fields, and pagination semantics against `docs/integration/ics-compatibility-matrix.md`.
+### Task 2: Add SEL → external consumer export interop tests
 
-**Test**: targeted integration test command + full CI suite.
+**What**: Add export-focused scenarios to `tests/integration/ics_interop_test.go`.
+Test both serialization modes explicitly:
+- `IncludeRRule=false` (default): wire-identical to Phase 2; no RRULE/EXDATE/RDATE emitted.
+- `IncludeRRule=true`: single VEVENT with RRULE; EXDATE uses TZID-local-time when TZID is
+  set (RFC 5545 §3.3.5 — no trailing `Z`).
 
-**Acceptance**: Exported ICS satisfies parser checks and recurrence expectations for recurring/non-recurring cases.
+For `eventSchedule` JSON-LD assertions: insert an `event_series` row with non-nil
+`series_start_date`/`series_end_date` — the API handler requires these to emit
+`eventSchedule` (omitempty).
+
+Each assertion must map to at least one row in `docs/integration/ics-compatibility-matrix.md`.
+
+**Test**: targeted integration test command + `scripts/agent-run.sh make test-ci`.
+
+**Acceptance**: Both `IncludeRRule` modes tested. EXDATE TZID format assertion present and
+passing. `eventSchedule` fields verified in JSON-LD response for recurring event with
+populated `event_series`. Compatibility matrix rows all referenced by at least one test.
 
 ### Task 3: Add ICS discovery heuristics section to `docs/integration/event-platforms.md`
 
 **What**: Create a new ICS-discovery section in `event-platforms.md` (currently 898 lines
-of scraper-focused content with zero ICS content). Cover ~8 platform fingerprints:
-WordPress Tribe (`?ical=1`), WordPress MEC (`?mec-ical-feed=1`), WordPress Events
-Manager, Tockify (`tockify.com/api/feeds/ics/<cal>`), Google Calendar (`basic.ics`),
-Meetup (`events/ical/`), Eventbrite bridge, and static ICS (`<link rel="alternate"
-type="text/calendar">`). Include detection signals, URL patterns, verification steps,
-and fallback guidance (when to use T0-T3 scraping instead).
+of scraper-focused content with zero ICS content). Cover 8 platform fingerprints with
+detection signal, ICS URL pattern, verification step, and fallback criteria:
 
-**Test**: manual checklist review + docs lint/format checks used in repo.
+| Platform | ICS URL pattern |
+|---|---|
+| WordPress Tribe | `?ical=1` appended to calendar page URL |
+| WordPress MEC (Modern Events Calendar) | `?mec-ical-feed=1` |
+| WordPress Events Manager | `/?ical=1` or `/events/feed/?ical=1` |
+| Tockify | `tockify.com/api/feeds/ics/<calendar-name>` |
+| Google Calendar | `calendar.google.com/calendar/ical/<id>/public/basic.ics` |
+| Meetup | `meetup.com/<group>/events/ical/` |
+| Eventbrite | No native ICS feed; bridge via third-party or scrape T1/T2 |
+| Static link | `<link rel="alternate" type="text/calendar" href="...">` in HTML |
 
-**Acceptance**: Discovery steps are explicit enough that another agent can classify source
-strategy without guesswork. All 8 platform patterns from plan.md (lines 568-578) covered.
+Include fallback guidance: when ICS is available but incomplete/unreliable, prefer T1/T2
+selectors. Reference `extraction_method: ics` as the config key that activates ICS mode.
+
+**Test**: manual checklist review; `make lint` and `make lint-openapi` pass.
+
+**Acceptance**: All 8 platform patterns documented with URL pattern, detection signal,
+verification step, fallback condition. A source-config author can determine ICS viability
+without guesswork. `extraction_method: ics` referenced with `server scrape sync` workflow.
 
 ### Task 4: Create `docs/integration/ics-feeds.md` runbook
 
-**What**: Write operational guide covering onboarding, validation, sync, diagnostics, recurrence checks, and troubleshooting.
+**What**: Write operational guide covering:
+1. Source config creation with `extraction_method: ics`
+2. Syncing to DB: `server scrape sync` (required — scraper reads from DB, not YAML files)
+3. Triggering a scrape run and reading results
+4. Diagnostics: `/api/v1/admin/scraper/diagnostics` path
+5. Common warning types and remediation (VTIMEZONE missing, UID collisions, EXDATE format)
+6. Recurrence sanity checks (verify `event_series` row, `series_start_date`/`series_end_date`)
+7. Troubleshooting checklist (source disabled, feed URL changed, auth required)
 
-**Test**: execute documented commands in staging dry-run path and verify no missing prerequisites.
+Reference `docs/integration/scraper.md` for general scraper ops; this runbook is
+ICS-specific and complements the general guide.
 
-**Acceptance**: Runbook is complete, executable, and references existing operational commands/paths accurately.
+**Test**: trace each command against existing operational paths — verify no missing
+prerequisites or phantom commands; `make lint` passes.
 
-### Task 5: Validate `ics-compatibility-matrix.md` coverage in interop tests
-
-**What**: Verify that Phase 4 interop tests (Tasks 1-2) explicitly map to rows in
-`docs/integration/ics-compatibility-matrix.md`. Update the matrix if interop testing
-reveals gaps or new compatibility data.
-
-**Test**: each matrix row referenced by at least one interop test assertion; `make lint` passes.
-
-**Acceptance**: compatibility matrix is current, every row is tested, and any new
-platform/client entries discovered during interop testing are added.
+**Acceptance**: Runbook is self-contained and executable. All commands reference real
+CLI/API paths. `server scrape sync` and `extraction_method: ics` are central. Staging
+admin token usage (from `.agent-keys/staging`) is referenced for diagnostics endpoints.
 
 ---
 
@@ -267,11 +334,11 @@ Documentation must reference existing config knobs from prior phases (e.g., ICS 
 
 ## Success Criteria
 
-1. Interop ingest tests pass against representative community-calendar-style fixtures.
-2. Interop export tests pass and verify recurrence + pagination behavior.
-3. Phase 4 interop tests explicitly map to `docs/integration/ics-compatibility-matrix.md` targets.
-4. `docs/integration/event-platforms.md` includes clear ICS heuristics and fallback rules.
-5. `docs/integration/ics-feeds.md` exists and is executable as an operations runbook.
+1. Ingest interop tests pass against 7 representative external ICS fixture shapes.
+2. Export interop tests pass for both `IncludeRRule=false` (default) and `IncludeRRule=true` modes, including RFC 5545 §3.3.5 EXDATE TZID format and `eventSchedule` JSON-LD assertions.
+3. Every interop test assertion maps to at least one row in `docs/integration/ics-compatibility-matrix.md`; the matrix is updated with test references.
+4. `docs/integration/event-platforms.md` includes clear ICS heuristics for all 8 platform patterns with fallback rules.
+5. `docs/integration/ics-feeds.md` exists, references `extraction_method: ics` and `server scrape sync`, and is executable as an operations runbook.
 
 ---
 
