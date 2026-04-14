@@ -145,16 +145,11 @@ func parseInt(s string) (int, error) {
 		if ch >= '0' && ch <= '9' {
 			n = n*10 + int(ch-'0')
 		} else if ch == '-' && n == 0 {
-			negative := true
-			rest := s[1:]
-			v, err := parseInt(rest)
+			v, err := parseInt(s[1:])
 			if err != nil {
 				return 0, fmt.Errorf("parseInt %q: %w", s, err)
 			}
-			if negative {
-				return -v, nil
-			}
-			return v, nil
+			return -v, nil
 		} else {
 			return 0, fmt.Errorf("parseInt %q: unexpected char %c", s, ch)
 		}

@@ -130,7 +130,13 @@ func serializeEventsCore(evts []events.Event, opts SerializeOptions) (SerializeR
 
 			for _, exDate := range evt.Recurrence.ExDates {
 				if evt.Recurrence.TZID != "" {
-					ve.AddExdate(exDate.UTC().Format("20060102T150405Z"), ics.WithTZID(evt.Recurrence.TZID))
+					// RFC 5545 §3.3.5: TZID= and trailing Z are mutually exclusive.
+					// When TZID is present, format as local time (no Z suffix).
+					loc, err := time.LoadLocation(evt.Recurrence.TZID)
+					if err != nil {
+						loc = time.UTC
+					}
+					ve.AddExdate(exDate.In(loc).Format("20060102T150405"), ics.WithTZID(evt.Recurrence.TZID))
 				} else {
 					ve.AddExdate(exDate.UTC().Format("20060102T150405Z"))
 				}
@@ -138,7 +144,13 @@ func serializeEventsCore(evts []events.Event, opts SerializeOptions) (SerializeR
 
 			for _, rDate := range evt.Recurrence.RDates {
 				if evt.Recurrence.TZID != "" {
-					ve.AddRdate(rDate.UTC().Format("20060102T150405Z"), ics.WithTZID(evt.Recurrence.TZID))
+					// RFC 5545 §3.3.5: TZID= and trailing Z are mutually exclusive.
+					// When TZID is present, format as local time (no Z suffix).
+					loc, err := time.LoadLocation(evt.Recurrence.TZID)
+					if err != nil {
+						loc = time.UTC
+					}
+					ve.AddRdate(rDate.In(loc).Format("20060102T150405"), ics.WithTZID(evt.Recurrence.TZID))
 				} else {
 					ve.AddRdate(rDate.UTC().Format("20060102T150405Z"))
 				}
