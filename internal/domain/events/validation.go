@@ -64,9 +64,33 @@ type EventInput struct {
 	License                       string                `json:"license,omitempty"`
 	Source                        *SourceInput          `json:"source,omitempty"`
 	Occurrences                   []OccurrenceInput     `json:"occurrences,omitempty"`
+	Recurrence                    *RecurrenceInput      `json:"-"`                                          // ICS ingest: series metadata; not exposed via JSON API
 	LifecycleState                string                `json:"lifecycle_state,omitempty"`                  // Scraper hint: "review" forces pending_review
 	SkipMultiSessionCheck         bool                  `json:"skip_multi_session_check,omitempty"`         // Disables multi-session heuristic for this event
 	MultiSessionDurationThreshold time.Duration         `json:"multi_session_duration_threshold,omitempty"` // Custom duration threshold for multi-session detection; 0 means use default (168h)
+}
+
+// RecurrenceInput carries series-level recurrence metadata populated by the ICS mapper.
+// It is set on every occurrence EventInput that belongs to a recurring RRULE master VEVENT.
+// All occurrences from the same master share an identical RecurrenceInput — the
+// createEventCore pipeline uses it to upsert exactly one event_series row per master.
+//
+// ExternalKey is the upsert key: "<source_name>:<master_uid>" (stable across re-ingests).
+// SeriesName is taken from the master VEVENT SUMMARY (shared across all occurrences).
+// SeriesStart is the master DTSTART truncated to local date (using TZID, not UTC).
+// SeriesEnd is derived from UNTIL in the RRULE if present; nil for COUNT-only or infinite.
+// RRule is the raw RRULE value string (no "RRULE:" prefix).
+// ExDates/RDates are copied from the master VEVENT.
+// TZID is the IANA timezone from DTSTART's TZID parameter.
+type RecurrenceInput struct {
+	ExternalKey string      // "<source_name>:<master_uid>"
+	SeriesName  string      // Master VEVENT SUMMARY
+	SeriesStart time.Time   // DTSTART truncated to local date (TZID-aware)
+	SeriesEnd   *time.Time  // UNTIL date if present; nil otherwise
+	RRule       string      // RFC 5545 RRULE value (no "RRULE:" prefix)
+	ExDates     []time.Time // EXDATE UTC timestamps
+	RDates      []time.Time // RDATE UTC timestamps
+	TZID        string      // IANA timezone ID
 }
 
 // PlaceInput represents a venue/location attached to an event during ingest.

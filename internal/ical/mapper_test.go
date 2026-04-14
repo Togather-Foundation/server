@@ -794,3 +794,217 @@ func TestMapToEventInputs_RRULECappedWarning(t *testing.T) {
 		t.Errorf("expected 'RRULE capped' warning, got warnings: %v", warnings)
 	}
 }
+
+func TestDeriveSeriesEnd(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		rrule   string
+		wantNil bool
+		want    string
+	}{
+		{
+			name:    "empty string returns nil",
+			rrule:   "",
+			wantNil: true,
+		},
+		{
+			name:  "UNTIL with Z suffix",
+			rrule: "FREQ=WEEKLY;UNTIL=20260831T235959Z",
+			want:  "2026-08-31T23:59:59Z",
+		},
+		{
+			name:  "UNTIL date-only",
+			rrule: "FREQ=WEEKLY;UNTIL=20260831",
+			want:  "2026-08-31T00:00:00Z",
+		},
+		{
+			name:  "UNTIL local time without Z",
+			rrule: "FREQ=WEEKLY;UNTIL=20260831T235959",
+			want:  "2026-08-31T23:59:59Z",
+		},
+		{
+			name:  "UNTIL with RFC3339 format",
+			rrule: "FREQ=WEEKLY;UNTIL=2026-08-31T23:59:59Z",
+			want:  "2026-08-31T23:59:59Z",
+		},
+		{
+			name:    "COUNT-only returns nil",
+			rrule:   "FREQ=WEEKLY;COUNT=10",
+			wantNil: true,
+		},
+		{
+			name:    "FREQ-only infinite returns nil",
+			rrule:   "FREQ=DAILY",
+			wantNil: true,
+		},
+		{
+			name:  "UNTIL with RRULE: prefix",
+			rrule: "RRULE:FREQ=WEEKLY;UNTIL=20260831T235959Z",
+			want:  "2026-08-31T23:59:59Z",
+		},
+		{
+			name:  "UNTIL before COUNT",
+			rrule: "FREQ=WEEKLY;UNTIL=20260831T235959Z;COUNT=10",
+			want:  "2026-08-31T23:59:59Z",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := deriveSeriesEnd(tt.rrule)
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("deriveSeriesEnd(%q) = %v, want nil", tt.rrule, got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatalf("deriveSeriesEnd(%q) = nil, want %s", tt.rrule, tt.want)
+			}
+			if got.Format(time.RFC3339) != tt.want {
+				t.Errorf("deriveSeriesEnd(%q) = %v, want %s", tt.rrule, got.Format(time.RFC3339), tt.want)
+			}
+		})
+	}
+}
+
+func TestMapToEventInputs_RecurrenceInput(t *testing.T) {
+	t.Parallel()
+
+	toronto, _ := time.LoadLocation("America/Toronto")
+	masterStart := time.Date(2026, 7, 6, 19, 0, 0, 0, toronto)
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:     "weekly-workshop",
+				Summary: "Weekly Workshop",
+				Start:   masterStart,
+				End:     masterStart.Add(2 * time.Hour),
+				RRULE:   "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260831T235959Z",
+				ExDates: []time.Time{time.Date(2026, 7, 6, 19, 0, 0, 0, toronto)},
+				TZID:    "America/Toronto",
+			},
+		},
+	}
+
+	opts := defaultMapperOpts()
+	opts.HorizonDays = 90
+
+	results, _, err := MapToEventInputs(context.Background(), cal, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+
+	rec := results[0].Recurrence
+	if rec == nil {
+		t.Fatal("expected Recurrence to be non-nil for recurring event")
+	}
+
+	if rec.ExternalKey != "test-source:weekly-workshop" {
+		t.Errorf("ExternalKey = %q, want %q", rec.ExternalKey, "test-source:weekly-workshop")
+	}
+
+	if rec.SeriesName != "Weekly Workshop" {
+		t.Errorf("SeriesName = %q, want %q", rec.SeriesName, "Weekly Workshop")
+	}
+
+	if rec.RRule != "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260831T235959Z" {
+		t.Errorf("RRule = %q, want %q", rec.RRule, "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260831T235959Z")
+	}
+
+	if rec.TZID != "America/Toronto" {
+		t.Errorf("TZID = %q, want %q", rec.TZID, "America/Toronto")
+	}
+
+	if len(rec.ExDates) != 1 {
+		t.Errorf("ExDates length = %d, want 1", len(rec.ExDates))
+	}
+
+	seriesStartYear := rec.SeriesStart.Year()
+	if seriesStartYear != 2026 {
+		t.Errorf("SeriesStart year = %d, want 2026", seriesStartYear)
+	}
+
+	if rec.SeriesEnd == nil {
+		t.Fatal("SeriesEnd should not be nil when UNTIL is present")
+	}
+	if rec.SeriesEnd.Year() != 2026 {
+		t.Errorf("SeriesEnd year = %d, want 2026", rec.SeriesEnd.Year())
+	}
+
+	// All occurrences should share the same RecurrenceInput pointer.
+	for i := 1; i < len(results); i++ {
+		if results[i].Recurrence != rec {
+			t.Errorf("result %d: Recurrence is not the same pointer as result 0", i)
+		}
+	}
+}
+
+func TestMapToEventInputs_RecurrenceInput_CountOnly_NilEnd(t *testing.T) {
+	t.Parallel()
+
+	dtstart := time.Now().Add(24 * time.Hour).Truncate(time.Second).UTC()
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:     "count-only",
+				Summary: "Count Only Series",
+				Start:   dtstart,
+				End:     dtstart.Add(time.Hour),
+				RRULE:   "FREQ=WEEKLY;COUNT=5",
+				TZID:    "UTC",
+			},
+		},
+	}
+
+	results, _, err := MapToEventInputs(context.Background(), cal, defaultMapperOpts())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one result")
+	}
+
+	rec := results[0].Recurrence
+	if rec == nil {
+		t.Fatal("expected Recurrence to be non-nil")
+	}
+
+	if rec.SeriesEnd != nil {
+		t.Errorf("SeriesEnd should be nil for COUNT-only series, got %v", rec.SeriesEnd)
+	}
+}
+
+func TestMapToEventInputs_NonRecurring_NoRecurrence(t *testing.T) {
+	t.Parallel()
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:     "single-001",
+				Summary: "One-Off Event",
+				Start:   time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+				End:     time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	results, _, err := MapToEventInputs(context.Background(), cal, defaultMapperOpts())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	if results[0].Recurrence != nil {
+		t.Error("expected Recurrence to be nil for non-recurring event")
+	}
+}

@@ -103,6 +103,10 @@ func (s stubEventsRepo) UpsertOrganization(_ context.Context, _ events.Organizat
 	return &events.OrganizationRecord{ID: "org-id", ULID: "org-ulid"}, nil
 }
 
+func (s stubEventsRepo) UpsertEventSeries(_ context.Context, _ events.UpsertEventSeriesParams) (*events.UpsertEventSeriesResult, error) {
+	return &events.UpsertEventSeriesResult{SeriesID: "series-id"}, nil
+}
+
 func (s stubEventsRepo) UpdateEvent(_ context.Context, _ string, _ events.UpdateEventParams) (*events.Event, error) {
 	return nil, errors.New("not implemented")
 }

@@ -108,6 +108,27 @@ type Occurrence struct {
 	Availability  string
 }
 
+// UpsertEventSeriesParams are the parameters for creating or updating an event_series row.
+// ExternalKey is the upsert key (unique): "<source_name>:<master_uid>".
+// On conflict, series_start_date, series_end_date, rrule, exdates, rdates, and
+// schedule_timezone are updated to reflect the latest feed state.
+type UpsertEventSeriesParams struct {
+	ExternalKey string
+	Name        string
+	SeriesStart time.Time  // truncated to local date via TZID
+	SeriesEnd   *time.Time // nil when UNTIL is absent (COUNT-only or infinite)
+	RRule       string     // RFC 5545 RRULE value (no "RRULE:" prefix)
+	ExDates     []time.Time
+	RDates      []time.Time
+	TZID        string // IANA timezone; empty → "UTC"
+}
+
+// UpsertEventSeriesResult is returned by UpsertEventSeries.
+// SeriesID is the UUID of the upserted event_series row.
+type UpsertEventSeriesResult struct {
+	SeriesID string
+}
+
 type EventCreateParams struct {
 	ULID                string
 	Name                string
@@ -128,6 +149,7 @@ type EventCreateParams struct {
 	Confidence          *float64
 	QualityScore        *int
 	OriginNodeID        *string
+	SeriesID            *string // non-nil when this event belongs to a recurring series
 }
 
 type OccurrenceCreateParams struct {
@@ -239,6 +261,11 @@ type Repository interface {
 	InsertIdempotencyKey(ctx context.Context, params IdempotencyKeyCreateParams) (*IdempotencyKey, error)
 	UpdateIdempotencyKeyEvent(ctx context.Context, key string, eventID string, eventULID string) error
 	UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error)
+	// UpsertEventSeries creates or updates an event_series row identified by ExternalKey.
+	// On conflict (same ExternalKey), series_start_date, series_end_date, rrule, exdates,
+	// rdates, and schedule_timezone are updated. Returns the UUID of the series row.
+	// Must be called inside a transaction (uses the same db connection as the caller).
+	UpsertEventSeries(ctx context.Context, params UpsertEventSeriesParams) (*UpsertEventSeriesResult, error)
 	// GetPlaceByULID looks up a place row by its ULID and returns its UUID and ULID.
 	// Used to resolve occurrence venueId canonical URIs (which carry the ULID) to the
 	// underlying DB UUID required by event_occurrences.venue_id.

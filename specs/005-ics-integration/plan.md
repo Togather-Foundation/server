@@ -1,6 +1,6 @@
 # Plan: ICS/iCal Integration
 
-**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 3 Delivered)
+**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 4 In Progress)
 **Goal**: Make ICS (RFC 5545) a first-class ingest and output format — the SEL can
 consume ICS feeds from any source (including community-calendar) and produce
 subscribable ICS feeds that any calendar client or aggregator can consume.
@@ -414,6 +414,13 @@ heuristics for ICS feeds; operational runbook and repeatable integration validat
 SEL; SEL ICS export passes consumer checks in both `IncludeRRule=false` and
 `IncludeRRule=true` modes; ICS discovery heuristics for 8 platforms documented; runbook
 is executable.
+
+**Status**: In Progress (srv-bvpkq delivered: ICS series dates auto-populated)
+
+**Supplemental delivery (srv-bvpkq)**: ICS ingest now auto-populates
+`event_series.series_start_date` and `event_series.series_end_date` from RRULE
+metadata, enabling `eventSchedule` JSON-LD for ICS-sourced recurring events.
+See `spec-phase4.md` Delivery Supplement section.
 
 **Tasks** (4):
 1. Test: external ICS feed shapes → SEL ingest — 7 fixtures (Outlook VTIMEZONE,

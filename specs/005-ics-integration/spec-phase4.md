@@ -1,6 +1,6 @@
 # Phase 4 Specification: Interop and Operations
 
-**Spec**: 005-ics-integration / Phase 4 | **Date**: 2026-04-14 | **Status**: Draft
+**Spec**: 005-ics-integration / Phase 4 | **Date**: 2026-04-14 | **Status**: In Progress
 **Parent**: `specs/005-ics-integration/plan.md`
 
 **Goal**: Prove bidirectional ICS interoperability with real external feed shapes and publish operational documentation/runbooks for reliable production use.
@@ -346,6 +346,47 @@ Documentation must reference existing config knobs from prior phases (e.g., ICS 
 
 1. Should Phase 4 include a versioned fixture refresh process for external feed format drift?
 2. Should parser-compatibility checks include a second ICS parsing library for stronger interop confidence?
+
+## Delivery Supplement: ICS Recurring Event Series Dates (srv-bvpkq)
+
+**Bead**: `srv-bvpkq` | **Date**: 2026-04-14 | **Status**: Implemented
+
+**Goal**: Make ICS ingest automatically populate `event_series.series_start_date` and
+`event_series.series_end_date` so that `eventSchedule` JSON-LD appears in API responses
+for recurring events ingested via ICS feeds.
+
+### What Changed
+
+| File | Change |
+|---|---|
+| `internal/ical/parse.go` | Added `TZID` field to `ParsedEvent`; `extractTZID()` helper resolves IANA timezone from DTSTART TZID parameter (with Windows alias support) |
+| `internal/ical/mapper.go` | `deriveSeriesEnd()` helper parses `UNTIL` from RRULE value string; `MapToEventInputs()` populates `RecurrenceInput` on each expanded occurrence of a recurring event |
+| `internal/domain/events/validation.go` | `RecurrenceInput` struct and `Recurrence *RecurrenceInput` field on `EventInput` (tagged `json:"-"`) |
+| `internal/domain/events/repository.go` | `UpsertEventSeriesParams`, `UpsertEventSeriesResult` types; `UpsertEventSeries()` method on `Repository` interface |
+| `internal/domain/events/create_event_core.go` | Step 10.5: if `validated.Recurrence != nil`, call `dbRepo.UpsertEventSeries()` before `Create()`, then set `params.SeriesID` |
+| `internal/storage/postgres/events_repository.go` | `UpsertEventSeries()` implementation with `ON CONFLICT (external_key) DO UPDATE`; `Create()` includes `series_id` in INSERT |
+| `internal/storage/postgres/migrations/000045_*` | `ALTER TABLE event_series ADD COLUMN external_key TEXT UNIQUE` |
+| `tests/` | Unit: `deriveSeriesEnd`, `RecurrenceInput` population, `TZID` extraction; Integration: `UpsertEventSeries` |
+
+### Architectural Decisions
+
+1. **Series row created inside `createEventCore` transaction** — atomicity for free, no separate lifecycle
+2. **`EventInput.Recurrence` is `*RecurrenceInput` with `json:"-"` tag** — zero blast radius on non-ICS paths
+3. **`series_end_date` derived from UNTIL in RRULE string** — no expansion needed; `NULL` for COUNT-only or infinite series
+4. **`external_key TEXT UNIQUE` on `event_series`** — upsert key is `"source_name:master_uid"`, stable across re-ingests
+5. **`series_start_date` truncated to local date using TZID** — not UTC date
+
+### What This Enables
+
+- ICS-recurring events now create `event_series` rows with `series_start_date`, `series_end_date`, `rrule`, `exdates`, `rdates`, and `schedule_timezone` populated
+- The `eventSchedule` JSON-LD field in API responses (`/api/v1/events`) is now populated for ICS-sourced recurring events
+- The `external_key` column supports idempotent re-ingest: same source + UID → upsert, not duplicate
+
+### Not Yet Done (Phase 5 follow-up)
+
+- Full end-to-end integration test verifying `eventSchedule` in JSON-LD API response after ICS ingest
+- Update `spec-phase4.md` Delivery Notes section
+- Phase 4 branch landing (`srv-tdhsr`)
 
 ## Rollback Notes (Phase 4)
 
