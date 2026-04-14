@@ -2971,3 +2971,93 @@ func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T)
 		}
 	})
 }
+
+// --------------------------------------------------------------------------
+// ValidateConfigWithWarnings — ICS extraction_method validation
+// --------------------------------------------------------------------------
+
+func TestValidateConfigWithWarnings_ICSExtractionMethod(t *testing.T) {
+	t.Parallel()
+
+	baseICS := func() SourceConfig {
+		return SourceConfig{
+			Name:             "ICS Source",
+			URL:              "https://example.com/events.ics",
+			TrustLevel:       5,
+			MaxPages:         10,
+			Schedule:         "daily",
+			ExtractionMethod: "ics",
+		}
+	}
+
+	t.Run("valid ICS config", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		assert.NoError(t, err)
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("ICS with selectors warns", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		cfg.Selectors.EventList = "div.event"
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		assert.NoError(t, err)
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0], "CSS selectors will be ignored")
+	})
+
+	t.Run("ICS with non-zero tier warns", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		cfg.Tier = 2
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		assert.NoError(t, err)
+		require.Len(t, warnings, 1)
+		assert.Contains(t, warnings[0], "tier 2 will be ignored")
+	})
+
+	t.Run("ICS skips selector validation for tier 1", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		cfg.Tier = 1
+		// Normally tier 1 requires event_list, but ICS should skip that check
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		assert.NoError(t, err)
+		// Should warn about tier but NOT error about missing event_list
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "tier 1 will be ignored") {
+				found = true
+			}
+		}
+		assert.True(t, found, "expected tier warning, got: %v", warnings)
+	})
+
+	t.Run("invalid extraction_method errors", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		cfg.ExtractionMethod = "magic"
+		_, err := ValidateConfigWithWarnings(cfg)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), `extraction_method: must be`)
+	})
+
+	t.Run("empty extraction_method is valid (default)", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		cfg.ExtractionMethod = ""
+		// With empty extraction_method, this is a regular tier 0 source
+		_, err := ValidateConfigWithWarnings(cfg)
+		assert.NoError(t, err)
+	})
+
+	t.Run("scraper extraction_method is valid", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		cfg.ExtractionMethod = "scraper"
+		_, err := ValidateConfigWithWarnings(cfg)
+		assert.NoError(t, err)
+	})
+}

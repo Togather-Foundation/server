@@ -33,7 +33,7 @@ import (
 //
 // Returns startDate, endDate as RFC 3339 strings. endDate may be empty if
 // no end information was found.
-func assembleDateTimeParts(parts []string, timezone string) (startDate, endDate string) {
+func assembleDateTimeParts(parts []string, timezone string, now time.Time) (startDate, endDate string) {
 	if len(parts) == 0 {
 		return "", ""
 	}
@@ -65,7 +65,7 @@ func assembleDateTimeParts(parts []string, timezone string) (startDate, endDate 
 		// Try splitting date ranges ("Feb 3 - Mar 8, 2026", "March 5-7").
 		if rangeParts := splitDateRange(part); len(rangeParts) == 2 {
 			for _, rp := range rangeParts {
-				d, t, ok := parseFuzzy(rp, loc)
+				d, t, ok := parseFuzzy(rp, loc, now)
 				if ok {
 					if d != nil {
 						dates = append(dates, *d)
@@ -79,7 +79,7 @@ func assembleDateTimeParts(parts []string, timezone string) (startDate, endDate 
 		}
 
 		// Single value — parse via go-dateparser.
-		d, t, ok := parseFuzzy(part, loc)
+		d, t, ok := parseFuzzy(part, loc, now)
 		if ok {
 			if d != nil {
 				dates = append(dates, *d)
@@ -103,7 +103,7 @@ func assembleDateTimeParts(parts []string, timezone string) (startDate, endDate 
 
 	// Assemble: first date + first time → startDate.
 	// If a second time exists, use first date + second time → endDate.
-	now := time.Now().In(loc)
+	now = now.In(loc)
 
 	if len(dates) == 0 && len(times) == 0 {
 		return "", ""
@@ -160,7 +160,7 @@ var yearPattern = regexp.MustCompile(`\b(19|20)\d{2}\b`)
 // Only calendar components (year, month, day, hour, minute) are extracted
 // from go-dateparser's result — timezone handling is left to the caller's
 // buildDateTime / loadTimezone logic.
-func parseFuzzy(s string, loc *time.Location) (d *parsedDate, t *parsedTime, ok bool) {
+func parseFuzzy(s string, loc *time.Location, now time.Time) (d *parsedDate, t *parsedTime, ok bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return nil, nil, false
@@ -170,7 +170,7 @@ func parseFuzzy(s string, loc *time.Location) (d *parsedDate, t *parsedTime, ok 
 		// Use the venue timezone so go-dateparser resolves "today/tomorrow"
 		// relative to the venue, but we only extract the calendar fields.
 		DefaultTimezone: loc,
-		CurrentTime:     time.Now().In(loc),
+		CurrentTime:     now.In(loc),
 	}
 
 	dt, err := dps.Parse(cfg, s)
@@ -430,7 +430,7 @@ func normalizeWhitespace(s string) string {
 //	"2026-03-05T21:30:00Z"       → "2026-03-05T21:30:00Z" (passthrough)
 //	"2026-03-05T21:30:00"        → "2026-03-05T21:30:00-05:00" (tz applied)
 //	"2026-03-05"                 → "2026-03-05T00:00:00-05:00" (tz applied)
-func normalizeDateToRFC3339(s string, timezone string) string {
+func normalizeDateToRFC3339(s string, timezone string, now time.Time) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return ""
@@ -448,7 +448,7 @@ func normalizeDateToRFC3339(s string, timezone string) string {
 	}
 
 	// Try to parse as combined date+time text.
-	result, _ := assembleDateTimeParts([]string{s}, timezone)
+	result, _ := assembleDateTimeParts([]string{s}, timezone, now)
 	return result
 }
 
@@ -487,8 +487,8 @@ func applyTimezoneToPartialISO8601(s string, timezone string) string {
 // combineAndNormalizeDateParts is called from NormalizeRawEvent when
 // RawEvent has DateParts populated (from date_selectors config). It
 // assembles the parts into RFC 3339 start and end dates.
-func combineAndNormalizeDateParts(dateParts []string, timezone string) (startDate, endDate string) {
-	return assembleDateTimeParts(dateParts, timezone)
+func combineAndNormalizeDateParts(dateParts []string, timezone string, now time.Time) (startDate, endDate string) {
+	return assembleDateTimeParts(dateParts, timezone, now)
 }
 
 // normalizeStartDate is a convenience wrapper used by NormalizeRawEvent.
@@ -498,15 +498,15 @@ func combineAndNormalizeDateParts(dateParts []string, timezone string) (startDat
 //  3. StartDate is human-readable → fuzzy parse
 //
 // Returns the RFC 3339 startDate and endDate (endDate may be empty).
-func normalizeStartDate(raw RawEvent, timezone string) (startDate, endDate string) {
+func normalizeStartDate(raw RawEvent, timezone string, now time.Time) (startDate, endDate string) {
 	// Case 1: date_selectors produced DateParts.
 	if len(raw.DateParts) > 0 {
-		return combineAndNormalizeDateParts(raw.DateParts, timezone)
+		return combineAndNormalizeDateParts(raw.DateParts, timezone, now)
 	}
 
 	// Case 2+3: traditional start_date selector.
-	startDate = normalizeDateToRFC3339(raw.StartDate, timezone)
-	endDate = normalizeDateToRFC3339(raw.EndDate, timezone)
+	startDate = normalizeDateToRFC3339(raw.StartDate, timezone, now)
+	endDate = normalizeDateToRFC3339(raw.EndDate, timezone, now)
 	return startDate, endDate
 }
 

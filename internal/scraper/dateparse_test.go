@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// testNow returns a fixed reference time for deterministic date-parsing tests.
+// Pinned to Jan 15 2026 so yearless dates like "Thu 5th March" resolve to 2026
+// (March is still in the future relative to January).
+func testNow() time.Time {
+	return time.Date(2026, time.January, 15, 12, 0, 0, 0, time.UTC)
+}
+
 // ── isPartialISO8601 ──────────────────────────────────────────────────
 
 func TestIsPartialISO8601(t *testing.T) {
@@ -82,7 +89,7 @@ func TestParseFuzzy(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			d, tm, ok := parseFuzzy(tc.s, loc)
+			d, tm, ok := parseFuzzy(tc.s, loc, testNow())
 			if ok != tc.wantOK {
 				t.Fatalf("parseFuzzy(%q) ok = %v, want %v", tc.s, ok, tc.wantOK)
 			}
@@ -290,7 +297,7 @@ func TestAssembleDateTimeParts(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			start, end := assembleDateTimeParts(tc.parts, tz)
+			start, end := assembleDateTimeParts(tc.parts, tz, testNow())
 
 			if tc.wantStart == "" {
 				if start != "" {
@@ -385,7 +392,7 @@ func TestNormalizeDateToRFC3339(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := normalizeDateToRFC3339(tc.s, tz)
+			got := normalizeDateToRFC3339(tc.s, tz, testNow())
 			// Exact match for RFC 3339 passthroughs; prefix match for all others.
 			if _, err := time.Parse(time.RFC3339, tc.s); err == nil {
 				if got != tc.want {
@@ -475,7 +482,7 @@ func TestNormalizeStartDate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			start, end := normalizeStartDate(tc.raw, tz)
+			start, end := normalizeStartDate(tc.raw, tz, testNow())
 
 			if tc.wantStart == "" {
 				if start != "" {

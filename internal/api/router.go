@@ -181,6 +181,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 			scraper.WithHTTPClientTimeout(time.Duration(cfg.Scraper.HTTPClientTimeout)*time.Millisecond),
 		)
 		scraperSvc = scraper.NewScraperWithSourceRepoAndSlot(ingestClient, queries, scraperSourceRepo, logger, slot)
+		scraperSvc.SetICSConfig(cfg.Scraper.ICS)
 		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
 
 		// Wire Tier 2 headless browser extractor when enabled (srv-1zrrt).
@@ -540,6 +541,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	publicPlacePage := rateLimitPublic(http.HandlerFunc(publicPages.GetPlace))
 	publicOrgPage := rateLimitPublic(http.HandlerFunc(publicPages.GetOrganization))
 
+	// ICS handlers
+	icsHandler := handlers.NewICSHandler(eventsService, cfg.Environment, cfg.Server.BaseURL)
+	icsHandler.Loc = loc
+	publicICSFeed := rateLimitPublic(http.HandlerFunc(icsHandler.FeedHandler))
+	publicICSEvent := rateLimitPublic(http.HandlerFunc(icsHandler.SingleEventHandler))
+
 	// Authenticated write endpoints with agent rate limiting
 	createEvents := apiKeyAuth(usageTracking(rateLimitAgent(middleware.EventRequestSize()(http.HandlerFunc(eventsHandler.Create)))))
 	createBatch := apiKeyAuth(usageTracking(rateLimitAgent(middleware.FederationRequestSize()(http.HandlerFunc(eventsHandler.CreateBatch)))))
@@ -549,11 +556,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		http.MethodGet:  publicEvents,
 		http.MethodPost: createEvents,
 	}))
+	mux.Handle("/api/v1/events.ics", publicICSFeed)
 	mux.Handle("/api/v1/events:batch", methodMux(map[string]http.Handler{
 		http.MethodPost: createBatch,
 	}))
 	mux.Handle("/api/v1/batch-status/{id}", batchStatus)
 	mux.Handle("/api/v1/events/{id}", publicEventGet)
+	mux.Handle("/api/v1/events/{id}/ics", publicICSEvent)
 	mux.Handle("/api/v1/places", publicPlaces)
 	mux.Handle("/api/v1/places/{id}", publicPlaceGet)
 	mux.Handle("/api/v1/organizations", publicOrgs)

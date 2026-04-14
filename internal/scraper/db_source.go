@@ -122,5 +122,7 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		cfg.LastScrapedAt = src.LastScrapedAt
 	}
 
+	cfg.ExtractionMethod = src.ExtractionMethod
+
 	return cfg, nil
 }

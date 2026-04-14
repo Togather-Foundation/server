@@ -206,13 +206,13 @@ type RawEvent struct {
 // the smart date assembler combines the parts into RFC 3339. Otherwise,
 // StartDate/EndDate are normalized from human-readable text to RFC 3339 as
 // a fallback. If the date is already RFC 3339, it passes through unchanged.
-func NormalizeRawEvent(raw RawEvent, source SourceConfig) (events.EventInput, error) {
+func NormalizeRawEvent(raw RawEvent, source SourceConfig, now time.Time) (events.EventInput, error) {
 	if raw.Name == "" {
 		return events.EventInput{}, fmt.Errorf("raw event has no name")
 	}
 
 	// Normalize dates: DateParts → assemble, or StartDate/EndDate → fuzzy parse.
-	startDate, endDate := normalizeStartDate(raw, source.GetTimezone())
+	startDate, endDate := normalizeStartDate(raw, source.GetTimezone(), now)
 
 	if startDate == "" {
 		return events.EventInput{}, fmt.Errorf("raw event has no startDate")
@@ -261,7 +261,7 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig) (events.EventInput, er
 //
 // Returns the consolidated EventInput if there are multiple rows, or the original
 // single event if there's only one.
-func consolidateOccurrences(raws []RawEvent, source SourceConfig) (events.EventInput, error) {
+func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time) (events.EventInput, error) {
 	if len(raws) == 0 {
 		return events.EventInput{}, fmt.Errorf("consolidateOccurrences: empty input")
 	}
@@ -272,7 +272,7 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig) (events.EventI
 
 	for _, raw := range raws {
 		// Normalize the date parts for this row.
-		startDate, endDate := normalizeStartDate(raw, tz)
+		startDate, endDate := normalizeStartDate(raw, tz, now)
 		if startDate == "" {
 			// Skip rows that don't have a valid start date.
 			continue
@@ -290,7 +290,6 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig) (events.EventI
 		// This is a recurring/ongoing event — create a placeholder occurrence
 		// at midnight today so it's clear this is a placeholder (not a specific time).
 		loc := loadTimezone(tz)
-		now := time.Now().In(loc)
 		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
 		placeholderStart := midnight.Format(time.RFC3339)
 		occurrences = append(occurrences, events.OccurrenceInput{

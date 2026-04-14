@@ -885,7 +885,7 @@ func TestScrapeWithSelectors_MultiRowConsolidation(t *testing.T) {
 
 	// Use normalizeRawEvents (the same helper the scraper uses) to group and consolidate.
 	logger := zerolog.Nop()
-	validEvents, skipped := normalizeRawEvents(rawEvents, cfg, 0, logger)
+	validEvents, skipped := normalizeRawEvents(rawEvents, cfg, 0, logger, testNow())
 	require.Equal(t, 0, skipped, "no events should be skipped")
 	require.Len(t, validEvents, 1, "both RawEvents should consolidate into a single EventInput")
 	consolidated := validEvents[0]

@@ -297,6 +297,11 @@ func TestEventsHandlerListSuccess(t *testing.T) {
 	require.Equal(t, "Jazz Fest", item0["name"])
 	require.Equal(t, "Event", item0["@type"])
 	require.Equal(t, "next", payload.NextCursor)
+
+	link := res.Header().Get("Link")
+	require.Contains(t, link, `rel="alternate"`)
+	require.Contains(t, link, `type="text/calendar"`)
+	require.Contains(t, link, ".ics")
 }
 
 func TestEventsHandlerListValidationError(t *testing.T) {
@@ -361,6 +366,12 @@ func TestEventsHandlerGetSuccess(t *testing.T) {
 	var payload map[string]any
 	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
 	require.Equal(t, "Jazz Fest", payload["name"])
+
+	link := res.Header().Get("Link")
+	require.Contains(t, link, `rel="alternate"`)
+	require.Contains(t, link, `type="text/calendar"`)
+	require.Contains(t, link, "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
+	require.Contains(t, link, "/ics")
 }
 
 func TestEventsHandlerGetInvalidID(t *testing.T) {

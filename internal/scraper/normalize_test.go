@@ -997,7 +997,7 @@ func TestNormalizeRawEvent(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := NormalizeRawEvent(tc.raw, tc.source)
+			got, err := NormalizeRawEvent(tc.raw, tc.source, testNow())
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error, got nil (result: %+v)", got)
@@ -1299,7 +1299,7 @@ func TestNormalizeRawEvents_MultiRowGrouping(t *testing.T) {
 		makeRaw("Oak Tree", "https://example.com/oak-tree", "2026-06-05T19:30:00"),
 	}
 
-	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger, testNow())
 
 	if skipped != 0 {
 		t.Errorf("expected 0 skipped, got %d", skipped)
@@ -1347,7 +1347,7 @@ func TestNormalizeRawEvents_SingleEvents(t *testing.T) {
 		makeRaw("Event C", "https://example.com/c", "2026-06-03T20:00:00"),
 	}
 
-	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger, testNow())
 
 	if skipped != 0 {
 		t.Errorf("expected 0 skipped, got %d", skipped)
@@ -1378,7 +1378,7 @@ func TestNormalizeRawEvents_Limit(t *testing.T) {
 		makeRaw("Event E", "https://example.com/e", "2026-06-05T20:00:00"),
 	}
 
-	valid, _ := normalizeRawEvents(raws, src, 2, logger)
+	valid, _ := normalizeRawEvents(raws, src, 2, logger, testNow())
 
 	if len(valid) != 2 {
 		t.Errorf("expected 2 EventInputs with limit=2, got %d", len(valid))
@@ -1402,7 +1402,7 @@ func TestNormalizeRawEvents_SkipsInvalidDates(t *testing.T) {
 		makeRaw("Show", "https://example.com/show", "2026-06-03T20:00:00"),
 	}
 
-	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger, testNow())
 
 	// The group as a whole should succeed (2 valid occurrences).
 	if skipped != 0 {
@@ -1432,7 +1432,7 @@ func TestNormalizeRawEvents_EmptyURLNoCollision(t *testing.T) {
 		makeRaw("Same Name", "", "2026-06-03T20:00:00"),
 	}
 
-	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger, testNow())
 
 	if skipped != 0 {
 		t.Errorf("expected 0 skipped, got %d", skipped)
@@ -1743,7 +1743,7 @@ func TestNormalizeRawEvents_AllInvalidDatesGroup(t *testing.T) {
 		makeRaw("Good Show", "https://example.com/good", "2026-06-01T20:00:00"),
 	}
 
-	valid, skipped := normalizeRawEvents(raws, src, 0, logger)
+	valid, skipped := normalizeRawEvents(raws, src, 0, logger, testNow())
 
 	// With placeholder occurrence for recurring events, no groups are skipped
 	if skipped != 0 {
@@ -1866,7 +1866,7 @@ func TestDefaultLocation_RawEventFallback(t *testing.T) {
 		URL:       "https://example.com/jazz-night",
 	}
 
-	got, err := NormalizeRawEvent(raw, src)
+	got, err := NormalizeRawEvent(raw, src, testNow())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1899,7 +1899,7 @@ func TestDefaultLocation_RawEventNotOverridden(t *testing.T) {
 		URL:       "https://example.com/concert",
 	}
 
-	got, err := NormalizeRawEvent(raw, src)
+	got, err := NormalizeRawEvent(raw, src, testNow())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1929,7 +1929,7 @@ func TestDefaultLocation_NilDefaultLocation(t *testing.T) {
 		URL:       "https://example.com/event",
 	}
 
-	got, err := NormalizeRawEvent(raw, src)
+	got, err := NormalizeRawEvent(raw, src, testNow())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

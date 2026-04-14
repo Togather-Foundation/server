@@ -79,6 +79,12 @@ type SourceConfig struct {
 	// to filter URLs by lastmod date.
 	LastScrapedAt *time.Time `yaml:"-" json:"-"`
 
+	// ExtractionMethod selects the extraction pipeline for this source.
+	// Values: "" or "scraper" (default tier-based dispatch), "ics" (ICS feed).
+	// When "ics", the scraper fetches the URL as an ICS feed and uses the
+	// ical package for parsing and mapping. Tier and selector fields are ignored.
+	ExtractionMethod string `yaml:"extraction_method,omitempty" json:"extraction_method,omitempty"`
+
 	// normalized is true after normalizeDescriptionSelectors has been applied.
 	// Used to avoid emitting inaccurate deprecation warnings in ValidateConfigWithWarnings
 	// when the config has already been normalized (warning already emitted accurately in loadFile).
@@ -478,11 +484,11 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		errs = append(errs, fmt.Sprintf("trust_level: must be 1-10, got %d", cfg.TrustLevel))
 	}
 
-	if cfg.Tier == 1 && strings.TrimSpace(cfg.Selectors.EventList) == "" {
+	if cfg.Tier == 1 && cfg.ExtractionMethod != "ics" && strings.TrimSpace(cfg.Selectors.EventList) == "" {
 		errs = append(errs, "selectors.event_list: required for tier 1")
 	}
 
-	if cfg.Tier == 2 && strings.TrimSpace(cfg.Selectors.EventList) == "" {
+	if cfg.Tier == 2 && cfg.ExtractionMethod != "ics" && strings.TrimSpace(cfg.Selectors.EventList) == "" {
 		errs = append(errs, "selectors.event_list: required for tier 2")
 	}
 
@@ -612,6 +618,25 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		default:
 			errs = append(errs, fmt.Sprintf("schedule: must be daily, weekly, or manual, got %q", cfg.Schedule))
 		}
+	}
+
+	// Validate extraction_method.
+	switch cfg.ExtractionMethod {
+	case "", "scraper":
+		// default tier-based dispatch — no special handling
+	case "ics":
+		// ICS sources: warn if selectors are provided (they'll be ignored)
+		if strings.TrimSpace(cfg.Selectors.EventList) != "" ||
+			strings.TrimSpace(cfg.Selectors.Name) != "" ||
+			strings.TrimSpace(cfg.Selectors.StartDate) != "" {
+			warnings = append(warnings, "extraction_method is \"ics\": CSS selectors will be ignored (ICS feed is parsed directly)")
+		}
+		// ICS sources: warn if tier is explicitly set to non-zero (it's ignored)
+		if cfg.Tier != 0 {
+			warnings = append(warnings, fmt.Sprintf("extraction_method is \"ics\": tier %d will be ignored (ICS extraction does not use tier-based dispatch)", cfg.Tier))
+		}
+	default:
+		errs = append(errs, fmt.Sprintf("extraction_method: must be \"\" (default), \"scraper\", or \"ics\", got %q", cfg.ExtractionMethod))
 	}
 
 	if cfg.MaxPages < 0 {

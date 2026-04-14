@@ -78,6 +78,13 @@ type listResponse struct {
 	Warnings   []string `json:"warnings,omitempty"` // Alias warnings from query param parsing
 }
 
+func icsAlternateLink(baseURL, path string) string {
+	if baseURL != "" {
+		return "<" + baseURL + path + ">; rel=\"alternate\"; type=\"text/calendar\""
+	}
+	return "<" + path + ">; rel=\"alternate\"; type=\"text/calendar\""
+}
+
 func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.Service == nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
@@ -118,6 +125,7 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		items = append(items, item)
 	}
 
+	w.Header().Set("Link", icsAlternateLink(h.BaseURL, "/api/v1/events.ics"))
 	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor, Warnings: warnings}, contentTypeFromRequest(r))
 }
 
@@ -437,6 +445,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	w.Header().Set("Link", icsAlternateLink(h.BaseURL, "/api/v1/events/"+ulidValue+"/ics"))
 	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
 }
 

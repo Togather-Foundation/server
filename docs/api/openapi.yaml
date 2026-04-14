@@ -100,6 +100,7 @@ info:
     API endpoints return JSON/JSON-LD via `Accept` header:
     - `application/ld+json` - JSON-LD (default)
     - `application/json` - JSON-LD (alias)
+    - `text/calendar` - iCalendar format (supported for event endpoints)
     
     ## Pagination
     List endpoints use cursor-based pagination with `after` and `limit` parameters.
@@ -160,7 +161,11 @@ paths:
     get:
       operationId: listEvents
       summary: List events
-      description: Query events with optional filters. Returns paginated JSON-LD.
+      description: |
+        Query events with optional filters. Returns paginated JSON-LD.
+        For iCalendar output use `GET /api/v1/events.ics` (same filter params).
+        A `Link: rel=alternate; type=text/calendar` header is included in the response
+        pointing to the corresponding ICS feed URL.
       tags: [Events]
       security: []
       parameters:
@@ -178,6 +183,12 @@ paths:
       responses:
         '200':
           description: Paginated list of events
+          headers:
+            Link:
+              description: Pagination cursor (rel=next, RFC 8288) and alternate ICS feed URL (rel=alternate)
+              schema:
+                type: string
+              example: </api/v1/events?after=ABC123&limit=50>; rel="next"
           content:
             application/ld+json:
               schema:
@@ -234,7 +245,11 @@ paths:
     get:
       operationId: getEvent
       summary: Get event by ID
-      description: Retrieve a single event by its ULID. Supports content negotiation.
+      description: |
+        Retrieve a single event by its ULID. Returns JSON-LD.
+        For iCalendar output use `GET /api/v1/events/{id}/ics`.
+        A `Link: rel=alternate; type=text/calendar` header is included in the response
+        pointing to the corresponding ICS download URL.
       tags: [Events]
       security: []
       parameters:
@@ -242,6 +257,12 @@ paths:
       responses:
         '200':
           description: Event details
+          headers:
+            Link:
+              description: Alternate ICS download URL for calendar clients (rel=alternate)
+              schema:
+                type: string
+              example: </api/v1/events/{id}/ics>; rel="alternate"; type="text/calendar"
           content:
             application/ld+json:
               schema:
@@ -312,6 +333,104 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /events.ics:
+    get:
+      operationId: listEventsICS
+      summary: List events as iCalendar feed
+      description: |
+        Query events with optional filters and return as an iCalendar (ICS) feed.
+        Same filter parameters as the JSON list endpoint.
+        Returns a valid VCALENDAR even when no events match (empty feed).
+      tags: [Events]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/startDate'
+        - $ref: '#/components/parameters/endDate'
+        - $ref: '#/components/parameters/city'
+        - $ref: '#/components/parameters/venueId'
+        - $ref: '#/components/parameters/organizerId'
+        - $ref: '#/components/parameters/lifecycleState'
+        - $ref: '#/components/parameters/eventDomain'
+        - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/keywords'
+        - $ref: '#/components/parameters/after'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: iCalendar feed of events
+          headers:
+            Content-Disposition:
+              description: Attachment filename for download
+              schema:
+                type: string
+              example: attachment; filename="events.ics"
+            Link:
+              description: Pagination cursor for next page of results (RFC 8288)
+              schema:
+                type: string
+              example: </api/v1/events.ics?after=ABC123&limit=50>; rel="next"
+          content:
+            text/calendar:
+              schema:
+                type: string
+                description: iCalendar (RFC 5545) calendar data
+        '400':
+          description: Invalid filter parameters
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /events/{id}/ics:
+    get:
+      operationId: getEventICS
+      summary: Get event as iCalendar
+      description: |
+        Retrieve a single event by its ULID as an iCalendar (ICS) download.
+        Useful for importing a specific event into calendar applications.
+      tags: [Events]
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      responses:
+        '200':
+          description: iCalendar event
+          headers:
+            Content-Disposition:
+              description: Attachment filename for download
+              schema:
+                type: string
+              example: attachment; filename="event-{id}.ics"
+          content:
+            text/calendar:
+              schema:
+                type: string
+                description: iCalendar (RFC 5545) calendar data
+        '404':
+          description: Event not found
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '410':
+          description: Event has been deleted
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /batch-status/{id}:
     get:
@@ -2938,6 +3057,12 @@ components:
           type: string
         enabled:
           type: boolean
+        extraction_method:
+          type: string
+          description: >-
+            Extraction pipeline for this source. Empty or "scraper" for
+            default tier-based dispatch, "ics" for ICS feed extraction.
+          enum: ["", "scraper", "ics"]
         last_run_status:
           type: string
         last_run_started_at:

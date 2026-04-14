@@ -168,6 +168,11 @@ func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper
 		}
 	}
 
+	// Wire ICS config when config was loaded successfully.
+	if err == nil {
+		s.SetICSConfig(cfg.Scraper.ICS)
+	}
+
 	// Wire in Tier 2 headless extractor if enabled via env vars.
 	if os.Getenv("SCRAPER_HEADLESS_ENABLED") == "true" {
 		chromePath := os.Getenv("SCRAPER_CHROME_PATH")

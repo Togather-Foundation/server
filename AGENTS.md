@@ -18,7 +18,7 @@ Before planning or writing code, search the project docs:
 - `docs/` — architecture, API design, interop profile, operations, deployment
 - `specs/` — Spec artifacts (constitution → spec → tasks); source of intent for every feature
 - `@specs/AGENTS.md` — read before writing or reviewing any plan, spec, or task document
-- `@internal/storage/postgres/AGENTS.md`, `@web/AGENTS.md`, `@tests/e2e/AGENTS.md` — read before touching files in those directories
+- `@internal/storage/postgres/AGENTS.md`, `@web/AGENTS.md`, `@tests/AGENTS.md`, `@tests/e2e/AGENTS.md` — read before touching files in those directories
 
 Use Grep/Glob/Read to find relevant docs. Do not assume — the project is well-documented and docs often contain decisions that must be preserved.
 You MUST update docs as needed.
@@ -126,13 +126,7 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 - Preserve source provenance (JSONB payloads); avoid lossy conversions
 - Error wrapping: `fmt.Errorf("...: %w", err)`
 
-**Testing:**
-- `go test ./internal/storage/postgres` — needs live DB (see `.env`)
-- `make e2e` — browser E2E tests; requires running server + `uvx`; see `tests/e2e/AGENTS.md`
-- Run targeted package tests first; expand to `make ci` only when needed
-- **Fault injection pattern:** for packages that call `os.*` directly (like `internal/fileutil`), introduce an unexported interface (e.g. `atomicFS`) with a `defaultFS` production impl and a `failFS` test impl. Use same-package tests (`package foo`, not `package foo_test`) to access the seam. See `internal/fileutil/atomicwrite.go` + `atomicwrite_fault_test.go` as a reference.
-- **`example.com` and any `*.example.com` subdomain URLs are a hard ingest error (HTTP 422)** in staging and production (all RFC 2606 reserved test domains are blocked). Tests or test harnesses that submit fixture events using those domains **must** set `ValidationConfig{AllowTestDomains: true}`. This field is never set via an env var — it is test-only and must be set explicitly. `server generate` and `cmd/loadtest` inject these placeholder URLs; never ingest their output against staging without source-tagging.
-- **Load-test cleanup on staging:** use `server cleanup loadtest --env=staging --source-id=<uuid> --confirm` (preferred) or `--legacy` for pre-tagging contamination. See `docs/operations/load-testing.md` for full workflow.
+**Testing:** see `tests/AGENTS.md`.
 
 ## Beads Workflow
 

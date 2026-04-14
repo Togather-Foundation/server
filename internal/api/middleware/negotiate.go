@@ -12,10 +12,11 @@ type contextKey string
 const contentTypeKey contextKey = "negotiatedContentType"
 
 const (
-	contentJSONLD = "application/ld+json"
-	contentJSON   = "application/json"
-	contentHTML   = "text/html"
-	contentTurtle = "text/turtle"
+	contentJSONLD   = "application/ld+json"
+	contentJSON     = "application/json"
+	contentHTML     = "text/html"
+	contentTurtle   = "text/turtle"
+	contentCalendar = "text/calendar"
 )
 
 func ContentNegotiation(next http.Handler) http.Handler {
@@ -52,6 +53,8 @@ func negotiateContentType(r *http.Request) string {
 			return contentHTML
 		case "turtle", "text/turtle":
 			return contentTurtle
+		case "calendar", "text/calendar":
+			return contentCalendar
 		}
 	}
 
@@ -111,6 +114,8 @@ func normalizeMediaType(mediaType string) string {
 		return contentHTML
 	case contentTurtle:
 		return contentTurtle
+	case contentCalendar:
+		return contentCalendar
 	default:
 		return ""
 	}
