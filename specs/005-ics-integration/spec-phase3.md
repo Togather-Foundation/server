@@ -136,21 +136,22 @@ internal/
       000043_event_series_rrule.down.sql    # NEW
       000044_event_series_drop_legacy_repeat.up.sql   # NEW - drop repeat_* columns
       000044_event_series_drop_legacy_repeat.down.sql # NEW
-    queries/
-      event_series.sql                      # NEW - first queries for dormant table
-                                            # (get by ID, get by series_id for event join)
+    events_repository.go                    # MODIFIED - GetByULID gains inline LEFT JOIN
+                                            # to event_series; scans rrule/exdates/rdates/
+                                            # schedule_timezone/series_start_date/
+                                            # series_end_date into RecurrenceRule
     models.go                               # GENERATED - picks up new columns after sqlc
   domain/events/
     repository.go                           # MODIFIED - add SeriesID + RecurrenceRule
-                                            # to Event struct; add series load path
-    service.go                              # MODIFIED - plumb recurrence data through
-                                            # GetByULID / List where series is loaded
+                                            # to Event struct; add RecurrenceRule type
   jsonld/schema/
     types.go                                # MODIFIED - add Schedule type +
                                             # EventSchedule *Schedule on Event
+    recurrence.go                           # NEW - ScheduleFromRecurrence() helper
   api/handlers/
-    events.go                               # MODIFIED - include eventSchedule in
-                                            # JSON-LD detail responses when present
+    events.go                               # MODIFIED - populate eventSchedule from
+                                            # Recurrence; set startDate/endDate from
+                                            # RecurrenceRule.SeriesStart/SeriesEnd
   ical/
     serialize.go                            # MODIFIED - add IncludeRRule to
                                             # SerializeOptions; emit RRULE/EXDATE/RDATE
@@ -166,20 +167,21 @@ docs/
 // internal/domain/events/repository.go
 
 // RecurrenceRule holds canonical recurrence data for an event series.
-// RRULE is stored and exposed WITHOUT the "RRULE:" prefix — value only
+// RRule is stored and exposed WITHOUT the "RRULE:" prefix — value only
 // (e.g. "FREQ=WEEKLY;BYDAY=MO,WE", not "RRULE:FREQ=WEEKLY;BYDAY=MO,WE").
+// The serializer adds the "RRULE:" property prefix on wire output.
 type RecurrenceRule struct {
-    RRule   string      // RFC 5545 RRULE value string (no "RRULE:" prefix)
-    ExDates []time.Time // UTC timestamps excluded from recurrence set
-    RDates  []time.Time // UTC timestamps added to recurrence set
-    TZID    string      // loaded from event_series.schedule_timezone — no new column needed
+    RRule       string      // RFC 5545 RRULE value string (no "RRULE:" prefix)
+    ExDates     []time.Time // UTC timestamps excluded from recurrence set (EXDATE)
+    RDates      []time.Time // UTC timestamps added to recurrence set (RDATE)
+    TZID        string      // IANA timezone from event_series.schedule_timezone
+    SeriesStart *time.Time  // series_start_date from event_series (nil if absent)
+    SeriesEnd   *time.Time  // series_end_date from event_series (nil if absent)
 }
 
-// Event — add these fields to the existing struct (internal/domain/events/repository.go:48-78)
-// alongside the existing Occurrences []Occurrence field:
-//
-//   SeriesID       *string          // non-nil when event belongs to a series
-//   Recurrence     *RecurrenceRule  // non-nil when series has a canonical RRULE
+// Event — fields added to the existing struct (internal/domain/events/repository.go):
+//   SeriesID   *string          // non-nil when event belongs to a series
+//   Recurrence *RecurrenceRule  // non-nil when series has a canonical RRULE
 ```
 
 ```go
@@ -230,9 +232,9 @@ ALTER TABLE event_series
 **Migration 000044** — drop legacy columns (run after code cutover and tests pass):
 ```sql
 ALTER TABLE event_series
-  DROP COLUMN repeat_frequency,
-  DROP COLUMN repeat_on_days,
-  DROP COLUMN repeat_on_dates;
+  DROP COLUMN IF EXISTS repeat_frequency,
+  DROP COLUMN IF EXISTS repeat_on_days,
+  DROP COLUMN IF EXISTS repeat_on_dates;
 ```
 
 No backfill step exists. The two migrations can run in sequence once the
@@ -241,7 +243,16 @@ codebase is updated to use the canonical columns.
 ### JSON-LD Projection
 
 - Continue returning occurrence-based `subEvent` for compatibility.
-- Add recurrence projection derived from RRULE using explicit schema.org `Schedule` shape:
+- Add recurrence projection derived from RRULE using explicit schema.org `Schedule` shape.
+  The projection is split across two locations:
+  - `internal/jsonld/schema/recurrence.go` — `ScheduleFromRecurrence()` maps RRULE params
+    to the `Schedule` struct: `repeatFrequency` (FREQ → ISO 8601), `byDay` (BYDAY),
+    `byMonthDay` (BYMONTHDAY), `scheduleTimezone` (TZID).
+  - `internal/api/handlers/events.go` — after calling `ScheduleFromRecurrence()`, the
+    handler sets `startDate`/`endDate` from `RecurrenceRule.SeriesStart`/`SeriesEnd`
+    (date-only format `2006-01-02`). Falls back to the first occurrence start time for
+    `startDate` if `SeriesStart` is nil. This separation keeps the projection helper
+    pure (no date arithmetic) and locates series-boundary decisions in the handler.
   - `eventSchedule.@type = "Schedule"`
   - `eventSchedule.repeatFrequency` — RRULE `FREQ` mapped to ISO 8601 duration:
 
@@ -253,10 +264,13 @@ codebase is updated to use the canonical columns.
     | YEARLY | P1Y | P{N}Y |
 
     FREQ values below DAILY (HOURLY, MINUTELY, SECONDLY) are not expected in event
-    data; omit from projection with a warning log.
+    data; omit from projection with a `slog.Warn`.
   - `eventSchedule.byDay` (from RRULE `BYDAY` when present)
   - `eventSchedule.byMonthDay` (from RRULE `BYMONTHDAY` when present)
-  - `eventSchedule.startDate` / `eventSchedule.endDate` (from series bounds where present)
+  - `eventSchedule.startDate` / `eventSchedule.endDate` — date-only format (`2006-01-02`),
+    populated from `RecurrenceRule.SeriesStart`/`SeriesEnd` in the handler (not in
+    `ScheduleFromRecurrence`). `startDate` falls back to the first occurrence start if
+    `SeriesStart` is nil; `endDate` is omitted when `SeriesEnd` is nil.
   - `eventSchedule.scheduleTimezone` (from canonical TZID)
 - Projection is derived at read time from canonical fields, not denormalized text blobs in event payload.
 
@@ -289,7 +303,9 @@ UID stability follows the Phase 2 contract:
   API-admin surfaces; internal errors wrapped with `%w`). Validation uses
   `teambition/rrule-go` parse in `internal/ical/rrule.go`, called from the domain
   service write path before persistence.
-- Backfill conversion failures: recorded for review; do not crash whole migration unless integrity invariants fail.
+- EXDATE/RDATE timestamp format: when `TZID` is set, timestamps are formatted as local
+  time without a trailing `Z` suffix (RFC 5545 §3.3.5 — `TZID=` and `Z` are mutually
+  exclusive). When no TZID, format as UTC with `Z` suffix.
 
 ### Security Model
 
@@ -311,14 +327,22 @@ UID stability follows the Phase 2 contract:
 
 ### Task 2: Wire event_series queries and load recurrence into domain `Event`
 
-**What**: Create `internal/storage/postgres/queries/event_series.sql` with queries needed to join series recurrence data when loading events. Extend the domain `Event` struct (`internal/domain/events/repository.go`) with `SeriesID *string` and `Recurrence *RecurrenceRule` fields. Update `GetByULID` and the event list path in the repository to populate these fields when `series_id` is non-null. Add `RecurrenceRule` type definition.
+**What**: Extend the domain `Event` struct (`internal/domain/events/repository.go`) with
+`SeriesID *string` and `Recurrence *RecurrenceRule` fields, and add the `RecurrenceRule`
+type definition. Update `GetByULID` in the repository to LEFT JOIN `event_series` inline
+in the existing SQL query (not via a separate SQLc query file) and scan
+`rrule`, `exdates`, `rdates`, `schedule_timezone`, `series_start_date`, `series_end_date`
+into `RecurrenceRule`. Populate `RecurrenceRule.SeriesStart`/`SeriesEnd` from
+`event_series.series_start_date`/`series_end_date`.
 
-This is the first time `event_series` will have any SQLc queries. The `events` table already has a `series_id FK` (migration 000001 line 169) — the repository join simply needs to be written.
+The join is written as inline SQL in `events_repository.go:GetByULID` rather than through
+a separate `queries/event_series.sql` SQLc file. This is the first time `event_series`
+data is surfaced via the domain layer.
 
 **Test**: Repository unit tests for:
 - Event with no series → `SeriesID = nil`, `Recurrence = nil`
 - Event with series but no RRULE → `SeriesID` set, `Recurrence = nil`
-- Event with series + RRULE → both populated
+- Event with series + RRULE → both populated, `SeriesStart`/`SeriesEnd` correct
 
 **Acceptance**: `GetByULID` returns `Recurrence` correctly for recurring events. Existing event query behavior unchanged for non-series events.
 
@@ -398,8 +422,12 @@ If RRULE preview/expansion endpoints are introduced during implementation, they 
    ever wrote these columns). Migration 000044 drops them directly.
 3. **`IncludeRRule` default**: `false` — existing ICS endpoints remain
    wire-compatible with Phase 2. RRULE mode is opt-in.
-4. **`event_series` queries**: first queries for this dormant table are
-   introduced in Phase 3 Task 2 via a new `event_series.sql` query file.
+4. **`event_series` queries**: recurrence data is loaded via an inline LEFT JOIN in
+   `GetByULID` (`events_repository.go`) rather than a separate SQLc query file. A
+   `queries/event_series.sql` file was created during T2 but the only query it contained
+   (`GetEventSeriesByID`) was never called — the inline approach was cleaner. The file was
+   removed and `sqlc` was re-run. The spec's intent (first access to the dormant
+   `event_series` table) is satisfied by the inline SQL in `GetByULID`.
 
 ## Rollback Notes (Phase 3)
 

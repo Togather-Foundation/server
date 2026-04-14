@@ -380,7 +380,8 @@ compatibility; ICS export emits RRULE+EXDATE+RDATE.
 1. Check if legacy repeat columns have data; add `rrule TEXT`, `exdates TIMESTAMPTZ[]`,
    `rdates TIMESTAMPTZ[]` to `event_series` (additive migration)
 2. ~~Backfill legacy repeat columns to RRULE equivalents~~ — **eliminated** (columns confirmed empty)
-3. Update recurrence-aware repository/domain plumbing (SQLc queries + model wiring)
+3. Update recurrence-aware repository/domain plumbing (inline LEFT JOIN in `GetByULID`,
+   not a separate SQLc query file; `RecurrenceRule` type with `SeriesStart`/`SeriesEnd`)
 4. Update JSON-LD serialization: generate `Schedule`-style recurrence projection
    from RRULE while preserving existing `subEvent` responses
 5. Update ICS serializer to emit RRULE/EXDATE/RDATE on series events
@@ -388,6 +389,14 @@ compatibility; ICS export emits RRULE+EXDATE+RDATE.
 7. Preserve deterministic recurring export UID stability across Phase 2 -> 3 cutover
 **Status**: All 6 tasks completed. 4 post-review fixes (RFC 5545 format, dead code,
 `eventSchedule` date boundaries). See `spec-phase3.md` Delivery Reflection.
+
+**Interface contract (Phase 3 → Phase 4)**:
+- `RecurrenceRule` struct (domain) carries `RRule`, `ExDates`, `RDates`, `TZID`,
+  `SeriesStart`, `SeriesEnd` — stable shape for interop fixture validation.
+- `eventSchedule` JSON-LD field is `omitempty` — non-recurring events emit no
+  `eventSchedule`; consumers must handle both shapes.
+- `IncludeRRule = false` (default) ICS output is wire-identical to Phase 2.
+  `IncludeRRule = true` emits a single VEVENT with RRULE/EXDATE/RDATE.
 
 ### Phase 4: Interop & Documentation
 
