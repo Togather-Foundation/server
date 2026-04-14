@@ -28,3 +28,17 @@ Examples:
 - Include comments in neighboring test files, not inside `.ics` payloads
 - Avoid secrets/tokens/private URLs
 - Keep malformed fixtures intentionally malformed but minimal
+
+## Regenerating `export-*.ics` Fixtures
+
+`export-*.ics` files are generated from the serializer — do not hand-edit them.
+To regenerate after changing `internal/ical/serialize.go`:
+
+```bash
+go test ./internal/ical/... -run TestExportFixturesParse -update
+```
+
+Review the diff carefully before committing.
+
+Note: `DTSTAMP:` lines are stripped during comparison (they are non-deterministic).
+

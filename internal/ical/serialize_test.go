@@ -2,12 +2,16 @@ package ical
 
 import (
 	"bytes"
+	"flag"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 )
+
+var update = flag.Bool("update", false, "update golden fixtures")
 
 func TestSerializeEvents(t *testing.T) {
 	venueName := "Test Venue"
@@ -305,22 +309,111 @@ func ptr[T any](v T) *T {
 }
 
 func TestExportFixturesParse(t *testing.T) {
-	files := []string{
-		"../../tests/testdata/ics/export-single-event.ics",
-		"../../tests/testdata/ics/export-multi-occurrence.ics",
+	files := []struct {
+		path   string
+		events []events.Event
+		opts   SerializeOptions
+	}{
+		{
+			path: "../../tests/testdata/ics/export-single-event.ics",
+			events: []events.Event{
+				{
+					ULID:        "01HYX7QVATM8PZK6J7X7PZK6J7",
+					Name:        "Community Meetup",
+					Description: "Join us for a monthly community gathering.",
+					Occurrences: []events.Occurrence{
+						{
+							ID:        "01HYX7QVATM8PZK6J7X7PZK6J7",
+							StartTime: time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+							EndTime:   ptr(time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC)),
+							VenueULID: ptr("01HYX7QVATM8PZK6J7X7PZK6J7"),
+							TicketURL: "https://example.com/events/meetup",
+						},
+					},
+					PrimaryVenueName: ptr("Community Center"),
+				},
+			},
+			opts: SerializeOptions{},
+		},
+		{
+			path: "../../tests/testdata/ics/export-multi-occurrence.ics",
+			events: []events.Event{
+				{
+					ULID:        "01HYX7QVATM8PZK6J7X7PZK6J7",
+					Name:        "Weekly Workshop",
+					Description: "Learn new skills in this weekly workshop series.",
+					Occurrences: []events.Occurrence{
+						{
+							ID:        "occevent1",
+							StartTime: time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+							EndTime:   ptr(time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC)),
+						},
+						{
+							ID:        "occevent2",
+							StartTime: time.Date(2026, 4, 22, 19, 0, 0, 0, time.UTC),
+							EndTime:   ptr(time.Date(2026, 4, 22, 21, 0, 0, 0, time.UTC)),
+						},
+						{
+							ID:        "occevent3",
+							StartTime: time.Date(2026, 4, 29, 19, 0, 0, 0, time.UTC),
+							EndTime:   ptr(time.Date(2026, 4, 29, 21, 0, 0, 0, time.UTC)),
+						},
+					},
+					PrimaryVenueName: ptr("Art Studio"),
+				},
+			},
+			opts: SerializeOptions{},
+		},
 	}
 
 	for _, f := range files {
-		t.Run(f, func(t *testing.T) {
-			data, err := os.ReadFile(f)
+		t.Run(f.path, func(t *testing.T) {
+			result, err := SerializeEvents(f.events, f.opts)
+			if err != nil {
+				t.Fatalf("SerializeEvents() error = %v", err)
+			}
+
+			if *update {
+				err := os.WriteFile(f.path, result.Data, 0644)
+				if err != nil {
+					t.Fatalf("failed to update fixture: %v", err)
+				}
+				t.Logf("updated fixture: %s", f.path)
+				return
+			}
+
+			expected, err := os.ReadFile(f.path)
 			if err != nil {
 				t.Fatalf("failed to read fixture: %v", err)
 			}
-			parsed, err := Parse(data)
+
+			resultData := stripDTSTAMP(result.Data)
+			expectedData := stripDTSTAMP(expected)
+
+			if !bytes.Equal(resultData, expectedData) {
+				t.Errorf("fixture mismatch\ngot:\n%s\nexpected:\n%s", resultData, expectedData)
+			}
+
+			parsed, err := Parse(result.Data)
 			if err != nil {
 				t.Fatalf("failed to parse fixture: %v", err)
 			}
-			t.Logf("parsed %d events from %s", len(parsed.Events), f)
+			t.Logf("parsed %d events from %s", len(parsed.Events), f.path)
 		})
 	}
+}
+
+func stripDTSTAMP(data []byte) []byte {
+	s := string(data)
+	lines := strings.Split(s, "\r\n")
+	if len(lines) == 1 {
+		lines = strings.Split(s, "\n")
+	}
+	var filtered []string
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "DTSTAMP:") {
+			filtered = append(filtered, line)
+		}
+	}
+	return []byte(strings.Join(filtered, "\r\n"))
 }
