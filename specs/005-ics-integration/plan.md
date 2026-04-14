@@ -1,6 +1,6 @@
 # Plan: ICS/iCal Integration
 
-**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 1 Delivered)
+**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 2 Delivered)
 **Goal**: Make ICS (RFC 5545) a first-class ingest and output format — the SEL can
 consume ICS feeds from any source (including community-calendar) and produce
 subscribable ICS feeds that any calendar client or aggregator can consume.
@@ -248,21 +248,30 @@ type MapperOptions struct {
 // SerializeEvents converts SEL events to a VCALENDAR payload.
 func SerializeEvents(evts []events.Event, opts SerializeOptions) (SerializeResult, error)
 
-// SerializeResult contains serialized bytes and derived metadata.
+// SerializeSingleEvent converts one domain event to a VCALENDAR payload.
+func SerializeSingleEvent(evt events.Event, opts SerializeOptions) (SerializeResult, error)
+
+// SerializeResult contains serialized bytes and non-fatal warnings.
+// (Implementation note: original design had Content/EventCount/GeneratedAt;
+// actual implementation uses Data/Warnings for idiomatic Go error handling.)
 type SerializeResult struct {
-    Content      []byte
-    EventCount   int
-    GeneratedAt  time.Time
+    Data     []byte
+    Warnings []string
 }
 
 type SerializeOptions struct {
-    ProductID    string // e.g. "-//Togather Foundation//SEL//EN"
-    CalendarName string // feed title (default: "Togather Events")
-    CalendarURL  string // canonical feed URL for SOURCE property
-    Method       string // optional; default "PUBLISH"
-    // Phase 3 adds: IncludeRRule bool, Timezone string
+    CalendarName        string // feed title (default: "Togather Events")
+    CalendarDescription string // optional feed description
+    // Phase 3 adds: IncludeRRule bool, Timezone string, ProductID string
 }
 ```
+
+> **Go 1.25 ServeMux constraint**: the `net/http` ServeMux rejects patterns where a
+> wildcard segment (`{id}`) is immediately followed by a literal suffix (e.g.
+> `{id}.ics`). The wildcard must end the path segment. For this reason the
+> single-event endpoint uses `GET /api/v1/events/{id}/ics` (wildcard + `/ics` suffix
+> segment) rather than `GET /api/v1/events/{id}.ics` as originally specified. The feed
+> endpoint `GET /api/v1/events.ics` (no wildcard) is unaffected.
 
 ### Scraper ICS Source
 
@@ -326,7 +335,7 @@ for implementation deviations.
 - `ical.SerializeOptions` struct defined but `serialize.go` not implemented
 - `ParsedEvent` struct is stable — Phase 2 uses it for round-trip testing
 
-### Phase 2: ICS Export (Vertical Slice)
+### Phase 2: ICS Export (Vertical Slice) — **Delivered**
 
 **Goal**: `GET /api/v1/events.ics` returns an agent/API-consumable ICS feed with
 cursor pagination; `GET /api/v1/events/{id}/ics` returns a single-event download.
@@ -335,6 +344,9 @@ cursor pagination; `GET /api/v1/events/{id}/ics` returns a single-event download
 **Exit criteria**: feed pagination (`after`/`limit`) works for ICS via `Link rel="next"`; per-event download
 produces valid ICS; API endpoints expose `Link` alternates for ICS discovery; calendar
 compatibility validated (Apple/Google import/subscription smoke tests).
+**Status**: All 7 tasks completed. Multiple follow-up bugs fixed (double-escaping,
+DTSTAMP, OAS3 violations, route rename). See `spec-phase2.md` for implementation
+deviations.
 
 **Tasks** (7):
 1. Implement `internal/ical/serialize.go` + `serialize_test.go` — Event → VCALENDAR
@@ -342,6 +354,7 @@ compatibility validated (Apple/Google import/subscription smoke tests).
 3. Add `GET /api/v1/events.ics` feed handler with same filters as JSON list endpoint
    plus cursor pagination semantics (`after`, `limit`, `Link rel="next"` per RFC 8288)
 4. Add `GET /api/v1/events/{id}/ics` single-event download handler
+   (**Note**: route changed from original `{id}.ics` — see Go 1.25 ServeMux constraint above)
 5. Add `Link` discovery headers with `rel="alternate"; type="text/calendar"` on
    `/api/v1/events` and `/api/v1/events/{id}`
 6. Update `docs/api/openapi.yaml` with ICS endpoints

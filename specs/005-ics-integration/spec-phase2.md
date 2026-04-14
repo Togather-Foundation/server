@@ -1,6 +1,6 @@
 # Phase 2 Specification: ICS Export
 
-**Spec**: 005-ics-integration / Phase 2 | **Date**: 2026-04-13 | **Status**: Draft
+**Spec**: 005-ics-integration / Phase 2 | **Date**: 2026-04-13 | **Status**: Delivered
 **Parent**: `specs/005-ics-integration/plan.md`
 **Goal**: `GET /api/v1/events.ics` and `GET /api/v1/events/{id}/ics` return valid iCalendar output optimized for agent/API consumers, while remaining compatible with calendar clients.
 
@@ -145,32 +145,35 @@ tests/
 package ical
 
 import (
-    "time"
-
     "github.com/Togather-Foundation/server/internal/domain/events"
 )
 
 // SerializeOptions controls ICS output formatting and feed metadata.
+// (Implementation note: original design also included ProductID, CalendarURL, Method
+// fields; actual implementation uses only CalendarName and CalendarDescription —
+// ProductID is hardcoded, CalendarURL/Method are not exposed in Phase 2.)
 type SerializeOptions struct {
-    ProductID    string // e.g. "-//Togather Foundation//SEL//EN"
-    CalendarName string // feed title
-    CalendarURL  string // canonical feed URL
-    Method       string // optional; default "PUBLISH"
-    // Phase 3 adds: Timezone string, IncludeRRule bool
+    CalendarName        string // feed title (default: "Togather Events")
+    CalendarDescription string // optional feed description
+    // Phase 3 adds: ProductID string, Method string, Timezone string, IncludeRRule bool
 }
 
-// SerializeResult contains serialized bytes and derived metadata.
+// SerializeResult contains serialized bytes and non-fatal warnings.
+// (Implementation note: original design had Content []byte, EventCount int,
+// GeneratedAt time.Time; actual implementation uses Data []byte, Warnings []string
+// for idiomatic Go error handling and forward-compatibility.)
 type SerializeResult struct {
-    Content      []byte
-    EventCount   int
-    GeneratedAt  time.Time
+    Data     []byte
+    Warnings []string
 }
 
 // SerializeEvents converts domain events to a VCALENDAR payload.
 func SerializeEvents(items []events.Event, opts SerializeOptions) (SerializeResult, error)
 
 // SerializeSingleEvent converts one domain event to a VCALENDAR payload.
-func SerializeSingleEvent(item *events.Event, opts SerializeOptions) (SerializeResult, error)
+// (Implementation note: original spec used pointer *events.Event; actual
+// implementation uses value events.Event for consistency with Go value semantics.)
+func SerializeSingleEvent(evt events.Event, opts SerializeOptions) (SerializeResult, error)
 ```
 
 ### Interfaces
@@ -205,6 +208,10 @@ Handler strategy for feed endpoint:
 
 2) **GET `/api/v1/events/{id}/ics`**
 - Auth: public
+- **Note**: originally specified as `GET /api/v1/events/{id}.ics` but renamed to
+  `/ics` path segment — Go 1.25 `net/http` ServeMux rejects patterns where a
+  wildcard segment is immediately followed by a literal suffix (e.g. `{id}.ics`).
+  The wildcard must end the path segment or be followed by `/`.
 - Response `200`: `text/calendar; charset=utf-8`
 - Headers:
   - `Content-Disposition: attachment; filename="event-{id}.ics"`
@@ -310,11 +317,83 @@ Serializer defaults:
 
 ## Success Criteria
 
-1. `GET /api/v1/events.ics` works end-to-end and is consumable by at least Apple Calendar + Google Calendar import tests.
-2. `GET /api/v1/events/{id}/ics` returns a valid single-event ICS artifact.
-3. OpenAPI includes new ICS endpoints and `text/calendar` response media types.
-4. No regressions in existing JSON-LD/HTML/Turtle content negotiation tests.
-5. Phase 2 tests explicitly cover relevant rows in `docs/integration/ics-compatibility-matrix.md`.
+All criteria validated as of delivery commit `1ceb77b`:
+
+1. ✓ `GET /api/v1/events.ics` works end-to-end (integration tests pass).
+2. ✓ `GET /api/v1/events/{id}/ics` returns a valid single-event ICS artifact.
+3. ✓ OpenAPI includes new ICS endpoints and `text/calendar` response media types; `make lint-openapi` passes.
+4. ✓ No regressions in existing JSON-LD/HTML/Turtle content negotiation tests.
+5. ✓ Phase 2 tests explicitly cover relevant rows in `docs/integration/ics-compatibility-matrix.md`.
+
+---
+
+## Implementation Discoveries
+
+Deviations from the original spec discovered during Phase 2 delivery. Preserved here
+as institutional knowledge for Phase 3 implementation and future maintenance.
+
+### 1. Double-escaping trap (`arran4/golang-ical`)
+
+`arran4/golang-ical`'s `SetSummary`, `SetDescription`, and `SetLocation` apply RFC
+5545 TEXT escaping internally via a `textEscaper`. Passing pre-escaped strings to
+these methods causes double-escaping on the wire (e.g. `SUMMARY:Comma\\\\, Test`
+instead of `SUMMARY:Comma\, Test`), which breaks Apple Calendar, Google Calendar, and
+Thunderbird.
+
+**Fix**: Pass raw unescaped strings to these setter methods — the library handles RFC
+5545 escaping. Remove any custom `escapeICSText()` helper.
+
+**Testing lesson**: roundtrip parse tests mask this bug (parsing undoes
+double-escaping). Wire-bytes assertions using `bytes.Contains(result.Data, ...)` are
+required to catch it.
+
+### 2. DTSTAMP is mandatory but not auto-added
+
+RFC 5545 §3.6.1 requires DTSTAMP on every VEVENT. `arran4/golang-ical`'s
+`NewComponent()` does NOT add it automatically. Must call
+`ve.SetDtStampTime(time.Now().UTC())` explicitly inside the per-occurrence loop.
+
+For deterministic tests, the serializer accepts a clock value or uses
+`time.Time{}` sentinel for test injection.
+
+### 3. OAS3 `description` placement
+
+In OpenAPI 3.x, `description` is not valid as a sibling of `schema` under a media
+type object — it must be inside `schema.description`. This was causing `oas3-schema`
+lint violations that had been globally suppressed. Fixed by moving descriptions into
+`schema.description` and re-enabling the `oas3-schema` lint rule.
+
+### 4. `text/calendar` not advertised on `/events` and `/events/{id}`
+
+The `GET /api/v1/events` and `GET /api/v1/events/{id}` handlers do not dispatch to
+ICS — they serve JSON-LD/JSON/HTML/Turtle. Advertising `text/calendar` in their
+`Accept` documentation would mislead clients. `text/calendar` is only advertised on
+the dedicated `.ics` endpoints. Discovery is handled via `Link rel="alternate"` headers.
+
+### 5. Route change: `{id}.ics` → `{id}/ics` (breaking from original spec)
+
+Go 1.25's `net/http` ServeMux rejects route patterns where a wildcard segment
+(`{id}`) is immediately followed by a literal suffix (e.g. `/events/{id}.ics`). The
+wildcard must be followed by `/` or end-of-string.
+
+**Actual routes implemented**:
+- `GET /api/v1/events.ics` — feed (no wildcard, unaffected)
+- `GET /api/v1/events/{id}/ics` — single-event download (`.ics` moved to new segment)
+
+This is a **breaking change from the original spec**. The Link alternate headers on
+`/api/v1/events/{id}` responses emit `/api/v1/events/{id}/ics` accordingly.
+
+### 6. Golden fixtures must be generated, not hand-authored
+
+ICS wire format includes DTSTAMP with the current UTC timestamp, making hand-authored
+golden fixtures immediately stale. The `-update` flag pattern was added to
+`TestExportFixturesParse` to allow controlled regeneration:
+
+```bash
+go test ./internal/ical -run TestExportFixturesParse -update
+```
+
+See `tests/testdata/ics/README.md` for regeneration instructions.
 
 ---
 
