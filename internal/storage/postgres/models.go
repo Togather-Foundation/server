@@ -190,9 +190,6 @@ type EventSeries struct {
 	Description      pgtype.Text          `json:"description"`
 	SeriesStartDate  pgtype.Date          `json:"series_start_date"`
 	SeriesEndDate    pgtype.Date          `json:"series_end_date"`
-	RepeatFrequency  pgtype.Text          `json:"repeat_frequency"`
-	RepeatOnDays     []string             `json:"repeat_on_days"`
-	RepeatOnDates    []int32              `json:"repeat_on_dates"`
 	ScheduleTimezone string               `json:"schedule_timezone"`
 	DefaultVenueID   pgtype.UUID          `json:"default_venue_id"`
 	DefaultStartTime pgtype.Time          `json:"default_start_time"`
