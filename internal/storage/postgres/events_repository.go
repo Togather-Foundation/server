@@ -286,7 +286,8 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	   o.ticket_url, o.price_min, o.price_max, o.price_currency, o.availability,
 	   org.ulid AS organizer_ulid,
 	   e.series_id::text AS series_id,
-	   es.rrule, es.exdates, es.rdates, es.schedule_timezone
+	   es.rrule, es.exdates, es.rdates, es.schedule_timezone,
+	   es.series_start_date, es.series_end_date
 	  FROM events e
 	  LEFT JOIN event_occurrences o ON o.event_id = e.id
 	  LEFT JOIN places pv ON pv.id = e.primary_venue_id
@@ -350,6 +351,8 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			seriesExDates       []pgtype.Timestamptz
 			seriesRDates        []pgtype.Timestamptz
 			seriesTZID          *string
+			seriesStartDate     pgtype.Date
+			seriesEndDate       pgtype.Date
 		)
 		if err := rows.Scan(
 			&eventID,
@@ -398,6 +401,8 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&seriesExDates,
 			&seriesRDates,
 			&seriesTZID,
+			&seriesStartDate,
+			&seriesEndDate,
 		); err != nil {
 			return nil, fmt.Errorf("scan event: %w", err)
 		}
@@ -459,6 +464,14 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 					if ts.Valid {
 						rr.RDates = append(rr.RDates, ts.Time)
 					}
+				}
+				if seriesStartDate.Valid {
+					t := seriesStartDate.Time
+					rr.SeriesStart = &t
+				}
+				if seriesEndDate.Valid {
+					t := seriesEndDate.Time
+					rr.SeriesEnd = &t
 				}
 				event.Recurrence = rr
 			}

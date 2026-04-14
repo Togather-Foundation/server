@@ -402,10 +402,14 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Populate eventSchedule from canonical recurrence data (Phase 3 T3).
 	// Only present for events that belong to a series with an RRULE.
 	event.EventSchedule = schema.ScheduleFromRecurrence(item.Recurrence)
-	if event.EventSchedule != nil && len(item.Occurrences) > 0 {
-		event.EventSchedule.StartDate = item.Occurrences[0].StartTime.Format(time.RFC3339)
-		if item.Occurrences[len(item.Occurrences)-1].EndTime != nil {
-			event.EventSchedule.EndDate = item.Occurrences[len(item.Occurrences)-1].EndTime.Format(time.RFC3339)
+	if event.EventSchedule != nil && item.Recurrence != nil {
+		if item.Recurrence.SeriesStart != nil {
+			event.EventSchedule.StartDate = item.Recurrence.SeriesStart.Format("2006-01-02")
+		} else if len(item.Occurrences) > 0 {
+			event.EventSchedule.StartDate = item.Occurrences[0].StartTime.Format("2006-01-02")
+		}
+		if item.Recurrence.SeriesEnd != nil {
+			event.EventSchedule.EndDate = item.Recurrence.SeriesEnd.Format("2006-01-02")
 		}
 	}
 

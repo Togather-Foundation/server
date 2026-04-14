@@ -50,10 +50,12 @@ type MergeResult struct {
 // (e.g. "FREQ=WEEKLY;BYDAY=MO,WE", not "RRULE:FREQ=WEEKLY;BYDAY=MO,WE").
 // The serializer adds the "RRULE:" property prefix on wire output.
 type RecurrenceRule struct {
-	RRule   string      // RFC 5545 RRULE value string (no "RRULE:" prefix)
-	ExDates []time.Time // UTC timestamps excluded from recurrence set (EXDATE)
-	RDates  []time.Time // UTC timestamps added to recurrence set (RDATE)
-	TZID    string      // IANA timezone from event_series.schedule_timezone
+	RRule       string      // RFC 5545 RRULE value string (no "RRULE:" prefix)
+	ExDates     []time.Time // UTC timestamps excluded from recurrence set (EXDATE)
+	RDates      []time.Time // UTC timestamps added to recurrence set (RDATE)
+	TZID        string      // IANA timezone from event_series.schedule_timezone
+	SeriesStart *time.Time  // series_start_date from event_series (nil if absent)
+	SeriesEnd   *time.Time  // series_end_date from event_series (nil if absent)
 }
 
 type Event struct {

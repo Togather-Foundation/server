@@ -143,12 +143,6 @@ type Querier interface {
 	GetEventByULID(ctx context.Context, ulid string) ([]GetEventByULIDRow, error)
 	GetEventChangeByID(ctx context.Context, id pgtype.UUID) (GetEventChangeByIDRow, error)
 	GetEventDateRange(ctx context.Context) (GetEventDateRangeRow, error)
-	// SQLc queries for event_series domain.
-	// These are the first queries for this previously-dormant table.
-	// Introduced in Phase 3 (srv-i1f0t) to load canonical recurrence data alongside events.
-	// Fetch a single event_series row by its UUID.
-	// Used when loading recurrence metadata for an event via series_id FK.
-	GetEventSeriesByID(ctx context.Context, dollar_1 pgtype.UUID) (GetEventSeriesByIDRow, error)
 	// SQLc queries for provenance tracking.
 	// Retrieves all sources for a given event with source metadata and timestamps (FR-029)
 	GetEventSources(ctx context.Context, eventID pgtype.UUID) ([]GetEventSourcesRow, error)

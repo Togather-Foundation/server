@@ -90,11 +90,24 @@ func TestGetByULID_RecurrenceRule(t *testing.T) {
 
 	t.Run("series with RRULE — SeriesID and Recurrence populated", func(t *testing.T) {
 		rrule := "FREQ=WEEKLY;BYDAY=MO,WE"
-		seriesID := insertSeries(t, &rrule)
+		seriesStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		seriesEnd := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+		var seriesID string
+		err := pool.QueryRow(ctx,
+			`INSERT INTO event_series (name, series_start_date, series_end_date, schedule_timezone, rrule)
+			 VALUES ($1, $2, $3, $4, $5)
+			 RETURNING id`,
+			"Test Series",
+			seriesStart.Format("2006-01-02"),
+			seriesEnd.Format("2006-01-02"),
+			"America/Toronto",
+			rrule,
+		).Scan(&seriesID)
+		require.NoError(t, err)
 
 		// Also set exdates on the series row to verify array population.
 		exDate := time.Date(2026, 5, 4, 18, 0, 0, 0, time.UTC)
-		_, err := pool.Exec(ctx,
+		_, err = pool.Exec(ctx,
 			`UPDATE event_series SET exdates = $1 WHERE id = $2::uuid`,
 			[]time.Time{exDate},
 			seriesID,
@@ -116,5 +129,15 @@ func TestGetByULID_RecurrenceRule(t *testing.T) {
 		require.Len(t, evt.Recurrence.ExDates, 1)
 		assert.True(t, evt.Recurrence.ExDates[0].Equal(exDate),
 			"ExDate should match stored value; got %v want %v", evt.Recurrence.ExDates[0], exDate)
+
+		require.NotNil(t, evt.Recurrence.SeriesStart, "SeriesStart should be populated from event_series.series_start_date")
+		assert.Equal(t, seriesStart.Year(), evt.Recurrence.SeriesStart.Year())
+		assert.Equal(t, seriesStart.Month(), evt.Recurrence.SeriesStart.Month())
+		assert.Equal(t, seriesStart.Day(), evt.Recurrence.SeriesStart.Day())
+
+		require.NotNil(t, evt.Recurrence.SeriesEnd, "SeriesEnd should be populated from event_series.series_end_date")
+		assert.Equal(t, seriesEnd.Year(), evt.Recurrence.SeriesEnd.Year())
+		assert.Equal(t, seriesEnd.Month(), evt.Recurrence.SeriesEnd.Month())
+		assert.Equal(t, seriesEnd.Day(), evt.Recurrence.SeriesEnd.Day())
 	})
 }

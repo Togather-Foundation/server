@@ -746,8 +746,8 @@ func TestEventsHandlerGetSubEventVenueURIFallback(t *testing.T) {
 }
 
 func TestEventsHandlerGetRecurringEventHasEventSchedule(t *testing.T) {
-	t0 := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
-	t0end := time.Date(2026, 9, 11, 22, 0, 0, 0, time.UTC)
+	seriesStart := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	seriesEnd := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
 
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
@@ -755,11 +755,13 @@ func TestEventsHandlerGetRecurringEventHasEventSchedule(t *testing.T) {
 				Name: "Weekly Jazz Series",
 				ULID: "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
 				Recurrence: &events.RecurrenceRule{
-					RRule: "FREQ=WEEKLY;BYDAY=MO,WE",
-					TZID:  "America/Toronto",
+					RRule:       "FREQ=WEEKLY;BYDAY=MO,WE",
+					TZID:        "America/Toronto",
+					SeriesStart: &seriesStart,
+					SeriesEnd:   &seriesEnd,
 				},
 				Occurrences: []events.Occurrence{
-					{StartTime: t0, EndTime: &t0end, Timezone: "America/Toronto"},
+					{StartTime: time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC), Timezone: "America/Toronto"},
 				},
 			}, nil
 		},
@@ -792,8 +794,49 @@ func TestEventsHandlerGetRecurringEventHasEventSchedule(t *testing.T) {
 	require.Equal(t, "Wednesday", byDay[1])
 
 	require.Equal(t, "America/Toronto", sched["scheduleTimezone"])
-	require.Equal(t, t0.Format(time.RFC3339), sched["startDate"])
-	require.Equal(t, t0end.Format(time.RFC3339), sched["endDate"])
+	require.Equal(t, "2026-07-01", sched["startDate"], "startDate must use date-only format from SeriesStart")
+	require.Equal(t, "2026-09-30", sched["endDate"], "endDate must use date-only format from SeriesEnd")
+}
+
+func TestEventsHandlerGetRecurringEventScheduleFallbackToOccurrences(t *testing.T) {
+	t0 := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+
+	repo := stubEventsRepo{
+		getFn: func(_ string) (*events.Event, error) {
+			return &events.Event{
+				Name: "Weekly Jazz Series",
+				ULID: "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+				Recurrence: &events.RecurrenceRule{
+					RRule: "FREQ=WEEKLY;BYDAY=MO",
+					TZID:  "America/Toronto",
+				},
+				Occurrences: []events.Occurrence{
+					{StartTime: t0, Timezone: "America/Toronto"},
+				},
+			}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
+	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+
+	es, ok := payload["eventSchedule"]
+	require.True(t, ok, "response must contain 'eventSchedule' key for recurring event")
+
+	sched, ok := es.(map[string]any)
+	require.True(t, ok, "eventSchedule must be an object")
+	require.Equal(t, "2026-07-10", sched["startDate"], "startDate must fall back to first occurrence when SeriesStart is nil")
+	_, hasEndDate := sched["endDate"]
+	require.False(t, hasEndDate, "endDate must be absent when SeriesEnd is nil and no last occurrence EndTime")
 }
 
 func TestEventsHandlerGetNonRecurringEventNoEventSchedule(t *testing.T) {
