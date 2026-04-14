@@ -217,7 +217,7 @@ func TestSerializeEvents(t *testing.T) {
 			}
 
 			if len(result.Warnings) != tt.wantWarnings {
-				t.Logf("warnings: %v", result.Warnings)
+				t.Errorf("got %d warnings, want %d: %v", len(result.Warnings), tt.wantWarnings, result.Warnings)
 			}
 
 			if tt.checkFunc != nil {

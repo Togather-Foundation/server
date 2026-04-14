@@ -165,6 +165,16 @@ func TestCompatMatrix_ICSEscaping(t *testing.T) {
 			t.Fatalf("SerializeEvents() error = %v", err)
 		}
 
+		wireData := string(result.Data)
+
+		if strings.Contains(wireData, "\\\\,") || strings.Contains(wireData, "\\\\;") {
+			t.Errorf("wire bytes contain double-escaped sequences: found \\\\escaped comma/semicolon")
+		}
+
+		if !strings.Contains(wireData, "\\,") && !strings.Contains(wireData, "\\;") {
+			t.Errorf("wire bytes missing single-escaped sequences: expected \\, and \\;")
+		}
+
 		parsed, err := Parse(result.Data)
 		if err != nil {
 			t.Fatalf("Parse() error = %v", err)

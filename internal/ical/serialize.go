@@ -2,7 +2,6 @@ package ical
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -75,15 +74,17 @@ func serializeEventsCore(evts []events.Event, opts SerializeOptions) (SerializeR
 				ve.SetEndAt(dtEnd)
 			}
 
-			ve.SetSummary(escapeICSText(evt.Name))
+			ve.SetDtStampTime(time.Now().UTC())
+
+			ve.SetSummary(evt.Name)
 
 			if evt.Description != "" {
-				ve.SetDescription(escapeICSText(evt.Description))
+				ve.SetDescription(evt.Description)
 			}
 
 			location := buildEventLocation(evt, occ)
 			if location != "" {
-				ve.SetLocation(escapeICSText(location))
+				ve.SetLocation(location)
 			}
 
 			if occ.TicketURL != "" {
@@ -130,12 +131,4 @@ func buildEventLocation(evt events.Event, occ events.Occurrence) string {
 		return *occ.VirtualURL
 	}
 	return ""
-}
-
-func escapeICSText(s string) string {
-	s = strings.ReplaceAll(s, "\n", "\\n")
-	s = strings.ReplaceAll(s, ",", "\\,")
-	s = strings.ReplaceAll(s, ";", "\\;")
-	s = strings.ReplaceAll(s, "\\", "\\\\")
-	return s
 }
