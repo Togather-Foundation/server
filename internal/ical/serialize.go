@@ -1,3 +1,7 @@
+// Package ical provides ICS (iCalendar) serialization for Togather events.
+//
+// Serialization is built on top of github.com/arran4/golang-ical and produces
+// standards-compliant .ics files. All datetime values are output in UTC.
 package ical
 
 import (
@@ -16,20 +20,47 @@ const (
 	domainSuffix = "togather.foundation"
 )
 
+// SerializeOptions holds optional settings for ICS serialization.
 type SerializeOptions struct {
-	CalendarName        string
+	// CalendarName is the X-WR-CALNAME property, shown by calendar clients.
+	CalendarName string
+	// CalendarDescription is the X-WR-CALDESC property, shown by calendar clients.
 	CalendarDescription string
 }
 
+// SerializeResult contains the serialized ICS calendar and any warnings encountered.
 type SerializeResult struct {
-	Data     []byte
+	// Data is the serialized ICS calendar in UTF-8.
+	Data []byte
+	// Warnings contains non-fatal issues encountered during serialization.
+	// For example, when an occurrence's timezone cannot be loaded.
 	Warnings []string
 }
 
+// SerializeEvents converts a slice of events into an ICS calendar.
+//
+// Each event must have at least one occurrence in Event.Occurrences.
+// Events with empty occurrences are silently skipped.
+//
+// All datetime values in the output are in UTC, regardless of the
+// occurrence's original timezone. If a timezone cannot be loaded,
+// a warning is added to SerializeResult.Warnings.
+//
+// Built on top of github.com/arran4/golang-ical.
 func SerializeEvents(evts []events.Event, opts SerializeOptions) (SerializeResult, error) {
 	return serializeEventsCore(evts, opts)
 }
 
+// SerializeSingleEvent converts a single event into an ICS calendar.
+//
+// The event must have at least one occurrence in Event.Occurrences.
+// It returns an error if the event has no occurrences.
+//
+// All datetime values in the output are in UTC, regardless of the
+// occurrence's original timezone. If a timezone cannot be loaded,
+// a warning is added to SerializeResult.Warnings.
+//
+// Built on top of github.com/arran4/golang-ical.
 func SerializeSingleEvent(evt events.Event, opts SerializeOptions) (SerializeResult, error) {
 	return serializeEventsCore([]events.Event{evt}, opts)
 }
