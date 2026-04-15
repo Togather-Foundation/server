@@ -1,6 +1,6 @@
 # Plan: ICS/iCal Integration
 
-**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 4 Delivered)
+**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 5 In Progress)
 **Goal**: Make ICS (RFC 5545) a first-class ingest and output format — the SEL can
 consume ICS feeds from any source (including community-calendar) and produce
 subscribable ICS feeds that any calendar client or aggregator can consume.
@@ -47,6 +47,8 @@ fidelity with ICS sources.
 | Latest migration | `000042_scraper_sources_extraction_method` | `internal/storage/postgres/migrations/` |
 | ICS extractor | **Phase 1 Delivered** — RRULE expansion via `teambition/rrule-go` v1.8.2 | `internal/scraper/ics.go`, `internal/ical/rrule.go` |
 | EventSeries handling in scraper | Detects `Event`/`EventSeries` in JSON-LD and unfolds `subEvent` into occurrences during normalization | `internal/scraper/jsonld.go:45,168,231,306`, `internal/scraper/normalize.go:98-161` |
+| Phase 4 interop tests and docs | **Phase 4 Delivered** — interop tests (7 ingest + 2 export), ICS discovery heuristics, ics-feeds.md runbook, e2e eventSchedule test | `tests/integration/ics_interop_test.go`, `docs/integration/ics-feeds.md` |
+| Phase 5 rollout artifacts | **Phase 5 In Progress** — manifest, cohorts, outcomes taxonomy, report template, 12 onboarding beads | `specs/005-ics-integration/toronto-ics-manifest.json`, `toronto-rollout-cohorts.md`, `outcomes.md` |
 
 ## Architecture
 
@@ -462,8 +464,9 @@ SEL; SEL ICS export passes consumer checks in both `IncludeRRule=false` and
 `IncludeRRule=true` modes; ICS discovery heuristics for 8 platforms documented; runbook
 is executable; ICS-recurring events produce `eventSchedule` in API responses.
 
-**Status**: ICS series dates pipeline delivered (`srv-bvpkq`). Interop tests and
-docs remaining.
+**Status**: All tasks completed.
+
+**Delivery summary**: 7 interop ingest fixtures covering Outlook VTIMEZONE, WordPress Tribe, Google Calendar, Meetup, Tockify, RRULE+EXDATE TZID-local-time regression, and valid-mixed-with-malformed; 2 export mode tests (IncludeRRule=false and IncludeRRule=true); `TestICSIngestEventSchedule` e2e test asserting `eventSchedule` fields (`startDate`/`endDate`/`repeatFrequency`/`byDay`/`scheduleTimezone`) plus EXDATE exclusion and non-recurring/no-schedule case plus upsert idempotency (409 on re-ingest, same ULID); `docs/integration/ics-feeds.md` runbook; `docs/integration/event-platforms.md` updated with ICS heuristics for 8 platforms; `server scrape test-fixture` CLI command for one-shot fixture validation.
 
 **Completed work (srv-bvpkq)**:
 
@@ -503,6 +506,7 @@ docs remaining.
 - Operational runbook defines safe onboarding/diagnostics workflow for source rollout.
 - ICS-sourced recurring events auto-populate `event_series` via `RecurrenceInput` → `UpsertEventSeries` pipeline — recurring sources get `eventSchedule` in JSON-LD responses without manual data entry.
 - `event_series.external_key` (`<source_name>:<master_UID>`) provides idempotent re-ingest: repeated scrapes of the same RRULE master upsert the same series row rather than creating duplicates.
+- `server scrape test-fixture <yaml>` CLI command enables one-shot fixture scraping for validation without River job scheduling — useful for source onboarding smoke tests.
 
 ### Phase 5: Toronto ICS Source Inventory Rollout
 
@@ -518,24 +522,41 @@ in API responses automatically.
 **Tasks** (7):
 1. Convert inventory sections (overlap, SEL-only, net-new, non-starters) into a
    machine-readable manifest (CSV/JSON) under `specs/005-ics-integration/`.
+   **Status**: ✓ Delivered — `toronto-ics-manifest.json`, 85 entries (11 overlap, 72 net-new, 1 sel-only summary, 1 non-starter summary).
 2. Define rollout cohorts (e.g., high-value net-new first, overlap validation
    second) with explicit acceptance targets per cohort. Include acceptance criteria
    for recurring sources: `eventSchedule` must appear in JSON-LD responses for
    RRULE-bearing ICS feeds within one scrape cycle.
+   **Status**: ✓ Delivered — `toronto-rollout-cohorts.md`, 2 cohorts (Cohort 1: 72 net-new / 29 high-priority; Cohort 2: 11 overlap).
 3. Create source-onboarding beads from the manifest (one bead per source or source
    bundle) with priority and dependency metadata.
+   **Status**: ✓ Delivered — 12 beads created (7 individual high-priority + 3 Meetup bundles + 1 medium bundle + 1 overlap bundle).
 4. Add outcome taxonomy (`onboarded`, `deferred`, `blocked`, `non-starter`) and
    capture criteria to avoid ad-hoc status labels.
+   **Status**: ✓ Delivered — `outcomes.md` + `toronto-rollout-report-template.md`.
 5. Run a first staged cohort in staging and publish metrics (attempted, onboarded,
    blocked reasons, median setup time) in a rollout report. Verify that recurring
    events from ICS sources produce `event_series` rows with `series_start_date`,
    `series_end_date`, and `schedule_timezone` populated — re-scraping the same source
    must upsert (not duplicate) via `external_key`.
+   **Status**: Pending — `srv-fyb0s`.
 6. Feed lessons back into `docs/integration/event-platforms.md` and
    `docs/integration/ics-feeds.md` with concrete examples from Toronto sources.
+   **Status**: Pending — after Task 5.
 7. Add end-to-end integration test: ICS ingest of a recurring event fixture → verify
    `eventSchedule` fields (`startDate`, `endDate`, `repeatFrequency`) appear in
    `/api/v1/events` JSON-LD response. Use `interop-recurrence-exdate.ics` fixture.
+   **Status**: ✓ Delivered in Phase 4 merge — `TestICSIngestEventSchedule` in `tests/integration/ics_interop_test.go`. Closed as `srv-uv27p`.
+
+**Note on manifest lifecycle**: The manifest (`toronto-ics-manifest.json`) is a planning
+artifact / inventory snapshot. It is NOT kept in sync with YAML source configs
+post-onboarding. Individual source beads and their `configs/sources/*.yaml` files are
+the operational tracking mechanism.
+
+**Known manifest gap**: 72 net-new entries in manifest vs 91 in plan. ~19 un-named
+sources are covered by the `wp-tribe-toronto-additional` bundle placeholder (WordPress
+Tribe sites) and pending Meetup slug resolution (`srv-4s1uk`) before individual configs
+can be created.
 
 ## Final Release Gate
 

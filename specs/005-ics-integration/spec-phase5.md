@@ -1,15 +1,8 @@
 # Phase 5 Specification: Toronto ICS Inventory Rollout
 
-**Spec**: 005-ics-integration / Phase 5 | **Date**: 2026-04-13 | **Status**: Draft — PROVISIONAL
+**Spec**: 005-ics-integration / Phase 5 | **Date**: 2026-04-13 | **Status**: In Progress
 **Parent**: `specs/005-ics-integration/plan.md`
 
-> **PROVISIONAL**: This spec captures current thinking but depends on learnings from
-> Phases 1-4. Cohort strategies and success thresholds will be revised based on actual
-> ingest/export behavior observed in earlier phases. The value of specifying Phase 5
-> now is that the Toronto inventory research (89 ICS feeds, platform fingerprints,
-> high-value source list) directly informs Phase 1 parser requirements (which feed
-> shapes must work), Phase 2 pagination sizing (feeds with 2,900-6,558 events), and
-> Phase 4 interop fixture selection (which platforms to prioritize).
 **Goal**: Turn the Toronto ICS source inventory into a staged rollout program with measurable onboarding outcomes.
 
 ## Context
@@ -23,15 +16,17 @@ The plan includes a detailed Toronto inventory (overlap, SEL-only, net-new, non-
 | Toronto ICS Source Inventory analysis in plan | Present | `specs/005-ics-integration/plan.md:457-554` |
 | ICS ingest/export/recurrence capabilities | Delivered by prior phases | `spec-phase1.md` to `spec-phase4.md` |
 | Interop fixtures and runbook baseline | Delivered by Phase 4 | `spec-phase4.md` |
-| Rollout manifest + cohort tracking artifacts | Missing (Phase 5 deliverable) | — |
+| Rollout manifest + cohort tracking artifacts | **Delivered** — toronto-ics-manifest.json (85 entries), toronto-rollout-cohorts.md, outcomes.md, toronto-rollout-report-template.md | `specs/005-ics-integration/` |
+| Source-onboarding beads | **Delivered** — 12 beads (7 individual high-priority + 3 Meetup bundles + 1 medium bundle + 1 overlap bundle) | bd show srv-k58rq, srv-qdalp, srv-xt9iu, ... |
+| E2E integration test (eventSchedule) | **Delivered** (Phase 4 merge) — TestICSIngestEventSchedule | `tests/integration/ics_interop_test.go` |
 
 ### What This Phase Delivers
 
-1. Inventory manifest in machine-readable form.
-2. Cohort strategy for staged onboarding.
-3. Bead-backed onboarding work graph.
-4. Outcome taxonomy and reporting template.
-5. First staged cohort execution + metrics.
+1. ✓ Inventory manifest — delivered
+2. ✓ Cohort strategy — delivered
+3. ✓ Bead-backed onboarding work graph — delivered
+4. ✓ Outcome taxonomy and reporting template — delivered
+5. Pending: First staged cohort execution + metrics (`srv-fyb0s`)
 
 ### Non-Goals
 
@@ -112,11 +107,17 @@ specs/005-ics-integration/
   "display_name": "string",
   "category": "overlap|sel_only|net_new|non_starter",
   "feed_type": "string",
+  "ics_url_pattern": "string",
+  "sel_config_name": "string",
+  "est_event_count": 0,
   "priority": "high|medium|low",
   "rollout_status": "planned|onboarded|deferred|blocked|non_starter",
+  "cohort": 0,
   "notes": "string"
 }
 ```
+
+**Note**: The manifest is a planning artifact / inventory snapshot. It is NOT kept in sync with YAML source configs post-onboarding. Individual source beads and their `configs/sources/*.yaml` files are the operational tracking mechanism.
 
 **Priority mapping to beads**: `high` -> P1, `medium` -> P2, `low` -> P3. Task 3
 uses this mapping when creating onboarding beads from manifest rows.
@@ -143,6 +144,8 @@ uses this mapping when creating onboarding beads from manifest rows.
 
 **Acceptance**: manifest rows map cleanly to all known inventory categories.
 
+**Status**: ✓ Delivered — `toronto-ics-manifest.json`, 85 entries (11 overlap, 72 net-new, 1 sel-only summary, 1 non-starter summary). Known gap: ~19 un-named sources (`wp-tribe-toronto-additional` placeholder + Meetup slug resolution pending via `srv-4s1uk`).
+
 ### Task 2: Define rollout cohorts and priorities
 
 **What**: Create `toronto-rollout-cohorts.md` with explicit cohort boundaries and rationale.
@@ -150,6 +153,8 @@ uses this mapping when creating onboarding beads from manifest rows.
 **Test**: manual review against runbook constraints.
 
 **Acceptance**: each cohort has entry/exit criteria and expected throughput.
+
+**Status**: ✓ Delivered — `toronto-rollout-cohorts.md`.
 
 ### Task 3: Create onboarding beads from manifest
 
@@ -159,6 +164,8 @@ uses this mapping when creating onboarding beads from manifest rows.
 
 **Acceptance**: every in-scope source has a tracked onboarding bead.
 
+**Status**: ✓ Delivered — 12 beads: `srv-k58rq` (torevent), `srv-qdalp` (York U), `srv-xt9iu` (CultureLink), `srv-ve518` (NOW Toronto), `srv-odm4o` (CITA x3), `srv-oj23k` (Show Up TO), `srv-h7ovs` (Repair Cafe + Another Story), `srv-uteu6` (tech Meetup x8), `srv-gp908` (outdoors Meetup x6), `srv-ud6xn` (social Meetup x5), `srv-9kecc` (medium-priority bundle), `srv-3nzar` (Cohort 2 overlap x11).
+
 ### Task 4: Add standardized rollout report template
 
 **What**: Create `toronto-rollout-report-template.md` with metric and decision sections.
@@ -166,6 +173,8 @@ uses this mapping when creating onboarding beads from manifest rows.
 **Test**: fill template using one sample cohort.
 
 **Acceptance**: report format supports objective comparison across cohorts.
+
+**Status**: ✓ Delivered — `outcomes.md` + `toronto-rollout-report-template.md`.
 
 ### Task 5: Execute first staging cohort + publish report
 
@@ -180,6 +189,8 @@ remaining sources documented as blocked/deferred with reasons and next actions.
 attempted/onboarded/blocked/deferred counts, ingestion quality notes, median setup time,
 and maintenance risk markers.
 
+**Status**: Pending — `srv-fyb0s`.
+
 ### Task 6: Feed outcomes back into integration docs
 
 **What**: Update platform heuristics and ICS runbook with observed Toronto rollout lessons.
@@ -188,18 +199,28 @@ and maintenance risk markers.
 
 **Acceptance**: docs include concrete examples and revised guidance from rollout evidence.
 
+**Status**: Pending — after Task 5.
+
+### Task 7: End-to-end integration test: ICS ingest → eventSchedule in JSON-LD
+
+**What**: Add end-to-end test verifying ICS ingest of a recurring event fixture produces `eventSchedule` fields in JSON-LD API responses.
+
+**Test**: `TestICSIngestEventSchedule` in `tests/integration/ics_interop_test.go`.
+
+**Acceptance**: `eventSchedule.startDate`, `endDate`, `repeatFrequency`, `byDay`, `scheduleTimezone` asserted on single-event and list endpoints; EXDATE exclusion verified; non-recurring events have no `eventSchedule`; upsert idempotency (409 on re-ingest, same ULID).
+
+**Status**: ✓ Delivered in Phase 4 merge — `TestICSIngestEventSchedule` in `tests/integration/ics_interop_test.go`. Closed as `srv-uv27p`.
+
 ---
 
 ## Success Criteria
 
-1. Toronto inventory exists as a validated manifest artifact.
+1. ✓ Toronto inventory exists as `toronto-ics-manifest.json` (85 entries).
 2. At least one rollout cohort completes with published metrics.
-3. Source onboarding work is tracked consistently via beads.
+3. ✓ Source onboarding work is tracked via 12 beads.
 4. Integration docs improve from real rollout evidence.
 
 ## Rollback Notes (Phase 5)
 
 - If a cohort rollout introduces unstable source configs, revert affected sources to
   disabled state and preserve manifest/report evidence for retry planning.
-- If manifest schema changes break automation, roll back to previous manifest version
-  and regenerate beads from the last validated artifact.
