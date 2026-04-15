@@ -5,6 +5,13 @@
 # Supports parallel sessions via AGENT_SESSION=<id>.
 # Usage: AGENT=1 make test
 #        AGENT=1 AGENT_SESSION=session1 make ci
+#
+# NOTE for AI agents: always prefer `scripts/agent-run.sh make <target>` over
+# bare `make <target>` or `AGENT=1 make <target>`.
+# rtk (the shell proxy) rewrites bare `make ...` to `rtk make ...`, which gives
+# token-compressed output but NO persistent .agent-output/ log and NO Go-specific
+# failure extraction with L:NNN line references. scripts/agent-run.sh is
+# recognised as a passthrough by rtk, so both benefits are preserved.
 ifdef AGENT
 RUN := scripts/agent-run.sh
 else
