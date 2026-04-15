@@ -118,6 +118,19 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Populate eventSchedule from canonical recurrence data
+		item.EventSchedule = schema.ScheduleFromRecurrence(event.Recurrence)
+		if item.EventSchedule != nil && event.Recurrence != nil {
+			if event.Recurrence.SeriesStart != nil {
+				item.EventSchedule.StartDate = event.Recurrence.SeriesStart.Format("2006-01-02")
+			} else if len(event.Occurrences) > 0 {
+				item.EventSchedule.StartDate = event.Occurrences[0].StartTime.Format("2006-01-02")
+			}
+			if event.Recurrence.SeriesEnd != nil {
+				item.EventSchedule.EndDate = event.Recurrence.SeriesEnd.Format("2006-01-02")
+			}
+		}
+
 		// Add location (required per Interop Profile §3.1)
 		// Resolve to embedded Place object when possible
 		item.Location = resolveEventLocation(r.Context(), h.BaseURL, &event, h.PlaceResolver)
