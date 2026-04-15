@@ -200,6 +200,7 @@ type EventSeries struct {
 	Rrule            pgtype.Text          `json:"rrule"`
 	Exdates          []pgtype.Timestamptz `json:"exdates"`
 	Rdates           []pgtype.Timestamptz `json:"rdates"`
+	ExternalKey      pgtype.Text          `json:"external_key"`
 }
 
 type EventSource struct {

@@ -38,7 +38,7 @@ func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig 
 	var allWarnings []string
 
 	// 1. Fetch the ICS feed.
-	data, fetchWarnings, err := e.fetchFeed(ctx, cfg.URL)
+	data, fetchWarnings, err := e.fetchFeed(ctx, cfg.URL, cfg.Headers)
 	allWarnings = append(allWarnings, fetchWarnings...)
 	if err != nil {
 		return nil, allWarnings, fmt.Errorf("ics fetch %q: %w", cfg.URL, err)
@@ -87,9 +87,15 @@ func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig 
 	return results, allWarnings, nil
 }
 
+// icsDefaultUserAgent is the User-Agent sent for ICS feed requests.
+// A browser-compatible prefix is required by some CDNs (e.g. Meetup.com) that
+// block requests from Go's default "Go-http-client/2.0" UA.
+const icsDefaultUserAgent = "Mozilla/5.0 (compatible; Togather-ICS/1.0)"
+
 // fetchFeed fetches the ICS feed from the given URL with body size limits
-// and redirect handling.
-func (e *ICSExtractor) fetchFeed(ctx context.Context, feedURL string) ([]byte, []string, error) {
+// and redirect handling. extraHeaders are merged on top of the default
+// headers (User-Agent, Accept); a User-Agent in extraHeaders overrides the default.
+func (e *ICSExtractor) fetchFeed(ctx context.Context, feedURL string, extraHeaders map[string]string) ([]byte, []string, error) {
 	var warnings []string
 
 	// Create HTTP client with redirect limit (same as Tier 3 REST).
@@ -101,6 +107,10 @@ func (e *ICSExtractor) fetchFeed(ctx context.Context, feedURL string) ([]byte, [
 		return nil, nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Accept", "text/calendar")
+	req.Header.Set("User-Agent", icsDefaultUserAgent)
+	for k, v := range extraHeaders {
+		req.Header.Set(k, v)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {

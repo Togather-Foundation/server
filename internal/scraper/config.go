@@ -85,6 +85,16 @@ type SourceConfig struct {
 	// ical package for parsing and mapping. Tier and selector fields are ignored.
 	ExtractionMethod string `yaml:"extraction_method,omitempty" json:"extraction_method,omitempty"`
 
+	// Headers are extra HTTP headers sent with every ICS feed request.
+	// Use to override the default User-Agent or add auth headers for sources
+	// that block generic bot UAs (e.g. Meetup.com).
+	// Example:
+	//   headers:
+	//     User-Agent: "Mozilla/5.0 (compatible; MyBot/1.0)"
+	// Only applies when extraction_method is "ics". For Tier 2 (headless)
+	// use headless.headers; for Tier 3 (REST) use rest.headers.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+
 	// normalized is true after normalizeDescriptionSelectors has been applied.
 	// Used to avoid emitting inaccurate deprecation warnings in ValidateConfigWithWarnings
 	// when the config has already been normalized (warning already emitted accurately in loadFile).
