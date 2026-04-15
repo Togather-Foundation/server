@@ -560,7 +560,8 @@ ci: sqlc-generate vulncheck
 	fi
 	@echo "=========================================="
 
-# Fast CI gate for agent pre-commit use (~90s). Skips cold-cache lint, vulncheck, and docker-dependent checks.
+# Fast CI gate for agent pre-commit use (~90s).
+# Skips: vulncheck, sqlc-generate (checks drift instead), webfiles, and docker-dependent checks (lint-yaml, docker-compose-lint).
 ci-fast:
 	@echo ""
 	@echo "=========================================="
