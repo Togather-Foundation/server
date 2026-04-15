@@ -196,10 +196,10 @@ After each subagent returns:
 5. Mark TodoWrite items complete; update bead notes for significant decisions
 6. If stuck, delegate to `@diagnose`
 
-**Local verification:** After all steps are implemented, run the full local test
-suite and start the local server to verify the feature works end-to-end:
+**Local verification:** After all steps are implemented, run the fast CI gate
+and start the local server to verify the feature works end-to-end:
 ```bash
-scripts/agent-run.sh make ci
+scripts/agent-run.sh make ci-fast
 make run   # or make dev for live reload
 ```
 
@@ -209,12 +209,12 @@ make run   # or make dev for live reload
 
 **Goal:** Verify everything works locally before staging.
 
-1. **CI gate:** `scripts/agent-run.sh make ci` -- fix failures before continuing.
+1. **CI gate:** `scripts/agent-run.sh make ci-fast` -- fix failures before continuing.
 2. **Code review** -- Delegate to `@beads-code-reviewer`: review `git diff main...HEAD`,
    check quality/idioms/errors/tests/security/performance. Include Reference Doc paths.
    Ask for findings as CRITICAL / WARNING / SUGGESTION with file:line references.
 3. **Fix** CRITICAL and WARNING (P0 and relevant P1 and P2) findings (delegate to `@general`).
-4. **Re-run CI** after fixes: `scripts/agent-run.sh make ci`
+4. **Re-run CI** after fixes: `scripts/agent-run.sh make ci-fast`
 5. **Local user review** -- Present a summary of changes to the user. If the server
    is running locally (`make run`), suggest specific things to test (endpoints, UI,
    behavior changes). Ask the user to confirm it works before proceeding. If they

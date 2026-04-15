@@ -7,7 +7,7 @@ go test ./internal/storage/postgres   # needs live DB (see .env)
 make e2e                               # browser E2E tests; requires running server + uvx
 ```
 
-Run targeted package tests first; expand to `make ci` only when needed.
+Run targeted package tests first; expand to `make ci-fast` for quick CI feedback, or `make ci` for full verification.
 
 For E2E details see `tests/e2e/AGENTS.md`.
 

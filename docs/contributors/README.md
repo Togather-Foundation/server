@@ -59,7 +59,7 @@ make test-ci-race  # all test suites with race detector (~10min)
 
 # Linting
 make lint
-make lint-ci       # CI configuration
+make lint-debug-cold  # Debug GH Actions lint failures (cold cache, slow)
 
 # Build
 make build

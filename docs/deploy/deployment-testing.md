@@ -61,7 +61,7 @@ See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
 
 - [ ] **Linter passes**
   ```bash
-  make lint-ci
+  make lint
   ```
 
 - [ ] **Deployment package builds**
