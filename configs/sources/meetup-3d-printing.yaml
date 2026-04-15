@@ -1,0 +1,8 @@
+name: "meetup-3d-printing"
+url: "https://www.meetup.com/toronto-3d-printing/events/ical/"
+extraction_method: ics
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+timezone: "America/Toronto"
+enabled: true

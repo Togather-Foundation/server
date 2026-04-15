@@ -311,6 +311,70 @@ type RecurrenceRule struct {
    Ensure `series_start_date` and `series_end_date` are both non-NULL (see
    [Recurrence Sanity Checks](#6-recurrence-sanity-checks)).
 
+## 8. community-calendar: Reference & Troubleshooting Aid
+
+[community-calendar](https://github.com/judell/community-calendar) is an open-source
+project by Jon Udell that aggregates ICS feeds from community organisations in multiple
+cities, including Toronto. It is the primary reference for the Toronto ICS source
+inventory in this project.
+
+### What it provides
+
+| Resource | URL | Notes |
+|----------|-----|-------|
+| Toronto feed list | `cities/toronto/feeds.txt` | One feed URL per line with display name comments. Authoritative slug source for all 51 Meetup groups. |
+| Feed health report | `report.json` (root) | Generated daily via GitHub Actions. Shows event count and error per feed. |
+| GitHub Actions log | `.github/workflows/` | Shows fetch cadence and last-run status for every feed. |
+
+### When to use it
+
+**Finding the correct Meetup group slug.** All 51 Toronto Meetup slugs used in
+`toronto-ics-manifest.json` were sourced from `feeds.txt`. If a Meetup feed returns
+404 and you need to verify the slug:
+
+```bash
+# Check the canonical slug in feeds.txt
+curl -s https://raw.githubusercontent.com/judell/community-calendar/main/cities/toronto/feeds.txt \
+  | grep -i "<group-name>"
+```
+
+**Checking whether a feed is live before debugging locally.** community-calendar
+fetches all Toronto feeds daily via GitHub Actions. If a feed shows `count > 0` in
+`report.json`, the URL is working at least from GitHub's infrastructure:
+
+```bash
+# Check event count and error status for a specific source
+curl -s https://raw.githubusercontent.com/judell/community-calendar/main/report.json \
+  | python3 -c "import json,sys; r=json.load(sys.stdin); [print(k,v) for k,v in r.items() if 'meetup' in k.lower() and 'toronto' in k.lower()]"
+```
+
+A `count > 0` with no `error` field means the feed is live. A local 404 is then
+almost certainly an IP rate-limit or User-Agent issue — **not** a broken URL.
+
+**Discovering new Toronto sources.** If you suspect a Toronto organisation has a
+public ICS feed, check `feeds.txt` first before attempting manual discovery. The file
+also includes non-Meetup sources (Tockify, Google Calendar, WordPress, Eventbrite
+bridge, static `.ics` files) that may not be obvious from a site visit.
+
+### Known discrepancies vs. our manifest
+
+| Source key | community-calendar entry | Difference |
+|------------|--------------------------|------------|
+| `meetup-dance-go-latin` | `golatindance.com/events/?ical=1` | Not a Meetup group — WordPress ICS. `feed_type` corrected to `wordpress_tribe` in manifest (2026-04-15). |
+
+### Cautionary notes
+
+- community-calendar fetches from GitHub Actions runners (AWS us-east-1 IPs). Meetup
+  may respond differently to other IP ranges — a feed appearing healthy in `report.json`
+  does not guarantee it will work from every IP. Test from staging before concluding a
+  feed is broken.
+- `report.json` is regenerated on each run and not versioned. Check the
+  [GitHub Actions run history](https://github.com/judell/community-calendar/actions)
+  for historical data.
+- `feeds.txt` is maintained manually — it may be incomplete or have stale slugs for
+  groups that have renamed. Always verify a URL returns `BEGIN:VCALENDAR` before
+  creating a source config.
+
 ## See Also
 
 - [scraper.md](scraper.md) — general scraper operations, CLI reference, config format

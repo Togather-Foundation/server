@@ -1,0 +1,8 @@
+name: "meetup-dance-go-latin"
+url: "https://golatindance.com/events/?ical=1"
+extraction_method: ics
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+timezone: "America/Toronto"
+enabled: true

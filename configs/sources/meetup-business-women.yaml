@@ -1,0 +1,8 @@
+name: "meetup-business-women"
+url: "https://www.meetup.com/downtown-toronto-women-in-business-meetup/events/ical/"
+extraction_method: ics
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+timezone: "America/Toronto"
+enabled: true
