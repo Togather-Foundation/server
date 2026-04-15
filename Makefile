@@ -45,8 +45,6 @@ help:
 	@echo "  make test-race     - Run tests with race detector"
 	@echo "  make coverage      - Run tests with coverage report (enforces 35% min threshold)"
 	@echo "  make coverage-check - Check if coverage meets 35% min threshold"
-	@echo "  make lint          - Run golangci-lint"
-	@echo "  make lint-debug-cold - Debug GH Actions lint failures (cold cache, slow)"
 	@echo "  make fmt           - Format all Go files"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make run           - Build and run the server (kills existing first), log to temp/server.log"
@@ -149,6 +147,11 @@ test-ci:
 # Run integration test suites in parallel
 test-ci-parallel:
 	@echo "==> Running test suites in parallel..."
+	@if ! command -v pyshacl > /dev/null 2>&1; then \
+		echo "WARNING: pyshacl not found. SHACL validation will be skipped."; \
+		echo "Install with: make install-pyshacl"; \
+		echo ""; \
+	fi
 	@mkdir -p .ci-logs
 	@FAIL=0; \
 	go test -v ./tests/contracts/...        > .ci-logs/contracts.log 2>&1 & PID_CONTRACTS=$$!; \
