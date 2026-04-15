@@ -1,9 +1,8 @@
-# DISABLED: Tockify ICS feed contains malformed properties that fail parsing
-# The feed contains improperly formatted X-TKF-PROMOTION-BUTTON properties with
-# parameters (;label=...;skip_details=...) followed by values with line-folding
-# issues. The golang-ical parser rejects: "missing property value for skip".
-# This appears to be a Tockify ICS generator bug. Contact tockify support to fix
-# the feed format, or use the Tockify REST/GraphQL API as an alternative (T3).
+# Tockify ICS feed contains malformed X-TKF-PROMOTION-BUTTON properties with
+# underscore-containing parameter names (skip_details=false). These are
+# non-RFC-5545-compliant but harmless. Our golang-ical fork (v0.3.6-fork.1)
+# handles them via WithPropertyParseErrorHandler — see go.mod replace directive
+# and upstream PR: https://github.com/arran4/golang-ical/pull/135
 name: "torevent"
 url: "https://tockify.com/api/feeds/ics/torevent"
 extraction_method: ics
@@ -11,4 +10,4 @@ schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
 timezone: "America/Toronto"
-enabled: false
+enabled: true
