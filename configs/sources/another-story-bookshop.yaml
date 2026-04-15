@@ -1,0 +1,28 @@
+name: "another-story-bookshop"
+# BLOCKED: Events page uses React SPA with BookManager integration
+# Website: anotherstory.ca (independent bookstore)
+# Events page: https://www.anotherstory.ca/events/
+# Blocker: Page renders Ant Design loading spinner indefinitely in headless browser
+#   - React SPA with async data loading (likely API call with auth/session requirement)
+#   - 30s+ headless timeout does not load event data
+#   - No public API endpoint or static feed URL found
+# Known attempt: searched for Eventbrite links — none found in page source
+# Next steps:
+#   1. Check if they expose a public GraphQL/REST API
+#   2. Contact organizer for event feed URL
+#   3. Consider manual data entry as fallback
+# Organization match: no match found in database
+url: "https://www.anotherstory.ca/events/"
+tier: 2
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: false
+headless:
+  wait_selector: ".event-container"
+  wait_timeout_ms: 30000
+selectors:
+  event_list: ".event-card"
+  name: ".event-title"
+  url: "a.event-link"
+# Placeholder selectors — blocked pending resolution

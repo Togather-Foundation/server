@@ -1,0 +1,10 @@
+name: "cita-special-events"
+# Google Calendar ICS feed - CITA Special Events
+# Organization match: no match found in database
+url: "https://calendar.google.com/calendar/ical/d7muv9fjli72io6q1a7hkdpf04%40group.calendar.google.com/public/basic.ics"
+extraction_method: ics
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+timezone: "America/Toronto"
+enabled: true

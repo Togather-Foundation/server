@@ -1,0 +1,35 @@
+name: "york-university"
+# Modern Events Calendar (MEC) plugin — ~6500 events total
+# BLOCKER: Date extraction fails because event dates are stored in parent section's
+# data-mec-cell attribute (YYYYMMDD format), not in text content within event articles.
+# Time is available in .mec-event-time, but without date context, events get skipped.
+# 
+# Workaround attempted:
+# - date_selectors with ".mec-event-time" (matches 200/235 events but needs date)
+# - start_date with various selectors — all fail to access parent date
+# - follow_event_urls — not supported by scraper yet
+#
+# Required capability: Extract date from parent container attributes or URL query params
+# (occurrence=YYYY-MM-DD in href).
+# 
+# Organization match: York University (no match found in database — API unavailable)
+url: "https://events.yorku.ca/"
+tier: 2
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: false
+max_pages: 5
+headless:
+  wait_selector: ".mec-calendar"
+  wait_timeout_ms: 20000
+  wait_network_idle: true
+selectors:
+  event_list: ".mec-calendar-events-sec .mec-event-article"
+  name: ".mec-event-title a"
+  url: ".mec-event-title a"
+  location: ".mec-event-loc-place"
+  date_selectors:
+    - ".mec-event-time"
+timezone: "America/Toronto"
+

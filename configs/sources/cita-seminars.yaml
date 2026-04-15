@@ -1,0 +1,10 @@
+name: "cita-seminars"
+# Google Calendar ICS feed - CITA Seminars
+# Organization match: no match found in database
+url: "https://calendar.google.com/calendar/ical/4h7dspldpuviiv4o1slj9o5p5c%40group.calendar.google.com/public/basic.ics"
+extraction_method: ics
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+timezone: "America/Toronto"
+enabled: true

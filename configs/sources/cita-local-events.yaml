@@ -1,0 +1,10 @@
+name: "cita-local-events"
+# Google Calendar ICS feed - CITA Local Events
+# Organization match: no match found in database
+url: "https://calendar.google.com/calendar/ical/qfg129sn6k25ah00ioakus0gds%40group.calendar.google.com/public/basic.ics"
+extraction_method: ics
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+timezone: "America/Toronto"
+enabled: true

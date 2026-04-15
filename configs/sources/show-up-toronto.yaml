@@ -1,0 +1,11 @@
+name: "show-up-toronto"
+# Static ICS feed: https://showuptoronto.ca/static/showupto.ics
+# Display text: "Show Up Toronto brings together community organizing, mutual aid, and advocacy events from around the city."
+# Organization match: no match found in database
+url: "https://showuptoronto.ca/static/showupto.ics"
+tier: 0
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+extraction_method: "ics"

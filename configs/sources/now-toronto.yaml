@@ -1,0 +1,23 @@
+name: "now-toronto"
+# NOW Toronto arts/culture events — WordPress The Events Calendar (Tribe)
+# 
+# BLOCKED: Site is protected by Cloudflare Turnstile CAPTCHA that requires human interaction.
+# - ICS feed URL: https://nowtoronto.com/events/?ical=1 returns HTTP 403
+# - HTML page: https://nowtoronto.com/events/ shows Cloudflare Turnstile challenge
+# - Headless browser gets stuck on captcha page, never reaches event content
+# - Undetected mode does not bypass Turnstile
+# - Standard curl/requests library access is blocked
+# 
+# Possible solutions (not yet implemented):
+# 1. Request website admin to whitelist scraper IPs or provide API access
+# 2. Wait for scraper infrastructure upgrade supporting Turnstile solving service
+# 3. Switch to a different NOW Toronto event source if available
+#
+# Organization match: no match found in database
+url: "https://nowtoronto.com/events/?ical=1"
+extraction_method: ics
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+timezone: "America/Toronto"
+enabled: false

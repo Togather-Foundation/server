@@ -1,0 +1,13 @@
+name: "repair-cafe-toronto"
+# WordPress Events Manager plugin ICS feed at https://repaircafetoronto.ca/events/?ical=1
+# Display text: "Repair Café Toronto – Toss it away? No way!"
+# Platform: WordPress + Events Manager (not Tribe — has ical=1 endpoint)
+# Estimated ~82 recurring repair cafe events
+# Organization match: no match found in database
+url: "https://repaircafetoronto.ca/events/?ical=1"
+tier: 0
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+enabled: true
+extraction_method: "ics"
