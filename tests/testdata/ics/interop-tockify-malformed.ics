@@ -1,0 +1,23 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+X-WR-CALNAME:Tockify Malformed Params
+X-PUBLISHED-TTL:PT1H
+BEGIN:VEVENT
+UID:tockify-malformed-1@example.org
+SUMMARY:Tockify Event With Malformed Params
+DTSTART:20260720T190000Z
+DTEND:20260720T210000Z
+LOCATION:Online via Zoom
+DESCRIPTION:Event with malformed X-TKF properties.
+X-TKF-PROMOTION-BUTTON;skip_details=false;button_text=Buy Tickets:https://example.org/tickets
+END:VEVENT
+BEGIN:VEVENT
+UID:tockify-malformed-2@example.org
+SUMMARY:Normal Tockify Event
+DTSTART:20260722T060000Z
+DTEND:20260722T070000Z
+LOCATION:Riverside Park
+DESCRIPTION:This event has no malformed properties.
+END:VEVENT
+END:VCALENDAR

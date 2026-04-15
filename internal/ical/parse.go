@@ -85,16 +85,27 @@ var WindowsTZIDAliases = map[string]string{
 // ParsedCalendar.Warnings. Only returns error if the overall VCALENDAR
 // structure is unparseable.
 func Parse(data []byte) (*ParsedCalendar, error) {
+	result := &ParsedCalendar{}
+
 	// Use AcceptUnknownPropertyHandler so that non-standard properties
 	// (e.g. X-WR-CALNAME appearing after END:VTIMEZONE in real-world Meetup
 	// feeds) are silently accepted instead of causing a parse error.
+	//
+	// Use WithPropertyParseErrorHandler to skip properties with malformed
+	// parameter names (e.g. Tockify X-TKF-* properties containing underscores
+	// in parameter names like "skip_details=false"). These are non-RFC-compliant
+	// but harmless — the property values are presentation hints we don't need.
 	cal, err := ics.ParseCalendarWithOptions(bytes.NewReader(data),
-		ics.WithUnknownPropertyHandler(ics.AcceptUnknownPropertyHandler))
+		ics.WithUnknownPropertyHandler(ics.AcceptUnknownPropertyHandler),
+		ics.WithPropertyParseErrorHandler(func(rawLine ics.ContentLine, parseErr error) (*ics.BaseProperty, error) {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("skipped malformed property: %s", parseErr))
+			return nil, nil // skip the property
+		}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("ics parse: %w", err)
 	}
-
-	result := &ParsedCalendar{}
 
 	// Extract calendar-level properties.
 	for _, prop := range cal.CalendarProperties {

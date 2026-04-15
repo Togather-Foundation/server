@@ -161,3 +161,8 @@ require (
 	google.golang.org/grpc v1.78.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+// Temporary fork: adds WithPropertyParseErrorHandler for lenient ICS parsing.
+// Upstream PR: https://github.com/arran4/golang-ical/pull/TBD
+// Remove once upstream merges and tags a release.
+replace github.com/arran4/golang-ical => github.com/RKelln/golang-ical v0.3.6-fork.1

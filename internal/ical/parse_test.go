@@ -925,3 +925,36 @@ func TestParse_MeetupVTIMEZONE(t *testing.T) {
 		t.Errorf("unexpected warnings: %v", cal.Warnings)
 	}
 }
+
+func TestParse_TockifyMalformedParams(t *testing.T) {
+	t.Parallel()
+	data := loadFixture(t, "interop-tockify-malformed.ics")
+
+	cal, err := Parse(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Both events should parse successfully — the malformed X-TKF property
+	// in the first event should be skipped, not abort the calendar.
+	if len(cal.Events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(cal.Events))
+	}
+
+	if cal.Events[0].Summary != "Tockify Event With Malformed Params" {
+		t.Errorf("Events[0].Summary = %q, want %q",
+			cal.Events[0].Summary, "Tockify Event With Malformed Params")
+	}
+	if cal.Events[1].Summary != "Normal Tockify Event" {
+		t.Errorf("Events[1].Summary = %q, want %q",
+			cal.Events[1].Summary, "Normal Tockify Event")
+	}
+
+	// Exactly one warning for the skipped property.
+	if len(cal.Warnings) != 1 {
+		t.Fatalf("expected 1 warning, got %d: %v", len(cal.Warnings), cal.Warnings)
+	}
+	if want := "skipped malformed property"; !contains(cal.Warnings[0], want) {
+		t.Errorf("warning = %q, want substring %q", cal.Warnings[0], want)
+	}
+}
