@@ -65,6 +65,7 @@ func init() {
 	scrapeCmd.AddCommand(scrapeTestCmd)
 	scrapeCmd.AddCommand(scrapeSyncCmd)
 	scrapeCmd.AddCommand(scrapeExportCmd)
+	scrapeCmd.AddCommand(scrapeFixtureCmd)
 
 	// Persistent flags available to all scrape subcommands
 	scrapeCmd.PersistentFlags().StringVar(&scrapeServerURL, "server", "", "SEL server base URL (default: SEL_SERVER_URL or http://localhost:8080)")
@@ -99,6 +100,13 @@ func init() {
 	scrapeTestCmd.Flags().StringVar(&scrapeTestPagination, "pagination", "", "CSS selector for the pagination next-page link")
 	scrapeTestCmd.Flags().StringSliceVar(&scrapeTestDateSels, "date-selectors", nil, "CSS selectors for date_selectors (comma-separated or repeated)")
 	scrapeTestCmd.Flags().BoolVar(&scrapeTestJSON, "json", false, "output extracted events as JSON (full description, no truncation)")
+
+	// Flags for `scrape test-fixture`
+	scrapeFixtureCmd.Flags().StringVar(&fixtureExtractionMethod, "extraction-method", "", "extraction method (auto-detected from file extension; override with ics, scraper, or \"\")")
+	scrapeFixtureCmd.Flags().IntVar(&fixtureTier, "tier", -1, "source tier (-1 = auto-detect from file extension)")
+	scrapeFixtureCmd.Flags().IntVar(&fixtureTrustLevel, "trust-level", 5, "source trust level (1-10)")
+	scrapeFixtureCmd.Flags().StringVar(&fixtureSourceName, "source-name", "", "source name (default: derived from filename)")
+	scrapeFixtureCmd.Flags().BoolVar(&scrapeHeadless, "headless", false, "Force Tier 2 headless browser scraping (requires SCRAPER_HEADLESS_ENABLED=true)")
 }
 
 // loadScrapeConfig loads environment files and resolves server URL and API key
