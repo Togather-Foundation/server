@@ -124,6 +124,6 @@ If any workers reported issues, print them in a consolidated section:
 Then, if any configs were written:
 > Review the generated files in `configs/sources/`, then:
 > ```
-> make ci
+> make ci-fast
 > git add configs/sources/ && git commit -m "feat(scraper): add selectors for <names>"
 > ```

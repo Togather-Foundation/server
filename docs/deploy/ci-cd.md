@@ -662,7 +662,7 @@ jobs:
         run: make test
       
       - name: Run linter
-        run: make lint-ci
+        run: make lint
   
   deploy:
     name: Deploy to Production
@@ -872,7 +872,7 @@ test:
   script:
     - go version
     - make test
-    - make lint-ci
+    - make lint
   only:
     - main
     - merge_requests
@@ -1089,7 +1089,7 @@ pipeline {
                 }
                 stage('Lint') {
                     steps {
-                        sh 'make lint-ci'
+                        sh 'make lint'
                     }
                 }
             }

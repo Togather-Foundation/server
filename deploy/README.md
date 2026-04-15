@@ -814,7 +814,7 @@ make ci
 # Includes:
 # - go build (compile check)
 # - make test-ci (all test suites, no race detector)
-# - make lint-ci (golangci-lint)
+# - make lint (golangci-lint, warm cache; COLD=1 for cold-cache debug)
 # Use make test-ci-race for full CI parity with race detection (~10min)
 
 # If make ci passes, deploy:

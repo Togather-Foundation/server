@@ -33,7 +33,10 @@ make serve-stop     # graceful shutdown via PID file
 # test locally (foreground, logs to tmp/server.log)
 make run
 
-# CI before pushing (required)
+# Pre-commit CI (fast, ~90s)
+scripts/agent-run.sh make ci-fast
+
+# Pre-push full CI gate (required before pushing to main)
 scripts/agent-run.sh make ci
 
 # Before merging a feature branch to main (required — catches data races)
@@ -158,7 +161,7 @@ For full workflow context: `bd prime`.
 Work is NOT complete until docs are updated and `git push` succeeds.
 
 ```bash
-scripts/agent-run.sh make ci          # quality gate (if code changed)
+scripts/agent-run.sh make ci-fast     # quality gate (if code changed)
 bd close <id> --reason "..."          # close finished beads
 git pull --rebase
 git push

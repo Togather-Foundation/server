@@ -141,6 +141,7 @@ failure-reports/
 
 # Agent output (command logs for context management)
 .agent-output/
+.ci-logs/
 .ci-start-time
 
 # OpenCode checkpoint files
