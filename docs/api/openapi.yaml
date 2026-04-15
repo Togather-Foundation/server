@@ -3410,9 +3410,8 @@ components:
           format: date-time
           description: DTSTART truncated to local date (TZID-aware).
         series_end:
-          type: string
+          type: ['string', 'null']
           format: date-time
-          nullable: true
           description: UNTIL date if present in RRULE; null for COUNT-only or infinite rules.
         rrule:
           type: string
