@@ -85,7 +85,11 @@ var WindowsTZIDAliases = map[string]string{
 // ParsedCalendar.Warnings. Only returns error if the overall VCALENDAR
 // structure is unparseable.
 func Parse(data []byte) (*ParsedCalendar, error) {
-	cal, err := ics.ParseCalendar(bytes.NewReader(data))
+	// Use AcceptUnknownPropertyHandler so that non-standard properties
+	// (e.g. X-WR-CALNAME appearing after END:VTIMEZONE in real-world Meetup
+	// feeds) are silently accepted instead of causing a parse error.
+	cal, err := ics.ParseCalendarWithOptions(bytes.NewReader(data),
+		ics.WithUnknownPropertyHandler(ics.AcceptUnknownPropertyHandler))
 	if err != nil {
 		return nil, fmt.Errorf("ics parse: %w", err)
 	}

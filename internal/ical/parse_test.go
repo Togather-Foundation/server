@@ -884,3 +884,44 @@ END:VCALENDAR`
 		t.Errorf("expected empty TZID for floating time, got %q", ev.TZID)
 	}
 }
+
+// TestParse_MeetupVTIMEZONE is a regression test for Meetup-style ICS feeds that
+// place non-standard calendar properties (e.g. X-WR-CALNAME, X-WR-TIMEZONE) AFTER
+// END:VTIMEZONE rather than in the calendar header section. The golang-ical library's
+// DefaultUnknownCalendarPropertyHandler returns an error for these; we must use
+// AcceptUnknownPropertyHandler instead.
+func TestParse_MeetupVTIMEZONE(t *testing.T) {
+	t.Parallel()
+	data := loadFixture(t, "interop-meetup-vtimezone.ics")
+
+	cal, err := Parse(data)
+	if err != nil {
+		t.Fatalf("unexpected error parsing Meetup-style ICS with VTIMEZONE: %v", err)
+	}
+
+	if len(cal.Events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(cal.Events))
+	}
+
+	// Calendar name extracted from X-WR-CALNAME (appears after END:VTIMEZONE).
+	if cal.Name != "TechTO" {
+		t.Errorf("Name = %q, want %q", cal.Name, "TechTO")
+	}
+
+	// Verify events parsed correctly with TZID-qualified timestamps.
+	torontoLoc, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatalf("failed to load America/Toronto: %v", err)
+	}
+	ev := cal.Events[0]
+	if ev.UID != "techto-001@meetup.com" {
+		t.Errorf("UID = %q, want %q", ev.UID, "techto-001@meetup.com")
+	}
+	wantStart := time.Date(2026, 7, 15, 18, 0, 0, 0, torontoLoc)
+	if !ev.Start.Equal(wantStart) {
+		t.Errorf("Start = %v, want %v", ev.Start, wantStart)
+	}
+	if len(cal.Warnings) != 0 {
+		t.Errorf("unexpected warnings: %v", cal.Warnings)
+	}
+}
