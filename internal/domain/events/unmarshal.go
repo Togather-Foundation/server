@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // UnmarshalJSON implements custom JSON unmarshaling for EventInput to handle
@@ -15,32 +16,40 @@ import (
 //   - inLanguage as single string (wraps in array)
 //   - keywords as comma-separated string (splits into array)
 //   - @context field (accepted but ignored)
+//
+// IMPORTANT: The rawEvent intermediate struct MUST mirror every field in EventInput.
+// If you add a field to EventInput, you MUST also add it to rawEvent and copy it
+// below, otherwise it will be silently dropped during JSON deserialization.
+// TestEventInput_JSONRoundTrip_AllFields guards against this.
 func (e *EventInput) UnmarshalJSON(data []byte) error {
 	// Use a raw intermediate to handle flexible fields
 	type rawEvent struct {
-		Context             json.RawMessage       `json:"@context,omitempty"`
-		ID                  string                `json:"@id,omitempty"`
-		Type                string                `json:"@type,omitempty"`
-		Name                string                `json:"name,omitempty"`
-		Description         string                `json:"description,omitempty"`
-		StartDate           string                `json:"startDate,omitempty"`
-		EndDate             string                `json:"endDate,omitempty"`
-		DoorTime            string                `json:"doorTime,omitempty"`
-		EventDomain         string                `json:"eventDomain,omitempty"`
-		Location            json.RawMessage       `json:"location,omitempty"`
-		VirtualLocation     *VirtualLocationInput `json:"virtualLocation,omitempty"`
-		Organizer           json.RawMessage       `json:"organizer,omitempty"`
-		Image               json.RawMessage       `json:"image,omitempty"`
-		URL                 string                `json:"url,omitempty"`
-		Keywords            json.RawMessage       `json:"keywords,omitempty"`
-		InLanguage          json.RawMessage       `json:"inLanguage,omitempty"`
-		IsAccessibleForFree *bool                 `json:"isAccessibleForFree,omitempty"`
-		Offers              json.RawMessage       `json:"offers,omitempty"`
-		SameAs              []string              `json:"sameAs,omitempty"`
-		License             string                `json:"license,omitempty"`
-		Source              *SourceInput          `json:"source,omitempty"`
-		Occurrences         []OccurrenceInput     `json:"occurrences,omitempty"`
-		LifecycleState      string                `json:"lifecycle_state,omitempty"`
+		Context                       json.RawMessage       `json:"@context,omitempty"`
+		ID                            string                `json:"@id,omitempty"`
+		Type                          string                `json:"@type,omitempty"`
+		Name                          string                `json:"name,omitempty"`
+		Description                   string                `json:"description,omitempty"`
+		StartDate                     string                `json:"startDate,omitempty"`
+		EndDate                       string                `json:"endDate,omitempty"`
+		DoorTime                      string                `json:"doorTime,omitempty"`
+		EventDomain                   string                `json:"eventDomain,omitempty"`
+		Location                      json.RawMessage       `json:"location,omitempty"`
+		VirtualLocation               *VirtualLocationInput `json:"virtualLocation,omitempty"`
+		Organizer                     json.RawMessage       `json:"organizer,omitempty"`
+		Image                         json.RawMessage       `json:"image,omitempty"`
+		URL                           string                `json:"url,omitempty"`
+		Keywords                      json.RawMessage       `json:"keywords,omitempty"`
+		InLanguage                    json.RawMessage       `json:"inLanguage,omitempty"`
+		IsAccessibleForFree           *bool                 `json:"isAccessibleForFree,omitempty"`
+		Offers                        json.RawMessage       `json:"offers,omitempty"`
+		SameAs                        []string              `json:"sameAs,omitempty"`
+		License                       string                `json:"license,omitempty"`
+		Source                        *SourceInput          `json:"source,omitempty"`
+		Occurrences                   []OccurrenceInput     `json:"occurrences,omitempty"`
+		Recurrence                    *RecurrenceInput      `json:"recurrence,omitempty"`
+		LifecycleState                string                `json:"lifecycle_state,omitempty"`
+		SkipMultiSessionCheck         bool                  `json:"skip_multi_session_check,omitempty"`
+		MultiSessionDurationThreshold time.Duration         `json:"multi_session_duration_threshold,omitempty"`
 	}
 
 	var raw rawEvent
@@ -65,7 +74,10 @@ func (e *EventInput) UnmarshalJSON(data []byte) error {
 	e.License = raw.License
 	e.Source = raw.Source
 	e.Occurrences = raw.Occurrences
+	e.Recurrence = raw.Recurrence
 	e.LifecycleState = raw.LifecycleState
+	e.SkipMultiSessionCheck = raw.SkipMultiSessionCheck
+	e.MultiSessionDurationThreshold = raw.MultiSessionDurationThreshold
 
 	// Handle location: object or text string
 	if len(raw.Location) > 0 {

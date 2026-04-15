@@ -3383,6 +3383,55 @@ components:
           $ref: '#/components/schemas/OfferInput'
         source:
           $ref: '#/components/schemas/SourceInput'
+        recurrence:
+          $ref: '#/components/schemas/RecurrenceInput'
+          description: |
+            Series recurrence metadata for ICS-ingested recurring events.
+            When present, the create pipeline upserts an event_series row using
+            external_key as the upsert key, and links this event to the series.
+
+    RecurrenceInput:
+      type: object
+      description: |
+        Carries series-level recurrence metadata populated by the ICS mapper.
+        All occurrences from the same master VEVENT share an identical RecurrenceInput.
+        The createEventCore pipeline uses it to upsert exactly one event_series row
+        per master UID (keyed by external_key).
+      required: [external_key, series_name, series_start, rrule, tzid]
+      properties:
+        external_key:
+          type: string
+          description: Upsert key for the event_series row, formatted as "<source_name>:<master_uid>".
+        series_name:
+          type: string
+          description: Master VEVENT SUMMARY (shared across all occurrences).
+        series_start:
+          type: string
+          format: date-time
+          description: DTSTART truncated to local date (TZID-aware).
+        series_end:
+          type: string
+          format: date-time
+          nullable: true
+          description: UNTIL date if present in RRULE; null for COUNT-only or infinite rules.
+        rrule:
+          type: string
+          description: RFC 5545 RRULE value string (no "RRULE:" prefix).
+        exdates:
+          type: array
+          items:
+            type: string
+            format: date-time
+          description: EXDATE UTC timestamps from the master VEVENT.
+        rdates:
+          type: array
+          items:
+            type: string
+            format: date-time
+          description: RDATE UTC timestamps from the master VEVENT.
+        tzid:
+          type: string
+          description: IANA timezone ID from DTSTART's TZID parameter.
 
     EventUpdateInput:
       description: Schema for updating an existing event with version control for optimistic locking

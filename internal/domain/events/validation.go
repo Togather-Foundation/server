@@ -64,7 +64,7 @@ type EventInput struct {
 	License                       string                `json:"license,omitempty"`
 	Source                        *SourceInput          `json:"source,omitempty"`
 	Occurrences                   []OccurrenceInput     `json:"occurrences,omitempty"`
-	Recurrence                    *RecurrenceInput      `json:"-"`                                          // ICS ingest: series metadata; not exposed via JSON API
+	Recurrence                    *RecurrenceInput      `json:"recurrence,omitempty"`                       // ICS ingest: series metadata; propagated through batch API
 	LifecycleState                string                `json:"lifecycle_state,omitempty"`                  // Scraper hint: "review" forces pending_review
 	SkipMultiSessionCheck         bool                  `json:"skip_multi_session_check,omitempty"`         // Disables multi-session heuristic for this event
 	MultiSessionDurationThreshold time.Duration         `json:"multi_session_duration_threshold,omitempty"` // Custom duration threshold for multi-session detection; 0 means use default (168h)
@@ -83,14 +83,14 @@ type EventInput struct {
 // ExDates/RDates are copied from the master VEVENT.
 // TZID is the IANA timezone from DTSTART's TZID parameter.
 type RecurrenceInput struct {
-	ExternalKey string      // "<source_name>:<master_uid>"
-	SeriesName  string      // Master VEVENT SUMMARY
-	SeriesStart time.Time   // DTSTART truncated to local date (TZID-aware)
-	SeriesEnd   *time.Time  // UNTIL date if present; nil otherwise
-	RRule       string      // RFC 5545 RRULE value (no "RRULE:" prefix)
-	ExDates     []time.Time // EXDATE UTC timestamps
-	RDates      []time.Time // RDATE UTC timestamps
-	TZID        string      // IANA timezone ID
+	ExternalKey string      `json:"external_key"` // "<source_name>:<master_uid>"
+	SeriesName  string      `json:"series_name"`  // Master VEVENT SUMMARY
+	SeriesStart time.Time   `json:"series_start"` // DTSTART truncated to local date (TZID-aware)
+	SeriesEnd   *time.Time  `json:"series_end"`   // UNTIL date if present; nil otherwise
+	RRule       string      `json:"rrule"`        // RFC 5545 RRULE value (no "RRULE:" prefix)
+	ExDates     []time.Time `json:"exdates"`      // EXDATE UTC timestamps
+	RDates      []time.Time `json:"rdates"`       // RDATE UTC timestamps
+	TZID        string      `json:"tzid"`         // IANA timezone ID
 }
 
 // PlaceInput represents a venue/location attached to an event during ingest.
