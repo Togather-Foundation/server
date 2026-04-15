@@ -187,10 +187,14 @@ update SQLc queries as needed.
 After each subagent returns:
 1. `scripts/agent-run.sh make test` -- verify tests pass
 2. `make sqlc` if SQL queries changed
-3. Commit: `<type>(<scope>): <description> [<bead-id>]`
+3. **Triage subagent reflections** -- read them carefully. Fix anything actionable
+   before committing (e.g. a missed edge case, a cleanup, a confusing variable name).
+   Record non-trivial items that can't be fixed now as beads. Do not silently discard
+   the subagent's observations -- they have context the orchestrator lacks.
+4. Commit: `<type>(<scope>): <description> [<bead-id>]`
    (types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`)
-4. Mark TodoWrite items complete; update bead notes for significant decisions
-5. If stuck, delegate to `@diagnose`
+5. Mark TodoWrite items complete; update bead notes for significant decisions
+6. If stuck, delegate to `@diagnose`
 
 **Local verification:** After all steps are implemented, run the full local test
 suite and start the local server to verify the feature works end-to-end:
@@ -220,9 +224,14 @@ make run   # or make dev for live reload
 
 ## Phase 6: REFLECT
 
-**Goal:** Capture design and workflow hindsight while context is fresh.
+**Goal:** Synthesize hindsight from all sources while context is fresh.
 
-Reflect on what you (and implementation agents) would do differently next time, evaluating the work process, architectural decisions, and paths not taken.
+**Sources to draw from — all are required input, not optional:**
+- Your own observations as orchestrator (decisions that felt awkward, phases that stalled)
+- Subagent reflections returned during Phase 4 (implementors see things orchestrators miss)
+- Code review findings from Phase 5 (patterns that recurred, gaps the reviewer flagged)
+
+Evaluate the work process, architectural decisions, and paths not taken.
 The goal is meta-process improvement and surfacing hidden debt, not recounting a commit log.
 
 - Present a **human-readable reflection report** to the user.
