@@ -445,6 +445,8 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	var errs []string
 	var warnings []string
 
+	isICS := cfg.ExtractionMethod == "ics"
+
 	if strings.TrimSpace(cfg.Name) == "" {
 		errs = append(errs, "name: required")
 	}
@@ -484,11 +486,11 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		errs = append(errs, fmt.Sprintf("trust_level: must be 1-10, got %d", cfg.TrustLevel))
 	}
 
-	if cfg.Tier == 1 && cfg.ExtractionMethod != "ics" && strings.TrimSpace(cfg.Selectors.EventList) == "" {
+	if cfg.Tier == 1 && !isICS && strings.TrimSpace(cfg.Selectors.EventList) == "" {
 		errs = append(errs, "selectors.event_list: required for tier 1")
 	}
 
-	if cfg.Tier == 2 && cfg.ExtractionMethod != "ics" && strings.TrimSpace(cfg.Selectors.EventList) == "" {
+	if cfg.Tier == 2 && !isICS && strings.TrimSpace(cfg.Selectors.EventList) == "" {
 		errs = append(errs, "selectors.event_list: required for tier 2")
 	}
 
@@ -527,7 +529,7 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		}
 	}
 
-	if cfg.Tier == 3 {
+	if cfg.Tier == 3 && !isICS {
 		if cfg.GraphQL != nil && cfg.REST != nil {
 			errs = append(errs, "tier 3: graphql and rest are mutually exclusive; set exactly one")
 		} else if cfg.GraphQL == nil && cfg.REST == nil {
