@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/ical"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
@@ -483,28 +482,6 @@ func TestICSIngestEventSchedule(t *testing.T) {
 		require.NoError(t, err, "count events for source")
 		require.Equal(t, len(inputs), count, "DB must have exactly %d events after re-ingest (no duplicates)", len(inputs))
 	})
-}
-
-// ingestEventInput submits a single EventInput via POST /api/v1/events and returns
-// the created/upserted event ULID and status code. Exported for reuse by sibling tests.
-func ingestEventInput(t *testing.T, env *testEnv, apiKey string, inp events.EventInput) (string, int) {
-	t.Helper()
-	body, err := json.Marshal(inp)
-	require.NoError(t, err, "marshal EventInput")
-
-	req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/ld+json")
-	req.Header.Set("Accept", "application/ld+json")
-
-	resp, err := env.Server.Client().Do(req)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	var payload map[string]any
-	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
-	return eventIDFromPayload(payload), resp.StatusCode
 }
 
 func insertRecurringEventWithSeries(t *testing.T, env *testEnv, name, orgID, venueID string) string {
