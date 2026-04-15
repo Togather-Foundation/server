@@ -163,6 +163,6 @@ require (
 )
 
 // Temporary fork: adds WithPropertyParseErrorHandler for lenient ICS parsing.
-// Upstream PR: https://github.com/arran4/golang-ical/pull/TBD
+// Upstream PR: https://github.com/arran4/golang-ical/pull/135
 // Remove once upstream merges and tags a release.
 replace github.com/arran4/golang-ical => github.com/RKelln/golang-ical v0.3.6-fork.1

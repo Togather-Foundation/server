@@ -251,10 +251,10 @@ directive and update to the new upstream version.
 - [x] Feature branch created (`feat/property-parse-error-handler`)
 - [x] Core implementation done (calendar.go + components.go changes)
 - [x] Existing library tests pass
-- [ ] New tests for the handler feature
-- [ ] togather go.mod pointed to fork
-- [ ] togather integration in `internal/ical/parse.go`
-- [ ] togather tests for malformed ICS handling
-- [ ] `make ci` passes
-- [ ] Upstream PR opened to `arran4/golang-ical`
-- [ ] Bead `srv-7bi1l` updated/closed
+- [x] New tests for the handler feature (6 tests)
+- [x] togather go.mod pointed to fork
+- [x] togather integration in `internal/ical/parse.go`
+- [x] togather tests for malformed ICS handling
+- [x] `make ci` passes (build, lint, tests)
+- [x] Upstream PR opened to `arran4/golang-ical` (https://github.com/arran4/golang-ical/pull/135)
+- [ ] Bead `srv-7bi1l` closed
