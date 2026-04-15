@@ -1,6 +1,6 @@
 # Plan: ICS/iCal Integration
 
-**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 3 Delivered)
+**Spec**: 005-ics-integration | **Date**: 2026-04-13 | **Status**: In Progress (Phase 4 Delivered)
 **Goal**: Make ICS (RFC 5545) a first-class ingest and output format — the SEL can
 consume ICS feeds from any source (including community-calendar) and produce
 subscribable ICS feeds that any calendar client or aggregator can consume.
@@ -38,7 +38,8 @@ fidelity with ICS sources.
 | `text/calendar` content negotiation | **None** | `internal/api/middleware/negotiate.go:14-19` |
 | Scraper source types | `scraper`, `partner`, `user`, `federation` (Go); DB also allows `api`, `manual` | `internal/domain/provenance/validation.go:24-29` |
 | Scraper tiers | Tier 0 (JSON-LD), Tier 1 (Colly/CSS), Tier 2 (Rod/headless), Tier 3 (GraphQL/REST) | `internal/scraper/config.go:20-92` |
-| Event series recurrence | `repeat_frequency TEXT`, `repeat_on_days TEXT[]`, `repeat_on_dates INTEGER[]` | `migrations/000001_core.up.sql:112-114`, `models.go:193-195` |
+| Event series recurrence | **Phase 3 Delivered + Phase 4 series dates** — `rrule`, `exdates`, `rdates`, `external_key` on `event_series` | `migrations/000043`, `000045`, `internal/domain/events/repository.go` |
+| ICS→SEL series dates pipeline | **Phase 4 Delivered** — `RecurrenceInput` on `EventInput`, `UpsertEventSeries` in `createEventCore`, `deriveSeriesEnd` in mapper | `internal/ical/mapper.go`, `internal/domain/events/validation.go`, `internal/domain/events/create_event_core.go` |
 | Event occurrences | `event_occurrences` table (1:many from events) | `migrations/000001_core.up.sql` |
 | Content negotiation | `application/ld+json`, `application/json`, `text/html`, `text/turtle` | `internal/api/middleware/negotiate.go:14-19` |
 | Change feed | `GET /api/v1/feeds/changes` with cursor pagination | `internal/api/handlers/feeds.go:27`, `router.go:808` |
@@ -62,21 +63,24 @@ ICS Feed URL                    Existing SEL Pipeline
        │ raw []byte                     │
        ▼                                │
 ┌──────────────┐                        │
-│  ICS Parser  │ arran4/golang-ical     │
+│  ICS Parser  │ arran4/golang-ical      │
 │              │ VCALENDAR → []VEVENT   │
+│              │ TZID extracted per event│
 └──────┬───────┘                        │
        │ []ics.VEvent                   │
        ▼                                │
 ┌──────────────┐                        │
 │  ICS→Event   │ VEVENT → EventInput    │
-│  Mapper      │ RRULE → series hints   │
+│  Mapper      │ RRULE → RecurrenceInput│
+│              │ (series dates + TZID)   │
 └──────┬───────┘                        │
        │ []events.EventInput            │
        ▼                                ▼
 ┌──────────────────────────────────────────┐
 │           Ingest Pipeline                │
-│  Validate → Dedup → Create → Review      │
-│  (existing — no changes needed)          │
+│  Validate → Dedup → UpsertEventSeries  │
+│            → Create → Review             │
+│  (series upsert inside event transaction)│
 └──────────────────────────────────────────┘
 ```
 
@@ -203,7 +207,8 @@ type ParsedEvent struct {
     RRULE        string           // Raw RRULE string, empty if non-recurring
     RecurrenceID time.Time        // RECURRENCE-ID (zero if absent; exception to RRULE series)
     ExDates      []time.Time      // EXDATE values
-    RDates       []time.Time      // RDATE values
+    RDates      []time.Time      // RDATE values
+    TZID         string           // IANA timezone ID from DTSTART TZID parameter (empty if UTC/floating)
     Organizer    string           // ORGANIZER CN parameter (display name)
     OrganizerEmail string         // ORGANIZER mailto: value (email)
     Categories   []string         // CATEGORIES values (multi-value, multi-property)
@@ -225,7 +230,8 @@ type ParsedEvent struct {
 // MapToEventInputs converts parsed ICS events to SEL EventInputs.
 // Non-recurring events become a single EventInput.
 // Recurring events with RRULE expand occurrences within the horizon window
-// and produce one EventInput per occurrence (linked by series metadata).
+// and produce one EventInput per occurrence, each sharing a RecurrenceInput
+// that carries series-level metadata (TZID, series dates, RRULE, EXDATE/RDATE).
 // ctx enables cancellation during large RRULE expansions.
 func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptions) ([]events.EventInput, []string, error)
 
@@ -238,7 +244,47 @@ type MapperOptions struct {
     HorizonDays     int           // How far to expand recurring events (default: 90)
     MaxOccurrences  int           // Safety cap on expanded occurrences (default: 100)
 }
+
+// deriveSeriesEnd parses the UNTIL value from an RRULE string.
+// Returns nil for COUNT-only or infinite series (no UNTIL).
+func deriveSeriesEnd(rruleStr string) *time.Time
 ```
+
+### Series Dates Pipeline (ICS → event_series)
+
+When ICS ingest encounters a recurring event (RRULE present), the mapper populates
+`EventInput.Recurrence` — a `*RecurrenceInput` carrying series-level metadata:
+
+```go
+// internal/domain/events/validation.go
+
+// RecurrenceInput carries series-level recurrence metadata populated by the ICS mapper.
+// Set on every occurrence EventInput from the same master VEVENT; the ingest pipeline
+// uses it to upsert exactly one event_series row per master.
+type RecurrenceInput struct {
+    ExternalKey string      // "<source_name>:<master_uid>" — upsert key
+    SeriesName   string      // Master VEVENT SUMMARY
+    SeriesStart  time.Time   // DTSTART truncated to local date (TZID-aware)
+    SeriesEnd    *time.Time  // UNTIL date if present; nil for COUNT-only/infinite
+    RRule        string      // RFC 5545 RRULE value (no "RRULE:" prefix)
+    ExDates      []time.Time // EXDATE UTC timestamps from master VEVENT
+    RDates       []time.Time // RDATE UTC timestamps from master VEVENT
+    TZID         string      // IANA timezone; empty → "UTC"
+}
+```
+
+Inside `createEventCore`, before calling `dbRepo.Create()`, if `validated.Recurrence != nil`,
+the pipeline calls `dbRepo.UpsertEventSeries()` to create or update the `event_series`
+row using `external_key` as the idempotency key. The resulting `seriesID` is then set
+on `EventCreateParams.SeriesID` so the event row links to its series:
+
+```
+Validate → Dedup → [UpsertEventSeries if recurring] → Create(event) → CreateOccurrences → RecordSource
+```
+
+This means ICS-sourced recurring events automatically populate `series_start_date`,
+`series_end_date`, `rrule`, `exdates`, `rdates`, and `schedule_timezone` — enabling
+`eventSchedule` JSON-LD in API responses without manual data entry.
 
 ### Event → ICS Serializer
 
@@ -306,8 +352,8 @@ ALTER TABLE scraper_sources
 | Phase 1 (Ingest) | Existing scraper dispatch + ingest pipeline + scraper source config model | ICS parse/map/extract path, `extraction_method` dispatch contract, stable `Source.EventID` derivation |
 | Phase 2 (Export) | Phase 1 parsed/mapped event identity contract + occurrence data model | ICS serialization contract, API export endpoints, `Link rel="next"` pagination, discovery headers |
 | Phase 3 (Recurrence) | Phase 2 serialization behavior + legacy `event_series` schema | Canonical recurrence persistence (`rrule/exdates/rdates`), recurrence projection contract |
-| Phase 4 (Interop/Docs) | Phase 1-3 runtime behavior and contracts | Interop fixture corpus + validation contract, operations runbook |
-| Phase 5 (Inventory Rollout) | Phase 4 runbook + interop fixture expectations + Toronto inventory research | Cohort rollout manifest and execution/reporting contract |
+| Phase 4 (Interop/Docs) | Phase 1-3 runtime behavior and contracts | Interop fixture corpus + validation contract, operations runbook, ICS→event_series dates pipeline (`RecurrenceInput` → `UpsertEventSeries`) |
+| Phase 5 (Inventory Rollout) | Phase 4 runbook + interop fixture expectations + series dates pipeline + Toronto inventory research | Cohort rollout manifest and execution/reporting contract; `eventSchedule` in JSON-LD for rolled-out recurring sources |
 
 ### Phase 1: ICS Ingest (Vertical Slice) — **Delivered**
 
@@ -404,16 +450,39 @@ compatibility; ICS export emits RRULE+EXDATE+RDATE.
   post-delivery; was missing from initial Phase 3 delivery — the `GetByULID()` path
   had it but the paginated feed path did not).
 
-### Phase 4: Interop & Documentation
+### Phase 4: Interop & Documentation — **Delivered**
 
 **Goal**: Validated interop with real external ICS feed shapes; platform discovery
-heuristics for ICS feeds; operational runbook and repeatable integration validation.
+heuristics for ICS feeds; operational runbook and repeatable integration validation;
+ICS-sourced recurring events auto-populate `event_series` dates.
 
 **Entry criteria**: Phase 1-3 delivered.
 **Exit criteria**: 7 representative external ICS fixture shapes ingest successfully into
 SEL; SEL ICS export passes consumer checks in both `IncludeRRule=false` and
 `IncludeRRule=true` modes; ICS discovery heuristics for 8 platforms documented; runbook
-is executable.
+is executable; ICS-recurring events produce `eventSchedule` in API responses.
+
+**Status**: ICS series dates pipeline delivered (`srv-bvpkq`). Interop tests and
+docs remaining.
+
+**Completed work (srv-bvpkq)**:
+
+| Component | Change | File |
+|---|---|---|
+| ICS parsing | `TZID` field on `ParsedEvent`; `extractTZID()` helper | `internal/ical/parse.go` |
+| ICS mapping | `deriveSeriesEnd()` parses UNTIL from RRULE; `RecurrenceInput` populated on recurring events | `internal/ical/mapper.go` |
+| Domain types | `RecurrenceInput` struct; `Recurrence *RecurrenceInput` on `EventInput` (`json:"-"`) | `internal/domain/events/validation.go` |
+| Repository | `UpsertEventSeriesParams`, `UpsertEventSeriesResult`; `UpsertEventSeries()` method; `SeriesID` on `EventCreateParams` | `internal/domain/events/repository.go` |
+| Ingest pipeline | Step 10.5 in `createEventCore`: upsert series before Create when `Recurrence != nil` | `internal/domain/events/create_event_core.go` |
+| Storage | `UpsertEventSeries` with `ON CONFLICT (external_key) DO UPDATE`; `Create()` includes `series_id` | `internal/storage/postgres/events_repository.go` |
+| DB | `external_key TEXT UNIQUE` on `event_series` | `migrations/000045` |
+
+**Architectural decisions**:
+1. Series row created inside `createEventCore` transaction — atomicity for free, no separate lifecycle
+2. `EventInput.Recurrence` is `*RecurrenceInput` with `json:"-"` — zero blast radius on non-ICS paths
+3. `series_end_date` derived from UNTIL in RRULE — `NULL` for COUNT-only or infinite series
+4. `external_key TEXT UNIQUE` on `event_series` — `"source_name:master_uid"` for idempotent re-ingest
+5. `series_start_date` truncated to local date using TZID — not UTC date
 
 **Tasks** (4):
 1. Test: external ICS feed shapes → SEL ingest — 7 fixtures (Outlook VTIMEZONE,
@@ -432,30 +501,41 @@ is executable.
 **Interface contract (Phase 4 → Phase 5)**:
 - Interop fixture corpus and validation scripts define accepted external ICS shapes.
 - Operational runbook defines safe onboarding/diagnostics workflow for source rollout.
+- ICS-sourced recurring events auto-populate `event_series` via `RecurrenceInput` → `UpsertEventSeries` pipeline — recurring sources get `eventSchedule` in JSON-LD responses without manual data entry.
+- `event_series.external_key` (`<source_name>:<master_UID>`) provides idempotent re-ingest: repeated scrapes of the same RRULE master upsert the same series row rather than creating duplicates.
 
 ### Phase 5: Toronto ICS Source Inventory Rollout
 
 **Goal**: Operationalize the Toronto ICS inventory into prioritized, trackable source
 onboarding work and staged rollout metrics.
 
-**Entry criteria**: Phase 4 delivered (interop tests + runbook available).
+**Entry criteria**: Phase 4 delivered (interop tests + runbook available; series dates pipeline operational).
 **Exit criteria**: inventory is converted into rollout cohorts with ownership,
 success/failure tracking, and documented decisions for overlap, net-new, and
-non-starter sources.
+non-starter sources; recurring events from rolled-out sources produce `eventSchedule`
+in API responses automatically.
 
-**Tasks** (6):
+**Tasks** (7):
 1. Convert inventory sections (overlap, SEL-only, net-new, non-starters) into a
    machine-readable manifest (CSV/JSON) under `specs/005-ics-integration/`.
 2. Define rollout cohorts (e.g., high-value net-new first, overlap validation
-   second) with explicit acceptance targets per cohort.
+   second) with explicit acceptance targets per cohort. Include acceptance criteria
+   for recurring sources: `eventSchedule` must appear in JSON-LD responses for
+   RRULE-bearing ICS feeds within one scrape cycle.
 3. Create source-onboarding beads from the manifest (one bead per source or source
    bundle) with priority and dependency metadata.
 4. Add outcome taxonomy (`onboarded`, `deferred`, `blocked`, `non-starter`) and
    capture criteria to avoid ad-hoc status labels.
 5. Run a first staged cohort in staging and publish metrics (attempted, onboarded,
-   blocked reasons, median setup time) in a rollout report.
+   blocked reasons, median setup time) in a rollout report. Verify that recurring
+   events from ICS sources produce `event_series` rows with `series_start_date`,
+   `series_end_date`, and `schedule_timezone` populated — re-scraping the same source
+   must upsert (not duplicate) via `external_key`.
 6. Feed lessons back into `docs/integration/event-platforms.md` and
    `docs/integration/ics-feeds.md` with concrete examples from Toronto sources.
+7. Add end-to-end integration test: ICS ingest of a recurring event fixture → verify
+   `eventSchedule` fields (`startDate`, `endDate`, `repeatFrequency`) appear in
+   `/api/v1/events` JSON-LD response. Use `interop-recurrence-exdate.ics` fixture.
 
 ## Final Release Gate
 

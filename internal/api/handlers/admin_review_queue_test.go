@@ -134,6 +134,14 @@ func (m *MockRepository) UpsertOrganization(ctx context.Context, params events.O
 	return args.Get(0).(*events.OrganizationRecord), args.Error(1)
 }
 
+func (m *MockRepository) UpsertEventSeries(ctx context.Context, params events.UpsertEventSeriesParams) (*events.UpsertEventSeriesResult, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.UpsertEventSeriesResult), args.Error(1)
+}
+
 func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params events.UpdateEventParams) (*events.Event, error) {
 	args := m.Called(ctx, ulid, params)
 	if args.Get(0) == nil {

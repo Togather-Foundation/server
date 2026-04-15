@@ -361,6 +361,10 @@ func (m *MockRepository) UpsertOrganization(ctx context.Context, params Organiza
 	return org, nil
 }
 
+func (m *MockRepository) UpsertEventSeries(ctx context.Context, params UpsertEventSeriesParams) (*UpsertEventSeriesResult, error) {
+	return &UpsertEventSeriesResult{SeriesID: "mock-series-id"}, nil
+}
+
 // Admin operations (stub implementations for testing)
 func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error) {
 	m.mu.Lock()

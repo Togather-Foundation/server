@@ -43,3 +43,18 @@ Review the diff carefully before committing.
 
 Note: `DTSTAMP:` lines are stripped during comparison (they are non-deterministic).
 
+## Interop Fixtures
+
+Phase 4 interop fixtures test real-world ICS feed shape ingestion and export
+consumer expectations. Each fixture maps to a row in `docs/integration/ics-compatibility-matrix.md`.
+
+| Fixture | Shape | VEVENTs | Key Properties |
+|---|---|---|---|
+| `interop-outlook-vtimezone.ics` | Outlook/Exchange with VTIMEZONE block | 2 | `DTSTART;TZID=America/New_York`, STANDARD/DAYLIGHT sub-components |
+| `interop-tribe-ical.ics` | WordPress Tribe `?ical=1` | 3 | `X-WR-CALNAME`, `X-WR-TIMEZONE`, `ORGANIZER`, `CATEGORIES`, `X-TRIBE-*` |
+| `interop-google-basic.ics` | Google Calendar `basic.ics` | 2 | `DTSTART` in UTC (trailing Z), `STATUS:CONFIRMED`, `DESCRIPTION` with URLs |
+| `interop-meetup.ics` | Meetup export | 2 | `URL` with meetup.com pattern, `LOCATION` with full address, `ORGANIZER;CN=` |
+| `interop-tockify.ics` | Tockify feed | 2 | `X-PUBLISHED-TTL:PT1H`, `DESCRIPTION` with HTML markup, UTC timestamps |
+| `interop-recurrence-exdate.ics` | RFC 5545 §3.3.5 regression guard | 1 | `RRULE:FREQ=WEEKLY;BYDAY=MO,WE`, `EXDATE;TZID=America/Toronto` (no trailing Z) |
+| `interop-mixed-malformed.ics` | Valid + malformed mix | 2 valid + 1 missing-DTSTART | One VEVENT missing DTSTART (skipped with warning), two valid VEVENTs succeed |
+

@@ -42,15 +42,16 @@ func NewEvent(name string) *Event {
 // response), DoorTime and Timezone are populated so that the admin UI can
 // display and edit all occurrence details.
 type EventSummary struct {
-	Context   any    `json:"@context,omitempty"`
-	Type      string `json:"@type"`
-	ID        string `json:"@id,omitempty"`
-	Name      string `json:"name"`
-	StartDate string `json:"startDate,omitempty"`
-	EndDate   string `json:"endDate,omitempty"`
-	DoorTime  string `json:"doorTime,omitempty"`
-	Timezone  string `json:"timezone,omitempty"`
-	Location  any    `json:"location,omitempty"`
+	Context       any       `json:"@context,omitempty"`
+	Type          string    `json:"@type"`
+	ID            string    `json:"@id,omitempty"`
+	Name          string    `json:"name"`
+	StartDate     string    `json:"startDate,omitempty"`
+	EndDate       string    `json:"endDate,omitempty"`
+	DoorTime      string    `json:"doorTime,omitempty"`
+	Timezone      string    `json:"timezone,omitempty"`
+	Location      any       `json:"location,omitempty"`
+	EventSchedule *Schedule `json:"eventSchedule,omitempty"`
 }
 
 // NewEventSummary creates an EventSummary with @type pre-set.

@@ -255,6 +255,9 @@ func (m *mockTransactionalRepo) GetPlaceByULID(ctx context.Context, ulid string)
 func (m *mockTransactionalRepo) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {
 	return nil, errors.New("not implemented")
 }
+func (m *mockTransactionalRepo) UpsertEventSeries(ctx context.Context, params UpsertEventSeriesParams) (*UpsertEventSeriesResult, error) {
+	return &UpsertEventSeriesResult{SeriesID: "mock-series-id"}, nil
+}
 func (m *mockTransactionalRepo) UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error) {
 	if m.updateEventFunc != nil {
 		return m.updateEventFunc(ctx, ulid, params)

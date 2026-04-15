@@ -701,6 +701,25 @@ func (s *IngestService) createEventCore(
 		params.LifecycleState = "pending_review"
 	}
 
+	// ── 10.5. Upsert event_series for recurring events ─────────────────────────
+	if validated.Recurrence != nil {
+		rec := validated.Recurrence
+		seriesResult, err := dbRepo.UpsertEventSeries(ctx, UpsertEventSeriesParams{
+			ExternalKey: rec.ExternalKey,
+			Name:        rec.SeriesName,
+			SeriesStart: rec.SeriesStart,
+			SeriesEnd:   rec.SeriesEnd,
+			RRule:       rec.RRule,
+			ExDates:     rec.ExDates,
+			RDates:      rec.RDates,
+			TZID:        rec.TZID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("upsert event series: %w", err)
+		}
+		params.SeriesID = &seriesResult.SeriesID
+	}
+
 	// ── 11. Create event ─────────────────────────────────────────────────────
 	event, err := dbRepo.Create(ctx, params)
 	if err != nil {

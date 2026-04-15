@@ -41,6 +41,7 @@ type ParsedEvent struct {
 	RecurrenceID   time.Time         // RECURRENCE-ID (zero if absent; identifies exception to RRULE series)
 	ExDates        []time.Time       // EXDATE values
 	RDates         []time.Time       // RDATE values
+	TZID           string            // IANA timezone ID from DTSTART TZID parameter (empty if UTC/floating)
 	Organizer      string            // ORGANIZER CN parameter (display name)
 	OrganizerEmail string            // ORGANIZER mailto: value (email address)
 	Categories     []string          // CATEGORIES values (split on comma per value)
@@ -156,6 +157,9 @@ func parseVEvent(ve *ics.VEvent, seenUIDs map[string]bool) (*ParsedEvent, []stri
 		w := fmt.Sprintf("unparseable DTSTART (UID: %s): %v", uid, err)
 		return nil, append(warnings, w), fmt.Errorf("%s", w)
 	}
+
+	// Extract TZID from DTSTART for series timezone resolution.
+	tzid := extractTZID(dtStartProp)
 
 	// --- Duplicate UID detection ---
 	// RECURRENCE-ID events are allowed to share a UID with the master event.
@@ -363,6 +367,7 @@ func parseVEvent(ve *ics.VEvent, seenUIDs map[string]bool) (*ParsedEvent, []stri
 		RecurrenceID:   recurrenceID,
 		ExDates:        exdates,
 		RDates:         rdates,
+		TZID:           tzid,
 		Organizer:      organizer,
 		OrganizerEmail: organizerEmail,
 		Categories:     categories,
@@ -375,6 +380,25 @@ func parseVEvent(ve *ics.VEvent, seenUIDs map[string]bool) (*ParsedEvent, []stri
 		Status:         status,
 		RawProps:       rawProps,
 	}, warnings, nil
+}
+
+// extractTZID returns the IANA timezone identifier from a time property's
+// TZID parameter, with Windows TZID aliases resolved to their IANA equivalents.
+// Returns empty string if no TZID parameter is present.
+func extractTZID(prop *ics.IANAProperty) string {
+	if tzids, ok := prop.ICalParameters[string(ics.ParameterTzid)]; ok && len(tzids) > 0 {
+		tzid := tzids[0]
+		loc, err := time.LoadLocation(tzid)
+		if err == nil {
+			_ = loc // valid IANA
+			return tzid
+		}
+		// Try Windows TZID alias map.
+		if iana, ok := WindowsTZIDAliases[tzid]; ok {
+			return iana
+		}
+	}
+	return ""
 }
 
 // isAllDayProp checks if a time property has VALUE=DATE (all-day event).

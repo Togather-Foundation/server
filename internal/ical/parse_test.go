@@ -824,3 +824,63 @@ func TestParse_RawProps_NoExtras(t *testing.T) {
 		t.Logf("RawProps found (may be valid): %v", ev.RawProps)
 	}
 }
+
+func TestParse_TZIDExtracted(t *testing.T) {
+	t.Parallel()
+
+	data := loadFixture(t, "parse-outlook-vtimezone.ics")
+
+	cal, err := Parse(data)
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if len(cal.Events) == 0 {
+		t.Fatal("expected at least 1 event")
+	}
+
+	ev := cal.Events[0]
+
+	// The fixture uses TZID=America/New_York on DTSTART.
+	if ev.TZID == "" {
+		t.Error("expected TZID to be extracted from DTSTART, got empty string")
+	}
+
+	// If it's a Windows alias, it should be resolved to IANA.
+	if ev.TZID != "" {
+		loc, err := time.LoadLocation(ev.TZID)
+		if err != nil {
+			t.Errorf("TZID %q is not a valid IANA timezone: %v", ev.TZID, err)
+		}
+		_ = loc
+	}
+}
+
+func TestParse_TZID_FloatingTime(t *testing.T) {
+	t.Parallel()
+
+	ics := `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:floating-001
+DTSTART:20260415T190000
+DTEND:20260415T210000
+SUMMARY:Floating Time Event
+END:VEVENT
+END:VCALENDAR`
+
+	cal, err := Parse([]byte(ics))
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if len(cal.Events) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(cal.Events))
+	}
+
+	ev := cal.Events[0]
+
+	// Floating time has no TZID parameter.
+	if ev.TZID != "" {
+		t.Errorf("expected empty TZID for floating time, got %q", ev.TZID)
+	}
+}

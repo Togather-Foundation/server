@@ -581,7 +581,8 @@ INSERT INTO events (
 	license_status,
 	confidence,
 	quality_score,
-	dedup_hash
+	dedup_hash,
+	series_id
 ) VALUES (
 	$1,
 	$2,
@@ -600,7 +601,8 @@ INSERT INTO events (
 	$15,
 	$16,
 	$17,
-	NULLIF($18, '')
+	NULLIF($18, ''),
+	$19
 )
 RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 	  lifecycle_state, event_status, attendance_mode, event_domain,
@@ -627,6 +629,7 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 		params.Confidence,
 		params.QualityScore,
 		params.DedupHash,
+		params.SeriesID,
 	)
 
 	var data eventRow
@@ -1257,6 +1260,74 @@ RETURNING id, ulid
 		return nil, fmt.Errorf("upsert organization: %w", err)
 	}
 	return &record, nil
+}
+
+func (r *EventRepository) UpsertEventSeries(ctx context.Context, params events.UpsertEventSeriesParams) (*events.UpsertEventSeriesResult, error) {
+	queryer := r.queryer()
+
+	seriesStartDate := pgtype.Date{
+		Time:  params.SeriesStart,
+		Valid: true,
+	}
+	var seriesEndDate pgtype.Date
+	if params.SeriesEnd != nil {
+		seriesEndDate = pgtype.Date{
+			Time:  *params.SeriesEnd,
+			Valid: true,
+		}
+	}
+
+	tzid := params.TZID
+	if tzid == "" {
+		tzid = "UTC"
+	}
+
+	var exdates []pgtype.Timestamptz
+	for _, t := range params.ExDates {
+		exdates = append(exdates, pgtype.Timestamptz{Time: t.UTC(), Valid: true})
+	}
+	if exdates == nil {
+		exdates = []pgtype.Timestamptz{}
+	}
+
+	var rdates []pgtype.Timestamptz
+	for _, t := range params.RDates {
+		rdates = append(rdates, pgtype.Timestamptz{Time: t.UTC(), Valid: true})
+	}
+	if rdates == nil {
+		rdates = []pgtype.Timestamptz{}
+	}
+
+	row := queryer.QueryRow(ctx, `
+INSERT INTO event_series (external_key, name, series_start_date, series_end_date, rrule, exdates, rdates, schedule_timezone)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (external_key)
+  DO UPDATE SET
+    name = EXCLUDED.name,
+    series_start_date = EXCLUDED.series_start_date,
+    series_end_date = EXCLUDED.series_end_date,
+    rrule = EXCLUDED.rrule,
+    exdates = EXCLUDED.exdates,
+    rdates = EXCLUDED.rdates,
+    schedule_timezone = EXCLUDED.schedule_timezone,
+    updated_at = now()
+RETURNING id::text
+`,
+		params.ExternalKey,
+		params.Name,
+		seriesStartDate,
+		seriesEndDate,
+		nilIfEmpty(params.RRule),
+		exdates,
+		rdates,
+		tzid,
+	)
+
+	var seriesID string
+	if err := row.Scan(&seriesID); err != nil {
+		return nil, fmt.Errorf("upsert event series: %w", err)
+	}
+	return &events.UpsertEventSeriesResult{SeriesID: seriesID}, nil
 }
 
 type queryer interface {

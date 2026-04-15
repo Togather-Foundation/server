@@ -3,6 +3,7 @@ package events
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -775,4 +776,96 @@ func TestEventInput_UnmarshalJSON_OccurrencesPreserved(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, event.Occurrences, 1)
 	assert.Equal(t, "2026-02-01T10:00:00Z", event.Occurrences[0].StartDate)
+}
+
+func mustParseTime(t *testing.T, s string) time.Time {
+	t.Helper()
+	tv, err := time.Parse(time.RFC3339, s)
+	require.NoError(t, err)
+	return tv
+}
+
+func TestEventInput_JSONRoundTrip_AllFields(t *testing.T) {
+	free := true
+	seriesEnd := mustParseTime(t, "2026-12-31T00:00:00Z")
+	recurrence := &RecurrenceInput{
+		ExternalKey: "source:uid-123",
+		SeriesName:  "Weekly Series",
+		SeriesStart: mustParseTime(t, "2026-01-01T00:00:00Z"),
+		SeriesEnd:   &seriesEnd,
+		RRule:       "FREQ=WEEKLY;BYDAY=MO,WE",
+		ExDates:     []time.Time{mustParseTime(t, "2026-01-06T00:00:00Z")},
+		RDates:      []time.Time{mustParseTime(t, "2026-02-14T00:00:00Z")},
+		TZID:        "America/Toronto",
+	}
+
+	original := EventInput{
+		Name:                  "Round-Trip Test Event",
+		Description:           "Testing all fields survive JSON round-trip",
+		StartDate:             "2026-07-08T19:00:00-04:00",
+		EndDate:               "2026-07-08T21:00:00-04:00",
+		DoorTime:              "2026-07-08T18:30:00-04:00",
+		EventDomain:           "arts",
+		Location:              &PlaceInput{Name: "Test Venue"},
+		VirtualLocation:       &VirtualLocationInput{Type: "VirtualLocation", URL: "https://example.com/stream"},
+		Organizer:             &OrganizationInput{Name: "Test Org", URL: "https://example.com"},
+		Image:                 "https://example.com/image.jpg",
+		URL:                   "https://example.com/event",
+		Keywords:              []string{"music", "live"},
+		InLanguage:            []string{"en", "fr"},
+		IsAccessibleForFree:   &free,
+		Offers:                &OfferInput{URL: "https://example.com/tickets", Price: "25.00", PriceCurrency: "CAD"},
+		SameAs:                []string{"https://external.com/e/123"},
+		License:               "CC0-1.0",
+		Source:                &SourceInput{URL: "https://example.com", EventID: "ext-123", Name: "example"},
+		Occurrences:           []OccurrenceInput{{StartDate: "2026-07-08T19:00:00-04:00", EndDate: "2026-07-08T21:00:00-04:00"}},
+		Recurrence:            recurrence,
+		LifecycleState:        "pending_review",
+		SkipMultiSessionCheck: true,
+	}
+
+	payload, err := json.Marshal(original)
+	require.NoError(t, err, "marshal should succeed")
+
+	var decoded EventInput
+	err = json.Unmarshal(payload, &decoded)
+	require.NoError(t, err, "unmarshal should succeed")
+
+	assert.Equal(t, original.Name, decoded.Name, "Name")
+	assert.Equal(t, original.Description, decoded.Description, "Description")
+	assert.Equal(t, original.StartDate, decoded.StartDate, "StartDate")
+	assert.Equal(t, original.EndDate, decoded.EndDate, "EndDate")
+	assert.Equal(t, original.DoorTime, decoded.DoorTime, "DoorTime")
+	assert.Equal(t, original.EventDomain, decoded.EventDomain, "EventDomain")
+	assert.NotNil(t, decoded.Location, "Location should not be nil")
+	assert.Equal(t, "Test Venue", decoded.Location.Name, "Location.Name")
+	assert.NotNil(t, decoded.VirtualLocation, "VirtualLocation should not be nil")
+	assert.Equal(t, "https://example.com/stream", decoded.VirtualLocation.URL, "VirtualLocation.URL")
+	assert.NotNil(t, decoded.Organizer, "Organizer should not be nil")
+	assert.Equal(t, "Test Org", decoded.Organizer.Name, "Organizer.Name")
+	assert.Equal(t, original.Image, decoded.Image, "Image")
+	assert.Equal(t, original.URL, decoded.URL, "URL")
+	assert.Equal(t, original.Keywords, decoded.Keywords, "Keywords")
+	assert.Equal(t, original.InLanguage, decoded.InLanguage, "InLanguage")
+	assert.NotNil(t, decoded.IsAccessibleForFree, "IsAccessibleForFree should not be nil")
+	assert.True(t, *decoded.IsAccessibleForFree, "IsAccessibleForFree")
+	assert.NotNil(t, decoded.Offers, "Offers should not be nil")
+	assert.Equal(t, "25.00", decoded.Offers.Price, "Offers.Price")
+	assert.Equal(t, original.SameAs, decoded.SameAs, "SameAs")
+	assert.Equal(t, original.License, decoded.License, "License")
+	assert.NotNil(t, decoded.Source, "Source should not be nil")
+	assert.Equal(t, "ext-123", decoded.Source.EventID, "Source.EventID")
+	assert.Len(t, decoded.Occurrences, 1, "Occurrences")
+	assert.Equal(t, original.LifecycleState, decoded.LifecycleState, "LifecycleState")
+	assert.True(t, decoded.SkipMultiSessionCheck, "SkipMultiSessionCheck")
+
+	require.NotNil(t, decoded.Recurrence, "Recurrence must survive round-trip — if this fails, the rawEvent struct in UnmarshalJSON is missing the field")
+	assert.Equal(t, "source:uid-123", decoded.Recurrence.ExternalKey, "Recurrence.ExternalKey")
+	assert.Equal(t, "Weekly Series", decoded.Recurrence.SeriesName, "Recurrence.SeriesName")
+	assert.Equal(t, "FREQ=WEEKLY;BYDAY=MO,WE", decoded.Recurrence.RRule, "Recurrence.RRule")
+	assert.Equal(t, "America/Toronto", decoded.Recurrence.TZID, "Recurrence.TZID")
+	assert.NotZero(t, decoded.Recurrence.SeriesStart, "Recurrence.SeriesStart")
+	assert.NotNil(t, decoded.Recurrence.SeriesEnd, "Recurrence.SeriesEnd")
+	assert.Len(t, decoded.Recurrence.ExDates, 1, "Recurrence.ExDates")
+	assert.Len(t, decoded.Recurrence.RDates, 1, "Recurrence.RDates")
 }

@@ -21,6 +21,23 @@ For E2E details see `tests/e2e/AGENTS.md`.
 
 **Golden fixtures must be generated, not hand-authored:** fixtures in `tests/testdata/` should be produced by running the serializer under test, not written by hand. Hand-authored fixtures silently diverge from actual output and give false confidence. If a `-update` flag pattern isn't in place yet, generate the fixture once and commit it — then review the diff carefully. See `tests/testdata/ics/README.md` for the naming convention.
 
+## Scraping Local Fixtures
+
+`server scrape test-fixture <path>` serves a local fixture file and scrapes it in one command — no manual `python3 -m http.server` or hand-written YAML needed.
+
+```bash
+# ICS fixture (auto-detected: extraction_method=ics, tier=0)
+server scrape test-fixture tests/testdata/ics/interop-recurrence-exdate.ics --dry-run
+
+# With overrides
+server scrape test-fixture tests/testdata/ics/interop-recurrence-exdate.ics --dry-run --verbose --source-name my-test
+
+# Non-ICS fixture (tier 0 JSON-LD by default)
+server scrape test-fixture /tmp/events.jsonld --dry-run
+```
+
+Flags: `--extraction-method`, `--tier` (default: auto-detect from extension), `--source-name`, `--trust-level` (default 5), `--headless`, plus all global scrape flags (`--dry-run`, `--verbose`, `--limit`, `--cache`).
+
 ## Staging Constraints
 
 **`example.com` and any `*.example.com` subdomain URLs are a hard ingest error (HTTP 422)** in staging and production (all RFC 2606 reserved test domains are blocked). Tests or test harnesses that submit fixture events using those domains **must** set `ValidationConfig{AllowTestDomains: true}`. This field is never set via an env var — it is test-only and must be set explicitly. `server generate` and `cmd/loadtest` inject these placeholder URLs; never ingest their output against staging without source-tagging.

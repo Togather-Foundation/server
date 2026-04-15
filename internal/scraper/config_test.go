@@ -3060,4 +3060,32 @@ func TestValidateConfigWithWarnings_ICSExtractionMethod(t *testing.T) {
 		_, err := ValidateConfigWithWarnings(cfg)
 		assert.NoError(t, err)
 	})
+
+	t.Run("ICS with tier 3 does not require graphql or rest", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		cfg.Tier = 3
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		assert.NoError(t, err)
+		found := false
+		for _, w := range warnings {
+			if strings.Contains(w, "tier 3 will be ignored") {
+				found = true
+			}
+		}
+		assert.True(t, found, "expected tier warning, got: %v", warnings)
+		for _, w := range warnings {
+			assert.NotContains(t, w, "graphql", "ICS tier 3 should not require graphql/rest: %s", w)
+		}
+	})
+
+	t.Run("tier 3 without ICS still requires graphql or rest", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseICS()
+		cfg.Tier = 3
+		cfg.ExtractionMethod = ""
+		_, err := ValidateConfigWithWarnings(cfg)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "tier 3 requires a graphql or rest config block")
+	})
 }

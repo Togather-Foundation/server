@@ -326,11 +326,11 @@ lint-ci:
 lint-openapi:
 	@echo "Validating OpenAPI specification..."
 	@if command -v vacuum > /dev/null 2>&1; then \
-		vacuum lint -r .vacuum.yaml docs/api/openapi.yaml; \
+		vacuum lint -r .vacuum.yaml -d -s docs/api/openapi.yaml; \
 	elif [ -f $(HOME)/go/bin/vacuum ]; then \
-		$(HOME)/go/bin/vacuum lint -r .vacuum.yaml docs/api/openapi.yaml; \
+		$(HOME)/go/bin/vacuum lint -r .vacuum.yaml -d -s docs/api/openapi.yaml; \
 	elif [ -f $(GOPATH)/bin/vacuum ]; then \
-		$(GOPATH)/bin/vacuum lint -r .vacuum.yaml docs/api/openapi.yaml; \
+		$(GOPATH)/bin/vacuum lint -r .vacuum.yaml -d -s docs/api/openapi.yaml; \
 	else \
 		echo "vacuum not found. Install with 'make install-tools'"; \
 		exit 1; \

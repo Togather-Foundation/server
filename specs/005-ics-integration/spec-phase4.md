@@ -1,6 +1,6 @@
 # Phase 4 Specification: Interop and Operations
 
-**Spec**: 005-ics-integration / Phase 4 | **Date**: 2026-04-14 | **Status**: Draft
+**Spec**: 005-ics-integration / Phase 4 | **Date**: 2026-04-14 | **Status**: Delivered
 **Parent**: `specs/005-ics-integration/plan.md`
 
 **Goal**: Prove bidirectional ICS interoperability with real external feed shapes and publish operational documentation/runbooks for reliable production use.
@@ -29,6 +29,11 @@ root cause is a Phase 2/3 contract bug (file follow-up there) or an interop gap
 | ICS contract tests (Phase 2: content type, DTSTAMP, pagination, 404/410) | Production | `tests/integration/ics_test.go` |
 | ICS fixture library (20 files: `parse-*` and `export-*` shapes) | Production | `tests/testdata/ics/` — `README.md` reserves `interop-*.ics` prefix for Phase 4 |
 | ICS compatibility matrix (4 rows: strict parser, Apple, Google, community-calendar) | Production | `docs/integration/ics-compatibility-matrix.md` |
+| ICS→SEL series dates pipeline (srv-bvpkq) | **Delivered** | `internal/ical/mapper.go`, `internal/domain/events/create_event_core.go`, `internal/storage/postgres/events_repository.go` |
+| `ParsedEvent.TZID` extraction from DTSTART | **Delivered** | `internal/ical/parse.go` — `extractTZID()` with Windows alias support |
+| `RecurrenceInput` on `EventInput` for ICS recurring events | **Delivered** | `internal/domain/events/validation.go` — `json:"-"`, zero blast-radius on non-ICS paths |
+| `UpsertEventSeries` in ingest pipeline | **Delivered** | `internal/domain/events/create_event_core.go` — step 10.5, inside transaction |
+| `event_series.external_key` for idempotent re-ingest | **Delivered** | `migrations/000045_event_series_external_key` |
 | Dedicated ICS integration runbook doc | Missing (Phase 4 deliverable) | — |
 | Interop test suite (external feed shapes → SEL, SEL → consumer expectations) | Missing (Phase 4 deliverable) | — |
 
@@ -36,8 +41,9 @@ root cause is a Phase 2/3 contract bug (file follow-up there) or an interop gap
 
 1. End-to-end interop test: real external ICS feed shapes → SEL ingest.
 2. End-to-end interop test: SEL ICS export → external consumer expectations, both `IncludeRRule=false` (default) and `IncludeRRule=true` modes.
-3. Updated ICS platform discovery heuristics in `docs/integration/event-platforms.md`.
-4. New operations guide: `docs/integration/ics-feeds.md`.
+3. **ICS→SEL series dates pipeline** (delivered via `srv-bvpkq`): ICS recurring events auto-populate `event_series.series_start_date`, `series_end_date`, `rrule`, `exdates`, `rdates`, and `schedule_timezone` via `RecurrenceInput` → `UpsertEventSeries` in `createEventCore`, enabling `eventSchedule` JSON-LD for ICS-sourced recurring events.
+4. Updated ICS platform discovery heuristics in `docs/integration/event-platforms.md`.
+5. New operations guide: `docs/integration/ics-feeds.md`.
 
 ### Non-Goals
 
@@ -81,6 +87,7 @@ As an operator, I can ingest representative real-world ICS feed shapes and get e
 4. **Given** an ICS fixture with RRULE + EXDATE using TZID-local-time (RFC 5545 §3.3.5: no trailing `Z` when TZID is set), **When** ingested, **Then** recurrence metadata is stored and excluded dates are correct — this is a regression guard for the Phase 3 EXDATE format fix.
 5. **Given** malformed entries mixed with valid entries, **When** ingest runs, **Then** valid entries succeed and malformed entries are captured in run diagnostics without aborting the full run.
 6. **Given** each ingest fixture, **When** the test asserts, **Then** assertions explicitly map to at least one row in `docs/integration/ics-compatibility-matrix.md`.
+7. **Given** an ICS fixture with RRULE (e.g. `FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260831T235959Z`) and TZID, **When** ingested via the ICS mapper, **Then** the `RecurrenceInput` on each expanded occurrence `EventInput` has: `ExternalKey` = `"<source_name>:<master_uid>"`, `SeriesStart` = DTSTART truncated to local date, `SeriesEnd` = UNTIL-derived date (nil for COUNT-only), `RRule` = value without `"RRULE:"` prefix, `TZID` = IANA timezone, and the `event_series` row is created with `series_start_date`, `series_end_date`, `rrule`, and `schedule_timezone` populated — this enables `eventSchedule` in the JSON-LD API response.
 
 ### User Story 2 - Export SEL to External Consumers (Priority: P1)
 
@@ -200,10 +207,47 @@ type RecurrenceRule struct {
 }
 ```
 
+**`RecurrenceInput` struct** (from `internal/domain/events/validation.go`) — populated
+by the ICS mapper on each expanded occurrence of a recurring event; wired into
+`createEventCore` via `UpsertEventSeries`:
+
+```go
+type RecurrenceInput struct {
+    ExternalKey string      // "<source_name>:<master_uid>" — upsert key for event_series
+    SeriesName   string      // Master VEVENT SUMMARY
+    SeriesStart  time.Time   // DTSTART truncated to local date (TZID-aware, not UTC)
+    SeriesEnd    *time.Time  // UNTIL date if present; nil for COUNT-only or infinite series
+    RRule        string      // RFC 5545 RRULE value (no "RRULE:" prefix)
+    ExDates      []time.Time // EXDATE UTC timestamps from master VEVENT
+    RDates       []time.Time // RDATE UTC timestamps from master VEVENT
+    TZID         string      // IANA timezone; empty → "UTC"
+}
+```
+
+**Series dates pipeline flow**:
+
+```
+ICS parse → ParsedEvent (TZID extracted from DTSTART)
+                    ↓
+ICS mapper → deriveSeriesEnd(RRULE) parses UNTIL → *time.Time
+           → RecurrenceInput populated on each expanded occurrence
+                    ↓
+createEventCore → validated.Recurrence != nil
+                → dbRepo.UpsertEventSeries(UpsertEventSeriesParams{...})
+                → params.SeriesID = &result.SeriesID
+                → dbRepo.Create(params) includes series_id
+                    ↓
+event_series row: external_key, name, series_start_date, series_end_date,
+                  rrule, exdates, rdates, schedule_timezone
+                    ↓
+API response: eventSchedule.startDate, .endDate, .repeatFrequency populated
+```
+
 **`eventSchedule` requirement**: export interop tests that assert the JSON-LD
 `eventSchedule` field (via `/api/v1/events`) must insert an `event_series` row with
 non-nil `series_start_date`/`series_end_date`. Without these, the API handler omits
-`eventSchedule` due to `omitempty`.
+`eventSchedule` due to `omitempty`. For ICS-sourced recurring events, this happens
+automatically via the `RecurrenceInput` → `UpsertEventSeries` pipeline.
 
 ### Interfaces
 
@@ -342,14 +386,14 @@ Documentation must reference existing config knobs from prior phases (e.g., ICS 
 
 ---
 
-## Open Questions
-
-1. Should Phase 4 include a versioned fixture refresh process for external feed format drift?
-2. Should parser-compatibility checks include a second ICS parsing library for stronger interop confidence?
-
 ## Rollback Notes (Phase 4)
 
 - If interop tests are unstable due to external drift, pin fixtures and mark volatile
   checks separately while retaining deterministic core contract tests.
 - If documentation updates conflict with runtime behavior, revert docs changes to last
   verified state and reopen implementation follow-up beads for contract corrections.
+- The `external_key` column on `event_series` (migration 000045) is additive and
+  safe to leave if the series dates pipeline needs rollback — the column is nullable
+  and unused by non-ICS paths. To fully revert: drop the column, remove `RecurrenceInput`
+  wiring in mapper and `createEventCore`, and revert the `UpsertEventSeries` storage
+  method.

@@ -12,6 +12,46 @@ import (
 	"github.com/Togather-Foundation/server/internal/sanitize"
 )
 
+// deriveSeriesEnd parses the UNTIL value from an RRULE string and returns the
+// date it represents. Returns nil if UNTIL is absent (COUNT-only or infinite
+// series). The RRULE value string may or may not start with "RRULE:"; both
+// forms are accepted.
+func deriveSeriesEnd(rruleStr string) *time.Time {
+	if rruleStr == "" {
+		return nil
+	}
+
+	val := rruleStr
+	if strings.HasPrefix(strings.ToUpper(val), "RRULE:") {
+		val = val[len("RRULE:"):]
+	}
+
+	for _, part := range strings.Split(val, ";") {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		if strings.EqualFold(kv[0], "UNTIL") {
+			// UNTIL may be DATE or DATE-TIME. Try DATE-TIME first, then DATE.
+			formats := []string{
+				"20060102T150405Z",
+				"20060102T150405",
+				"20060102Z",
+				"20060102",
+				time.RFC3339,
+			}
+			for _, f := range formats {
+				if t, err := time.Parse(f, kv[1]); err == nil {
+					return &t
+				}
+			}
+			// Could not parse UNTIL — treat as nil (honest over guessing).
+			return nil
+		}
+	}
+	return nil
+}
+
 // MapperOptions controls how parsed ICS events are converted to EventInputs.
 type MapperOptions struct {
 	SourceURL       string             // Feed URL for provenance (→ Source.URL)
@@ -115,6 +155,39 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 
 			duration := ev.End.Sub(ev.Start)
 
+			// Build shared RecurrenceInput for all occurrences of this master.
+			seriesStartLocal := ev.Start
+			if loc := ev.Start.Location(); loc != nil && loc != time.UTC {
+				seriesStartLocal = ev.Start.In(loc)
+			}
+			seriesStartLocal = seriesStartLocal.Truncate(24 * time.Hour)
+
+			seriesEnd := deriveSeriesEnd(ev.RRULE)
+
+			rruleValue := ev.RRULE
+			if strings.HasPrefix(strings.ToUpper(rruleValue), "RRULE:") {
+				rruleValue = rruleValue[len("RRULE:"):]
+			}
+
+			tzid := ev.TZID
+			if tzid == "" {
+				tzid = opts.Timezone
+			}
+			if tzid == "" {
+				tzid = "UTC"
+			}
+
+			recurrence := &events.RecurrenceInput{
+				ExternalKey: opts.SourceName + ":" + ev.UID,
+				SeriesName:  sanitize.Text(ev.Summary),
+				SeriesStart: seriesStartLocal,
+				SeriesEnd:   seriesEnd,
+				RRule:       rruleValue,
+				ExDates:     ev.ExDates,
+				RDates:      ev.RDates,
+				TZID:        tzid,
+			}
+
 			for _, occStart := range occurrences {
 				occEnd := occStart.Add(duration)
 
@@ -126,6 +199,7 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 					if input != nil {
 						// Override Source.EventID with composite UID:startDate.
 						input.Source.EventID = ev.UID + ":" + exc.Start.Format(time.RFC3339)
+						input.Recurrence = recurrence
 						results = append(results, *input)
 					}
 					continue
@@ -136,6 +210,7 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 				if input != nil {
 					// Composite Source.EventID for RRULE-expanded occurrences.
 					input.Source.EventID = ev.UID + ":" + occStart.Format(time.RFC3339)
+					input.Recurrence = recurrence
 					results = append(results, *input)
 				}
 			}
