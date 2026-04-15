@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race lint lint-ci lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
+.PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -32,20 +32,21 @@ help:
 	@echo "  make test-ci       - Run all test suites (fast, no race detector)"
 	@echo "  make test-ci-race  - Run tests exactly as CI does (with race detector, ~10min)"
 	@echo "  make lint          - Run golangci-lint"
-	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (no cache, 5m timeout)"
+	@echo "  make lint-debug-cold - Debug GH Actions lint failures (cold cache, slow)"
 	@echo "  make lint-openapi  - Validate OpenAPI specification"
 	@echo "  make lint-yaml     - Validate YAML files (GitHub workflows, configs)"
 	@echo "  make lint-js       - Validate JavaScript syntax (web/admin/static/js)"
 	@echo "  make lint-docs     - Check local Markdown links in docs/ resolve to real files"
 	@echo "  make lint-shell    - Lint shell scripts with shellcheck"
 	@echo "  make vulncheck     - Run govulncheck vulnerability scan"
-	@echo "  make ci            - Run full CI pipeline locally (lint, format check, tests, build)"
+	@echo "  make ci            - Run full CI pipeline (warm lint by default; use COLD=1 for GH Actions parity)"
+	@echo "  make ci-fast       - Run fast CI pipeline for agents (~90s, warm lint, parallel tests)"
 	@echo "  make test-v        - Run tests with verbose output"
 	@echo "  make test-race     - Run tests with race detector"
 	@echo "  make coverage      - Run tests with coverage report (enforces 35% min threshold)"
 	@echo "  make coverage-check - Check if coverage meets 35% min threshold"
 	@echo "  make lint          - Run golangci-lint"
-	@echo "  make lint-ci       - Run golangci-lint exactly as CI does (no cache, 5m timeout)"
+	@echo "  make lint-debug-cold - Debug GH Actions lint failures (cold cache, slow)"
 	@echo "  make fmt           - Format all Go files"
 	@echo "  make clean         - Remove build artifacts"
 	@echo "  make run           - Build and run the server (kills existing first), log to temp/server.log"
@@ -141,24 +142,65 @@ test-ci:
 	@echo "==> Running unit tests..."
 	@$(RUN) go test -v -coverprofile=coverage.out $(shell go list ./internal/... | grep -v 'internal/loadtest$$\|internal/telemetry$$')
 	@echo ""
-	@echo "==> Running contract tests..."
-	@if ! command -v pyshacl > /dev/null 2>&1; then \
-		echo "WARNING: pyshacl not found. SHACL validation will be skipped."; \
-		echo "Install with: make install-pyshacl"; \
-		echo ""; \
-	fi
-	@$(RUN) go test -v ./tests/contracts/...
-	@echo ""
-	@echo "==> Running integration tests..."
-	@$(RUN) go test -v ./tests/integration/...
-	@echo ""
-	@echo "==> Running batch integration tests (with River workers)..."
-	@$(RUN) go test -v ./tests/integration_batch/...
-	@echo ""
-	@echo "==> Running E2E tests..."
-	@$(RUN) go test -v ./tests/e2e/...
+	@$(MAKE) test-ci-parallel
 	@echo ""
 	@echo "✓ All tests passed!"
+
+# Run integration test suites in parallel
+test-ci-parallel:
+	@echo "==> Running test suites in parallel..."
+	@mkdir -p .ci-logs
+	@FAIL=0; \
+	go test -v ./tests/contracts/...        > .ci-logs/contracts.log 2>&1 & PID_CONTRACTS=$$!; \
+	go test -v ./tests/integration/...      > .ci-logs/integration.log 2>&1 & PID_INTEGRATION=$$!; \
+	go test -v ./tests/integration_batch/...> .ci-logs/integration_batch.log 2>&1 & PID_BATCH=$$!; \
+	go test -v ./tests/e2e/...              > .ci-logs/e2e.log 2>&1 & PID_E2E=$$!; \
+	echo ""; \
+	CONTRACTS_RC=0; INTEGRATION_RC=0; BATCH_RC=0; E2E_RC=0; \
+	wait $$PID_CONTRACTS || CONTRACTS_RC=$$?; \
+	wait $$PID_INTEGRATION || INTEGRATION_RC=$$?; \
+	wait $$PID_BATCH || BATCH_RC=$$?; \
+	wait $$PID_E2E || E2E_RC=$$?; \
+	echo "==> Test Suite Results:"; \
+	echo ""; \
+	if [ $$CONTRACTS_RC -eq 0 ]; then \
+		echo "  ✓ contracts"; \
+	else \
+		echo "  ✗ contracts (exit $$CONTRACTS_RC)"; \
+		echo "    Last 20 lines:"; \
+		tail -20 .ci-logs/contracts.log | sed 's/^/    /'; \
+		echo "    Full log: .ci-logs/contracts.log"; \
+		FAIL=1; \
+	fi; \
+	if [ $$INTEGRATION_RC -eq 0 ]; then \
+		echo "  ✓ integration"; \
+	else \
+		echo "  ✗ integration (exit $$INTEGRATION_RC)"; \
+		echo "    Last 20 lines:"; \
+		tail -20 .ci-logs/integration.log | sed 's/^/    /'; \
+		echo "    Full log: .ci-logs/integration.log"; \
+		FAIL=1; \
+	fi; \
+	if [ $$BATCH_RC -eq 0 ]; then \
+		echo "  ✓ integration_batch"; \
+	else \
+		echo "  ✗ integration_batch (exit $$BATCH_RC)"; \
+		echo "    Last 20 lines:"; \
+		tail -20 .ci-logs/integration_batch.log | sed 's/^/    /'; \
+		echo "    Full log: .ci-logs/integration_batch.log"; \
+		FAIL=1; \
+	fi; \
+	if [ $$E2E_RC -eq 0 ]; then \
+		echo "  ✓ e2e"; \
+	else \
+		echo "  ✗ e2e (exit $$E2E_RC)"; \
+		echo "    Last 20 lines:"; \
+		tail -20 .ci-logs/e2e.log | sed 's/^/    /'; \
+		echo "    Full log: .ci-logs/e2e.log"; \
+		FAIL=1; \
+	fi; \
+	echo ""; \
+	exit $$FAIL
 
 # Run tests exactly as CI does (with race detector — slow, ~10min)
 test-ci-race:
@@ -308,9 +350,9 @@ lint:
 		exit 1; \
 	fi
 
-# Run linter exactly as CI does (cold cache, matches GitHub Actions behaviour)
-lint-ci:
-	@echo "Running linter as CI does (no cache, 5m timeout)..."
+# Cold-cache lint for debugging GitHub Actions failures locally. Not for normal use.
+lint-debug-cold:
+	@echo "Running linter with cold cache (GH Actions debug mode)..."
 	@if command -v golangci-lint > /dev/null 2>&1; then \
 		GOLANGCI_LINT_CACHE=$$(mktemp -d) golangci-lint run --timeout=5m --allow-parallel-runners ./...; \
 	elif [ -f $(HOME)/go/bin/golangci-lint ]; then \
@@ -438,7 +480,13 @@ docker-compose-lint:
 	@echo "✓ docker-compose.blue-green.yml is valid"
 
 # Run full CI pipeline locally
-ci: sqlc-generate lint-ci vulncheck
+ci: sqlc-generate vulncheck
+	@# Use COLD=1 to replicate GitHub Actions cold-cache lint (slow, for debugging GH failures)
+	@if [ "$(COLD)" = "1" ]; then \
+		$(MAKE) lint-debug-cold; \
+	else \
+		$(MAKE) lint; \
+	fi
 	@echo ""
 	@echo "=========================================="
 	@echo "Starting CI pipeline at $$(date '+%H:%M:%S')"
@@ -498,6 +546,70 @@ ci: sqlc-generate lint-ci vulncheck
 	@echo ""
 	@echo "=========================================="
 	@echo "✓ All CI checks passed!"
+	@if [ -f .ci-start-time ]; then \
+		CI_START=$$(cat .ci-start-time); \
+		CI_END=$$(date +%s); \
+		CI_DURATION=$$((CI_END - CI_START)); \
+		CI_MINUTES=$$((CI_DURATION / 60)); \
+		CI_SECONDS=$$((CI_DURATION % 60)); \
+		echo "Completed at $$(date '+%H:%M:%S') (took $${CI_MINUTES}m $${CI_SECONDS}s)"; \
+		rm -f .ci-start-time; \
+	fi
+	@echo "=========================================="
+
+# Fast CI gate for agent pre-commit use (~90s). Skips cold-cache lint, vulncheck, and docker-dependent checks.
+ci-fast:
+	@echo ""
+	@echo "=========================================="
+	@echo "Starting fast CI pipeline at $$(date '+%H:%M:%S')"
+	@echo "=========================================="
+	@date +%s > .ci-start-time
+	@echo ""
+	@$(MAKE) lint
+	@echo ""
+	@echo "==> Checking code formatting..."
+	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \
+		echo "✗ Code is not formatted. Run 'make fmt'"; \
+		gofmt -l .; \
+		exit 1; \
+	else \
+		echo "✓ Code is properly formatted"; \
+	fi
+	@echo ""
+	@echo "==> Validating OpenAPI specification..."
+	@$(MAKE) lint-openapi
+	@echo ""
+	@echo "==> Validating JavaScript files..."
+	@$(MAKE) lint-js
+	@echo ""
+	@echo "==> Checking Markdown links in docs/..."
+	@$(MAKE) lint-docs
+	@echo ""
+	@echo "==> Linting shell scripts..."
+	@$(MAKE) lint-shell
+	@echo ""
+	@echo "==> Building server..."
+	@$(MAKE) build
+	@if [ ! -f bin/togather-server ]; then \
+		echo "✗ Build failed: binary not found"; \
+		exit 1; \
+	fi
+	@echo "✓ Build successful"
+	@echo ""
+	@echo "==> Checking SQLc generation is up to date..."
+	@if [ -n "$$(git status --porcelain internal/storage/postgres/sqlc)" ]; then \
+		echo "✗ Generated SQLc code differs from committed version"; \
+		echo "Run 'make sqlc-generate' and commit changes"; \
+		git diff internal/storage/postgres/sqlc; \
+		exit 1; \
+	else \
+		echo "✓ SQLc code is up to date"; \
+	fi
+	@echo ""
+	@$(MAKE) test-ci
+	@echo ""
+	@echo "=========================================="
+	@echo "✓ All fast CI checks passed!"
 	@if [ -f .ci-start-time ]; then \
 		CI_START=$$(cat .ci-start-time); \
 		CI_END=$$(date +%s); \
