@@ -15,7 +15,6 @@ extraction_method: "ics"
 insecure_skip_verify: true
 request_timeout: "120s"
 max_body_bytes: 15000000
-ics_start_date: "today"
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"

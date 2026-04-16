@@ -42,25 +42,11 @@ func NewICSExtractor(client *http.Client, maxBodyBytes int64, insecureSkipVerify
 func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig config.ICSConfig) ([]events.EventInput, []string, error) {
 	var allWarnings []string
 
-	// Build the feed URL with optional start_date filter.
-	feedURL := cfg.URL
-	if cfg.ICSStartDate != "" {
-		startDate := cfg.ICSStartDate
-		if startDate == "today" {
-			startDate = time.Now().Format("2006-01-02")
-		}
-		separator := "?"
-		if strings.Contains(feedURL, "?") {
-			separator = "&"
-		}
-		feedURL = feedURL + separator + "start_date=" + startDate
-	}
-
 	// 1. Fetch the ICS feed.
-	data, fetchWarnings, err := e.fetchFeed(ctx, feedURL, cfg.Headers)
+	data, fetchWarnings, err := e.fetchFeed(ctx, cfg.URL, cfg.Headers)
 	allWarnings = append(allWarnings, fetchWarnings...)
 	if err != nil {
-		return nil, allWarnings, fmt.Errorf("ics fetch %q: %w", feedURL, err)
+		return nil, allWarnings, fmt.Errorf("ics fetch %q: %w", cfg.URL, err)
 	}
 
 	// 2. Parse the ICS data.

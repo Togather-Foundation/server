@@ -113,13 +113,6 @@ type SourceConfig struct {
 	// Only applies when extraction_method is "ics".
 	MaxBodyBytes int64 `yaml:"max_body_bytes,omitempty" json:"max_body_bytes,omitempty"`
 
-	// ICSStartDate appends a start_date query parameter to the ICS feed URL
-	// for sources that support date filtering (e.g. WordPress MEC). Value is
-	// a Go time format string (e.g. "2006-01-02"). The special value "today"
-	// uses the current date. Use to filter out past events from large feeds.
-	// Only applies when extraction_method is "ics".
-	ICSStartDate string `yaml:"ics_start_date,omitempty" json:"ics_start_date,omitempty"`
-
 	// normalized is true after normalizeDescriptionSelectors has been applied.
 	// Used to avoid emitting inaccurate deprecation warnings in ValidateConfigWithWarnings
 	// when the config has already been normalized (warning already emitted accurately in loadFile).
