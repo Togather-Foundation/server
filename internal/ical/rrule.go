@@ -15,8 +15,9 @@ const DefaultMaxOccurrences = 100
 
 // RRuleOptions controls RRULE expansion behavior.
 type RRuleOptions struct {
-	HorizonDays    int // How far forward to expand (default: 90)
-	MaxOccurrences int // Safety cap (default: 100)
+	HorizonDays    int       // How far forward to expand (default: 90)
+	MaxOccurrences int       // Safety cap (default: 100)
+	Now            time.Time // Reference time for window calculation; zero → time.Now()
 }
 
 // ExpandRRule expands an RRULE string into concrete occurrence times.
@@ -83,7 +84,10 @@ func ExpandRRule(rruleStr string, dtstart time.Time, exdates, rdates []time.Time
 	// Window: from dtstart to now + HorizonDays.
 	// Past occurrences (before now) are excluded — a series that has ended
 	// returns an empty slice.
-	now := time.Now()
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
 	windowStart := now
 	if dtstart.After(now) {
 		windowStart = dtstart

@@ -10,6 +10,10 @@ import (
 )
 
 // defaultMapperOpts returns MapperOptions for tests with sensible defaults.
+// Now is fixed to 2020-01-01 so that all hardcoded event dates in test
+// fixtures (2026+) are always treated as future, regardless of when the
+// tests run. Tests that need specific past/future behaviour set opts.Now
+// explicitly after calling this function.
 func defaultMapperOpts() MapperOptions {
 	return MapperOptions{
 		SourceURL:  "https://example.com/feed.ics",
@@ -17,6 +21,7 @@ func defaultMapperOpts() MapperOptions {
 		TrustLevel: 5,
 		License:    "CC0-1.0",
 		Timezone:   "America/Toronto",
+		Now:        time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 }
 
@@ -539,7 +544,8 @@ func TestMapToEventInputs_DurationEndDate(t *testing.T) {
 		},
 	}
 
-	results, _, err := MapToEventInputs(context.Background(), cal, defaultMapperOpts())
+	opts := defaultMapperOpts()
+	results, _, err := MapToEventInputs(context.Background(), cal, opts)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -553,15 +559,11 @@ func TestMapToEventInputs_DurationEndDate(t *testing.T) {
 func TestMapToEventInputs_RecurrenceIDException(t *testing.T) {
 	t.Parallel()
 
-	// Master recurring event + exception that replaces one occurrence.
-	masterStart := time.Now().Add(24 * time.Hour).Truncate(time.Second).UTC()
-	// Adjust to a Tuesday for weekly recurrence.
-	for masterStart.Weekday() != time.Tuesday {
-		masterStart = masterStart.AddDate(0, 0, 1)
-	}
-
-	exceptionOriginal := masterStart.AddDate(0, 0, 7)    // second occurrence
-	exceptionNew := exceptionOriginal.Add(4 * time.Hour) // rescheduled 4h later
+	// Fixed anchor: defaultMapperOpts sets Now=2020-01-01; use HorizonDays=3650
+	// (10 years) so these fixed future dates always land within the window.
+	masterStart := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC) // a Tuesday
+	exceptionOriginal := masterStart.AddDate(0, 0, 7)           // second occurrence
+	exceptionNew := exceptionOriginal.Add(4 * time.Hour)        // rescheduled 4h later
 
 	cal := &ParsedCalendar{
 		Events: []ParsedEvent{
@@ -583,7 +585,7 @@ func TestMapToEventInputs_RecurrenceIDException(t *testing.T) {
 	}
 
 	opts := defaultMapperOpts()
-	opts.HorizonDays = 90
+	opts.HorizonDays = 3650 // wide window so fixed future dates always land inside
 
 	results, _, err := MapToEventInputs(context.Background(), cal, opts)
 	if err != nil {
@@ -618,10 +620,112 @@ func TestMapToEventInputs_RecurrenceIDException(t *testing.T) {
 	}
 }
 
+// TestMapToEventInputs_RecurrenceIDException_PastReschedule verifies that a
+// RECURRENCE-ID exception rescheduled to a past time is filtered out, while
+// the remaining future occurrences are still included.
+func TestMapToEventInputs_RecurrenceIDException_PastReschedule(t *testing.T) {
+	t.Parallel()
+
+	anchor := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	// Master weekly event starting after anchor; three occurrences.
+	masterStart := time.Date(2026, 6, 3, 10, 0, 0, 0, time.UTC) // a Wednesday
+	secondOccurrence := masterStart.AddDate(0, 0, 7)
+
+	// Exception reschedules the second occurrence to a time before anchor.
+	exceptionPastStart := anchor.Add(-48 * time.Hour)
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:     "reschedule-past-001",
+				Summary: "Weekly Event",
+				Start:   masterStart,
+				End:     masterStart.Add(time.Hour),
+				RRULE:   "FREQ=WEEKLY;COUNT=3",
+			},
+			{
+				UID:          "reschedule-past-001",
+				Summary:      "Moved To Past",
+				RecurrenceID: secondOccurrence,
+				Start:        exceptionPastStart,
+				End:          exceptionPastStart.Add(time.Hour),
+			},
+		},
+	}
+
+	opts := defaultMapperOpts()
+	opts.Now = anchor
+
+	results, _, err := MapToEventInputs(context.Background(), cal, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The exception (rescheduled to the past) should be excluded.
+	// Occurrences 1 and 3 are future — expect 2 results.
+	if len(results) != 2 {
+		t.Fatalf("expected 2 results (past exception excluded), got %d", len(results))
+	}
+	for _, r := range results {
+		if r.Name == "Moved To Past" {
+			t.Error("past-rescheduled exception should have been filtered out")
+		}
+	}
+}
+
+// TestMapToEventInputs_RRuleParseFailure_PastFiltered verifies that when RRULE
+// expansion fails (malformed rule), the event falls back to single-event
+// treatment and is still subject to the past-event filter.
+func TestMapToEventInputs_RRuleParseFailure_PastFiltered(t *testing.T) {
+	t.Parallel()
+
+	anchor := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:     "bad-rrule-past-001",
+				Summary: "Past Event With Bad RRULE",
+				Start:   anchor.Add(-48 * time.Hour),
+				End:     anchor.Add(-24 * time.Hour),
+				RRULE:   "FREQ=NOTVALID",
+			},
+			{
+				UID:     "bad-rrule-future-001",
+				Summary: "Future Event With Bad RRULE",
+				Start:   anchor.Add(24 * time.Hour),
+				End:     anchor.Add(26 * time.Hour),
+				RRULE:   "FREQ=NOTVALID",
+			},
+		},
+	}
+
+	opts := defaultMapperOpts()
+	opts.Now = anchor
+
+	results, warnings, err := MapToEventInputs(context.Background(), cal, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(warnings) != 2 {
+		t.Errorf("expected 2 RRULE warnings, got %d: %v", len(warnings), warnings)
+	}
+	// Past event should be filtered; future event should be included.
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (future only), got %d", len(results))
+	}
+	if results[0].Source.EventID != "bad-rrule-future-001" {
+		t.Errorf("expected bad-rrule-future-001, got %q", results[0].Source.EventID)
+	}
+}
+
 func TestMapToEventInputs_RecurringCompositeEventID(t *testing.T) {
 	t.Parallel()
 
-	dtstart := time.Now().Add(24 * time.Hour).Truncate(time.Second).UTC()
+	// Fixed anchor: defaultMapperOpts sets Now=2020-01-01; dtstart is one day
+	// later and always within the default 90-day horizon.
+	dtstart := time.Date(2020, 1, 2, 9, 0, 0, 0, time.UTC)
 
 	cal := &ParsedCalendar{
 		Events: []ParsedEvent{
@@ -751,8 +855,9 @@ func containsHTML(s string) bool {
 func TestMapToEventInputs_RRULECappedWarning(t *testing.T) {
 	t.Parallel()
 
-	// Create a recurring event that produces many occurrences (daily, no COUNT/UNTIL).
-	dtstart := time.Now().Add(24 * time.Hour).Truncate(time.Second).UTC()
+	// Fixed anchor: defaultMapperOpts sets Now=2020-01-01; dtstart is one day
+	// later and always within the default 90-day horizon.
+	dtstart := time.Date(2020, 1, 2, 9, 0, 0, 0, time.UTC)
 	cal := &ParsedCalendar{
 		Events: []ParsedEvent{
 			{
@@ -873,6 +978,8 @@ func TestDeriveSeriesEnd(t *testing.T) {
 func TestMapToEventInputs_RecurrenceInput(t *testing.T) {
 	t.Parallel()
 
+	// Fixed anchor: defaultMapperOpts sets Now=2020-01-01 so the 2026 dates
+	// used in this test are within the expanded 3650-day horizon.
 	toronto, _ := time.LoadLocation("America/Toronto")
 	masterStart := time.Date(2026, 7, 6, 19, 0, 0, 0, toronto)
 
@@ -891,7 +998,7 @@ func TestMapToEventInputs_RecurrenceInput(t *testing.T) {
 	}
 
 	opts := defaultMapperOpts()
-	opts.HorizonDays = 90
+	opts.HorizonDays = 3650 // wide window so 2026 dates always land inside
 
 	results, _, err := MapToEventInputs(context.Background(), cal, opts)
 	if err != nil {
@@ -949,7 +1056,9 @@ func TestMapToEventInputs_RecurrenceInput(t *testing.T) {
 func TestMapToEventInputs_RecurrenceInput_CountOnly_NilEnd(t *testing.T) {
 	t.Parallel()
 
-	dtstart := time.Now().Add(24 * time.Hour).Truncate(time.Second).UTC()
+	// Fixed anchor: defaultMapperOpts sets Now=2020-01-01; dtstart is one day
+	// later and always within the default 90-day horizon.
+	dtstart := time.Date(2020, 1, 2, 10, 0, 0, 0, time.UTC)
 
 	cal := &ParsedCalendar{
 		Events: []ParsedEvent{
@@ -1006,5 +1115,89 @@ func TestMapToEventInputs_NonRecurring_NoRecurrence(t *testing.T) {
 
 	if results[0].Recurrence != nil {
 		t.Error("expected Recurrence to be nil for non-recurring event")
+	}
+}
+
+// TestMapToEventInputs_PastEventsFiltered verifies that non-recurring events
+// whose effective end time (or start if no end) is in the past are skipped.
+func TestMapToEventInputs_PastEventsFiltered(t *testing.T) {
+	t.Parallel()
+
+	// Use a fixed anchor so the test is deterministic regardless of when it runs.
+	anchor := time.Date(2030, 6, 1, 12, 0, 0, 0, time.UTC)
+	past := anchor.Add(-24 * time.Hour)
+	future := anchor.Add(48 * time.Hour)
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:     "past-001",
+				Summary: "Stale Event",
+				Start:   past.Add(-2 * time.Hour),
+				End:     past, // ended before anchor
+			},
+			{
+				UID:     "future-001",
+				Summary: "Upcoming Event",
+				Start:   future,
+				End:     future.Add(2 * time.Hour),
+			},
+			{
+				// Zero-duration event (end == start) in the past.
+				UID:     "past-nodur-001",
+				Summary: "No Duration Past",
+				Start:   past,
+				End:     past, // zero-duration: end == start, falls back to start check
+			},
+		},
+	}
+
+	opts := defaultMapperOpts()
+	opts.Now = anchor
+	results, _, err := MapToEventInputs(context.Background(), cal, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result (future only), got %d", len(results))
+	}
+	if results[0].Source.EventID != "future-001" {
+		t.Errorf("expected future-001, got %q", results[0].Source.EventID)
+	}
+}
+
+// TestIsOccurrencePast covers the helper directly with a fixed anchor time.
+func TestIsOccurrencePast(t *testing.T) {
+	t.Parallel()
+
+	anchor := time.Date(2030, 6, 1, 12, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name   string
+		start  time.Time
+		end    time.Time
+		expect bool
+	}{
+		{"ended before anchor", anchor.Add(-48 * time.Hour), anchor.Add(-24 * time.Hour), true},
+		{"ends after anchor", anchor.Add(-1 * time.Hour), anchor.Add(1 * time.Hour), false},
+		{"starts after anchor no meaningful end", anchor.Add(1 * time.Hour), anchor.Add(1 * time.Hour), false},
+		{"started before anchor no meaningful end", anchor.Add(-1 * time.Hour), anchor.Add(-1 * time.Hour), true},
+		// Event ending exactly at anchor is considered past (has just ended).
+		{"ends exactly at anchor", anchor.Add(-1 * time.Hour), anchor, true},
+		// Zero end time falls back to start time check.
+		{"zero end before anchor", anchor.Add(-1 * time.Hour), time.Time{}, true},
+		{"zero end after anchor", anchor.Add(1 * time.Hour), time.Time{}, false},
+		// Malformed: end before start — falls back to start time check.
+		{"malformed end before start past", anchor.Add(-1 * time.Hour), anchor.Add(-2 * time.Hour), true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := isOccurrencePast(tc.start, tc.end, anchor)
+			if got != tc.expect {
+				t.Errorf("isOccurrencePast(%v, %v) = %v, want %v", tc.start, tc.end, got, tc.expect)
+			}
+		})
 	}
 }

@@ -65,11 +65,11 @@ func TestParse_BasicEvent(t *testing.T) {
 		t.Errorf("URL = %q, want %q", ev.URL, "https://example.com/meetup")
 	}
 
-	wantStart := time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC)
+	wantStart := time.Date(2027, 4, 15, 19, 0, 0, 0, time.UTC)
 	if !ev.Start.Equal(wantStart) {
 		t.Errorf("Start = %v, want %v", ev.Start, wantStart)
 	}
-	wantEnd := time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC)
+	wantEnd := time.Date(2027, 4, 15, 21, 0, 0, 0, time.UTC)
 	if !ev.End.Equal(wantEnd) {
 		t.Errorf("End = %v, want %v", ev.End, wantEnd)
 	}
@@ -105,11 +105,11 @@ func TestParse_BasicEvent(t *testing.T) {
 	}
 
 	// Timestamps
-	wantCreated := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	wantCreated := time.Date(2027, 1, 1, 12, 0, 0, 0, time.UTC)
 	if !ev.Created.Equal(wantCreated) {
 		t.Errorf("Created = %v, want %v", ev.Created, wantCreated)
 	}
-	wantLastMod := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
+	wantLastMod := time.Date(2027, 4, 1, 12, 0, 0, 0, time.UTC)
 	if !ev.LastMod.Equal(wantLastMod) {
 		t.Errorf("LastMod = %v, want %v", ev.LastMod, wantLastMod)
 	}
@@ -208,8 +208,8 @@ func TestParse_RecurringWeekly(t *testing.T) {
 	if len(ev.ExDates) != 2 {
 		t.Fatalf("ExDates len = %d, want 2", len(ev.ExDates))
 	}
-	wantExDate1 := time.Date(2026, 4, 21, 10, 0, 0, 0, time.UTC)
-	wantExDate2 := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	wantExDate1 := time.Date(2027, 4, 21, 10, 0, 0, 0, time.UTC)
+	wantExDate2 := time.Date(2027, 5, 5, 10, 0, 0, 0, time.UTC)
 	if !ev.ExDates[0].Equal(wantExDate1) {
 		t.Errorf("ExDates[0] = %v, want %v", ev.ExDates[0], wantExDate1)
 	}
@@ -240,8 +240,8 @@ func TestParse_RecurringMonthly(t *testing.T) {
 	if len(ev.RDates) != 2 {
 		t.Fatalf("RDates len = %d, want 2", len(ev.RDates))
 	}
-	wantRDate1 := time.Date(2026, 5, 1, 19, 0, 0, 0, time.UTC)
-	wantRDate2 := time.Date(2026, 6, 1, 19, 0, 0, 0, time.UTC)
+	wantRDate1 := time.Date(2027, 5, 1, 19, 0, 0, 0, time.UTC)
+	wantRDate2 := time.Date(2027, 6, 1, 19, 0, 0, 0, time.UTC)
 	if !ev.RDates[0].Equal(wantRDate1) {
 		t.Errorf("RDates[0] = %v, want %v", ev.RDates[0], wantRDate1)
 	}
@@ -299,11 +299,11 @@ func TestParse_FloatingTime(t *testing.T) {
 	ev := cal.Events[0]
 
 	// Floating times are parsed in time.Local per parseTimeProp.
-	wantStart := time.Date(2026, 4, 15, 19, 0, 0, 0, time.Local)
+	wantStart := time.Date(2027, 4, 15, 19, 0, 0, 0, time.Local)
 	if !ev.Start.Equal(wantStart) {
 		t.Errorf("Start = %v, want %v (Local)", ev.Start, wantStart)
 	}
-	wantEnd := time.Date(2026, 4, 15, 21, 0, 0, 0, time.Local)
+	wantEnd := time.Date(2027, 4, 15, 21, 0, 0, 0, time.Local)
 	if !ev.End.Equal(wantEnd) {
 		t.Errorf("End = %v, want %v (Local)", ev.End, wantEnd)
 	}
@@ -332,11 +332,11 @@ func TestParse_AllDay(t *testing.T) {
 	}
 
 	// VALUE=DATE parsed in time.Local.
-	wantStart := time.Date(2026, 4, 15, 0, 0, 0, 0, time.Local)
+	wantStart := time.Date(2027, 4, 15, 0, 0, 0, 0, time.Local)
 	if !ev.Start.Equal(wantStart) {
 		t.Errorf("Start = %v, want %v", ev.Start, wantStart)
 	}
-	wantEnd := time.Date(2026, 4, 16, 0, 0, 0, 0, time.Local)
+	wantEnd := time.Date(2027, 4, 16, 0, 0, 0, 0, time.Local)
 	if !ev.End.Equal(wantEnd) {
 		t.Errorf("End = %v, want %v", ev.End, wantEnd)
 	}
@@ -482,11 +482,11 @@ func TestParse_OutlookVTIMEZONE(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to load America/New_York: %v", err)
 	}
-	wantStart := time.Date(2026, 4, 15, 14, 0, 0, 0, nyLoc)
+	wantStart := time.Date(2027, 4, 15, 14, 0, 0, 0, nyLoc)
 	if !ev.Start.Equal(wantStart) {
 		t.Errorf("Start = %v, want %v", ev.Start, wantStart)
 	}
-	wantEnd := time.Date(2026, 4, 15, 15, 0, 0, 0, nyLoc)
+	wantEnd := time.Date(2027, 4, 15, 15, 0, 0, 0, nyLoc)
 	if !ev.End.Equal(wantEnd) {
 		t.Errorf("End = %v, want %v", ev.End, wantEnd)
 	}
@@ -519,7 +519,7 @@ func TestParse_DurationEvent(t *testing.T) {
 	}
 
 	// End computed from Start + Duration since no DTEND.
-	wantStart := time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC)
+	wantStart := time.Date(2027, 4, 15, 19, 0, 0, 0, time.UTC)
 	wantEnd := wantStart.Add(wantDuration)
 	if !ev.Start.Equal(wantStart) {
 		t.Errorf("Start = %v, want %v", ev.Start, wantStart)
@@ -577,7 +577,7 @@ func TestParse_RecurrenceID(t *testing.T) {
 	}
 
 	// Exception should have RECURRENCE-ID.
-	wantRecID := time.Date(2026, 4, 21, 10, 0, 0, 0, time.UTC)
+	wantRecID := time.Date(2027, 4, 21, 10, 0, 0, 0, time.UTC)
 	if !exception.RecurrenceID.Equal(wantRecID) {
 		t.Errorf("exception RecurrenceID = %v, want %v", exception.RecurrenceID, wantRecID)
 	}
@@ -585,7 +585,7 @@ func TestParse_RecurrenceID(t *testing.T) {
 		t.Errorf("exception Summary = %q", exception.Summary)
 	}
 	// Exception has different start time (rescheduled to 14:00).
-	wantExStart := time.Date(2026, 4, 21, 14, 0, 0, 0, time.UTC)
+	wantExStart := time.Date(2027, 4, 21, 14, 0, 0, 0, time.UTC)
 	if !exception.Start.Equal(wantExStart) {
 		t.Errorf("exception Start = %v, want %v", exception.Start, wantExStart)
 	}
@@ -917,7 +917,7 @@ func TestParse_MeetupVTIMEZONE(t *testing.T) {
 	if ev.UID != "techto-001@meetup.com" {
 		t.Errorf("UID = %q, want %q", ev.UID, "techto-001@meetup.com")
 	}
-	wantStart := time.Date(2026, 7, 15, 18, 0, 0, 0, torontoLoc)
+	wantStart := time.Date(2027, 7, 15, 18, 0, 0, 0, torontoLoc)
 	if !ev.Start.Equal(wantStart) {
 		t.Errorf("Start = %v, want %v", ev.Start, wantStart)
 	}

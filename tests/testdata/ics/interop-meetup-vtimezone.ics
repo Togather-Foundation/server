@@ -26,8 +26,8 @@ X-WR-CALDESC:TechTO Meetup events
 BEGIN:VEVENT
 UID:techto-001@meetup.com
 SUMMARY:TechTO Monthly Gathering
-DTSTART;TZID=America/Toronto:20260715T180000
-DTEND;TZID=America/Toronto:20260715T210000
+DTSTART;TZID=America/Toronto:20270715T180000
+DTEND;TZID=America/Toronto:20270715T210000
 LOCATION:100 King St W\, Toronto\, ON
 DESCRIPTION:Monthly tech gathering for Toronto's tech community.
 URL:https://www.meetup.com/techto/events/123456/

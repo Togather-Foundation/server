@@ -62,6 +62,9 @@ type MapperOptions struct {
 	DefaultLocation *events.PlaceInput // Fallback location when VEVENT LOCATION is empty
 	HorizonDays     int                // RRULE expansion window (default: 90)
 	MaxOccurrences  int                // Safety cap on expanded occurrences (default: 100)
+	// Now is the reference time used to filter out past events. If zero,
+	// time.Now() is called once at the start of MapToEventInputs.
+	Now time.Time
 }
 
 // MapToEventInputs converts parsed ICS events to SEL EventInputs.
@@ -112,6 +115,10 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 
 	var results []events.EventInput
 	var warnings []string
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
 
 	for _, ev := range masterEvents {
 		select {
@@ -131,15 +138,19 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 			rrOpts := RRuleOptions{
 				HorizonDays:    horizonDays,
 				MaxOccurrences: maxOcc,
+				Now:            now,
 			}
 			occurrences, capped, err := ExpandRRule(ev.RRULE, ev.Start, ev.ExDates, ev.RDates, rrOpts)
 			if err != nil {
 				// Failed to parse RRULE — treat as single non-recurring event.
+				// Still apply past-event filter before adding.
 				warnings = append(warnings, fmt.Sprintf("RRULE expansion failed (UID: %s): %v", ev.UID, err))
-				input, ws := mapSingleEvent(ev, ev.Start, ev.End, fallbackLoc, opts)
-				warnings = append(warnings, ws...)
-				if input != nil {
-					results = append(results, *input)
+				if !isOccurrencePast(ev.Start, ev.End, now) {
+					input, ws := mapSingleEvent(ev, ev.Start, ev.End, fallbackLoc, opts)
+					warnings = append(warnings, ws...)
+					if input != nil {
+						results = append(results, *input)
+					}
 				}
 				continue
 			}
@@ -191,8 +202,22 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 			for _, occStart := range occurrences {
 				occEnd := occStart.Add(duration)
 
+				// Skip occurrences that have already ended. ExpandRRule's
+				// windowStart already excludes most past occurrences, but this
+				// guard also covers zero-duration events and ensures a consistent
+				// cutoff when opts.Now is injected.
+				if isOccurrencePast(occStart, occEnd, now) {
+					continue
+				}
+
 				// Check if this occurrence has a RECURRENCE-ID exception.
 				if exc, ok := exceptions[occStart.Unix()]; ok {
+					// The exception may reschedule to a different (potentially
+					// past) time — apply the filter against the exception's
+					// actual start/end, not the original occurrence slot.
+					if isOccurrencePast(exc.Start, exc.End, now) {
+						continue
+					}
 					// Use the exception's data instead.
 					input, ws := mapSingleEvent(*exc, exc.Start, exc.End, fallbackLoc, opts)
 					warnings = append(warnings, ws...)
@@ -215,7 +240,11 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 				}
 			}
 		} else {
-			// Non-recurring event.
+			// Non-recurring event: skip if it has already ended.
+			if isOccurrencePast(ev.Start, ev.End, now) {
+				slog.Debug("skipping past event", "uid", ev.UID, "start", ev.Start)
+				continue
+			}
 			input, ws := mapSingleEvent(ev, ev.Start, ev.End, fallbackLoc, opts)
 			warnings = append(warnings, ws...)
 			if input != nil {
@@ -225,6 +254,18 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 	}
 
 	return results, warnings, nil
+}
+
+// isOccurrencePast reports whether an event occurrence has already ended
+// relative to the provided now snapshot. If endTime is zero or not after
+// startTime (zero-duration, malformed, or all-day with no explicit end),
+// only startTime is used. An event ending exactly at now is considered past
+// (it has just ended).
+func isOccurrencePast(startTime, endTime time.Time, now time.Time) bool {
+	if !endTime.IsZero() && endTime.After(startTime) {
+		return !endTime.After(now)
+	}
+	return !startTime.After(now)
 }
 
 // mapSingleEvent maps a single ParsedEvent (or occurrence) to an EventInput.
