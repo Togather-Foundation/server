@@ -123,6 +123,9 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 	}
 
 	cfg.ExtractionMethod = src.ExtractionMethod
+	cfg.InsecureSkipVerify = src.InsecureSkipVerify
+	cfg.RequestTimeoutSeconds = src.RequestTimeoutSeconds
+	cfg.MaxBodyBytes = src.MaxBodyBytes
 
 	return cfg, nil
 }

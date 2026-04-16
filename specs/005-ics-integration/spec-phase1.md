@@ -395,6 +395,7 @@ type MapperOptions struct {
     DefaultLocation *events.PlaceInput // Fallback location when VEVENT LOCATION is empty
     HorizonDays    int    // RRULE expansion window (default: 90)
     MaxOccurrences int    // Safety cap on expanded occurrences (default: 100)
+    Now            time.Time // Reference time for past-event filtering; zero → time.Now() once at start
 }
 
 // MapToEventInputs converts parsed ICS events to SEL EventInputs.
@@ -405,8 +406,22 @@ type MapperOptions struct {
 // Each expanded occurrence has its own startDate/endDate (preserving
 // original duration) and shares all other fields.
 //
-// ctx is used for cancellation during large RRULE expansions (e.g., a
-// 6,558-event feed with recurring events could produce 10,000+ occurrences).
+// Past-event filtering: events (or individual occurrences) whose effective
+// end time is at or before the snapshot `now` are silently skipped. The
+// effective end is endTime when endTime > startTime, otherwise startTime
+// (covers zero-duration and all-day events). The check is applied to:
+//   1. Non-recurring events
+//   2. Each RRULE-expanded occurrence (after ExpandRRule, which also filters
+//      via windowStart; the per-occurrence check is intentionally redundant
+//      for zero-duration events and injectable-clock consistency)
+//   3. RECURRENCE-ID exceptions — checked against exc.Start/exc.End, not
+//      the original occurrence slot (an exception may reschedule to the past)
+//   4. RRULE parse-failure fallback: if expansion fails, the event is treated
+//      as single non-recurring and is still subject to the past filter.
+//
+// `now` is snapshotted once at the top of the call from opts.Now (zero → time.Now()).
+//
+// ctx is used for cancellation during large RRULE expansions.
 //
 // Returns the EventInputs and any warnings (e.g., RRULE cap hit).
 func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptions) ([]events.EventInput, []string, error)
@@ -442,8 +457,9 @@ import "time"
 
 // RRuleOptions controls RRULE expansion behavior.
 type RRuleOptions struct {
-    HorizonDays    int    // How far forward to expand (default: 90)
-    MaxOccurrences int    // Safety cap (default: 100)
+    HorizonDays    int       // How far forward to expand (default: 90)
+    MaxOccurrences int       // Safety cap (default: 100)
+    Now            time.Time // Reference time for window calculation; zero → time.Now()
 }
 
 // ExpandRRule expands an RRULE string into concrete occurrence times.

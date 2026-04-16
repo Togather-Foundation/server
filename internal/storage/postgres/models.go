@@ -511,6 +511,9 @@ type ScraperSource struct {
 	HeadlessIntercept             []byte             `json:"headless_intercept"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 type ScraperSubmission struct {

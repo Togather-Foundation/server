@@ -54,6 +54,10 @@ type Source struct {
 	DefaultLocation []byte // JSONB-encoded DefaultLocationConfig; nil when not set
 	// ExtractionMethod selects the extraction pipeline: "" or "scraper" (default), "ics"
 	ExtractionMethod string
+	// ICS per-source overrides
+	InsecureSkipVerify    bool  // skip TLS verification for this source
+	RequestTimeoutSeconds int   // 0 means global default
+	MaxBodyBytes          int64 // 0 means global default
 }
 
 // UpsertParams contains the fields used to create or update a scraper source.
@@ -95,6 +99,10 @@ type UpsertParams struct {
 	DefaultLocation []byte // JSONB-encoded DefaultLocationConfig; nil when not set
 	// ExtractionMethod selects the extraction pipeline: "" or "scraper" (default), "ics"
 	ExtractionMethod string
+	// ICS per-source overrides
+	InsecureSkipVerify    bool  // skip TLS verification for this source
+	RequestTimeoutSeconds int   // 0 means global default
+	MaxBodyBytes          int64 // 0 means global default
 }
 
 // Repository defines the persistence interface for scraper sources.

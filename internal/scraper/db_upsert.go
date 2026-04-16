@@ -118,5 +118,8 @@ func SourceConfigToUpsertParams(cfg SourceConfig) (domainScraper.UpsertParams, e
 		SitemapConfig:                 sitemapConfigJSON,
 		DefaultLocation:               defaultLocationJSON,
 		ExtractionMethod:              cfg.ExtractionMethod,
+		InsecureSkipVerify:            cfg.InsecureSkipVerify,
+		RequestTimeoutSeconds:         cfg.RequestTimeoutSeconds,
+		MaxBodyBytes:                  cfg.MaxBodyBytes,
 	}, nil
 }

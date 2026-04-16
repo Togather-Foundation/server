@@ -13,7 +13,7 @@ name: "york-university"
 url: "https://events.yorku.ca/?mec-ical-feed=1"
 extraction_method: "ics"
 insecure_skip_verify: true
-request_timeout: "120s"
+request_timeout_seconds: 120
 max_body_bytes: 15000000
 schedule: "daily"
 trust_level: 8

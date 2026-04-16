@@ -101,11 +101,11 @@ type SourceConfig struct {
 	// in production as it disables certificate validation.
 	InsecureSkipVerify bool `yaml:"insecure_skip_verify,omitempty" json:"insecure_skip_verify,omitempty"`
 
-	// RequestTimeout overrides the default HTTP client timeout for this source.
-	// Value is a Go duration string (e.g. "120s", "2m"). When empty, uses the
-	// global default (30s). Use for slow sources that need longer timeouts.
+	// RequestTimeoutSeconds overrides the default HTTP client timeout for this source.
+	// Value is in seconds (e.g. 120). When 0, uses the global default (30s).
+	// Use for slow sources that need longer timeouts.
 	// Only applies when extraction_method is "ics".
-	RequestTimeout string `yaml:"request_timeout,omitempty" json:"request_timeout,omitempty"`
+	RequestTimeoutSeconds int `yaml:"request_timeout_seconds,omitempty" json:"request_timeout_seconds,omitempty"`
 
 	// MaxBodyBytes overrides the default max body size for ICS feeds.
 	// Value is an integer (e.g. 15000000 for 15MB). When 0, uses the global

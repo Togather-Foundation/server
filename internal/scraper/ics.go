@@ -187,10 +187,8 @@ func (s *Scraper) scrapeICS(ctx context.Context, source SourceConfig, opts Scrap
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
 		// Apply source-specific timeout override if set.
 		timeout := fetchTimeout
-		if source.RequestTimeout != "" {
-			if d, err := time.ParseDuration(source.RequestTimeout); err == nil && d > 0 {
-				timeout = d
-			}
+		if source.RequestTimeoutSeconds > 0 {
+			timeout = time.Duration(source.RequestTimeoutSeconds) * time.Second
 		}
 		httpClient := opts.HTTPClient(timeout)
 		maxBody := s.icsConfig.MaxBodyBytes

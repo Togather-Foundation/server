@@ -2393,6 +2393,9 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 				SitemapConfig:                 params.SitemapConfig,
 				DefaultLocation:               params.DefaultLocation,
 				ExtractionMethod:              params.ExtractionMethod,
+				InsecureSkipVerify:            params.InsecureSkipVerify,
+				RequestTimeoutSeconds:         params.RequestTimeoutSeconds,
+				MaxBodyBytes:                  params.MaxBodyBytes,
 			}
 
 			// Exclude LastScrapedAt from comparison - it's set by the scraper at runtime.

@@ -15,6 +15,9 @@ INSERT INTO scraper_sources (
   sitemap_config,
   default_location,
   extraction_method,
+  insecure_skip_verify,
+  request_timeout_seconds,
+  max_body_bytes,
   updated_at
 ) VALUES (
   sqlc.arg('name'),
@@ -48,6 +51,9 @@ INSERT INTO scraper_sources (
   sqlc.arg('sitemap_config'),
   sqlc.arg('default_location'),
   sqlc.arg('extraction_method'),
+  sqlc.arg('insecure_skip_verify'),
+  sqlc.arg('request_timeout_seconds'),
+  sqlc.arg('max_body_bytes'),
   NOW()
 )
 ON CONFLICT (name) DO UPDATE SET
@@ -80,6 +86,9 @@ ON CONFLICT (name) DO UPDATE SET
   sitemap_config           = EXCLUDED.sitemap_config,
   default_location         = EXCLUDED.default_location,
   extraction_method        = EXCLUDED.extraction_method,
+  insecure_skip_verify     = EXCLUDED.insecure_skip_verify,
+  request_timeout_seconds          = EXCLUDED.request_timeout_seconds,
+  max_body_bytes           = EXCLUDED.max_body_bytes,
   updated_at               = NOW()
 RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
@@ -89,7 +98,7 @@ RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
           headless_headers, headless_rate_limit_ms,
           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
           graphql_config, rest_config, sitemap_config, default_location,
-          extraction_method;
+          extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes;
 
 -- name: GetScraperSourceByName :one
 -- Get a single scraper source by unique name.
@@ -100,8 +109,8 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config, default_location,
-       extraction_method
+        graphql_config, rest_config, sitemap_config, default_location,
+        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
   FROM scraper_sources
  WHERE name = sqlc.arg('name');
 
@@ -114,8 +123,8 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config, default_location,
-       extraction_method
+        graphql_config, rest_config, sitemap_config, default_location,
+        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
   FROM scraper_sources
  WHERE id = sqlc.arg('id');
 
@@ -128,8 +137,8 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config, default_location,
-       extraction_method
+        graphql_config, rest_config, sitemap_config, default_location,
+        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
   FROM scraper_sources
  WHERE (sqlc.narg('enabled')::boolean IS NULL OR enabled = sqlc.narg('enabled'))
  ORDER BY name ASC;
@@ -155,7 +164,7 @@ RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
           headless_headers, headless_rate_limit_ms,
           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
           graphql_config, rest_config, sitemap_config, default_location,
-          extraction_method;
+          extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes;
 
 -- name: DeleteScraperSource :exec
 -- Delete a scraper source by name.
@@ -183,7 +192,7 @@ SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license
        s.headless_headers, s.headless_rate_limit_ms,
        s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
        s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-       s.extraction_method
+       s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes
   FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = sqlc.arg('organization_id')
@@ -211,7 +220,7 @@ SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license
        s.headless_headers, s.headless_rate_limit_ms,
        s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
        s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-       s.extraction_method
+       s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes
   FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = sqlc.arg('place_id')
@@ -231,7 +240,7 @@ SELECT
   s.headless_headers, s.headless_rate_limit_ms,
   s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
   s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-  s.extraction_method,
+  s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,

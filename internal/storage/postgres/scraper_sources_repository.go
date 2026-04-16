@@ -77,6 +77,9 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		SitemapConfig:           params.SitemapConfig,
 		DefaultLocation:         params.DefaultLocation,
 		ExtractionMethod:        params.ExtractionMethod,
+		InsecureSkipVerify:      params.InsecureSkipVerify,
+		RequestTimeoutSeconds:   int32(params.RequestTimeoutSeconds),
+		MaxBodyBytes:            params.MaxBodyBytes,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("upsert scraper source %q: %w", params.Name, err)
@@ -266,6 +269,10 @@ func rowToSource(row ScraperSource) *scraper.Source {
 		DefaultLocation: row.DefaultLocation,
 		// Extraction method
 		ExtractionMethod: row.ExtractionMethod,
+		// ICS per-source overrides
+		InsecureSkipVerify:    row.InsecureSkipVerify,
+		RequestTimeoutSeconds: int(row.RequestTimeoutSeconds),
+		MaxBodyBytes:          row.MaxBodyBytes,
 	}
 	if row.Notes.Valid {
 		s.Notes = row.Notes.String
@@ -303,8 +310,10 @@ func upsertRowToScraperSource(r UpsertScraperSourceRow) ScraperSource {
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:  r.DefaultLocation,
-		ExtractionMethod: r.ExtractionMethod,
+		DefaultLocation:    r.DefaultLocation,
+		ExtractionMethod:   r.ExtractionMethod,
+		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
+		MaxBodyBytes: r.MaxBodyBytes,
 	}
 }
 
@@ -324,8 +333,10 @@ func getByNameRowToScraperSource(r GetScraperSourceByNameRow) ScraperSource {
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:  r.DefaultLocation,
-		ExtractionMethod: r.ExtractionMethod,
+		DefaultLocation:    r.DefaultLocation,
+		ExtractionMethod:   r.ExtractionMethod,
+		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
+		MaxBodyBytes: r.MaxBodyBytes,
 	}
 }
 
@@ -345,8 +356,10 @@ func listRowToScraperSource(r ListScraperSourcesRow) ScraperSource {
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:  r.DefaultLocation,
-		ExtractionMethod: r.ExtractionMethod,
+		DefaultLocation:    r.DefaultLocation,
+		ExtractionMethod:   r.ExtractionMethod,
+		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
+		MaxBodyBytes: r.MaxBodyBytes,
 	}
 }
 
@@ -366,8 +379,10 @@ func listByOrgRowToScraperSource(r ListScraperSourcesByOrgRow) ScraperSource {
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:  r.DefaultLocation,
-		ExtractionMethod: r.ExtractionMethod,
+		DefaultLocation:    r.DefaultLocation,
+		ExtractionMethod:   r.ExtractionMethod,
+		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
+		MaxBodyBytes: r.MaxBodyBytes,
 	}
 }
 
@@ -387,7 +402,9 @@ func listByPlaceRowToScraperSource(r ListScraperSourcesByPlaceRow) ScraperSource
 		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:  r.DefaultLocation,
-		ExtractionMethod: r.ExtractionMethod,
+		DefaultLocation:    r.DefaultLocation,
+		ExtractionMethod:   r.ExtractionMethod,
+		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
+		MaxBodyBytes: r.MaxBodyBytes,
 	}
 }

@@ -29,8 +29,8 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config, default_location,
-       extraction_method
+        graphql_config, rest_config, sitemap_config, default_location,
+        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
   FROM scraper_sources
  WHERE id = $1
 `
@@ -70,6 +70,9 @@ type GetScraperSourceByIDRow struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 // Get a single scraper source by primary key.
@@ -111,6 +114,9 @@ func (q *Queries) GetScraperSourceByID(ctx context.Context, id int64) (GetScrape
 		&i.SitemapConfig,
 		&i.DefaultLocation,
 		&i.ExtractionMethod,
+		&i.InsecureSkipVerify,
+		&i.RequestTimeoutSeconds,
+		&i.MaxBodyBytes,
 	)
 	return i, err
 }
@@ -123,8 +129,8 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config, default_location,
-       extraction_method
+        graphql_config, rest_config, sitemap_config, default_location,
+        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
   FROM scraper_sources
  WHERE name = $1
 `
@@ -164,6 +170,9 @@ type GetScraperSourceByNameRow struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 // Get a single scraper source by unique name.
@@ -205,6 +214,9 @@ func (q *Queries) GetScraperSourceByName(ctx context.Context, name string) (GetS
 		&i.SitemapConfig,
 		&i.DefaultLocation,
 		&i.ExtractionMethod,
+		&i.InsecureSkipVerify,
+		&i.RequestTimeoutSeconds,
+		&i.MaxBodyBytes,
 	)
 	return i, err
 }
@@ -251,8 +263,8 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
        headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
        headless_headers, headless_rate_limit_ms,
        headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-       graphql_config, rest_config, sitemap_config, default_location,
-       extraction_method
+        graphql_config, rest_config, sitemap_config, default_location,
+        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
   FROM scraper_sources
  WHERE ($1::boolean IS NULL OR enabled = $1)
  ORDER BY name ASC
@@ -293,6 +305,9 @@ type ListScraperSourcesRow struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 // List all scraper sources, optionally filtered by enabled flag.
@@ -340,6 +355,9 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 			&i.SitemapConfig,
 			&i.DefaultLocation,
 			&i.ExtractionMethod,
+			&i.InsecureSkipVerify,
+			&i.RequestTimeoutSeconds,
+			&i.MaxBodyBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -360,7 +378,7 @@ SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license
        s.headless_headers, s.headless_rate_limit_ms,
        s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
        s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-       s.extraction_method
+       s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes
   FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = $1
@@ -402,6 +420,9 @@ type ListScraperSourcesByOrgRow struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 // List all scraper sources linked to a given organization.
@@ -449,6 +470,9 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 			&i.SitemapConfig,
 			&i.DefaultLocation,
 			&i.ExtractionMethod,
+			&i.InsecureSkipVerify,
+			&i.RequestTimeoutSeconds,
+			&i.MaxBodyBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -469,7 +493,7 @@ SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license
        s.headless_headers, s.headless_rate_limit_ms,
        s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
        s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-       s.extraction_method
+       s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes
   FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = $1
@@ -511,6 +535,9 @@ type ListScraperSourcesByPlaceRow struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 // List all scraper sources linked to a given place.
@@ -558,6 +585,9 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 			&i.SitemapConfig,
 			&i.DefaultLocation,
 			&i.ExtractionMethod,
+			&i.InsecureSkipVerify,
+			&i.RequestTimeoutSeconds,
+			&i.MaxBodyBytes,
 		); err != nil {
 			return nil, err
 		}
@@ -579,7 +609,7 @@ SELECT
   s.headless_headers, s.headless_rate_limit_ms,
   s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
   s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-  s.extraction_method,
+  s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,
@@ -636,6 +666,9 @@ type ListScraperSourcesWithLatestRunRow struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 	LastRunStartedAt              pgtype.Timestamptz `json:"last_run_started_at"`
 	LastRunCompletedAt            pgtype.Timestamptz `json:"last_run_completed_at"`
 	LastRunStatus                 string             `json:"last_run_status"`
@@ -694,6 +727,9 @@ func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled p
 			&i.SitemapConfig,
 			&i.DefaultLocation,
 			&i.ExtractionMethod,
+			&i.InsecureSkipVerify,
+			&i.RequestTimeoutSeconds,
+			&i.MaxBodyBytes,
 			&i.LastRunStartedAt,
 			&i.LastRunCompletedAt,
 			&i.LastRunStatus,
@@ -726,7 +762,7 @@ RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
           headless_headers, headless_rate_limit_ms,
           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
           graphql_config, rest_config, sitemap_config, default_location,
-          extraction_method
+          extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
 `
 
 type SetScraperSourceEnabledParams struct {
@@ -769,6 +805,9 @@ type SetScraperSourceEnabledRow struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 // Enable or disable a scraper source by name. Returns the updated row.
@@ -810,6 +849,9 @@ func (q *Queries) SetScraperSourceEnabled(ctx context.Context, arg SetScraperSou
 		&i.SitemapConfig,
 		&i.DefaultLocation,
 		&i.ExtractionMethod,
+		&i.InsecureSkipVerify,
+		&i.RequestTimeoutSeconds,
+		&i.MaxBodyBytes,
 	)
 	return i, err
 }
@@ -876,6 +918,9 @@ INSERT INTO scraper_sources (
   sitemap_config,
   default_location,
   extraction_method,
+  insecure_skip_verify,
+  request_timeout_seconds,
+  max_body_bytes,
   updated_at
 ) VALUES (
   $1,
@@ -909,6 +954,9 @@ INSERT INTO scraper_sources (
   $29,
   $30,
   $31,
+  $32,
+  $33,
+  $34,
   NOW()
 )
 ON CONFLICT (name) DO UPDATE SET
@@ -941,6 +989,9 @@ ON CONFLICT (name) DO UPDATE SET
   sitemap_config           = EXCLUDED.sitemap_config,
   default_location         = EXCLUDED.default_location,
   extraction_method        = EXCLUDED.extraction_method,
+  insecure_skip_verify     = EXCLUDED.insecure_skip_verify,
+  request_timeout_seconds          = EXCLUDED.request_timeout_seconds,
+  max_body_bytes           = EXCLUDED.max_body_bytes,
   updated_at               = NOW()
 RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
@@ -950,7 +1001,7 @@ RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
           headless_headers, headless_rate_limit_ms,
           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
           graphql_config, rest_config, sitemap_config, default_location,
-          extraction_method
+          extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
 `
 
 type UpsertScraperSourceParams struct {
@@ -985,6 +1036,9 @@ type UpsertScraperSourceParams struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 type UpsertScraperSourceRow struct {
@@ -1022,6 +1076,9 @@ type UpsertScraperSourceRow struct {
 	SitemapConfig                 []byte             `json:"sitemap_config"`
 	DefaultLocation               []byte             `json:"default_location"`
 	ExtractionMethod              string             `json:"extraction_method"`
+	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
+	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
+	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 }
 
 // SQLc queries for scraper_sources and linkage tables.
@@ -1059,6 +1116,9 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		arg.SitemapConfig,
 		arg.DefaultLocation,
 		arg.ExtractionMethod,
+		arg.InsecureSkipVerify,
+		arg.RequestTimeoutSeconds,
+		arg.MaxBodyBytes,
 	)
 	var i UpsertScraperSourceRow
 	err := row.Scan(
@@ -1096,6 +1156,9 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		&i.SitemapConfig,
 		&i.DefaultLocation,
 		&i.ExtractionMethod,
+		&i.InsecureSkipVerify,
+		&i.RequestTimeoutSeconds,
+		&i.MaxBodyBytes,
 	)
 	return i, err
 }
