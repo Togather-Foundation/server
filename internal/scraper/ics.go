@@ -2,10 +2,12 @@ package scraper
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
@@ -14,8 +16,9 @@ import (
 
 // ICSExtractor fetches and parses an ICS feed URL.
 type ICSExtractor struct {
-	client       *http.Client
-	maxBodyBytes int64 // Default: 10 * 1024 * 1024 (10 MB)
+	client             *http.Client
+	maxBodyBytes       int64 // Default: 10 * 1024 * 1024 (10 MB)
+	insecureSkipVerify bool  // Skip TLS verification
 }
 
 // defaultICSMaxBodyBytes is the default maximum ICS feed body size.
@@ -23,13 +26,15 @@ const defaultICSMaxBodyBytes int64 = 10 * 1024 * 1024 // 10 MB
 
 // NewICSExtractor creates an ICS extractor with the given HTTP client.
 // maxBodyBytes defaults to 10 MB if <= 0.
-func NewICSExtractor(client *http.Client, maxBodyBytes int64) *ICSExtractor {
+// insecureSkipVerify disables TLS certificate verification (use for dev/testing only).
+func NewICSExtractor(client *http.Client, maxBodyBytes int64, insecureSkipVerify bool) *ICSExtractor {
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = defaultICSMaxBodyBytes
 	}
 	return &ICSExtractor{
-		client:       client,
-		maxBodyBytes: maxBodyBytes,
+		client:             client,
+		maxBodyBytes:       maxBodyBytes,
+		insecureSkipVerify: insecureSkipVerify,
 	}
 }
 
@@ -37,11 +42,25 @@ func NewICSExtractor(client *http.Client, maxBodyBytes int64) *ICSExtractor {
 func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig config.ICSConfig) ([]events.EventInput, []string, error) {
 	var allWarnings []string
 
+	// Build the feed URL with optional start_date filter.
+	feedURL := cfg.URL
+	if cfg.ICSStartDate != "" {
+		startDate := cfg.ICSStartDate
+		if startDate == "today" {
+			startDate = time.Now().Format("2006-01-02")
+		}
+		separator := "?"
+		if strings.Contains(feedURL, "?") {
+			separator = "&"
+		}
+		feedURL = feedURL + separator + "start_date=" + startDate
+	}
+
 	// 1. Fetch the ICS feed.
-	data, fetchWarnings, err := e.fetchFeed(ctx, cfg.URL, cfg.Headers)
+	data, fetchWarnings, err := e.fetchFeed(ctx, feedURL, cfg.Headers)
 	allWarnings = append(allWarnings, fetchWarnings...)
 	if err != nil {
-		return nil, allWarnings, fmt.Errorf("ics fetch %q: %w", cfg.URL, err)
+		return nil, allWarnings, fmt.Errorf("ics fetch %q: %w", feedURL, err)
 	}
 
 	// 2. Parse the ICS data.
@@ -101,6 +120,20 @@ func (e *ICSExtractor) fetchFeed(ctx context.Context, feedURL string, extraHeade
 	// Create HTTP client with redirect limit (same as Tier 3 REST).
 	client := *e.client
 	client.CheckRedirect = limitRedirects(10)
+
+	// Apply TLS config if insecure skip verify is enabled.
+	if e.insecureSkipVerify {
+		transport := client.Transport
+		if transport == nil {
+			transport = http.DefaultTransport
+		}
+		client.Transport = &http.Transport{
+			Proxy:               transport.(*http.Transport).Proxy,
+			TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
+			DialContext:         transport.(*http.Transport).DialContext,
+			TLSHandshakeTimeout: transport.(*http.Transport).TLSHandshakeTimeout,
+		}
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
 	if err != nil {
@@ -166,12 +199,23 @@ func (s *Scraper) scrapeICS(ctx context.Context, source SourceConfig, opts Scrap
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
-		httpClient := opts.HTTPClient(fetchTimeout)
+		// Apply source-specific timeout override if set.
+		timeout := fetchTimeout
+		if source.RequestTimeout != "" {
+			if d, err := time.ParseDuration(source.RequestTimeout); err == nil && d > 0 {
+				timeout = d
+			}
+		}
+		httpClient := opts.HTTPClient(timeout)
 		maxBody := s.icsConfig.MaxBodyBytes
 		if maxBody <= 0 {
 			maxBody = defaultICSMaxBodyBytes
 		}
-		extractor := NewICSExtractor(httpClient, maxBody)
+		// Override with source-specific max_body_bytes if set.
+		if source.MaxBodyBytes > 0 {
+			maxBody = source.MaxBodyBytes
+		}
+		extractor := NewICSExtractor(httpClient, maxBody, source.InsecureSkipVerify)
 
 		eventInputs, warnings, err := extractor.Extract(ctx, source, s.icsConfig)
 		if err != nil {

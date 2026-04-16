@@ -1,35 +1,24 @@
 name: "york-university"
-# Modern Events Calendar (MEC) plugin — ~6500 events total
-# BLOCKER: Date extraction fails because event dates are stored in parent section's
-# data-mec-cell attribute (YYYYMMDD format), not in text content within event articles.
-# Time is available in .mec-event-time, but without date context, events get skipped.
+# Modern Events Calendar (MEC) WordPress plugin with ICS feed
+# Organization match: York University
+# Platform: WordPress MEC (Modern Events Calendar)
+# Extraction method: ICS (iCalendar feed via ?mec-ical-feed=1)
 # 
-# Workaround attempted:
-# - date_selectors with ".mec-event-time" (matches 200/235 events but needs date)
-# - start_date with various selectors — all fail to access parent date
-# - follow_event_urls — not supported by scraper yet
-#
-# Required capability: Extract date from parent container attributes or URL query params
-# (occurrence=YYYY-MM-DD in href).
+# Previous issue: T2 headless scraping had date extraction problems due to MEC storing
+# dates in parent data-mec-cell attributes rather than text content. Switched to ICS feed
+# extraction which is more reliable and efficient.
 # 
-# Organization match: York University (no match found in database — API unavailable)
-url: "https://events.yorku.ca/"
-tier: 2
+# Note: Site is very slow (often 60s+ to respond), requires longer timeout.
+# ICS feed URL: https://events.yorku.ca/?mec-ical-feed=1
+url: "https://events.yorku.ca/?mec-ical-feed=1"
+extraction_method: "ics"
+insecure_skip_verify: true
+request_timeout: "120s"
+max_body_bytes: 15000000
+ics_start_date: "today"
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
-enabled: false
-max_pages: 5
-headless:
-  wait_selector: ".mec-calendar"
-  wait_timeout_ms: 20000
-  wait_network_idle: true
-selectors:
-  event_list: ".mec-calendar-events-sec .mec-event-article"
-  name: ".mec-event-title a"
-  url: ".mec-event-title a"
-  location: ".mec-event-loc-place"
-  date_selectors:
-    - ".mec-event-time"
+enabled: true
 timezone: "America/Toronto"
 

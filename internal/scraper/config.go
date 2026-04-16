@@ -95,6 +95,31 @@ type SourceConfig struct {
 	// use headless.headers; for Tier 3 (REST) use rest.headers.
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 
+	// InsecureSkipVerify disables TLS certificate verification for ICS feed
+	// requests. Use for sources with self-signed or expired certificates.
+	// WARNING: This should only be used for development/testing. Never enable
+	// in production as it disables certificate validation.
+	InsecureSkipVerify bool `yaml:"insecure_skip_verify,omitempty" json:"insecure_skip_verify,omitempty"`
+
+	// RequestTimeout overrides the default HTTP client timeout for this source.
+	// Value is a Go duration string (e.g. "120s", "2m"). When empty, uses the
+	// global default (30s). Use for slow sources that need longer timeouts.
+	// Only applies when extraction_method is "ics".
+	RequestTimeout string `yaml:"request_timeout,omitempty" json:"request_timeout,omitempty"`
+
+	// MaxBodyBytes overrides the default max body size for ICS feeds.
+	// Value is an integer (e.g. 15000000 for 15MB). When 0, uses the global
+	// default (10MB). Use for large feeds that exceed the default limit.
+	// Only applies when extraction_method is "ics".
+	MaxBodyBytes int64 `yaml:"max_body_bytes,omitempty" json:"max_body_bytes,omitempty"`
+
+	// ICSStartDate appends a start_date query parameter to the ICS feed URL
+	// for sources that support date filtering (e.g. WordPress MEC). Value is
+	// a Go time format string (e.g. "2006-01-02"). The special value "today"
+	// uses the current date. Use to filter out past events from large feeds.
+	// Only applies when extraction_method is "ics".
+	ICSStartDate string `yaml:"ics_start_date,omitempty" json:"ics_start_date,omitempty"`
+
 	// normalized is true after normalizeDescriptionSelectors has been applied.
 	// Used to avoid emitting inaccurate deprecation warnings in ValidateConfigWithWarnings
 	// when the config has already been normalized (warning already emitted accurately in loadFile).

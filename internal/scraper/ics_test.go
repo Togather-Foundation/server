@@ -35,7 +35,7 @@ func serveICSFile(t *testing.T, filename string) *httptest.Server {
 func TestICSExtractor_BasicEvent(t *testing.T) {
 	srv := serveICSFile(t, "parse-basic-event.ics")
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{
 		Name:       "test-ics",
 		URL:        srv.URL,
@@ -83,7 +83,7 @@ func TestICSExtractor_BasicEvent(t *testing.T) {
 func TestICSExtractor_MultiEvent(t *testing.T) {
 	srv := serveICSFile(t, "parse-multi-event.ics")
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{
 		Name:       "test-multi",
 		URL:        srv.URL,
@@ -109,7 +109,7 @@ func TestICSExtractor_MultiEvent(t *testing.T) {
 func TestICSExtractor_EmptyFeed(t *testing.T) {
 	srv := serveICSFile(t, "parse-empty-calendar.ics")
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{
 		Name:       "test-empty",
 		URL:        srv.URL,
@@ -134,7 +134,7 @@ func TestICSExtractor_HTTP404(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{
 		Name: "test-404",
 		URL:  srv.URL,
@@ -161,7 +161,7 @@ func TestICSExtractor_BodyTooLarge(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	extractor := NewICSExtractor(http.DefaultClient, limit)
+	extractor := NewICSExtractor(http.DefaultClient, limit, false)
 	cfg := SourceConfig{
 		Name: "test-large",
 		URL:  srv.URL,
@@ -195,7 +195,7 @@ func TestICSExtractor_RedirectFollowed(t *testing.T) {
 	}))
 	t.Cleanup(redirect.Close)
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{
 		Name: "test-redirect",
 		URL:  redirect.URL,
@@ -227,7 +227,7 @@ func TestICSExtractor_ContentTypeHTML(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{
 		Name: "test-html-ct",
 		URL:  srv.URL,
@@ -264,7 +264,7 @@ func TestICSExtractor_ContextCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // cancel immediately
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{
 		Name: "test-cancel",
 		URL:  srv.URL,
@@ -371,7 +371,7 @@ func TestICSExtractor_AcceptHeader(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{Name: "test-accept", URL: srv.URL}
 
 	_, _, err := extractor.Extract(t.Context(), cfg, config.ICSConfig{})
@@ -391,7 +391,7 @@ func TestICSExtractor_HTTP204(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	extractor := NewICSExtractor(http.DefaultClient, 0)
+	extractor := NewICSExtractor(http.DefaultClient, 0, false)
 	cfg := SourceConfig{Name: "test-204", URL: srv.URL}
 
 	results, warnings, err := extractor.Extract(t.Context(), cfg, config.ICSConfig{})
