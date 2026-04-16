@@ -4,16 +4,15 @@ This directory contains YAML configuration files for each scrape source.
 
 ## Tiers
 
-| Tier | Description | Tool |
-|------|-------------|------|
-| 0 | JSON-LD in static HTML — no selectors needed | `scrape url` |
-| 1 | CSS selectors on static HTML | `scrape url` / `scrape source` |
-| 2 | CSS selectors on JS-rendered HTML (headless Chromium via go-rod) | `scrape url --headless` / `scrape source` with `SCRAPER_HEADLESS_ENABLED=true` |
+| Tier | Description | Method | Tool |
+|------|-------------|--------|------|
+| 0 | Static feeds: JSON-LD in HTML or ICS calendar feed | No selectors (auto-extraction) | `scrape url` |
+| 1 | CSS selectors on static HTML | CSS selectors | `scrape url` / `scrape source` |
+| 2 | CSS selectors on JS-rendered HTML (headless Chromium via go-rod) | CSS selectors + headless | `scrape url --headless` / `scrape source` with `SCRAPER_HEADLESS_ENABLED=true` |
 
-Tier 2 sources require `SCRAPER_HEADLESS_ENABLED=true` in the environment. Set
-`SCRAPER_CHROME_PATH` to specify a custom Chromium binary (default: Rod download-on-demand).
-Use `server scrape capture <URL> --format inspect` to analyze a JS-rendered page before
-writing selectors.
+**Tier 0 notes:** JSON-LD extraction happens automatically from `<script type="application/ld+json">` tags in the page
+source. ICS feed extraction (via `extraction_method: ics`) bypasses CSS selectors and parses calendar events
+directly. For detailed ICS configuration, see [ics-feeds.md](ics-feeds.md).
 
 ## Headless Config Fields (Tier 2 YAML)
 
@@ -28,6 +27,15 @@ writing selectors.
 | `headless.headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
 
 ## Status Summary
+
+### Tier 0 (ICS / JSON-LD extraction)
+
+| Source | Status | Platform | Extraction Method | Notes |
+|--------|--------|----------|-------------------|-------|
+| akin-collective | **enabled** | Event JSON-LD | JSON-LD | Auto-extracted from HTML schema |
+| bloor-yorkville-bia | **enabled** | WordPress Tribe | JSON-LD | Auto-extracted from HTML schema |
+| buddies-in-bad-times | **enabled** | Generic JSON-LD | JSON-LD | Auto-extracted from HTML schema |
+| york-university | **enabled** | WordPress MEC | ICS feed | `https://events.yorku.ca/?mec-ical-feed=1` |
 
 ### Tier 1 (validated 2026-03-04)
 
@@ -263,6 +271,14 @@ only to resolve the warning.
 - **Blocker:** Event dates/times not visible on listing page (`https://www.xtsc.ca/zuluru/events/`).
   Detail pages (`/zuluru/events/view?event=<id>`) contain dates but would require separate depth scrape.
   Not viable without detail-page scraping (Tier 2+ feature). Site respects `robots.txt` (Crawl-delay: 10).
+
+### york-university.yaml (Tier 0 / ICS, enabled)
+- **Migrated from Tier 2 to Tier 0 ICS on 2026-04-16.**
+- Listing: `https://events.yorku.ca/?mec-ical-feed=1` — Modern Events Calendar (MEC) WordPress plugin with ICS feed export.
+- Previous approach: Tier 2 headless scraping with `date_selectors` was ineffective because MEC stores dates in parent container attributes (`data-mec-cell`) rather than in text content of event articles.
+- **Solution:** Use the ICS feed export endpoint (`?mec-ical-feed=1`), which MEC provides natively. ICS extraction is more efficient and reliable than DOM scraping.
+- Trust level: 8 (university source).
+- IANA timezone: `America/Toronto`.
 
 ---
 
