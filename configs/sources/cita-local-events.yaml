@@ -1,6 +1,8 @@
 name: "cita-local-events"
 # Google Calendar ICS feed - CITA Local Events
+# CITA (Canadian Institute for Theoretical Astrophysics) at University of Toronto
 # Organization match: no match found in database
+# Note: Some events omit LOCATION — default_location provides CITA as fallback
 url: "https://calendar.google.com/calendar/ical/qfg129sn6k25ah00ioakus0gds%40group.calendar.google.com/public/basic.ics"
 extraction_method: ics
 schedule: "daily"
@@ -8,3 +10,9 @@ trust_level: 7
 license: "CC0-1.0"
 timezone: "America/Toronto"
 enabled: true
+default_location:
+  name: "CITA – Canadian Institute for Theoretical Astrophysics"
+  address: "60 St. George St., Toronto, ON M5S 3H8"
+  city: "Toronto"
+  province: "ON"
+  country: "CA"
