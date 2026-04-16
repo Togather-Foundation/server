@@ -4,7 +4,7 @@ go 1.25.9
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
-	github.com/arran4/golang-ical v0.3.5
+	github.com/arran4/golang-ical v0.3.6-fork.2
 	github.com/docker/go-connections v0.6.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/go-rod/rod v0.116.2
@@ -162,7 +162,8 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 
-// Temporary fork: adds WithPropertyParseErrorHandler for lenient ICS parsing.
+// Temporary fork: adds WithPropertyParseErrorHandler for lenient ICS parsing,
+// and RDATE/EXDATE period value support (RFC 5545 §3.3.9).
 // Upstream PR: https://github.com/arran4/golang-ical/pull/135
 // Remove once upstream merges and tags a release.
-replace github.com/arran4/golang-ical => github.com/RKelln/golang-ical v0.3.6-fork.1
+replace github.com/arran4/golang-ical => github.com/RKelln/golang-ical v0.3.6-fork.2
