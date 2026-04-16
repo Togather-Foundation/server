@@ -12,7 +12,8 @@ timezone: "America/Toronto"
 enabled: true
 default_location:
   name: "CITA – Canadian Institute for Theoretical Astrophysics"
-  address: "60 St. George St., Toronto, ON M5S 3H8"
-  city: "Toronto"
-  province: "ON"
-  country: "CA"
+  street_address: "60 St. George St."
+  address_locality: "Toronto"
+  address_region: "ON"
+  postal_code: "M5S 3H8"
+  address_country: "CA"

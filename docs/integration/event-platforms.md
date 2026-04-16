@@ -518,10 +518,20 @@ headless:
 **If `undetected: true` still fails:** Contact the venue. Bot protection at this
 level (Cloudflare Enterprise + Turnstile) is not reliably bypassable.
 
+**Important nuance — ICS endpoints vs HTML pages:** Cloudflare's JS challenge and
+Turnstile apply to HTML page requests. ICS feed endpoints (`?ical=1`, `basic.ics`,
+etc.) are typically served as static/cached responses and are **not subject to the
+same challenge**. A site whose `/events/` HTML page returns a Turnstile wall may
+still serve its `?ical=1` feed cleanly with a plain HTTP GET (HTTP 200,
+`cf-cache-status: HIT`). Always check whether the site has an ICS feed before
+treating it as "Cloudflare-blocked" — see the [ICS Feed Discovery](event-platforms.md#ics-feed-discovery)
+section. `now-toronto.yaml` is the canonical example of this pattern.
+
 **Known examples:**
-- `crows-theatre.yaml` — disabled, Cloudflare JS challenge suspected
+- `crows-theatre.yaml` — resolved with T2 `wait_network_idle: true`
 - `st-lawrence-market.yaml` — disabled, anti-bot skeleton page
 - `ago.yaml` — disabled, HTTP 403
+- ~~`now-toronto.yaml`~~ — initially disabled (Turnstile on HTML page); ICS endpoint works fine with plain HTTP GET
 
 ---
 

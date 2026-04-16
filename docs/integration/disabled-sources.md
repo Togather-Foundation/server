@@ -334,6 +334,20 @@ events page no longer exists.
   feed. Glad Day is a culturally significant queer bookshop and likely supportive of
   inclusive event aggregation once the project is explained.
 
+### ~~now-toronto~~ — ✅ RESOLVED
+
+- **URL:** `https://nowtoronto.com/events/?ical=1`
+- **Previously:** Marked blocked because the HTML `/events/` page triggers a Cloudflare
+  Turnstile CAPTCHA challenge. The ICS endpoint was incorrectly assumed to be equally
+  blocked.
+- **Fix:** The `?ical=1` ICS endpoint is served from Cloudflare's cache (`cf-cache-status: HIT`)
+  and responds HTTP 200 to a plain GET request — no browser required. Set
+  `extraction_method: ics`, `enabled: true`. 20 events ingested.
+- **Lesson:** Always test the ICS feed URL directly with `curl -I` before assuming
+  Cloudflare blocks the entire domain. See
+  [event-platforms.md — Cloudflare-protected sites](event-platforms.md#14-cloudflare-protected-sites)
+  for the general pattern.
+
 ---
 
 ## 7a. Content model mismatch (not events)

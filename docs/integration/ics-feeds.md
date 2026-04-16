@@ -92,9 +92,22 @@ server scrape sync
 This command reads all `configs/sources/*.yaml` files and upserts them into the
 `scraper_sources` table. It reports created and updated counts.
 
-**Important:** The `enabled` field is only applied on initial insert. Existing DB rows
-retain their current `enabled` value across syncs. To re-enable a disabled source,
-update the DB row directly (admin UI or SQL), not the YAML file.
+**Important:** The `enabled` field is **only applied on initial insert**. The upsert
+SQL intentionally omits `enabled` from `ON CONFLICT DO UPDATE` so that admin toggles
+in the DB survive future syncs. This means:
+
+- Setting `enabled: true` in YAML **does not re-enable** a source that was disabled in
+  the DB.
+- To re-enable a source, update the DB row directly:
+
+```bash
+psql $DATABASE_URL -c "UPDATE scraper_sources SET enabled = true WHERE name = 'my-source';"
+```
+
+- The YAML `enabled` field is only authoritative at creation time. After that, treat the
+  DB value as the source of truth.
+- `--source-file` bypasses this entirely and runs even disabled sources, which is useful
+  for testing before a source is properly synced.
 
 For full sync behavior details, see [scraper.md — Config Storage](scraper.md#config-storage-yaml--database).
 
