@@ -11,6 +11,27 @@ Run targeted package tests first; expand to `make ci-fast` for quick CI feedback
 
 For E2E details see `tests/e2e/AGENTS.md`.
 
+## Shared Test Helpers (`tests/testhelpers`)
+
+The `tests/testhelpers` package provides shared utilities for `integration`, `integration_batch`, and `contracts` test packages. **Always use these instead of duplicating them.**
+
+| Function | Signature | Purpose |
+|---|---|---|
+| `TestLogger()` | `() zerolog.Logger` | Returns a no-op logger |
+| `TestConfig(dbURL)` | `(string) config.Config` | Standard test config (AllowTestDomains, high rate limits, etc.) |
+| `ProjectRoot(t)` | `(*testing.T) string` | Repo root via `runtime.Caller` — **must** be called from within the `tests/testhelpers` package; if you need the repo root from another package, define a local `projectRoot(t)` that wraps `runtime.Caller(0)` there |
+| `ResetDatabase(t, pool)` | `(*testing.T, *pgxpool.Pool)` | Truncates all public tables + restarts sequences |
+| `MigrateWithRetry(dbURL, path, timeout)` | `(string, string, time.Duration) error` | Runs migrations with retry loop |
+| `InsertAPIKey(t, pool, ctx, name)` | `(*testing.T, *pgxpool.Pool, context.Context, string) string` | Inserts a random API key using SHA-256 (not bcrypt). Returns the raw key. |
+| `InsertAdminUser(t, pool, ctx, ...)` | `(*testing.T, *pgxpool.Pool, context.Context, string×4)` | Inserts a user with bcrypt-hashed password (~100ms — use sparingly) |
+
+**Key design notes:**
+
+- `InsertAPIKey` uses `crypto/rand` (16 bytes → 32 hex chars) for fully random keys and SHA-256 hashing. Never use ULID-based key generation in tests — ULID prefixes collide within the same millisecond at test speed, causing unique constraint failures. Never use `auth.HashAPIKey` (bcrypt cost 12, ~300ms/call) in tests — it accumulated to test suite timeouts.
+- `ProjectRoot` uses `runtime.Caller(1)` relative to the testhelpers file. If you call it from a different test package, define your own local `projectRoot(t)` using `runtime.Caller(0)` so the path resolves correctly from your file.
+- `TestConfig` sets `AllowTestDomains: true` — required for fixtures using `example.com`. The `integration` package extends it locally to add `DeveloperConfig.UsageFlushTimeoutSeconds: 2`.
+- All helpers take explicit `pool`/`ctx` args (not a package-specific `testEnv` struct) so they work across packages.
+
 ## Patterns
 
 **Fault injection:** for packages that call `os.*` directly (like `internal/fileutil`), introduce an unexported interface (e.g. `atomicFS`) with a `defaultFS` production impl and a `failFS` test impl. Use same-package tests (`package foo`, not `package foo_test`) to access the seam. See `internal/fileutil/atomicwrite.go` + `atomicwrite_fault_test.go` as a reference.

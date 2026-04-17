@@ -3,8 +3,6 @@ package integration
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -19,15 +17,13 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api"
-	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
-	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -67,9 +63,9 @@ func setupTestEnv(t *testing.T) *testEnv {
 	t.Cleanup(cancel)
 
 	initShared(t)
-	resetDatabase(t, sharedPool)
+	testhelpers.ResetDatabase(t, sharedPool)
 
-	routerWithClient := api.NewRouter(sharedConfig, testLogger(), sharedPool, "test", "test-commit", "test-date")
+	routerWithClient := api.NewRouter(sharedConfig, testhelpers.TestLogger(), sharedPool, "test", "test-commit", "test-date")
 
 	// NOTE: River workers are NOT started in this package to optimize test execution time.
 	// Only batch ingestion tests (in tests/integration_batch/) require River workers.
@@ -126,8 +122,8 @@ func initShared(t *testing.T) {
 		}
 		sharedDBURL = dbURL
 
-		migrationsPath := filepath.Join(projectRoot(t), "internal", "storage", "postgres", "migrations")
-		if err := migrateWithRetry(dbURL, migrationsPath, 10*time.Second); err != nil {
+		migrationsPath := filepath.Join(testhelpers.ProjectRoot(t), "internal", "storage", "postgres", "migrations")
+		if err := testhelpers.MigrateWithRetry(dbURL, migrationsPath, 10*time.Second); err != nil {
 			sharedInitErr = err
 			return
 		}
@@ -174,94 +170,18 @@ func cleanupShared() {
 	}
 }
 
-func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-	if pool == nil {
-		require.Fail(t, "shared pool is nil")
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	rows, err := pool.Query(ctx, `
-SELECT tablename
-  FROM pg_tables
- WHERE schemaname = 'public'
-   AND tablename <> 'schema_migrations'
-   AND tablename <> 'river_migration'
- ORDER BY tablename;
-`)
-	require.NoError(t, err)
-	defer rows.Close()
-
-	var tables []string
-	for rows.Next() {
-		var name string
-		require.NoError(t, rows.Scan(&name))
-		if name == "" {
-			continue
-		}
-		safe := strings.ReplaceAll(name, "\"", "\"\"")
-		tables = append(tables, "\"public\".\""+safe+"\"")
-	}
-	require.NoError(t, rows.Err())
-
-	if len(tables) == 0 {
-		return
-	}
-
-	truncateSQL := "TRUNCATE TABLE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE;"
-	_, err = pool.Exec(ctx, truncateSQL)
-	require.NoError(t, err)
-}
-
-func testLogger() zerolog.Logger {
-	return zerolog.Nop()
-}
-
+// testConfig wraps testhelpers.TestConfig and adds the integration-specific
+// DeveloperConfig (short UsageFlushTimeout to prevent CI hangs).
 func testConfig(dbURL string) config.Config {
-	return config.Config{
-		Server: config.ServerConfig{
-			Host:    "127.0.0.1",
-			Port:    0,
-			BaseURL: "http://localhost",
-		},
-		Database: config.DatabaseConfig{
-			URL:            dbURL,
-			MaxConnections: 5,
-			MaxIdle:        2,
-		},
-		Auth: config.AuthConfig{
-			JWTSecret: "test-secret-32-bytes-minimum----",
-			JWTExpiry: time.Hour,
-		},
-		RateLimit: config.RateLimitConfig{
-			PublicPerMinute: 1000,
-			AgentPerMinute:  1000,
-			AdminPerMinute:  0,
-		},
-		AdminBootstrap: config.AdminBootstrapConfig{},
-		Jobs: config.JobsConfig{
-			RetryDeduplication:  1,
-			RetryReconciliation: 1,
-			RetryEnrichment:     1,
-		},
-		Logging: config.LoggingConfig{
-			Level:  "debug",
-			Format: "json",
-		},
-		Validation: config.ValidationConfig{
-			AllowTestDomains: true,
-		},
-		Developer: config.DeveloperConfig{
-			UsageFlushTimeoutSeconds: 2, // Short timeout so CI doesn't hang if pool is busy.
-		},
-		Environment:     "test",
-		DefaultTimezone: "America/Toronto",
+	cfg := testhelpers.TestConfig(dbURL)
+	cfg.Developer = config.DeveloperConfig{
+		UsageFlushTimeoutSeconds: 2, // Short timeout so CI doesn't hang if pool is busy.
 	}
+	return cfg
 }
 
+// projectRoot returns the repository root. Must be defined here (not in testhelpers)
+// so that runtime.Caller resolves relative to this package's source location.
 func projectRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
@@ -269,42 +189,9 @@ func projectRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
 }
 
-func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		if err := postgres.MigrateUp(databaseURL, migrationsPath); err != nil {
-			if time.Now().After(deadline) {
-				return err
-			}
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		return nil
-	}
-}
-
 func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 	t.Helper()
-
-	// Use crypto/rand for fully random keys — ULID-based keys share the same
-	// 8-char prefix within the same millisecond, causing unique constraint failures
-	// when many keys are inserted in quick succession.
-	// Use SHA-256 instead of bcrypt to avoid ~300ms/hash overhead per request;
-	// ValidateAPIKey supports both hash versions.
-	rawBytes := make([]byte, 16)
-	_, err := rand.Read(rawBytes)
-	require.NoError(t, err, "failed to generate random key bytes")
-	key := hex.EncodeToString(rawBytes) // 32 hex chars, fully random
-	prefix := key[:8]
-	hash := auth.HashAPIKeySHA256(key)
-
-	_, err = env.Pool.Exec(env.Context,
-		`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
-		prefix, hash, auth.HashVersionSHA256, name,
-	)
-	require.NoError(t, err, "failed to insert API key")
-
-	return key
+	return testhelpers.InsertAPIKey(t, env.Pool, env.Context, name)
 }
 
 func createdEventLocation(payload map[string]any) (map[string]any, error) {

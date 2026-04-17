@@ -3,24 +3,19 @@ package contracts_test
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api"
-	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
-	storagepostgres "github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/rs/zerolog"
@@ -61,9 +56,9 @@ func setupTestEnv(t *testing.T) *testEnv {
 	t.Cleanup(cancel)
 
 	initShared(t)
-	resetDatabase(t, sharedPool)
+	testhelpers.ResetDatabase(t, sharedPool)
 
-	server := httptest.NewServer(api.NewRouter(sharedConfig, testLogger(), sharedPool, "test", "test-commit", "test-date").Handler)
+	server := httptest.NewServer(api.NewRouter(sharedConfig, testhelpers.TestLogger(), sharedPool, "test", "test-commit", "test-date").Handler)
 	t.Cleanup(server.Close)
 
 	return &testEnv{
@@ -104,8 +99,8 @@ func initShared(t *testing.T) {
 		}
 		sharedDBURL = dbURL
 
-		migrationsPath := filepath.Join(projectRoot(t), "internal", "storage", "postgres", "migrations")
-		if err := migrateWithRetry(dbURL, migrationsPath, 10*time.Second); err != nil {
+		migrationsPath := filepath.Join(testhelpers.ProjectRoot(t), "internal", "storage", "postgres", "migrations")
+		if err := testhelpers.MigrateWithRetry(dbURL, migrationsPath, 10*time.Second); err != nil {
 			sharedInitErr = err
 			return
 		}
@@ -134,86 +129,15 @@ func cleanupShared() {
 
 func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	if pool == nil {
-		require.Fail(t, "shared pool is nil")
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	rows, err := pool.Query(ctx, `
-SELECT tablename
-  FROM pg_tables
- WHERE schemaname = 'public'
-   AND tablename <> 'schema_migrations'
- ORDER BY tablename;
-`)
-	require.NoError(t, err)
-	defer rows.Close()
-
-	var tables []string
-	for rows.Next() {
-		var name string
-		require.NoError(t, rows.Scan(&name))
-		if name == "" {
-			continue
-		}
-		safe := strings.ReplaceAll(name, "\"", "\"\"")
-		tables = append(tables, "\"public\".\""+safe+"\"")
-	}
-	require.NoError(t, rows.Err())
-
-	if len(tables) == 0 {
-		return
-	}
-
-	truncateSQL := "TRUNCATE TABLE " + strings.Join(tables, ", ") + " RESTART IDENTITY CASCADE;"
-	_, err = pool.Exec(ctx, truncateSQL)
-	require.NoError(t, err)
+	testhelpers.ResetDatabase(t, pool)
 }
 
 func testLogger() zerolog.Logger {
-	return zerolog.New(io.Discard)
+	return testhelpers.TestLogger()
 }
 
 func testConfig(dbURL string) config.Config {
-	return config.Config{
-		Server: config.ServerConfig{
-			Host:    "127.0.0.1",
-			Port:    0,
-			BaseURL: "http://localhost",
-		},
-		Database: config.DatabaseConfig{
-			URL:            dbURL,
-			MaxConnections: 5,
-			MaxIdle:        2,
-		},
-		Auth: config.AuthConfig{
-			JWTSecret: "test-secret-32-bytes-minimum----",
-			JWTExpiry: time.Hour,
-		},
-		RateLimit: config.RateLimitConfig{
-			PublicPerMinute: 1000,
-			AgentPerMinute:  1000,
-			AdminPerMinute:  0,
-		},
-		AdminBootstrap: config.AdminBootstrapConfig{},
-		Jobs: config.JobsConfig{
-			RetryDeduplication:  1,
-			RetryReconciliation: 1,
-			RetryEnrichment:     1,
-		},
-		Logging: config.LoggingConfig{
-			Level:  "debug",
-			Format: "json",
-		},
-		Validation: config.ValidationConfig{
-			AllowTestDomains: true,
-		},
-		DefaultTimezone: "America/Toronto",
-		Environment:     "test",
-	}
+	return testhelpers.TestConfig(dbURL)
 }
 
 func projectRoot(t *testing.T) string {
@@ -224,17 +148,7 @@ func projectRoot(t *testing.T) string {
 }
 
 func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		if err := storagepostgres.MigrateUp(databaseURL, migrationsPath); err != nil {
-			if time.Now().After(deadline) {
-				return err
-			}
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		return nil
-	}
+	return testhelpers.MigrateWithRetry(databaseURL, migrationsPath, timeout)
 }
 
 type seededEntity struct {
@@ -291,26 +205,7 @@ func insertEventWithOccurrence(t *testing.T, env *testEnv, name string, organize
 
 func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 	t.Helper()
-
-	// Use crypto/rand for fully random keys — ULID-based keys share the same
-	// 8-char prefix within the same millisecond, causing unique constraint failures
-	// when many keys are inserted in quick succession.
-	// Use SHA-256 instead of bcrypt to avoid ~300ms/hash overhead per request;
-	// ValidateAPIKey supports both hash versions.
-	rawBytes := make([]byte, 16)
-	_, err := rand.Read(rawBytes)
-	require.NoError(t, err, "failed to generate random key bytes")
-	key := hex.EncodeToString(rawBytes)
-	prefix := key[:8]
-	hash := auth.HashAPIKeySHA256(key)
-
-	_, err = env.Pool.Exec(env.Context,
-		`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
-		prefix, hash, auth.HashVersionSHA256, name,
-	)
-	require.NoError(t, err)
-
-	return key
+	return testhelpers.InsertAPIKey(t, env.Pool, env.Context, name)
 }
 
 func insertAdminUser(t *testing.T, env *testEnv, username, password, email, role string) {
