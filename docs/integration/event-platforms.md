@@ -1019,6 +1019,34 @@ provides per-group ICS feeds linked from the group's calendar page.
 **Verification step**: `curl -H "Accept: text/calendar" "https://www.meetup.com/<group>/events/ical/"`
 — should return `text/calendar` content with upcoming events.
 
+**Critical gap (discovered Cohort 1, 2026-04-17):** Meetup ICS feeds **omit the `LOCATION`
+property** for all events, including outdoor and in-person groups that clearly have physical
+venues. The SEL ingest API requires either `location` or `virtualLocation` — without either,
+every event in the feed is rejected with `invalid location: location or virtualLocation required`.
+All 19 Meetup groups in Cohort 1 failed for this reason.
+
+**Root cause**: Meetup has been reducing ICS field coverage since ~2023. The `URL` field
+pointing to the meetup event page IS present in the feed but is not mapped to
+`virtualLocation` by the ICS mapper (tracked as `srv-ia1w3`).
+
+**Remediation options** (choose based on group type):
+
+1. **`default_location` in config** (physical-venue groups): Works for groups that always
+   meet at the same trailhead, coworking space, or venue. Add `default_location:` block to
+   the YAML config. Not viable for groups with rotating or online-only venues.
+
+2. **ICS mapper `URL → virtualLocation` fix** (online groups): When bead `srv-ia1w3` is
+   merged, the mapper will use the Meetup event URL as `virtualLocation` for events lacking
+   `LOCATION`. This will unblock all 19 Meetup groups automatically.
+
+3. **Meetup API** (preferred if access is available): Meetup's GraphQL API returns
+   structured location data that the ICS feed omits. Requires venue or group admin
+   cooperation.
+
+**Slug verification**: Canonical slugs for all Toronto Meetup groups are in
+`specs/005-ics-integration/toronto-ics-manifest.json`. If a group URL returns 404,
+verify the slug in `community-calendar`'s `feeds.txt` (see `ics-feeds.md § 8`).
+
 **Fallback**: Meetup pages have JSON-LD but it can be sparse. Use T1/T2 selectors as
 supplement when ICS is incomplete.
 

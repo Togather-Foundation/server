@@ -225,6 +225,7 @@ ingestion — they are advisory signals for debugging.
 | `RRULE capped at N occurrences (UID: <uid>)` | RRULE expansion exceeded `ICS_MAX_OCCURRENCES` limit | Increase `ICS_MAX_OCCURRENCES` env var (default: 100) if more occurrences are needed, or widen `ICS_HORIZON_DAYS` (default: 90). |
 | `unparseable EXDATE (UID: <uid>)` | EXDATE value has an invalid date format | The feed has malformed date exclusions. The EXDATE is skipped; the event is still ingested without the exclusion. |
 | `expected text/calendar, got text/html` | Feed URL is a landing page or challenge page | Re-check the URL. Try the feed directly with `curl -H "Accept: text/calendar" <URL>`. |
+| `invalid location: location or virtualLocation required` | VEVENT has no `LOCATION` property and the mapper cannot derive a virtualLocation | (1) Add `default_location:` block to config if the source always uses the same venue. (2) Wait for `srv-ia1w3` (ICS mapper: `URL → virtualLocation`) to recover events that have a Meetup/event URL but no venue. Affects all Meetup ICS feeds. |
 
 ## 6. Recurrence Sanity Checks
 
