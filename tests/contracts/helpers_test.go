@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -18,7 +17,6 @@ import (
 	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -127,28 +125,8 @@ func cleanupShared() {
 	}
 }
 
-func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-	testhelpers.ResetDatabase(t, pool)
-}
-
-func testLogger() zerolog.Logger {
-	return testhelpers.TestLogger()
-}
-
 func testConfig(dbURL string) config.Config {
 	return testhelpers.TestConfig(dbURL)
-}
-
-func projectRoot(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-}
-
-func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Duration) error {
-	return testhelpers.MigrateWithRetry(databaseURL, migrationsPath, timeout)
 }
 
 type seededEntity struct {

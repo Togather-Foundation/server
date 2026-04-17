@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -26,7 +25,6 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
@@ -174,23 +172,8 @@ func resetDatabase(t *testing.T, pool *pgxpool.Pool) {
 	testhelpers.ResetDatabase(t, pool)
 }
 
-func testLogger() zerolog.Logger {
-	return testhelpers.TestLogger()
-}
-
 func testConfig(dbURL string) config.Config {
 	return testhelpers.TestConfig(dbURL)
-}
-
-func projectRoot(t *testing.T) string {
-	t.Helper()
-	_, file, _, ok := runtime.Caller(0)
-	require.True(t, ok)
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
-}
-
-func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Duration) error {
-	return testhelpers.MigrateWithRetry(databaseURL, migrationsPath, timeout)
 }
 
 func insertAPIKey(t *testing.T, env *testEnv, name string) string {
