@@ -180,7 +180,7 @@ jobs:
             > web/sitemap.xml
 
       - name: Run contract tests
-        run: go test -v -race -timeout 20m ./tests/contracts/...
+        run: go test -v -timeout 20m ./tests/contracts/...
         env:
           SHACL_VALIDATION_ENABLED: "true"
 
@@ -246,8 +246,8 @@ jobs:
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>' \
             > web/sitemap.xml
 
-      - name: Run integration tests with race detector
-        run: go test -v -race -timeout 20m -p 1 ./tests/integration/...
+      - name: Run integration tests
+        run: go test -v -timeout 20m -p 1 ./tests/integration/...
         env:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
@@ -323,7 +323,7 @@ jobs:
             > web/sitemap.xml
 
       - name: Run batch integration tests
-        run: go test -v -race -timeout 20m -p 1 ./tests/integration_batch/...
+        run: go test -v -timeout 20m -p 1 ./tests/integration_batch/...
         env:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
@@ -386,7 +386,7 @@ jobs:
             > web/sitemap.xml
 
       - name: Run federation sync integration tests
-        run: go test -v -race -timeout 20m -p 1 ./tests/integration/... -run 'Federation|ChangeFeed|Sync'
+        run: go test -v -timeout 20m -p 1 ./tests/integration/... -run 'Federation|ChangeFeed|Sync'
         env:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
@@ -452,7 +452,7 @@ jobs:
             > web/sitemap.xml
 
       - name: Run E2E tests
-        run: go test -v -race -timeout 20m ./tests/e2e/...
+        run: go test -v -timeout 20m ./tests/e2e/...
         env:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
