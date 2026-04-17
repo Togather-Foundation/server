@@ -3,6 +3,8 @@ package integration_batch
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -25,7 +27,6 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/oklog/ulid/v2"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
@@ -281,13 +282,17 @@ func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Du
 func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 	t.Helper()
 
-	key := ulid.Make().String() + "secret"
-	prefix := key[:8]
-	// Use SHA-256 instead of bcrypt to avoid ~300ms/hash overhead in tests.
+	// Use crypto/rand for fully random keys to avoid prefix collisions at high speed.
+	// Use SHA-256 instead of bcrypt to avoid ~300ms/hash overhead per request;
 	// ValidateAPIKey supports both hash versions.
+	rawBytes := make([]byte, 16)
+	_, err := rand.Read(rawBytes)
+	require.NoError(t, err, "failed to generate random key bytes")
+	key := hex.EncodeToString(rawBytes)
+	prefix := key[:8]
 	hash := auth.HashAPIKeySHA256(key)
 
-	_, err := env.Pool.Exec(env.Context,
+	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
 		prefix, hash, auth.HashVersionSHA256, name,
 	)

@@ -3,6 +3,8 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -23,7 +25,6 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/oklog/ulid/v2"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
 	"github.com/rs/zerolog"
@@ -285,40 +286,24 @@ func migrateWithRetry(databaseURL string, migrationsPath string, timeout time.Du
 func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 	t.Helper()
 
-	// Generate a unique API key with retry logic to handle ULID prefix collisions
-	var key, prefix string
-	var hash string
-	var err error
+	// Use crypto/rand for fully random keys — ULID-based keys share the same
+	// 8-char prefix within the same millisecond, causing unique constraint failures
+	// when many keys are inserted in quick succession.
+	// Use SHA-256 instead of bcrypt to avoid ~300ms/hash overhead per request;
+	// ValidateAPIKey supports both hash versions.
+	rawBytes := make([]byte, 16)
+	_, err := rand.Read(rawBytes)
+	require.NoError(t, err, "failed to generate random key bytes")
+	key := hex.EncodeToString(rawBytes) // 32 hex chars, fully random
+	prefix := key[:8]
+	hash := auth.HashAPIKeySHA256(key)
 
-	maxRetries := 5
-	for i := 0; i < maxRetries; i++ {
-		// Sleep to increase likelihood of unique ULID (millisecond precision)
-		if i > 0 {
-			time.Sleep(time.Duration(i*10) * time.Millisecond)
-		}
+	_, err = env.Pool.Exec(env.Context,
+		`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
+		prefix, hash, auth.HashVersionSHA256, name,
+	)
+	require.NoError(t, err, "failed to insert API key")
 
-		key = ulid.Make().String() + "secret"
-		prefix = key[:8]
-		// Use SHA-256 instead of bcrypt to avoid ~300ms/hash overhead in tests.
-		// ValidateAPIKey supports both hash versions.
-		hash = auth.HashAPIKeySHA256(key)
-
-		_, err = env.Pool.Exec(env.Context,
-			`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
-			prefix, hash, auth.HashVersionSHA256, name,
-		)
-
-		if err == nil {
-			return key
-		}
-
-		// Only retry on unique constraint violation
-		if !strings.Contains(err.Error(), "duplicate key") {
-			require.NoError(t, err)
-		}
-	}
-
-	require.NoError(t, err, "failed to insert API key after %d retries", maxRetries)
 	return key
 }
 
