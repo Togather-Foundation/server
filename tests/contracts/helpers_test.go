@@ -292,12 +292,13 @@ func insertAPIKey(t *testing.T, env *testEnv, name string) string {
 
 	key := ulid.Make().String() + "secret"
 	prefix := key[:8]
-	hash, err := auth.HashAPIKey(key)
-	require.NoError(t, err, "failed to hash API key")
+	// Use SHA-256 instead of bcrypt to avoid ~300ms/hash overhead in tests.
+	// ValidateAPIKey supports both hash versions.
+	hash := auth.HashAPIKeySHA256(key)
 
-	_, err = env.Pool.Exec(env.Context,
+	_, err := env.Pool.Exec(env.Context,
 		`INSERT INTO api_keys (prefix, key_hash, hash_version, name) VALUES ($1, $2, $3, $4)`,
-		prefix, hash, auth.HashVersionBcrypt, name,
+		prefix, hash, auth.HashVersionSHA256, name,
 	)
 	require.NoError(t, err)
 
