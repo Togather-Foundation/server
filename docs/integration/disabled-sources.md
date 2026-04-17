@@ -1,7 +1,7 @@
 # Disabled Scraper Sources — Status and Fix Paths
 
-**Last reviewed:** 2026-03-24  
-**Audit bead:** `srv-mo1xw` (review all disabled sources) — re-inspected all 14 disabled sources, deep-dived REST APIs, discovered new viable paths  
+**Last reviewed:** 2026-04-17  
+**Audit bead:** `srv-mo1xw` (review all disabled sources) — re-inspected the disabled source set, deep-dived REST APIs, discovered new viable paths  
 **Previous audits:** 2026-03-05 (`srv-2oipr`, `srv-n8qi1`, `srv-mwy3y`)  
 **Rod stealth/network-idle flags added:** 2026-03-05 (`srv-n8qi1`, closed)  
 **Cross-origin iframe extraction added:** 2026-03-05 (`srv-mwy3y`, closed) — adds `headless.iframe:` config block; unblocks reel-asian and lula-lounge  
@@ -27,18 +27,16 @@ Scraper tiers: T0 = JSON-LD/microdata, T1 = static HTML CSS selectors, T2 = JS-r
 | Category | Sources | Effort |
 |----------|---------|--------|
 | Seasonal — re-enable on a calendar trigger | heritage-toronto, imagine-native, inside-out, st-lawrence-market | None |
-| T3 REST API — unblocked by `srv-hi014` | burdock-brewery, workman-arts | Low (config only once `srv-hi014` lands) |
-| T2 widget never renders (third-party embed) | rcmusic | Low–Medium (find underlying API endpoint) |
+| T2 widget / SPA never renders | another-story-bookshop | Medium (find the underlying API or feed) |
 | Freeform layout — no repeating container | orpheus-choir-toronto | Low (contact venue for minor markup edit) |
-| Need depth-2 / multi-URL scraping | obsidian-theatre, luminato | Medium (new feature) |
-| Cross-origin iframe — config written, pending verification | lula-lounge | Low (verify selectors, flip enabled) |
+| Need depth-2 / multi-URL scraping | obsidian-theatre | Medium (new feature) |
 | Narrative date text (no parseable dates) | reel-asian | Blocked by `srv-054rj` (P3) |
 | Dates only on detail pages | tafelmusik | Blocked by `srv-qxj09` (P3) |
-| Content model mismatch (news posts, not events) | bloor-yorkville-bia, moca | Blocked |
-| Bot protection | ago, glad-day-bookshop | Medium–High |
+| Content model mismatch (news posts, not events) | bloor-annex-bia, bloor-yorkville-bia, moca | Blocked |
+| Attribute-only / URL hidden in data-* | xtsc | Low (attribute extraction already exists; URL still needs JS parsing) |
+| Bot protection / robots | glad-day-bookshop | Medium–High |
 | Site URL changed / content pending | hot-docs | Low (re-check after festival announcement) |
 | No events listing page | mammalian-diving-reflex | Blocked |
-| **Documented limitation (no_startDate)** | aga-khan-museum, charles-street-video, gardiner-museum, harbourfront-centre, koffler-arts, music-gallery | P3 engine work needed |
 
 ---
 
@@ -86,102 +84,12 @@ because they had zero events at review time.
 
 ---
 
-## 2. T3 REST API — unblocked by `srv-hi014`
-
-These sources use Showpass or another JSON REST API for ticketing. Once `srv-hi014`
-lands (adds the `rest:` config block to Tier 3), these become trivial config-only
-changes.
-
-### burdock-brewery
-- **URL:** `https://burdockbrewery.com/pages/music-hall`
-- **Platform:** Shopify page embeds a Showpass iframe widget (AngularJS); also has an
-  eventscalendar.co embed.
-- **Blocked by:** Cross-origin JS barrier — both the Showpass iframe and the
-  eventscalendar.co embed never produce DOM content accessible to Rod.
-- **Fix:** Showpass public REST API at
-  `https://www.showpass.com/api/public/events/?venue=17330` returns 34 events
-  across 2 pages (`{ count, next, results: [...] }`). Confirmed working with
-  `curl -sL`. Once `srv-hi014` lands:
-  ```yaml
-  tier: 3
-  rest:
-    endpoint: "https://www.showpass.com/api/public/events/?venue=17330"
-    results_field: "results"
-    next_field: "next"
-    url_template: "https://www.showpass.com/{{.slug}}"
-    field_map:
-      name: "name"
-      start_date: "starts_on"
-      end_date: "ends_on"
-      image: "image"
-  enabled: true
-  ```
-- **Related bead:** `srv-hi014`
-
-### workman-arts
-- **URL:** `https://workmanarts.com/events/`
-- **Platform:** WPBakery + Showpass widget
-- **Blocked by:** Two-layer barrier — AJAX filter interaction required before events
-  load, then events render via Showpass JS widget. Main programming is the Rendezvous
-  With Madness festival (October/November).
-- **Fix:** Find the Workman Arts Showpass venue ID (not yet confirmed). If they use
-  Showpass, the REST API pattern from burdock-brewery applies directly. Check the
-  Showpass iframe src on the page for a venue ID, or search
-  `showpass.com/api/public/events/?q=workman`. Once `srv-hi014` lands and the
-  venue ID is confirmed, enable with the same `rest:` block pattern as burdock.
-- **Related bead:** `srv-hi014`
-
----
-
-## 3. T2 widget never renders (third-party embed)
-
-These sources load event data via a third-party JS widget that does not render
-within Rod's timeout, or at all. Tier 2 headless is working correctly — the widget
-simply never produces DOM content within the selector wait.
-
-**Two T2 flags are available** (`srv-n8qi1`) and have been tested against these sources:
-
-- `wait_network_idle: true` — after `wait_selector` resolves, waits an additional
-  500 ms idle window for all in-flight XHR/fetch requests to settle.
-- `undetected: true` — launches with `go-rod/stealth` evasions.
-
-### rcmusic
-- **URL:** `https://www.rcmusic.com/events-and-performances`
-- **Platform:** AWS CloudSearch JS widget (`data-template="TPSPT.AWSFacetedSearchResults_Events"`)
-- **Blocked by:** Page renders ~7 KB of empty containers; events are fetched via an AWS
-  XHR endpoint that is not visible in page source.
-- **Next step:** Try `wait_network_idle: true` + `wait_timeout_ms: 20000`. The XHR
-  endpoint may fire and populate the DOM once network requests settle. Capture with
-  `server scrape capture` to check if the widget content appears.
-- **Fallback:** Use browser DevTools Network tab to capture the XHR request the widget
-  makes. If the endpoint is unauthenticated, add as a Tier 3 REST config. Alternatively
-  check for a WordPress iCal feed (`/events/feed/` or `?ical=1`).
-
----
-
-## 4. Need depth-2 / multi-URL scraping
+## 2. Need depth-2 / multi-URL scraping
 
 These sources have usable content but dates appear only on individual event/show
 detail pages, or the listing page is unscrapeable while individual pages work.
 A depth-2 mode (follow URLs from listing → extract from detail pages) or multi-URL
 config would unlock these sources.
-
-### luminato — BREAKTHROUGH: Individual show pages fully scrapeable
-- **URL:** `https://www.luminatofestival.com/events` (listing — unscrapeable widget)
-- **Platform:** DM website-builder + eventscalendar.co embed (Shadow DOM)
-- **Status (2026-03-09):** The /events listing page uses an eventscalendar.co widget
-  that wraps DOM in Shadow DOM — confirmed unscrapeable even with all headless flags.
-  **However**: Individual show pages have **full structured data in static HTML**:
-  - `/PennTeller` — Penn & Teller (June 5-6, 2026 at Meridian Hall)
-  - `/10-days-in-a-madhouse` — 10 Days in a Madhouse (June 16-21, 2026 at Bluma Appel Theatre)
-  - `/play-dead` — Play Dead (June 25-28, 2026 at Meridian Arts Centre)
-  - Each page has: title, dates & times table, venue, run time, ticket links, artist bios.
-  - Sitemap at `/sitemap.xml` has ~150 pages including all show URLs.
-- **Viable paths:**
-  1. **Multi-URL config** — List known show page URLs, scrape each individually (requires scraper enhancement).
-  2. **Depth-2 scraping** — Follow URLs from nav menu or sitemap to discover show pages, extract structured data.
-  3. **Sitemap-based discovery** — Parse `/sitemap.xml` to find show page URLs, filter by pattern.
-- **Festival:** Annual, June. 2026 festival confirmed with active show pages.
 
 ### obsidian-theatre
 - **URL:** `https://www.obsidiantheatre.com/season-listings/`
@@ -198,24 +106,7 @@ config would unlock these sources.
   2. Depth-2 scraping: listing page → show detail pages → extract from SHOW DETAILS section.
   3. Contact venue to add schema.org Event JSON-LD (one-time theme change).
 
-### east-end-arts ✅ RESOLVED
-- **URL:** `https://eastendarts.ca/`
-- **Platform:** WordPress with REST API
-- **Resolution:** Upgraded to **Tier 3 REST API**. WordPress REST API endpoint
-  `/wp-json/wp/v2/posts?per_page=10` returns structured RFC 3339 dates.
-- **Status:** `enabled: true` as of 2026-03-09.
-
-### theatre-passe-muraille ✅ RESOLVED
-- **URL:** `https://passemuraille.ca/25-26-season/`
-- **Platform:** Custom CMS
-- **Resolution (2026-03-24):** Upgraded to **Tier 1 sitemap-based**. Uses sitemap
-  `https://passemuraille.ca/sitemap.xml` for URL discovery, filters to season pages,
-  then extracts from Elementor widget sections. 3/3 events submit successfully.
-- **Status:** `enabled: true` as of 2026-03-24.
-
----
-
-## 4b. Freeform layout — no repeating container wrapper
+## 3. Freeform layout — no repeating container wrapper
 
 These venues use CMS layouts (WordPress Gutenberg, Elementor, etc.) where content
 blocks are freeform siblings without a shared repeating container div. CSS selectors
@@ -254,7 +145,7 @@ sites need either a markup edit from the venue or a different extraction strateg
 
 ---
 
-## 5. Blocked by third-party widget
+## 4. Blocked by third-party widget
 
 These sites delegate event rendering to an embedded third-party widget. The widget
 either (a) never renders in Rod, (b) renders inside a cross-origin iframe, or (c) the
@@ -270,7 +161,7 @@ events page no longer exists.
   (`/dynamic-events-sitemap.xml` has 13 event URLs) can be combined with the Wix
   API to retrieve structured event data. Needs a Wix API key from the venue.
 
-### hot-docs — site recovered, URL structure changed
+### hot-docs
 - **URL:** `https://hotdocs.ca/whats-on` (updated — old `/whats-on/cinema` returns 404)
 - **Platform:** ApostropheCMS (custom Node.js CMS)
 - **Status (2026-03-09):** Site is **BACK UP** (was returning 502 Bad Gateway). Main
@@ -289,43 +180,32 @@ events page no longer exists.
   2. Inspect Agile widget JS for underlying data endpoint.
   3. Individual film detail pages may be scrapeable once slug discovery is possible.
 
-### lula-lounge
-- **URL:** `https://www.lula.ca/events` (404 — Wix removed the events page)
-- **Situation:** The homepage now links to Eventbrite and Fever for ticketing, and to
-  a Ticket Spot iframe widget (Wix embed from `geteventviewer.com`/`ticketspotapp.com`)
-  on some pages. No dedicated events listing exists directly in the Wix page DOM.
-- **Cross-origin iframe blocker resolved:** The same-origin policy that previously
-  prevented CSS access to Ticket Spot iframe content is now resolved via the
-  `headless.iframe:` config block (implemented in srv-mwy3y). The scraper uses CDP
-  frame navigation to enter the iframe's execution context.
-- **Status:** A working iframe config has been written for lula-lounge but the source
-  remains `enabled: false` pending manual verification that selectors correctly extract
-  events from the Ticket Spot iframe DOM.
-- **Next step:** Run `SCRAPER_HEADLESS_ENABLED=true server scrape source lula-lounge --source-file configs/sources/lula-lounge.yaml --dry-run` to confirm ≥ 3 events are extracted, then set `enabled: true`.
-- **Fallback:** Use the Eventbrite public API with the organizer ID
-  (`4108527983` — `eventbrite.ca/o/lula-lounge-toronto-4108527983`) once `srv-hi014`
-  (T3 REST tier) lands. Alternatively contact the venue to restore their events page.
+### church-wellesley-village-bia
+- **URL:** `https://www.churchwellesleyvillage.ca/events`
+- **Platform:** Wix Thunderbolt OOI
+- **Blocked by:** Wix OOI widget (`#comp-mbl3z9lq`) never renders within Rod timeout.
+  The Wix platform requires full JS bootstrap that does not complete in headless Rod.
+- **Action:** Wix exposes a public Events API for sites using Wix Events
+  (`www.wixapis.com/events/v1/events`). Check if the site's sitemap
+  (`/dynamic-events-sitemap.xml` has 13 event URLs) can be combined with the Wix
+  API to retrieve structured event data. Needs a Wix API key from the venue.
 
-### reel-asian ✅ RESOLVED
-- **URL:** `https://www.reelasian.com/year-round/current-events/`
-- **Resolution:** Downgraded from Tier 2 to **Tier 1 static**. Selectors target
-  `.vc_col-sm-4:has(.wpb_text_column)` event cards. `enabled: true`.
+### bloor-annex-bia
+- **URL:** `https://www.blooryorkville.com/events`
+- **Platform:** Wix
+- **Blocked by:** The "events" page contains news articles and blog posts about the
+  neighbourhood, not dated event listings. Content model is "What's New" / "News" not
+  "Calendar of Events".
+- **Action:** None — this source is fundamentally incompatible with event scraping.
 
----
-
-## 6. Blocked by bot protection
-
-### ago (Art Gallery of Ontario)
-- **URL:** `https://ago.ca/whats-on`
-- **Blocked by:** HTTP 403 on all listing pages — Cloudflare or explicit scraper block.
-- **Action:** AGO has a collections API (`ago.ca/collections`) — check if an events
-  feed is exposed under the same platform. Alternatively, AGO is a high-profile venue
-  worth a direct contact request for a data feed.
-
-### ~~crows-theatre~~ — ✅ RESOLVED
-
-- **URL:** `https://crowstheatre.com/shows-events/`
-- **Fix:** T2 headless with `wait_network_idle: true`. 7 events extracted. `enabled: true`.
+### moca
+- **URL:** `https://moca.ca/exhibitions/`
+- **Platform:** Elementor / Jet Engine
+- **Blocked by:** Elementor widgets use ambiguous CSS class naming (`.elementor-element`,
+  `.jet-engine-equal-height`) that cannot be reliably distinguished from other pages on
+  the same site. Multiple widget types (exhibitions, events, blog posts) share the same
+  DOM structure.
+- **Action:** Contact venue for a dedicated events page or data feed.
 
 ### glad-day-bookshop
 - **URL:** `https://www.gladdaybookshop.com/events`
@@ -333,20 +213,6 @@ events page no longer exists.
 - **Action:** Legal blocker — contact the bookshop to request permission or a JSON/iCal
   feed. Glad Day is a culturally significant queer bookshop and likely supportive of
   inclusive event aggregation once the project is explained.
-
-### ~~now-toronto~~ — ✅ RESOLVED
-
-- **URL:** `https://nowtoronto.com/events/?ical=1`
-- **Previously:** Marked blocked because the HTML `/events/` page triggers a Cloudflare
-  Turnstile CAPTCHA challenge. The ICS endpoint was incorrectly assumed to be equally
-  blocked.
-- **Fix:** The `?ical=1` ICS endpoint is served from Cloudflare's cache (`cf-cache-status: HIT`)
-  and responds HTTP 200 to a plain GET request — no browser required. Set
-  `extraction_method: ics`, `enabled: true`. 20 events ingested.
-- **Lesson:** Always test the ICS feed URL directly with `curl -I` before assuming
-  Cloudflare blocks the entire domain. See
-  [event-platforms.md — Cloudflare-protected sites](event-platforms.md#14-cloudflare-protected-sites)
-  for the general pattern.
 
 ---
 
@@ -406,6 +272,23 @@ to detail pages for date extraction (Tier 1 only). Blocked by `srv-qxj09` (P3).
   CSS selectors.
 - **Status:** `enabled: false`
 - **Related bead:** `srv-qxj09` — Engine: Tier 1 follow_event_urls with detail-page selectors
+
+## 7d. SPA / hidden URL blockers
+
+### another-story-bookshop
+- **URL:** `https://www.anotherstory.ca/events/`
+- **Platform:** React SPA with BookManager integration
+- **Blocked by:** Headless browser never resolves the event list; page spins on an
+  Ant Design loading state and no public API/feed is visible.
+- **Action:** Re-check for a public API or feed URL; otherwise contact the venue.
+
+### xtsc
+- **URL:** `https://www.xtsc.ca/zuluru/events/`
+- **Platform:** Zuluru
+- **Blocked by:** Event names are available in `data-event`, but the actual event URLs
+  are embedded in HTML-encoded data attributes and require custom parsing beyond the
+  current selector model.
+- **Action:** Keep disabled until URL extraction or a better data source is available.
 
 ---
 

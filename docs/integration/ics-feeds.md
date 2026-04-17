@@ -1,7 +1,7 @@
 # ICS Feed Operations Runbook
 
-**Version:** 1.0
-**Date:** 2026-04-14
+**Version:** 1.1
+**Date:** 2026-04-17
 **Status:** Implemented
 
 This runbook covers onboarding, configuring, and troubleshooting ICS (iCalendar) feed
@@ -27,6 +27,16 @@ Create a YAML file in `configs/sources/` with `extraction_method: ics` to activa
 mode. When ICS mode is active, the scraper fetches the URL as an ICS feed and uses the
 `ical` package for parsing and mapping. The T0–T3 tier dispatch is bypassed entirely —
 `tier`, `selectors`, `headless`, `graphql`, and `rest` fields are all ignored.
+
+Toronto rollout note: keep this file focused on operator workflow, validation, and
+remediation. Platform detection heuristics belong in `event-platforms.md`.
+
+### Toronto examples
+
+- `now-toronto.yaml` proved the feed can be public even when the HTML page is blocked.
+- Public WordPress Tribe feeds often use `?ical=1` on the listing URL.
+- If a feed returns HTML, stop and validate the URL instead of treating it as a parser
+  problem.
 
 ### Example YAML Config
 
@@ -214,6 +224,7 @@ ingestion — they are advisory signals for debugging.
 | `duplicate UID (UID: <uid>)` | Two VEVENTs share the same UID | Check the upstream feed for duplicates. Provenance dedup handles this — the second occurrence is skipped. |
 | `RRULE capped at N occurrences (UID: <uid>)` | RRULE expansion exceeded `ICS_MAX_OCCURRENCES` limit | Increase `ICS_MAX_OCCURRENCES` env var (default: 100) if more occurrences are needed, or widen `ICS_HORIZON_DAYS` (default: 90). |
 | `unparseable EXDATE (UID: <uid>)` | EXDATE value has an invalid date format | The feed has malformed date exclusions. The EXDATE is skipped; the event is still ingested without the exclusion. |
+| `expected text/calendar, got text/html` | Feed URL is a landing page or challenge page | Re-check the URL. Try the feed directly with `curl -H "Accept: text/calendar" <URL>`. |
 
 ## 6. Recurrence Sanity Checks
 
@@ -316,13 +327,16 @@ type RecurrenceRule struct {
    appearing in public API responses.
 
 7. **Recurrence is wrong** — check `event_series.rrule` and `exdates` columns:
-   ```sql
-   SELECT id, rrule, exdates, series_start_date, series_end_date
-   FROM event_series
+    ```sql
+    SELECT id, rrule, exdates, series_start_date, series_end_date
+    FROM event_series
    WHERE name ILIKE '%<source-name>%';
    ```
-   Ensure `series_start_date` and `series_end_date` are both non-NULL (see
-   [Recurrence Sanity Checks](#6-recurrence-sanity-checks)).
+    Ensure `series_start_date` and `series_end_date` are both non-NULL (see
+    [Recurrence Sanity Checks](#6-recurrence-sanity-checks)).
+
+8. **If the HTML page is blocked but ICS works, prefer ICS** — the feed may be the
+   only viable path even when the site has anti-bot protection on the web page.
 
 ## 8. community-calendar: Reference & Troubleshooting Aid
 

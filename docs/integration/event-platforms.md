@@ -5,7 +5,7 @@ inspecting an unknown site's DOM, check the recognition cheatsheet below to iden
 the platform. If a match is found, use the known selectors and headless flags as a
 starting point rather than deriving everything from scratch.
 
-**Last updated:** 2026-04-14
+**Last updated:** 2026-04-17
 
 ---
 
@@ -519,13 +519,11 @@ headless:
 level (Cloudflare Enterprise + Turnstile) is not reliably bypassable.
 
 **Important nuance — ICS endpoints vs HTML pages:** Cloudflare's JS challenge and
-Turnstile apply to HTML page requests. ICS feed endpoints (`?ical=1`, `basic.ics`,
-etc.) are typically served as static/cached responses and are **not subject to the
-same challenge**. A site whose `/events/` HTML page returns a Turnstile wall may
-still serve its `?ical=1` feed cleanly with a plain HTTP GET (HTTP 200,
-`cf-cache-status: HIT`). Always check whether the site has an ICS feed before
-treating it as "Cloudflare-blocked" — see the [ICS Feed Discovery](event-platforms.md#ics-feed-discovery)
-section. `now-toronto.yaml` is the canonical example of this pattern.
+Turnstile usually apply to HTML page requests, not ICS feeds. Always probe the feed
+URL directly before treating a site as "Cloudflare-blocked". Toronto's canonical
+example is `now-toronto.yaml`: `/events/` returned a Turnstile wall, but
+`/events/?ical=1` returned a clean `text/calendar` response with plain HTTP GET
+(`cf-cache-status: HIT`).
 
 **Known examples:**
 - `crows-theatre.yaml` — resolved with T2 `wait_network_idle: true`
@@ -913,6 +911,20 @@ Many event platforms expose calendar data as ICS (iCalendar) feeds. When a valid
 feed is available, `extraction_method: ics` bypasses the T0–T3 tier dispatch entirely
 and parses the feed directly. This section documents the detection heuristics and URL
 patterns for common platforms.
+
+For operational setup, sync, warnings, and recurrence troubleshooting, see
+[ics-feeds.md](ics-feeds.md).
+
+### Toronto rollout observations
+
+- `now-toronto.yaml` is the best Cloudflare example: the HTML events page is blocked,
+  but `https://nowtoronto.com/events/?ical=1` serves ICS directly.
+- Public WordPress Tribe sites often expose `?ical=1`; verify with
+  `curl -H "Accept: text/calendar" "<events-url>?ical=1"` before falling back to HTML
+  scraping.
+- If the response body is HTML instead of `BEGIN:VCALENDAR`, the URL is usually a
+  landing page, login page, or challenge wall. Use the HTML scraper path or ask the
+  venue for the actual feed URL.
 
 ### WordPress + The Events Calendar (Tribe)
 
