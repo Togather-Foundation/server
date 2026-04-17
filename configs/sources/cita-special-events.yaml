@@ -7,4 +7,4 @@ schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
 timezone: "America/Toronto"
-enabled: true
+enabled: false  # Calendar abandoned — only 1 event from 2018. See srv-h9i8r.

@@ -189,7 +189,7 @@ remaining sources documented as blocked/deferred with reasons and next actions.
 attempted/onboarded/blocked/deferred counts, ingestion quality notes, median setup time,
 and maintenance risk markers.
 
-**Status**: Pending — `srv-fyb0s`.
+**Status**: ✓ Delivered — `toronto-rollout-report-cohort1.md`. 9/10 named sources onboarded (90%). 19 Meetup groups blocked (missing LOCATION in ICS — follow-up: srv-ia1w3). Re-ingest upsert deferred pending curator-protection spec 006.
 
 ### Task 6: Feed outcomes back into integration docs
 
