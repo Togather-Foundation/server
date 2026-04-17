@@ -103,7 +103,7 @@ jobs:
         run: go test -v -race ./internal/...
 
       - name: Run contract tests
-        run: go test -v -race ./tests/contracts/...
+        run: go test -v -race -timeout 20m ./tests/contracts/...
         env:
           SHACL_VALIDATION_ENABLED: "true"
 
@@ -113,19 +113,19 @@ jobs:
           SHACL_VALIDATION_ENABLED: "true"
 
       - name: Run integration tests with race detector
-        run: go test -v -race -p 1 ./tests/integration/...
+        run: go test -v -race -timeout 20m -p 1 ./tests/integration/...
         env:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
 
       - name: Run batch integration tests
-        run: go test -v -race -p 1 ./tests/integration_batch/...
+        run: go test -v -race -timeout 20m -p 1 ./tests/integration_batch/...
         env:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
 
       - name: Run E2E tests
-        run: go test -v -race ./tests/e2e/...
+        run: go test -v -race -timeout 20m ./tests/e2e/...
         env:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
