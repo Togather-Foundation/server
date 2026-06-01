@@ -561,7 +561,7 @@ jobs:
           cache: true
 
       - name: Install sqlc
-        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
 
       - name: Generate SQLc code
         run: make sqlc-generate
