@@ -35,19 +35,26 @@ type ListEventChangesParams struct {
 
 // ListEventChangesRow represents a row returned from ListEventChanges query.
 type ListEventChangesRow struct {
-	ID                pgtype.UUID
-	EventID           pgtype.UUID
-	Action            string
-	ChangedFields     []byte
-	Snapshot          []byte
-	ChangedAt         pgtype.Timestamptz
-	SequenceNumber    pgtype.Int8
-	EventUlid         string
-	FederationUri     pgtype.Text
-	LicenseUrl        string
-	LicenseStatus     string
-	SourceTimestamp   pgtype.Timestamptz
-	ReceivedTimestamp pgtype.Timestamptz
+	ID                   pgtype.UUID
+	EventID              pgtype.UUID
+	Action               string
+	ChangedFields        []byte
+	Snapshot             []byte
+	ChangedAt            pgtype.Timestamptz
+	SequenceNumber       pgtype.Int8
+	EventUlid            string
+	FederationUri        pgtype.Text
+	LicenseUrl           string
+	LicenseStatus        string
+	SourceTimestamp      pgtype.Timestamptz
+	ReceivedTimestamp    pgtype.Timestamptz
+	OccurrenceStartTime  pgtype.Timestamptz
+	OccurrenceEndTime    pgtype.Timestamptz
+	VenueName            pgtype.Text
+	VenueStreetAddress   pgtype.Text
+	VenueAddressLocality pgtype.Text
+	VenueAddressRegion   pgtype.Text
+	VenueAddressCountry  pgtype.Text
 }
 
 // ChangeFeedService provides business logic for change feed operations.
@@ -244,7 +251,16 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 				entry.Snapshot = row.Snapshot
 			} else {
 				// Transform database snapshot to JSON-LD format for create/update actions
-				transformedSnapshot, err := s.transformSnapshotToJSONLD(row.Snapshot, s.baseURL)
+				extra := snapshotExtras{
+					StartTime:          row.OccurrenceStartTime,
+					EndTime:            row.OccurrenceEndTime,
+					VenueName:          row.VenueName,
+					VenueStreetAddress: row.VenueStreetAddress,
+					VenueLocality:      row.VenueAddressLocality,
+					VenueRegion:        row.VenueAddressRegion,
+					VenueCountry:       row.VenueAddressCountry,
+				}
+				transformedSnapshot, err := s.transformSnapshotToJSONLD(row.Snapshot, s.baseURL, extra)
 				if err != nil {
 					s.logger.Warn().
 						Err(err).
@@ -284,8 +300,19 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 	}, nil
 }
 
+// snapshotExtras holds live-query fields not present in the stored snapshot JSONB.
+type snapshotExtras struct {
+	StartTime          pgtype.Timestamptz
+	EndTime            pgtype.Timestamptz
+	VenueName          pgtype.Text
+	VenueStreetAddress pgtype.Text
+	VenueLocality      pgtype.Text
+	VenueRegion        pgtype.Text
+	VenueCountry       pgtype.Text
+}
+
 // transformSnapshotToJSONLD converts a database snapshot (raw column names) to JSON-LD format.
-func (s *ChangeFeedService) transformSnapshotToJSONLD(dbSnapshot json.RawMessage, baseURL string) (json.RawMessage, error) {
+func (s *ChangeFeedService) transformSnapshotToJSONLD(dbSnapshot json.RawMessage, baseURL string, extras snapshotExtras) (json.RawMessage, error) {
 	// Parse database snapshot
 	var dbData map[string]any
 	if err := json.Unmarshal(dbSnapshot, &dbData); err != nil {
@@ -358,9 +385,42 @@ func (s *ChangeFeedService) transformSnapshotToJSONLD(dbSnapshot json.RawMessage
 		jsonLD["isAccessibleForFree"] = accessible
 	}
 
-	// startDate — try to extract from snapshot occurrence data if present
-	if startDate, ok := dbData["start_date"].(string); ok && startDate != "" {
-		jsonLD["startDate"] = startDate
+	// startDate / endDate — from joined event_occurrences (first occurrence)
+	if extras.StartTime.Valid {
+		jsonLD["startDate"] = extras.StartTime.Time.UTC().Format(time.RFC3339)
+	}
+	if extras.EndTime.Valid {
+		jsonLD["endDate"] = extras.EndTime.Time.UTC().Format(time.RFC3339)
+	}
+
+	// location — from joined places table
+	if extras.VenueName.Valid && extras.VenueName.String != "" {
+		location := map[string]any{
+			"@type": "Place",
+			"name":  extras.VenueName.String,
+		}
+		address := map[string]any{"@type": "PostalAddress"}
+		hasAddress := false
+		if extras.VenueStreetAddress.Valid && extras.VenueStreetAddress.String != "" {
+			address["streetAddress"] = extras.VenueStreetAddress.String
+			hasAddress = true
+		}
+		if extras.VenueLocality.Valid && extras.VenueLocality.String != "" {
+			address["addressLocality"] = extras.VenueLocality.String
+			hasAddress = true
+		}
+		if extras.VenueRegion.Valid && extras.VenueRegion.String != "" {
+			address["addressRegion"] = extras.VenueRegion.String
+			hasAddress = true
+		}
+		if extras.VenueCountry.Valid && extras.VenueCountry.String != "" {
+			address["addressCountry"] = extras.VenueCountry.String
+			hasAddress = true
+		}
+		if hasAddress {
+			location["address"] = address
+		}
+		jsonLD["location"] = location
 	}
 
 	// Marshal back to JSON

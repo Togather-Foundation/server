@@ -136,7 +136,14 @@ SELECT ec.id,
        e.license_url,
        e.license_status,
        es.source_timestamp,
-       e.created_at AS received_timestamp
+       e.created_at AS received_timestamp,
+       eo.start_time AS occurrence_start_time,
+       eo.end_time   AS occurrence_end_time,
+       p.name        AS venue_name,
+       p.street_address   AS venue_street_address,
+       p.address_locality AS venue_address_locality,
+       p.address_region   AS venue_address_region,
+       p.address_country  AS venue_address_country
   FROM event_changes ec
   JOIN events e ON e.id = ec.event_id
   LEFT JOIN (
@@ -145,6 +152,14 @@ SELECT ec.id,
       FROM event_sources
      GROUP BY event_id
   ) es ON es.event_id = ec.event_id
+  LEFT JOIN LATERAL (
+    SELECT start_time, end_time
+      FROM event_occurrences
+     WHERE event_id = ec.event_id
+     ORDER BY start_time ASC
+     LIMIT 1
+  ) eo ON true
+  LEFT JOIN places p ON p.id = e.primary_venue_id
   WHERE ($1::bigint IS NULL OR ec.sequence_number > $1::bigint)
     AND ($2::timestamptz IS NULL OR ec.changed_at >= $2::timestamptz)
     AND ($3::text IS NULL OR ec.action = $3::text)
@@ -160,19 +175,26 @@ type ListEventChangesParams struct {
 }
 
 type ListEventChangesRow struct {
-	ID                pgtype.UUID        `json:"id"`
-	EventID           pgtype.UUID        `json:"event_id"`
-	Action            string             `json:"action"`
-	ChangedFields     []byte             `json:"changed_fields"`
-	Snapshot          []byte             `json:"snapshot"`
-	ChangedAt         pgtype.Timestamptz `json:"changed_at"`
-	SequenceNumber    pgtype.Int8        `json:"sequence_number"`
-	EventUlid         string             `json:"event_ulid"`
-	FederationUri     pgtype.Text        `json:"federation_uri"`
-	LicenseUrl        string             `json:"license_url"`
-	LicenseStatus     string             `json:"license_status"`
-	SourceTimestamp   pgtype.Timestamptz `json:"source_timestamp"`
-	ReceivedTimestamp pgtype.Timestamptz `json:"received_timestamp"`
+	ID                   pgtype.UUID        `json:"id"`
+	EventID              pgtype.UUID        `json:"event_id"`
+	Action               string             `json:"action"`
+	ChangedFields        []byte             `json:"changed_fields"`
+	Snapshot             []byte             `json:"snapshot"`
+	ChangedAt            pgtype.Timestamptz `json:"changed_at"`
+	SequenceNumber       pgtype.Int8        `json:"sequence_number"`
+	EventUlid            string             `json:"event_ulid"`
+	FederationUri        pgtype.Text        `json:"federation_uri"`
+	LicenseUrl           string             `json:"license_url"`
+	LicenseStatus        string             `json:"license_status"`
+	SourceTimestamp      pgtype.Timestamptz `json:"source_timestamp"`
+	ReceivedTimestamp    pgtype.Timestamptz `json:"received_timestamp"`
+	OccurrenceStartTime  pgtype.Timestamptz `json:"occurrence_start_time"`
+	OccurrenceEndTime    pgtype.Timestamptz `json:"occurrence_end_time"`
+	VenueName            pgtype.Text        `json:"venue_name"`
+	VenueStreetAddress   pgtype.Text        `json:"venue_street_address"`
+	VenueAddressLocality pgtype.Text        `json:"venue_address_locality"`
+	VenueAddressRegion   pgtype.Text        `json:"venue_address_region"`
+	VenueAddressCountry  pgtype.Text        `json:"venue_address_country"`
 }
 
 // SQLc queries for change feeds.
@@ -204,6 +226,13 @@ func (q *Queries) ListEventChanges(ctx context.Context, arg ListEventChangesPara
 			&i.LicenseStatus,
 			&i.SourceTimestamp,
 			&i.ReceivedTimestamp,
+			&i.OccurrenceStartTime,
+			&i.OccurrenceEndTime,
+			&i.VenueName,
+			&i.VenueStreetAddress,
+			&i.VenueAddressLocality,
+			&i.VenueAddressRegion,
+			&i.VenueAddressCountry,
 		); err != nil {
 			return nil, err
 		}

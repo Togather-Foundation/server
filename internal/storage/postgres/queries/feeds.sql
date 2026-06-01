@@ -13,7 +13,14 @@ SELECT ec.id,
        e.license_url,
        e.license_status,
        es.source_timestamp,
-       e.created_at AS received_timestamp
+       e.created_at AS received_timestamp,
+       eo.start_time AS occurrence_start_time,
+       eo.end_time   AS occurrence_end_time,
+       p.name        AS venue_name,
+       p.street_address   AS venue_street_address,
+       p.address_locality AS venue_address_locality,
+       p.address_region   AS venue_address_region,
+       p.address_country  AS venue_address_country
   FROM event_changes ec
   JOIN events e ON e.id = ec.event_id
   LEFT JOIN (
@@ -22,6 +29,14 @@ SELECT ec.id,
       FROM event_sources
      GROUP BY event_id
   ) es ON es.event_id = ec.event_id
+  LEFT JOIN LATERAL (
+    SELECT start_time, end_time
+      FROM event_occurrences
+     WHERE event_id = ec.event_id
+     ORDER BY start_time ASC
+     LIMIT 1
+  ) eo ON true
+  LEFT JOIN places p ON p.id = e.primary_venue_id
   WHERE (sqlc.narg('after_sequence')::bigint IS NULL OR ec.sequence_number > sqlc.narg('after_sequence')::bigint)
     AND (sqlc.narg('after_timestamp')::timestamptz IS NULL OR ec.changed_at >= sqlc.narg('after_timestamp')::timestamptz)
     AND (sqlc.narg('action')::text IS NULL OR ec.action = sqlc.narg('action')::text)
