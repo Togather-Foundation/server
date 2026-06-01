@@ -5,4 +5,6 @@ schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
 timezone: "America/Toronto"
-enabled: true
+enabled: false
+# Disabled: global ICS feed with no Toronto filter — ingests events from NYC, SF, London, etc.
+# golatindance.com has no city-scoped ICS endpoint. Re-enable only if a Toronto-specific feed is found.
