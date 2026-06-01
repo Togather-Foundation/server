@@ -104,6 +104,39 @@ The API returns JSON-LD. Field names differ from typical REST APIs:
   Minimal jq to extract title + time + venue:
     curl -s '<url>' | jq -r '.items[] | "\(.startDate) — \(.name) — \(.location.name // "?")"'
 
+### Polling for new events (curator / daily-sync pattern)
+
+Use the change feed to discover events added since your last check — no seen-set or
+ULID tracking required. The feed is public (no auth), ordered by ingestion sequence,
+and covers every event ever added to this node.
+
+Step 1 — bootstrap with a timestamp (first run):
+  GET /api/v1/feeds/changes?since=2026-06-01T00:00:00Z&action=create&include_snapshot=true&limit=200
+
+Step 2 — store next_cursor from the response (e.g. "c2VxXzQyNDc").
+
+Step 3 — on each subsequent poll, pass the cursor:
+  GET /api/v1/feeds/changes?since=<next_cursor>&action=create&include_snapshot=true&limit=200
+
+Step 4 — when next_cursor is empty, you are caught up. Store the last cursor for next run.
+
+?since= accepts either an ISO 8601 timestamp (bootstrap) or an opaque cursor (subsequent
+polls). Cursors are stable and sequence-based, so you never miss an event or re-process
+one across restarts.
+
+?action=create returns only new events. Omit to also receive updates and deletes.
+?include_snapshot=true embeds the full JSON-LD event record in each change entry so you
+do not need a second GET /api/v1/events/{ulid} call.
+
+Change feed response shape:
+  .changes[]
+    .action           — "create", "update", or "delete"
+    .changed_at       — ingestion timestamp (ISO 8601)
+    .sequence_number  — stable monotonic sequence position
+    .event_ulid       — ULID of the event
+    .snapshot         — full JSON-LD event (only when include_snapshot=true)
+  .next_cursor        — pass as ?since= on next call (empty when caught up)
+
 ### Other endpoints
 
 Read places (no auth):        GET /api/v1/places?q=...&limit=10

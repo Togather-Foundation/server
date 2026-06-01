@@ -14,10 +14,11 @@
 5. [Event Submission (POST /api/v1/events)](#event-submission)
 6. [Event Retrieval (GET /api/v1/events)](#event-retrieval)
 7. [Developer Endpoints](#developer-endpoints)
-8. [Idempotency](#idempotency)
-9. [Duplicate Detection](#duplicate-detection)
-10. [Error Handling](#error-handling)
-11. [Examples](#examples)
+8. [Change Feed (Polling for New Events)](#change-feed-polling-for-new-events)
+9. [Idempotency](#idempotency)
+10. [Duplicate Detection](#duplicate-detection)
+11. [Error Handling](#error-handling)
+12. [Examples](#examples)
 
 ---
 
@@ -686,6 +687,68 @@ The developer portal provides a web interface for key management:
 | `/dev/accept-invitation` | Accept invitation and set password | No (token in URL) |
 | `/dev/dashboard` | Developer dashboard with usage overview | Yes |
 | `/dev/api-keys` | Manage API keys (create, list, revoke) | Yes |
+
+---
+
+## Change Feed (Polling for New Events)
+
+The change feed is the recommended way for curator agents and integrators to discover
+events that have been added or updated since a previous check.
+
+**Endpoint:** `GET /api/v1/feeds/changes`  
+**Auth:** None required (public endpoint)  
+**Ordered by:** Ingestion sequence number (stable, monotonic)
+
+### Why use the change feed instead of GET /api/v1/events?
+
+The events list is sorted by `startDate`, so new events can appear anywhere in the
+list. Polling the events list requires maintaining a seen-set of ULIDs and paging
+through the full result set on every check. The change feed is ordered by ingestion
+time, so you only ever need to store one cursor value.
+
+### Daily-sync pattern
+
+**First run — bootstrap with a timestamp:**
+```bash
+curl 'https://<node>/api/v1/feeds/changes?since=2026-06-01T00:00:00Z&action=create&include_snapshot=true&limit=200'
+```
+
+**Store `next_cursor` from the response** (e.g. `"c2VxXzQyNDc"`).
+
+**Subsequent runs — pass the cursor:**
+```bash
+curl 'https://<node>/api/v1/feeds/changes?since=<next_cursor>&action=create&include_snapshot=true&limit=200'
+```
+
+When `next_cursor` is empty, you are caught up. Persist the last non-empty cursor for the next run.
+
+### Query parameters
+
+| Parameter | Description |
+|-----------|-------------|
+| `since` | ISO 8601 timestamp (bootstrap) **or** opaque cursor from `next_cursor` (subsequent polls). Cursors are sequence-based and never expire. |
+| `action` | Filter by `create`, `update`, or `delete`. Omit to receive all change types. |
+| `include_snapshot` | `true` embeds the full JSON-LD event in each change entry — no second request needed. |
+| `limit` | 1–200, default 50. |
+
+### Response shape
+
+```json
+{
+  "changes": [
+    {
+      "action": "create",
+      "changed_at": "2026-06-01T20:03:10Z",
+      "sequence_number": 4247,
+      "event_ulid": "01KQABCDEF1234567890ABCDEF",
+      "snapshot": { "@type": "Event", "name": "...", ... }
+    }
+  ],
+  "next_cursor": "c2VxXzQyNDc"
+}
+```
+
+When `include_snapshot=false` (default), fetch the full record with `GET /api/v1/events/{ulid}`.
 
 ---
 
