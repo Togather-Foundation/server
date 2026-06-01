@@ -1009,7 +1009,13 @@ paths:
       parameters:
         - name: since
           in: query
-          description: Cursor from previous response (e.g., seq_1048576)
+          description: |
+            Pagination cursor from a previous response (e.g. `c2VxXzIwMA`), **or** an ISO 8601
+            timestamp (e.g. `2026-06-01T20:00:00Z`) to return only changes ingested after that
+            time. Cursor takes precedence when both interpretations are valid. Curator agents
+            should store `next_cursor` from each response and pass it here on the next poll for
+            efficient sequence-based pagination; on the first call an ISO timestamp can be used
+            to bootstrap from a known point in time.
           schema:
             type: string
         - $ref: '#/components/parameters/limit'

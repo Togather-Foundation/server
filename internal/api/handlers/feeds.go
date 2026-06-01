@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/domain/federation"
@@ -34,18 +35,28 @@ func (h *FeedsHandler) ListChanges(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	query := r.URL.Query()
 
-	// Support both 'since' (per Interop Profile) and 'after' (legacy) for cursor parameter
-	// 'since' parameter can be either a cursor or timestamp - cursor takes precedence
-	cursor := query.Get("since") // Prefer 'since' per Interop Profile §4.3
-	if cursor == "" {
-		cursor = query.Get("after") // Fallback to 'after' for backward compatibility
+	// Support both 'since' (per Interop Profile) and 'after' (legacy) for cursor/timestamp parameter.
+	// 'since' can be either an opaque cursor (e.g. "c2VxXzIwMA") or an ISO 8601 timestamp
+	// (e.g. "2026-06-01T20:00:00Z"). Cursors take precedence; if the value parses as a
+	// timestamp it is used as a time filter instead.
+	sinceRaw := query.Get("since")
+	if sinceRaw == "" {
+		sinceRaw = query.Get("after") // Fallback to 'after' for backward compatibility
 	}
 
-	// Build service params
 	params := federation.ChangeFeedParams{
-		After:           cursor,
 		Action:          query.Get("action"),
 		IncludeSnapshot: query.Get("include_snapshot") == "true",
+	}
+
+	if sinceRaw != "" {
+		// Try parsing as ISO 8601 timestamp first.
+		if t, err := time.Parse(time.RFC3339, sinceRaw); err == nil {
+			params.Since = t
+		} else {
+			// Treat as opaque cursor.
+			params.After = sinceRaw
+		}
 	}
 
 	// Parse limit
