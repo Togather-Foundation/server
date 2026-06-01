@@ -46,6 +46,8 @@ type EventSummary struct {
 	Type          string    `json:"@type"`
 	ID            string    `json:"@id,omitempty"`
 	Name          string    `json:"name"`
+	Description   string    `json:"description,omitempty"`
+	Keywords      []string  `json:"keywords,omitempty"`
 	StartDate     string    `json:"startDate,omitempty"`
 	EndDate       string    `json:"endDate,omitempty"`
 	DoorTime      string    `json:"doorTime,omitempty"`

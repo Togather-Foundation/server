@@ -412,7 +412,7 @@ GET /api/v1/events
 | `venueULID` | ULID | Filter by specific venue |
 | `organizerULID` | ULID | Filter by specific organizer |
 | `lifecycleState` | string | Filter by state: `draft`, `published`, `deleted` |
-| `query` | string | Full-text search query |
+| `q` | string | Full-text search query (searches name and description) |
 | `keywords` | string | Comma-separated keywords |
 | `domain` | string | Event domain: `arts`, `sports`, `community`, etc. |
 

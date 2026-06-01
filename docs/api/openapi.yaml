@@ -3225,6 +3225,11 @@ components:
           type: string
         description:
           type: string
+        keywords:
+          type: array
+          items:
+            type: string
+          description: Descriptive keyword tags
         eventStatus:
           type: string
           format: uri
@@ -3624,6 +3629,47 @@ components:
           type: string
           description: External system's event ID
 
+    EventSummary:
+      type: object
+      description: Compact event representation returned in list responses. For the full record (organizer, offers, provenance) fetch the individual event by @id.
+      required: ['@id', '@type', name, startDate, location]
+      properties:
+        '@context':
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+            - type: object
+          description: JSON-LD context.
+        '@id':
+          type: string
+          format: uri
+          description: Canonical URI for this event
+        '@type':
+          type: string
+          enum: [Event, EventSeries]
+        name:
+          type: string
+        description:
+          type: string
+          description: Event description. Present when the source provided one.
+        keywords:
+          type: array
+          items:
+            type: string
+          description: Descriptive keyword tags. Present when the source provided them.
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        location:
+          $ref: '#/components/schemas/Place'
+        eventSchedule:
+          $ref: '#/components/schemas/Schedule'
+
     EventListResponse:
       description: Paginated list of events with cursor-based pagination
       type: object
@@ -3632,7 +3678,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/Event'
+            $ref: '#/components/schemas/EventSummary'
         next_cursor:
           type: string
           description: Cursor for next page

@@ -109,6 +109,8 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		item := schema.NewEventSummary(event.Name)
 		item.Context = contextValue
 		item.ID = schema.BuildEventURI(h.BaseURL, event.ULID)
+		item.Description = event.Description
+		item.Keywords = event.Keywords
 
 		// Add startDate (required per Interop Profile §3.1)
 		if len(event.Occurrences) > 0 {
