@@ -482,6 +482,164 @@ docker system prune --volumes -f
 | Unused Docker volumes | `docker volume prune -f` |
 | Large deployment log files | `find ~/.togather/logs -mtime +30 -delete` |
 | PostgreSQL WAL files | Review `wal_keep_size` in postgresql.conf |
+| Prometheus WAL bloat (see below) | Clear WAL, verify retention config |
+| Stale containerd exec PID files (see below) | Verify `containerd-pid-cleanup.timer` is active |
+
+---
+
+### Issue: Prometheus WAL Fills Disk (cascade outage)
+
+**Symptom:**
+
+The PostgreSQL container fails to start with:
+```
+FATAL: could not write lock file "postmaster.pid": No space left on device
+```
+`df -h /` shows the disk at 100%. `docker system df` shows the Prometheus data
+volume consuming tens of gigabytes.
+
+**Root cause:**
+
+Prometheus writes incoming scrape data to a write-ahead log (WAL) and compacts
+it into blocks roughly every two hours. The size/time retention flags
+(`--storage.tsdb.retention.size`, `--storage.tsdb.retention.time`) apply only to
+the compacted blocks — **not** to the WAL itself. If the disk fills up before
+compaction can run, Prometheus cannot compact, the WAL grows unbounded, and the
+disk stays full (a self-reinforcing loop). Once the disk is full, Docker cannot
+write `/run` state files, so other containers (including PostgreSQL) cannot start.
+
+**Diagnosis:**
+```bash
+# Confirm disk full
+df -h /
+
+# Identify Prometheus WAL as the culprit
+sudo du -sh /var/lib/docker/volumes/togather-staging_prometheus-data/_data/wal/
+```
+
+**Recovery:**
+
+1. Stop Prometheus so the WAL is no longer open:
+   ```bash
+   docker stop togather-prometheus
+   ```
+
+2. Clear the WAL and in-memory chunks (loses historical metrics — acceptable for
+   staging):
+   ```bash
+   sudo find /var/lib/docker/volumes/togather-staging_prometheus-data/_data/wal \
+     -mindepth 1 -delete
+   sudo find /var/lib/docker/volumes/togather-staging_prometheus-data/_data/chunks_head \
+     -mindepth 1 -delete
+   ```
+
+3. Also clear accumulated containerd exec PID files if `/run` is also full (see
+   next section):
+   ```bash
+   sudo find /run/containerd/io.containerd.runtime.v2.task/moby \
+     -name '*.pid' -not -name 'init.pid' -delete
+   ```
+
+4. Restart all containers:
+   ```bash
+   docker start togather-prometheus togather-db
+   # Verify health
+   curl -s http://localhost:8082/health | jq .status
+   ```
+
+**Verify retention config:**
+```bash
+docker inspect togather-prometheus | grep -A2 'retention'
+# Should show: --storage.tsdb.retention.time=15d
+#              --storage.tsdb.retention.size=10GB
+```
+
+If retention flags are missing from the container args, update
+`deploy/docker/docker-compose.yml` and recreate the container.
+
+---
+
+### Issue: /run tmpfs Full — Docker Cannot Start Containers
+
+**Symptom:**
+
+`docker start <container>` fails with:
+```
+failed to create shim task: OCI runtime create failed: ... unable to store init
+state: write /var/run/docker/runtime-runc/moby/<id>/state-...: no space left on device
+```
+`df -h /run` shows the 197 MB tmpfs at 100%, even though `/dev/sda` has space.
+
+**Root cause (containerd exec PID leak):**
+
+This is a known containerd v2.x bug. Every Docker `CMD`-style health check spawns
+an exec process tracked by containerd, which creates a `.pid` file under:
+```
+/run/containerd/io.containerd.runtime.v2.task/moby/<container-id>/
+```
+Containerd does not delete these files when the exec process exits. The server
+container's health check (`CMD /app/server healthcheck`) fires every 30 seconds,
+producing ~2,880 new `.pid` files per day. At 4 KB each on the tmpfs, the 197 MB
+`/run` fills in roughly 7–8 weeks.
+
+**Diagnosis:**
+```bash
+# Check /run usage
+df -h /run
+
+# Count stale PID files for the running server container
+CID=$(docker inspect --format '{{.Id}}' togather-server-green)
+sudo find /run/containerd/io.containerd.runtime.v2.task/moby/$CID \
+  -name '*.pid' | wc -l
+```
+
+**Immediate fix:**
+```bash
+# Delete all exec PID files (init.pid is the container's main process — keep it)
+CID=$(docker inspect --format '{{.Id}}' togather-server-green)
+sudo find /run/containerd/io.containerd.runtime.v2.task/moby/$CID \
+  -name '*.pid' -not -name 'init.pid' -delete
+
+df -h /run   # should drop to ~1%
+```
+
+**Permanent fix — systemd cleanup timer:**
+
+A timer is installed on staging to run this cleanup hourly. Verify it is active:
+```bash
+systemctl status containerd-pid-cleanup.timer
+# Should show: active (waiting)
+```
+
+If missing, reinstall:
+```bash
+sudo tee /etc/systemd/system/containerd-pid-cleanup.service > /dev/null << 'EOF'
+[Unit]
+Description=Clean up stale containerd exec PID files
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find /run/containerd/io.containerd.runtime.v2.task/moby -name '*.pid' -not -name 'init.pid' -mmin +5 -delete
+EOF
+
+sudo tee /etc/systemd/system/containerd-pid-cleanup.timer > /dev/null << 'EOF'
+[Unit]
+Description=Hourly cleanup of stale containerd exec PID files
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now containerd-pid-cleanup.timer
+```
+
+The `-mmin +5` guard ensures only files older than 5 minutes are deleted; health
+checks complete in under 5 seconds so no active process is affected.
 
 ---
 
@@ -1018,4 +1176,4 @@ For production incidents, follow the incident response process in your organizat
 
 ---
 
-**Last Updated:** 2026-02-28
+**Last Updated:** 2026-06-01
