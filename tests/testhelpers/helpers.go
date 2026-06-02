@@ -30,7 +30,7 @@ func TestLogger() zerolog.Logger {
 
 // TestConfig returns a standard config.Config for tests using the given DB URL.
 // Rate limits are set high so they never interfere with test logic.
-// AllowTestDomains is always true so fixtures using example.com pass validation.
+// AllowTestDomains is always true so test code constructing example.com URLs passes validation.
 func TestConfig(dbURL string) config.Config {
 	return config.Config{
 		Server: config.ServerConfig{

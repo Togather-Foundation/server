@@ -29,7 +29,7 @@ The `tests/testhelpers` package provides shared utilities for `integration`, `in
 
 - `InsertAPIKey` uses `crypto/rand` (16 bytes → 32 hex chars) for fully random keys and SHA-256 hashing. Never use ULID-based key generation in tests — ULID prefixes collide within the same millisecond at test speed, causing unique constraint failures. Never use `auth.HashAPIKey` (bcrypt cost 12, ~300ms/call) in tests — it accumulated to test suite timeouts.
 - `ProjectRoot` uses `runtime.Caller(1)` relative to the testhelpers file. If you call it from a different test package, define your own local `projectRoot(t)` using `runtime.Caller(0)` so the path resolves correctly from your file.
-- `TestConfig` sets `AllowTestDomains: true` — required for fixtures using `example.com`. The `integration` package extends it locally to add `DeveloperConfig.UsageFlushTimeoutSeconds: 2`.
+- `TestConfig` sets `AllowTestDomains: true` — fixture generators (`RandomEventInput`, etc.) no longer produce `example.com` URLs, but the flag is still required because integration tests construct `example.com` URLs inline and `server generate`/`cmd/loadtest` continue to inject placeholder domains. The `integration` package extends it locally to add `DeveloperConfig.UsageFlushTimeoutSeconds: 2`.
 - All helpers take explicit `pool`/`ctx` args (not a package-specific `testEnv` struct) so they work across packages.
 
 ## Patterns
@@ -61,6 +61,10 @@ Flags: `--extraction-method`, `--tier` (default: auto-detect from extension), `-
 
 ## Staging Constraints
 
-**`example.com` and any `*.example.com` subdomain URLs are a hard ingest error (HTTP 422)** in staging and production (all RFC 2606 reserved test domains are blocked). Tests or test harnesses that submit fixture events using those domains **must** set `ValidationConfig{AllowTestDomains: true}`. This field is never set via an env var — it is test-only and must be set explicitly. `server generate` and `cmd/loadtest` inject these placeholder URLs; never ingest their output against staging without source-tagging.
+**`example.com` and any `*.example.com` subdomain URLs are a hard ingest error (HTTP 422)** in staging and production (all RFC 2606 reserved test domains are blocked). Tests or test harnesses that submit fixture events using those domains **must** set `ValidationConfig{AllowTestDomains: true}`. This field is never set via an env var — it is test-only and must be set explicitly.
+
+**Fixture generators in `tests/testdata/fixtures.go` (`RandomEventInput`, `EventInputReversedDates`, `EventInputMissingVenue`, `EventInputLikelyDuplicate`, `EventInputMultipleWarnings`, review scenarios) no longer produce `example.com` URLs** — they use `source.BaseURL` (realistic domains like eventbrite.ca, meetup.com, squarespace.com) for event URLs and `unsplashImage` for images. Tests using these generators do not require `AllowTestDomains` on that basis alone.
+
+**`server generate` and `cmd/loadtest` still inject `example.com` placeholder URLs** — never ingest their output against staging without source-tagging.
 
 **Load-test cleanup on staging:** use `server cleanup loadtest --env=staging --source-id=<uuid> --confirm` (preferred) or `--legacy` for pre-tagging contamination. See `docs/operations/load-testing.md` for full workflow.
