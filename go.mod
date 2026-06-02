@@ -5,7 +5,6 @@ go 1.25.10
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
 	github.com/arran4/golang-ical v0.3.6-fork.2
-	github.com/bojanz/address v1.3.3
 	github.com/docker/go-connections v0.6.0
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/go-rod/rod v0.116.2

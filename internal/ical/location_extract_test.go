@@ -227,9 +227,7 @@ func TestDecomposeLocation(t *testing.T) {
 
 	t.Run("full address from name", func(t *testing.T) {
 		t.Parallel()
-		opts := DecomposeOpts{
-			CountryCode: "CA",
-		}
+		opts := DecomposeOpts{}
 		pi := DecomposeLocation("100 King St W, Toronto, ON M5X 1A9", opts)
 
 		if pi.Name != "100 King St W, Toronto, ON M5X 1A9" {
@@ -243,7 +241,6 @@ func TestDecomposeLocation(t *testing.T) {
 	t.Run("partial address with defaults", func(t *testing.T) {
 		t.Parallel()
 		opts := DecomposeOpts{
-			CountryCode:     "CA",
 			DefaultLocality: "Toronto",
 			DefaultRegion:   "ON",
 			DefaultCountry:  "CA",

@@ -7,7 +7,6 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/sanitize"
-	"github.com/bojanz/address"
 )
 
 var (
@@ -86,58 +85,38 @@ func ExtractLocationWithPatterns(desc string, patterns []LocationPattern) (strin
 	return "", false
 }
 
-// DecomposeOpts controls how a raw location name is decomposed into structured
-// PlaceInput fields. All fields are optional; DecomposeLocation falls back to
-// defaults for any missing address components.
+// DecomposeOpts controls how a raw location name is mapped into structured
+// PlaceInput fields. All fields are optional; DecomposeLocation fills missing
+// address components from these defaults.
 type DecomposeOpts struct {
-	CountryCode     string
 	DefaultLocality string
 	DefaultRegion   string
 	DefaultCountry  string
 }
 
-// DecomposeLocation converts a raw location name string into a PlaceInput with
-// structured address components using opts defaults to fill missing fields.
-// StreetAddress is set to the name when no structured decomposition is available.
+// DecomposeLocation converts a raw location name into a PlaceInput.
+// For venue names extracted from ICS descriptions (e.g. "Finch Subway Station"),
+// there are typically no structured address components to decompose. The name is
+// used as StreetAddress, and any missing locality/region/country fields are filled
+// from opts defaults (typically sourced from MapperOptions.DefaultLocation).
+// Full address decomposition (e.g. "123 Main St, Toronto, ON M5V 1A1") is handled
+// downstream by the geocoding pipeline.
 func DecomposeLocation(name string, opts DecomposeOpts) events.PlaceInput {
-	addr := address.Address{
-		Line1: name,
-	}
-
 	pi := events.PlaceInput{
 		Name: sanitize.Text(name),
 	}
 
-	streetAddr := addr.Line1
-	if addr.Line2 != "" {
-		streetAddr += ", " + addr.Line2
-	}
-	if addr.Line3 != "" {
-		streetAddr += ", " + addr.Line3
-	}
-	if streetAddr != "" {
-		pi.StreetAddress = sanitize.Text(streetAddr)
+	if name != "" {
+		pi.StreetAddress = sanitize.Text(name)
 	}
 
-	if addr.Locality != "" {
-		pi.AddressLocality = sanitize.Text(addr.Locality)
-	} else if opts.DefaultLocality != "" {
+	if opts.DefaultLocality != "" {
 		pi.AddressLocality = opts.DefaultLocality
 	}
-
-	if addr.Region != "" {
-		pi.AddressRegion = sanitize.Text(addr.Region)
-	} else if opts.DefaultRegion != "" {
+	if opts.DefaultRegion != "" {
 		pi.AddressRegion = opts.DefaultRegion
 	}
-
-	if addr.PostalCode != "" {
-		pi.PostalCode = sanitize.Text(addr.PostalCode)
-	}
-
-	if addr.CountryCode != "" && address.CheckCountryCode(addr.CountryCode) {
-		pi.AddressCountry = addr.CountryCode
-	} else if opts.DefaultCountry != "" {
+	if opts.DefaultCountry != "" {
 		pi.AddressCountry = opts.DefaultCountry
 	}
 
