@@ -102,6 +102,7 @@ symlink ".env"
 symlink ".deploy.conf.staging"
 symlink ".deploy.conf.production"
 symlink ".agent-keys"
+symlink "deploy/testing/environments"
 
 # ---------------------------------------------------------------------------
 # 2. Symlink generated web files (gitignored, needed for embed directives)
