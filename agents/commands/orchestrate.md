@@ -20,7 +20,7 @@ Phase 2b: UI DESIGN     -- (UI features only) Write visual spec; present to user
   >>> GATE: Stop and wait for user to approve the UI design <<<
 Phase 3: BEAD & BRANCH  -- Create feature branch, create/claim bead
 Phase 4: IMPLEMENT      -- TDD in subagents (delegate to @general)
-Phase 5: REVIEW         -- CI + code review (delegate to @beads-code-reviewer)
+Phase 5: REVIEW         -- CI + code review (delegate to @beads-go-reviewer)
 Phase 6: REFLECT        -- Design hindsight, create follow-up beads
   >>> GATE: Stop and present reflection report to the user <<<
 Phase 7: DOCUMENTATION  -- Update docs (delegate to @general)
@@ -55,11 +55,22 @@ for management, decisions, and coordination.
 |---|---|
 | Beads (`bd show/update/close`) | Exploration, doc reading -> `@explore` |
 | Git (branch, commit, push) | Code + tests -> `@general` |
-| Build/test/deploy (`scripts/agent-run.sh`) | Code review -> `@beads-code-reviewer` |
+| Build/test/deploy (`scripts/agent-run.sh`) | Code review -> `@beads-go-reviewer` |
 | TodoWrite, GATEs, coordination | Hard problems -> `@diagnose` |
 
 When delegating, always include: what to do, reference doc paths from Phase 1,
 what to return, and the bead ID(s).
+
+**Parallel delegation — file ownership:** When delegating two or more subagents
+simultaneously, enumerate which files each subagent owns. No file may appear in
+more than one subagent's ownership list. If two subagents genuinely need the same
+file, run them sequentially instead. This prevents merge conflicts and dropped
+changes from overlapping edits.
+
+**Sequence when one subagent changes public API:** Even across non-overlapping
+files, if subagent A renames a field, changes a function signature, or alters a
+type that subagent B's files import, run them sequentially. The API change creates
+an implicit dependency — subagent B won't compile until A's changes land.
 
 **CRITICAL — No commits in subagents:** Every prompt you send to a subagent via
 the Task tool **must** include this instruction verbatim:
@@ -76,6 +87,9 @@ under orchestration. The orchestrator commits after verifying each step.
 `$ARGUMENTS` should be one of:
 - A bead ID or space-separated list of bead IDs (e.g. `beads-abc beads-def`)
 - A workflow type followed by a description: `feature|bugfix|refactor|security <description>`
+
+Add `--worktree` to isolate work in a git worktree (safe parallel orchestration).
+Omit for an in-tree feature branch.
 
 If bead IDs are provided, read them with `bd show <id> --json` to get context.
 
@@ -161,6 +175,22 @@ git checkout -b <type>/<bead-id>-<short-description>  # feat/, fix/, refactor/
 bd update <id> --status in_progress
 ```
 
+### Worktree mode (`--worktree`)
+
+For multi-bead work, pick a primary bead for naming, and claim every bead:
+```bash
+git worktree prune
+WORKTREE=".worktrees/togather-<primary-bead-id>"
+git worktree add -b <type>/<primary-bead-id>-<short-description> "$WORKTREE" main
+scripts/worktree-setup.sh "$WORKTREE"
+bd update <primary-bead-id> --status in_progress
+bd update <bead-id-2> --status in_progress  # if multiple beads
+```
+
+**All subsequent phases in worktree mode** run with `workdir="$WORKTREE"` on
+every bash command (`make ci-fast`, `git`, `go build`, etc.). Subagent prompts must
+include the worktree path so they know where to operate.
+
 ---
 
 ## Phase 4: IMPLEMENT (TDD)
@@ -191,9 +221,10 @@ After each subagent returns:
    before committing (e.g. a missed edge case, a cleanup, a confusing variable name).
    Record non-trivial items that can't be fixed now as beads. Do not silently discard
    the subagent's observations -- they have context the orchestrator lacks.
-4. Commit: `<type>(<scope>): <description> [<bead-id>]`
+3. Commit: `<type>(<scope>): <description> [<bead-id>]`
    (types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`)
-5. Mark TodoWrite items complete; update bead notes for significant decisions
+   **Never use `git add -A`** — stage specific files with explicit paths.
+4. Mark TodoWrite items complete; update bead notes for significant decisions
 6. If stuck, delegate to `@diagnose`
 
 **Local verification:** After all steps are implemented, run the fast CI gate
@@ -210,10 +241,14 @@ make run   # or make dev for live reload
 **Goal:** Verify everything works locally before staging.
 
 1. **CI gate:** `scripts/agent-run.sh make ci-fast` -- fix failures before continuing.
-2. **Code review** -- Delegate to `@beads-code-reviewer`: review `git diff main...HEAD`,
-   check quality/idioms/errors/tests/security/performance. Include Reference Doc paths.
-   Ask for findings as CRITICAL / WARNING / SUGGESTION with file:line references.
-3. **Fix** CRITICAL and WARNING (P0 and relevant P1 and P2) findings (delegate to `@general`).
+2. **Code review** -- Delegate to `@beads-go-reviewer`: review `git diff main...HEAD`
+   for the current branch. The reviewer reports findings at four severity levels 
+   (Critical/High/Medium/Low) with `file:line` references. It creates beads for 
+   trackable P0–P2 issues automatically. Include Reference Doc paths from Phase 1.
+3. **Triage findings** -- Read the review report. Fix Critical (P0) and High (P1) findings
+   first (delegate to `@general`). Medium (P2) may be deferred if substantial and 
+   documented as follow-up beads, while simple fixes can be done immediately in subagents. 
+   Low/nitpicks should be done immediately if trivial and you think improves code quality.
 4. **Re-run CI** after fixes: `scripts/agent-run.sh make ci-fast`
 5. **Local user review** -- Present a summary of changes to the user. If the server
    is running locally (`make run`), suggest specific things to test (endpoints, UI,
@@ -327,6 +362,7 @@ Do not proceed to Phase 9 until user explicitly signs off.
 
 **Goal:** Merge to main. Only after user sign-off from Phase 8.
 
+**In-tree (default):**
 ```bash
 # Rebase
 git checkout main && git pull && git checkout - && git rebase main
@@ -342,9 +378,32 @@ bd close <id> --reason "<summary of what changed and why>"
 bd create --title="<follow-up>" --description="<context>" --type=task --priority=3
 
 # Push and clean up
-bd sync && git push
+git push
 git status    # Must show "up to date with origin"
 git branch -d <branch-name>
+scripts/agent-cleanup.sh
+```
+
+**Worktree mode (`--worktree`):** main is locked in the main worktree.
+Push first, then switch to main working directory for the merge:
+```bash
+# From the worktree:
+git fetch origin main && git rebase origin/main
+scripts/agent-run.sh make ci    # re-verify after rebase (runs in worktree via workdir="$WORKTREE")
+git push
+```
+```bash
+# In the main working directory (NOT the worktree):
+git checkout main && git pull && git merge --no-ff <branch-name> \
+  -m "Merge branch '<branch-name>'" \
+  -m "<Detailed summary of what was built, fixed, and why. List closed beads.>"
+bd close <id> --reason "<summary of what changed and why>"
+# Add any final follow-ups
+bd create --title="<follow-up>" --description="<context>" --type=task --priority=3
+make ci && git push
+git status    # Must show "up to date with origin"
+git branch -d <branch-name>
+git worktree remove "$WORKTREE" && git worktree prune
 scripts/agent-cleanup.sh
 ```
 
