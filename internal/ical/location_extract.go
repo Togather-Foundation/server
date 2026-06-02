@@ -15,6 +15,8 @@ var (
 	defaultLocationPatterns     []LocationPattern
 )
 
+// LocationPattern pairs a named regex with a human-readable label used for debugging
+// and error reporting during location extraction.
 type LocationPattern struct {
 	Name string
 	Re   *regexp.Regexp
@@ -47,10 +49,11 @@ var virtualSignals = []string{
 	"google meet",
 	"teams meeting",
 	"zoom meeting",
-	"http://",
-	"https://",
 }
 
+// IsVirtualDescription returns true if the description contains known virtual event
+// signals (zoom, virtual, online, webinar, etc.), indicating the event has no
+// physical venue.
 func IsVirtualDescription(desc string) bool {
 	lower := strings.ToLower(desc)
 	for _, signal := range virtualSignals {
@@ -61,14 +64,18 @@ func IsVirtualDescription(desc string) bool {
 	return false
 }
 
+// ExtractLocationFromDescription scans the description using DefaultLocationPatterns
+// and returns the first match. Returns ("", false) if no pattern matches.
 func ExtractLocationFromDescription(desc string) (string, bool) {
 	return ExtractLocationWithPatterns(desc, DefaultLocationPatterns())
 }
 
+// ExtractLocationWithPatterns scans the description using the provided patterns
+// (in order) and returns the first match. Returns ("", false) if no pattern matches.
 func ExtractLocationWithPatterns(desc string, patterns []LocationPattern) (string, bool) {
 	for _, p := range patterns {
 		match := p.Re.FindStringSubmatch(desc)
-		if match != nil && len(match) > 1 {
+		if len(match) > 1 {
 			extracted := strings.TrimSpace(match[1])
 			extracted = sanitize.Text(extracted)
 			if extracted != "" {
@@ -79,6 +86,9 @@ func ExtractLocationWithPatterns(desc string, patterns []LocationPattern) (strin
 	return "", false
 }
 
+// DecomposeOpts controls how a raw location name is decomposed into structured
+// PlaceInput fields. All fields are optional; DecomposeLocation falls back to
+// defaults for any missing address components.
 type DecomposeOpts struct {
 	CountryCode     string
 	DefaultLocality string
@@ -86,6 +96,9 @@ type DecomposeOpts struct {
 	DefaultCountry  string
 }
 
+// DecomposeLocation converts a raw location name string into a PlaceInput with
+// structured address components using opts defaults to fill missing fields.
+// StreetAddress is set to the name when no structured decomposition is available.
 func DecomposeLocation(name string, opts DecomposeOpts) events.PlaceInput {
 	addr := address.Address{
 		Line1: name,
