@@ -10,6 +10,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/api/apitypes"
 	"github.com/spf13/cobra"
 )
 
@@ -42,43 +43,6 @@ func init() {
 	scrapeFailuresCmd.Flags().IntVar(&failuresLimit, "limit", 0, "Maximum sources to return (0 = all)")
 	scrapeFailuresCmd.Flags().StringVar(&failuresStatus, "status", "", "Filter by run status (e.g. running, completed, failed)")
 	scrapeFailuresCmd.Flags().BoolVar(&failuresJSON, "json", false, "Output as JSON")
-}
-
-type diagnosticsResponse struct {
-	SourceName        string               `json:"source_name"`
-	LatestRun         *scraperRunResponse  `json:"latest_run"`
-	LastSuccessfulRun *scraperRunResponse  `json:"last_successful_run,omitempty"`
-	RecentRuns        []scraperRunResponse `json:"recent_runs"`
-}
-
-type allDiagnosticsResponse struct {
-	Items []scraperRunResponse `json:"items"`
-	Total int                  `json:"total"`
-}
-
-type scraperRunResponse struct {
-	ID                int64                  `json:"id"`
-	SourceName        string                 `json:"source_name"`
-	SourceURL         string                 `json:"source_url"`
-	Tier              int32                  `json:"tier"`
-	Status            string                 `json:"status"`
-	StartedAt         *time.Time             `json:"started_at,omitempty"`
-	CompletedAt       *time.Time             `json:"completed_at,omitempty"`
-	EventsFound       int32                  `json:"events_found"`
-	EventsNew         int32                  `json:"events_new"`
-	EventsDup         int32                  `json:"events_dup"`
-	EventsFailed      int32                  `json:"events_failed"`
-	ErrorMessage      string                 `json:"error_message,omitempty"`
-	EventFailures     []eventFailureResponse `json:"event_failures,omitempty"`
-	ICSWarningsTotal  int32                  `json:"ics_warnings_total,omitempty"`
-	ICSWarningsUnique int32                  `json:"ics_warnings_unique,omitempty"`
-	ICSWarnings       []string               `json:"ics_warnings,omitempty"`
-}
-
-type eventFailureResponse struct {
-	Index   int    `json:"index"`
-	URL     string `json:"url,omitempty"`
-	Message string `json:"message"`
 }
 
 func runScrapeFailures(cmd *cobra.Command, args []string) error {
@@ -138,7 +102,7 @@ func fetchAndPrintSourceDeepDive(client *http.Client, serverURL, authKey, source
 	if err != nil {
 		return err
 	}
-	var resp diagnosticsResponse
+	var resp apitypes.DiagnosticsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -162,7 +126,7 @@ func fetchAndPrintTable(client *http.Client, serverURL, authKey, status string, 
 	if err != nil {
 		return err
 	}
-	var resp allDiagnosticsResponse
+	var resp apitypes.AllDiagnosticsResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -200,7 +164,7 @@ func doGET(client *http.Client, url, authKey string) ([]byte, error) {
 	return body, nil
 }
 
-func printDeepDive(out io.Writer, diag *diagnosticsResponse) {
+func printDeepDive(out io.Writer, diag *apitypes.DiagnosticsResponse) {
 	_, _ = fmt.Fprintf(out, "Source: %s\n", diag.SourceName)
 
 	var sourceURL string
@@ -227,7 +191,7 @@ func printDeepDive(out io.Writer, diag *diagnosticsResponse) {
 	}
 }
 
-func printRunDetail(out io.Writer, label string, run *scraperRunResponse) {
+func printRunDetail(out io.Writer, label string, run *apitypes.ScraperRunResponse) {
 	startedAt := "N/A"
 	if run.StartedAt != nil {
 		startedAt = run.StartedAt.UTC().Format(time.RFC3339)
@@ -246,15 +210,9 @@ func printRunDetail(out io.Writer, label string, run *scraperRunResponse) {
 		}
 	}
 
-	if run.ICSWarningsTotal > 0 || len(run.ICSWarnings) > 0 {
-		_, _ = fmt.Fprintf(out, "  ICS warnings: %d (%d unique)\n", run.ICSWarningsTotal, run.ICSWarningsUnique)
-		for _, w := range run.ICSWarnings {
-			_, _ = fmt.Fprintf(out, "    - %s\n", w)
-		}
-	}
 }
 
-func printTable(out io.Writer, resp *allDiagnosticsResponse) {
+func printTable(out io.Writer, resp *apitypes.AllDiagnosticsResponse) {
 	if len(resp.Items) == 0 {
 		_, _ = fmt.Fprintln(out, "No failed sources found.")
 		return

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/api/apitypes"
 	"github.com/spf13/cobra"
 )
 
@@ -39,8 +40,8 @@ func TestScrapeFailuresTable(t *testing.T) {
 	now := time.Now()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(allDiagnosticsResponse{
-			Items: []scraperRunResponse{
+		_ = json.NewEncoder(w).Encode(apitypes.AllDiagnosticsResponse{
+			Items: []apitypes.ScraperRunResponse{
 				{
 					SourceName:   "source-a",
 					Tier:         1,
@@ -102,8 +103,8 @@ func TestScrapeFailuresJSON(t *testing.T) {
 	now := time.Now()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(allDiagnosticsResponse{
-			Items: []scraperRunResponse{
+		_ = json.NewEncoder(w).Encode(apitypes.AllDiagnosticsResponse{
+			Items: []apitypes.ScraperRunResponse{
 				{
 					SourceName:   "source-a",
 					Tier:         1,
@@ -133,7 +134,7 @@ func TestScrapeFailuresJSON(t *testing.T) {
 	}
 
 	output := buf.String()
-	var parsed allDiagnosticsResponse
+	var parsed apitypes.AllDiagnosticsResponse
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
 		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, output)
 	}
@@ -149,9 +150,9 @@ func TestScrapeFailuresJSONWithSource(t *testing.T) {
 	now := time.Now()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(diagnosticsResponse{
+		_ = json.NewEncoder(w).Encode(apitypes.DiagnosticsResponse{
 			SourceName: "mysource",
-			LatestRun: &scraperRunResponse{
+			LatestRun: &apitypes.ScraperRunResponse{
 				SourceName:   "mysource",
 				SourceURL:    "https://example.com",
 				Tier:         1,
@@ -179,7 +180,7 @@ func TestScrapeFailuresJSONWithSource(t *testing.T) {
 	}
 
 	output := buf.String()
-	var parsed diagnosticsResponse
+	var parsed apitypes.DiagnosticsResponse
 	if err := json.Unmarshal([]byte(output), &parsed); err != nil {
 		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, output)
 	}
@@ -192,9 +193,9 @@ func TestScrapeFailuresDeepDive(t *testing.T) {
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(diagnosticsResponse{
+		_ = json.NewEncoder(w).Encode(apitypes.DiagnosticsResponse{
 			SourceName: "mysource",
-			LatestRun: &scraperRunResponse{
+			LatestRun: &apitypes.ScraperRunResponse{
 				SourceName:   "mysource",
 				SourceURL:    "https://example.com",
 				Tier:         1,
@@ -206,12 +207,12 @@ func TestScrapeFailuresDeepDive(t *testing.T) {
 				EventsDup:    30,
 				EventsFailed: 2,
 				ErrorMessage: "connection refused",
-				EventFailures: []eventFailureResponse{
+				EventFailures: []apitypes.EventFailureResponse{
 					{Index: 0, Message: "invalid date format"},
 					{Index: 1, Message: "missing required field: name"},
 				},
 			},
-			LastSuccessfulRun: &scraperRunResponse{
+			LastSuccessfulRun: &apitypes.ScraperRunResponse{
 				SourceName:  "mysource",
 				SourceURL:   "https://example.com",
 				Tier:        1,
@@ -265,7 +266,7 @@ func TestScrapeFailuresDeepDive(t *testing.T) {
 func TestScrapeFailuresDeepDiveNoRuns(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(diagnosticsResponse{
+		_ = json.NewEncoder(w).Encode(apitypes.DiagnosticsResponse{
 			SourceName: "mysource",
 		})
 	}))
@@ -294,8 +295,8 @@ func TestScrapeFailuresDeepDiveNoRuns(t *testing.T) {
 func TestScrapeFailuresEmpty(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(allDiagnosticsResponse{
-			Items: []scraperRunResponse{},
+		_ = json.NewEncoder(w).Encode(apitypes.AllDiagnosticsResponse{
+			Items: []apitypes.ScraperRunResponse{},
 			Total: 0,
 		})
 	}))
@@ -387,8 +388,8 @@ func TestScrapeFailuresWithStatusFilter(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestPath = r.URL.Path + "?" + r.URL.RawQuery
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(allDiagnosticsResponse{
-			Items: []scraperRunResponse{
+		_ = json.NewEncoder(w).Encode(apitypes.AllDiagnosticsResponse{
+			Items: []apitypes.ScraperRunResponse{
 				{SourceName: "source-a", Tier: 1, Status: "failed", EventsFound: 10, ErrorMessage: "error", StartedAt: &now},
 			},
 			Total: 1,
@@ -435,8 +436,8 @@ func TestScrapeFailuresWithEnvToken(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(allDiagnosticsResponse{
-			Items: []scraperRunResponse{},
+		_ = json.NewEncoder(w).Encode(apitypes.AllDiagnosticsResponse{
+			Items: []apitypes.ScraperRunResponse{},
 			Total: 0,
 		})
 	}))

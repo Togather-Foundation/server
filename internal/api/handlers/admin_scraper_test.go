@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Togather-Foundation/server/internal/api/apitypes"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 )
@@ -326,7 +327,7 @@ func TestAdminScraperHandler_ListSourceRuns(t *testing.T) {
 
 			if tc.wantStatus == http.StatusOK {
 				var body struct {
-					Items []scraperRunResponse `json:"items"`
+					Items []apitypes.ScraperRunResponse `json:"items"`
 				}
 				require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 				assert.Len(t, body.Items, tc.wantItemsLen)
@@ -1122,7 +1123,7 @@ func TestAdminScraperHandler_GetSourceDiagnostics(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, resp.StatusCode)
 
 			if tc.wantStatus == http.StatusOK {
-				var body diagnosticsResponse
+				var body apitypes.DiagnosticsResponse
 				require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 				assert.Equal(t, tc.sourceName, body.SourceName)
 				if tc.wantLatest {
@@ -1217,7 +1218,7 @@ func TestAdminScraperHandler_GetAllDiagnostics(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, resp.StatusCode)
 
 			if tc.wantStatus == http.StatusOK {
-				var body allDiagnosticsResponse
+				var body apitypes.AllDiagnosticsResponse
 				require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 				assert.Len(t, body.Items, tc.wantItemsLen)
 				assert.Equal(t, tc.wantItemsLen, body.Total)
