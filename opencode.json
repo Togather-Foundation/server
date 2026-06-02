@@ -10,7 +10,7 @@
     "explore": {
       "description": "Fast agent specialized for exploring codebases",
       "mode": "subagent",
-      "model": "github-copilot/grok-code-fast-1",
+      "model": "deepseek/deepseek-v4-flash",
       "permission": {
         "write": "deny",
         "edit": "deny",
