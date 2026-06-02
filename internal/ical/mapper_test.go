@@ -1411,3 +1411,62 @@ func TestBuildLocation_FullGeo(t *testing.T) {
 		t.Errorf("Longitude = %f, want -79.3868", loc.Longitude)
 	}
 }
+
+func TestMapRealMeetupFixtures(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		fixture     string
+		wantPlace   bool
+		wantVirtual bool
+		wantErr     bool
+	}{
+		{
+			name:        "firstline: venue name from first line",
+			fixture:     "interop-meetup-real-firstline.ics",
+			wantPlace:   true,
+			wantVirtual: false,
+		},
+		{
+			name:        "virtual: first line as fallback",
+			fixture:     "interop-meetup-real-virtual.ics",
+			wantPlace:   true,
+			wantVirtual: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			data := loadFixture(t, tt.fixture)
+			cal, err := Parse(data)
+			if err != nil {
+				if tt.wantErr {
+					return
+				}
+				t.Fatalf("parse: %v", err)
+			}
+
+			opts := defaultMapperOpts()
+			inputs, _, err := MapToEventInputs(t.Context(), cal, opts)
+			if err != nil {
+				t.Fatalf("map: %v", err)
+			}
+			if len(inputs) == 0 {
+				t.Fatal("no events mapped")
+			}
+
+			ei := inputs[0]
+			if (ei.Location != nil) != tt.wantPlace {
+				t.Errorf("Location = %v, wantPlace=%v", ei.Location != nil, tt.wantPlace)
+			}
+			if (ei.VirtualLocation != nil) != tt.wantVirtual {
+				t.Errorf("VirtualLocation = %v, wantVirtual=%v", ei.VirtualLocation != nil, tt.wantVirtual)
+			}
+			if ei.Location != nil && ei.Location.Name == "" {
+				t.Error("PlaceInput.Name is empty")
+			}
+		})
+	}
+}
