@@ -103,6 +103,11 @@ type ServerConfig struct {
 	BaseURL     string
 	PublicURL   string // Public-facing domain for invitation links (e.g., "toronto.togather.foundation")
 	AdminLocale string // BCP 47 locale tag for admin UI date/time formatting (e.g., "en-CA", "en-US")
+
+	// ShutdownPoolCloseTimeout is the maximum time to wait for pgxpool.Close()
+	// during graceful shutdown before forcing exit.
+	// Environment variable: SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS (default: 10)
+	ShutdownPoolCloseTimeout time.Duration
 }
 
 type DatabaseConfig struct {
@@ -411,11 +416,12 @@ func Load() (Config, error) {
 
 	cfg := Config{
 		Server: ServerConfig{
-			Host:        getEnv("SERVER_HOST", "0.0.0.0"),
-			Port:        getEnvInt("SERVER_PORT", 8080),
-			BaseURL:     getEnv("SERVER_BASE_URL", "http://localhost:8080"),
-			PublicURL:   getEnv("PUBLIC_URL", "localhost:8080"),
-			AdminLocale: getEnv("ADMIN_LOCALE", "en-CA"),
+			Host:                     getEnv("SERVER_HOST", "0.0.0.0"),
+			Port:                     getEnvInt("SERVER_PORT", 8080),
+			BaseURL:                  getEnv("SERVER_BASE_URL", "http://localhost:8080"),
+			PublicURL:                getEnv("PUBLIC_URL", "localhost:8080"),
+			AdminLocale:              getEnv("ADMIN_LOCALE", "en-CA"),
+			ShutdownPoolCloseTimeout: time.Duration(getEnvInt("SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS", 10)) * time.Second,
 		},
 		Database: DatabaseConfig{
 			URL:            getEnv("DATABASE_URL", ""),

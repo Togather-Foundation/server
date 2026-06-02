@@ -5,6 +5,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/rs/zerolog"
 )
 
 func TestServeCommandHelp(t *testing.T) {
@@ -245,6 +248,58 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestClosePoolWithTimeout(t *testing.T) {
+	logger := zerolog.Nop()
+
+	tests := []struct {
+		name          string
+		closeFn       func()
+		timeout       time.Duration
+		wantOnTimeout bool
+	}{
+		{
+			name:          "pool closes normally",
+			closeFn:       func() {},
+			timeout:       50 * time.Millisecond,
+			wantOnTimeout: false,
+		},
+		{
+			name: "pool close times out",
+			closeFn: func() {
+				select {} // block forever
+			},
+			timeout:       10 * time.Millisecond,
+			wantOnTimeout: true,
+		},
+		{
+			name: "pool close after partial wait",
+			closeFn: func() {
+				time.Sleep(5 * time.Millisecond)
+			},
+			timeout:       50 * time.Millisecond,
+			wantOnTimeout: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			onTimeoutCalled := false
+			onTimeout := func() {
+				onTimeoutCalled = true
+			}
+
+			closePoolWithTimeout(logger, tt.closeFn, tt.timeout, onTimeout)
+
+			if tt.wantOnTimeout && !onTimeoutCalled {
+				t.Errorf("expected onTimeout to be called")
+			}
+			if !tt.wantOnTimeout && onTimeoutCalled {
+				t.Errorf("expected onTimeout NOT to be called")
 			}
 		})
 	}

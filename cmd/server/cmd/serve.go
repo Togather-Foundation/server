@@ -109,7 +109,7 @@ func runServer() error {
 	if err != nil {
 		return fmt.Errorf("database connection failed: %w", err)
 	}
-	defer pool.Close()
+	defer closePoolWithTimeout(logger, pool.Close, cfg.Server.ShutdownPoolCloseTimeout, func() { os.Exit(1) })
 
 	// Start database metrics collector (collect every 15 seconds)
 	dbCollector := metrics.NewDBCollector(pool)
@@ -270,4 +270,21 @@ func gracefulShutdown(server *http.Server, logger zerolog.Logger, shutdownCancel
 
 	logger.Info().Msg("server stopped")
 	return nil
+}
+
+// closePoolWithTimeout wraps a pool Close function with a timeout.
+// If closeFn doesn't return within timeout, onTimeout is called.
+func closePoolWithTimeout(logger zerolog.Logger, closeFn func(), timeout time.Duration, onTimeout func()) {
+	done := make(chan struct{})
+	go func() {
+		closeFn()
+		close(done)
+	}()
+	select {
+	case <-done:
+		logger.Info().Msg("database pool closed")
+	case <-time.After(timeout):
+		logger.Warn().Dur("timeout", timeout).Msg("database pool close timed out; forcing exit")
+		onTimeout()
+	}
 }
