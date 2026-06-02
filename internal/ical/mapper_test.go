@@ -16,12 +16,13 @@ import (
 // explicitly after calling this function.
 func defaultMapperOpts() MapperOptions {
 	return MapperOptions{
-		SourceURL:  "https://example.com/feed.ics",
-		SourceName: "test-source",
-		TrustLevel: 5,
-		License:    "CC0-1.0",
-		Timezone:   "America/Toronto",
-		Now:        time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		SourceURL:   "https://example.com/feed.ics",
+		SourceName:  "test-source",
+		TrustLevel:  5,
+		License:     "CC0-1.0",
+		Timezone:    "America/Toronto",
+		CountryCode: "CA",
+		Now:         time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
 	}
 }
 
@@ -834,6 +835,9 @@ func TestMapToEventInputs_NoLocationNoDefault(t *testing.T) {
 	if results[0].Location != nil {
 		t.Errorf("Location = %+v, want nil", results[0].Location)
 	}
+	if results[0].VirtualLocation != nil {
+		t.Errorf("VirtualLocation = %+v, want nil", results[0].VirtualLocation)
+	}
 }
 
 // containsHTML checks if a string contains HTML-like tags.
@@ -1199,5 +1203,173 @@ func TestIsOccurrencePast(t *testing.T) {
 				t.Errorf("isOccurrencePast(%v, %v) = %v, want %v", tc.start, tc.end, got, tc.expect)
 			}
 		})
+	}
+}
+
+func TestMapToEventInputs_VirtualLocation(t *testing.T) {
+	t.Parallel()
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:         "virtual-001",
+				Summary:     "Zoom Meetup",
+				Description: "Join us on Zoom for this event",
+				URL:         "https://zoom.us/j/abc123",
+				Start:       time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+				End:         time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	results, _, err := MapToEventInputs(context.Background(), cal, defaultMapperOpts())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	ei := results[0]
+	if ei.Location != nil {
+		t.Errorf("Location = %+v, want nil", ei.Location)
+	}
+	if ei.VirtualLocation == nil {
+		t.Fatal("VirtualLocation is nil, expected populated")
+	}
+	if ei.VirtualLocation.URL != "https://zoom.us/j/abc123" {
+		t.Errorf("VirtualLocation.URL = %q, want %q", ei.VirtualLocation.URL, "https://zoom.us/j/abc123")
+	}
+}
+
+func TestMapToEventInputs_LocationFromDescription(t *testing.T) {
+	t.Parallel()
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:         "locdesc-001",
+				Summary:     "Community Walk",
+				Description: "Join us for a walk.\nLocation: Finch Station\nBring water.",
+				Start:       time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+				End:         time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	opts := defaultMapperOpts()
+	results, _, err := MapToEventInputs(context.Background(), cal, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	ei := results[0]
+	if ei.VirtualLocation != nil {
+		t.Errorf("VirtualLocation = %+v, want nil", ei.VirtualLocation)
+	}
+	if ei.Location == nil {
+		t.Fatal("Location is nil, expected extracted from description")
+	}
+	if ei.Location.Name != "Finch Station" {
+		t.Errorf("Location.Name = %q, want %q", ei.Location.Name, "Finch Station")
+	}
+	if ei.Location.AddressCountry != "CA" {
+		t.Errorf("Location.AddressCountry = %q, want %q", ei.Location.AddressCountry, "CA")
+	}
+}
+
+func TestMapToEventInputs_VirtualOverridesPhysical(t *testing.T) {
+	t.Parallel()
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:         "virtphys-001",
+				Summary:     "Virtual Event",
+				Description: "Join the Zoom meeting.\nLocation: Finch Station",
+				URL:         "https://zoom.us/j/abc123",
+				Start:       time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+				End:         time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	results, _, err := MapToEventInputs(context.Background(), cal, defaultMapperOpts())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	ei := results[0]
+	if ei.Location != nil {
+		t.Errorf("Location = %+v, want nil (virtual should win)", ei.Location)
+	}
+	if ei.VirtualLocation == nil {
+		t.Fatal("VirtualLocation is nil, expected populated")
+	}
+	if ei.VirtualLocation.URL != "https://zoom.us/j/abc123" {
+		t.Errorf("VirtualLocation.URL = %q, want %q", ei.VirtualLocation.URL, "https://zoom.us/j/abc123")
+	}
+}
+
+func TestBuildLocation_GeoOnly(t *testing.T) {
+	t.Parallel()
+
+	opts := defaultMapperOpts()
+	ev := ParsedEvent{
+		HasGeo: true,
+		GeoLat: 43.6532,
+		GeoLon: -79.3832,
+	}
+
+	loc, virtual := buildLocation(ev, opts)
+	if virtual != nil {
+		t.Errorf("VirtualLocation = %+v, want nil", virtual)
+	}
+	if loc == nil {
+		t.Fatal("Location is nil")
+	}
+	if loc.Latitude != 43.6532 {
+		t.Errorf("Latitude = %f, want 43.6532", loc.Latitude)
+	}
+	if loc.Longitude != -79.3832 {
+		t.Errorf("Longitude = %f, want -79.3832", loc.Longitude)
+	}
+	if loc.Name != "" {
+		t.Errorf("Name = %q, want empty", loc.Name)
+	}
+}
+
+func TestBuildLocation_FullGeo(t *testing.T) {
+	t.Parallel()
+
+	opts := defaultMapperOpts()
+	ev := ParsedEvent{
+		Location: "Toronto Reference Library",
+		HasGeo:   true,
+		GeoLat:   43.6718,
+		GeoLon:   -79.3868,
+	}
+
+	loc, virtual := buildLocation(ev, opts)
+	if virtual != nil {
+		t.Errorf("VirtualLocation = %+v, want nil", virtual)
+	}
+	if loc == nil {
+		t.Fatal("Location is nil")
+	}
+	if loc.Name != "Toronto Reference Library" {
+		t.Errorf("Name = %q, want %q", loc.Name, "Toronto Reference Library")
+	}
+	if loc.Latitude != 43.6718 {
+		t.Errorf("Latitude = %f, want 43.6718", loc.Latitude)
+	}
+	if loc.Longitude != -79.3868 {
+		t.Errorf("Longitude = %f, want -79.3868", loc.Longitude)
 	}
 }
