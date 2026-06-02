@@ -131,9 +131,22 @@ func TestExtractLocationFromDescription(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name:   "no match",
+			name:   "first-line fallback",
+			desc:   "High Park Yoga\n**details**",
+			want:   "High Park Yoga",
+			wantOK: true,
+		},
+		{
+			name:   "first-line matched but label patterns win",
+			desc:   "Community Walk\nLocation: Finch Station\nBring water.",
+			want:   "Finch Station",
+			wantOK: true,
+		},
+		{
+			name:   "first-line fallback generic",
 			desc:   "Come hang out with us!",
-			wantOK: false,
+			want:   "Come hang out with us!",
+			wantOK: true,
 		},
 		{
 			name:   "empty description",
@@ -320,8 +333,8 @@ func TestDefaultLocationPatterns(t *testing.T) {
 	t.Parallel()
 
 	patterns := DefaultLocationPatterns()
-	if len(patterns) != 8 {
-		t.Errorf("DefaultLocationPatterns length = %d, want 8", len(patterns))
+	if len(patterns) != 9 {
+		t.Errorf("DefaultLocationPatterns length = %d, want 9", len(patterns))
 	}
 
 	names := make(map[string]bool)
@@ -344,6 +357,7 @@ func TestDefaultLocationPatterns(t *testing.T) {
 		"meet-at-near",
 		"starting-point",
 		"start-location",
+		"first-line",
 	}
 	for _, name := range expectedNames {
 		if !names[name] {

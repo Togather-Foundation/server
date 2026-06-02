@@ -32,6 +32,7 @@ func DefaultLocationPatterns() []LocationPattern {
 			{Name: "meet-at-near", Re: regexp.MustCompile(`(?i)\bmeet\s+(?:at|near|in front of|outside|inside)\s+([^.\n\r]+)`)},
 			{Name: "starting-point", Re: regexp.MustCompile(`(?i)starting\s+point\s*:\s*([^\n\r]+)`)},
 			{Name: "start-location", Re: regexp.MustCompile(`(?i)start\s+location\s*:\s*([^\n\r]+)`)},
+			{Name: "first-line", Re: regexp.MustCompile(`^([^\n\r]+)`)},
 		}
 	})
 	return defaultLocationPatterns

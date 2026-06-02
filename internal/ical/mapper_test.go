@@ -811,6 +811,44 @@ func TestMapToEventInputs_ContextCancellation(t *testing.T) {
 	_ = results
 }
 
+func TestMapToEventInputs_URLFallback(t *testing.T) {
+	t.Parallel()
+
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:     "urlfallback-001",
+				Summary: "Event With URL Only",
+				URL:     "https://example.com/event-details",
+				Start:   time.Date(2026, 4, 15, 19, 0, 0, 0, time.UTC),
+				End:     time.Date(2026, 4, 15, 21, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+
+	opts := defaultMapperOpts()
+	opts.DefaultLocation = nil
+
+	results, _, err := MapToEventInputs(context.Background(), cal, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	ei := results[0]
+	if ei.Location != nil {
+		t.Errorf("Location = %+v, want nil", ei.Location)
+	}
+	if ei.VirtualLocation == nil {
+		t.Fatal("VirtualLocation is nil, expected URL fallback")
+	}
+	if ei.VirtualLocation.URL != "https://example.com/event-details" {
+		t.Errorf("VirtualLocation.URL = %q, want %q", ei.VirtualLocation.URL, "https://example.com/event-details")
+	}
+}
+
 func TestMapToEventInputs_NoLocationNoDefault(t *testing.T) {
 	t.Parallel()
 

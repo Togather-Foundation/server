@@ -411,6 +411,10 @@ func buildLocation(ev ParsedEvent, opts MapperOptions) (*events.PlaceInput, *eve
 		return &loc, nil
 	}
 
+	if ev.URL != "" {
+		return nil, &events.VirtualLocationInput{URL: ev.URL}
+	}
+
 	return nil, nil
 }
 
