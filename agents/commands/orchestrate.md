@@ -403,8 +403,7 @@ bd create --title="<follow-up>" --description="<context>" --type=task --priority
 make ci && git push
 git status    # Must show "up to date with origin"
 git branch -d <branch-name>
-git worktree remove "$WORKTREE" && git worktree prune
-scripts/agent-cleanup.sh
+scripts/land-worktree.sh "$WORKTREE"
 ```
 
 ---
