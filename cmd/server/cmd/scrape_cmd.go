@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -107,6 +108,44 @@ func init() {
 	scrapeFixtureCmd.Flags().IntVar(&fixtureTrustLevel, "trust-level", 5, "source trust level (1-10)")
 	scrapeFixtureCmd.Flags().StringVar(&fixtureSourceName, "source-name", "", "source name (default: derived from filename)")
 	scrapeFixtureCmd.Flags().BoolVar(&scrapeHeadless, "headless", false, "Force Tier 2 headless browser scraping (requires SCRAPER_HEADLESS_ENABLED=true)")
+}
+
+// parseServerConfig resolves server URL and auth key from flags + env vars.
+// Resolution chains:
+//
+//	server: --server flag → TOGATHER_BASE_URL env → scrapeServerURL var → "http://localhost:8080"
+//	key:    --key flag → TOGATHER_ADMIN_TOKEN env → SEL_API_KEY env → scrapeAPIKey var → ""
+func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey string, err error) {
+	config.LoadEnvFile(".env")
+	config.LoadEnvFile("deploy/docker/.env")
+
+	serverURL = serverFlag
+	if serverURL == "" {
+		serverURL = os.Getenv("TOGATHER_BASE_URL")
+	}
+	if serverURL == "" {
+		serverURL = scrapeServerURL
+	}
+	if serverURL == "" {
+		serverURL = "http://localhost:8080"
+	}
+
+	authKey = keyFlag
+	if authKey == "" {
+		authKey = os.Getenv("TOGATHER_ADMIN_TOKEN")
+	}
+	if authKey == "" {
+		authKey = os.Getenv("SEL_API_KEY")
+	}
+	if authKey == "" {
+		authKey = scrapeAPIKey
+	}
+
+	if serverURL == "" && authKey == "" {
+		return "", "", fmt.Errorf("no server URL or auth key provided; set --server, --key, or env vars")
+	}
+
+	return serverURL, authKey, nil
 }
 
 // loadScrapeConfig loads environment files and resolves server URL and API key
