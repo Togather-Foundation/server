@@ -47,97 +47,97 @@ func TestExtractLocationFromDescription(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		desc string
-		want string
+		name   string
+		desc   string
+		want   string
 		wantOK bool
 	}{
 		{
-			name: "meetup-location-label",
-			desc: "Come join us! Meetup Location: Finch Subway Station near the entrance",
-			want: "Finch Subway Station near the entrance",
+			name:   "meetup-location-label",
+			desc:   "Come join us! Meetup Location: Finch Subway Station near the entrance",
+			want:   "Finch Subway Station near the entrance",
 			wantOK: true,
 		},
 		{
-			name: "meetup-point-label",
-			desc: "Details: Meet up point: Union Station Great Hall",
-			want: "Union Station Great Hall",
+			name:   "meetup-point-label",
+			desc:   "Details: Meet up point: Union Station Great Hall",
+			want:   "Union Station Great Hall",
 			wantOK: true,
 		},
 		{
-			name: "location-label at start of line",
-			desc: "Some text before\nLocation: 123 Main St, Toronto\nMore text after",
-			want: "123 Main St, Toronto",
+			name:   "location-label at start of line",
+			desc:   "Some text before\nLocation: 123 Main St, Toronto\nMore text after",
+			want:   "123 Main St, Toronto",
 			wantOK: true,
 		},
 		{
-			name: "venue-label",
-			desc: "Come to our event!\nVenue: The Great Hall\nSee you there!",
-			want: "The Great Hall",
+			name:   "venue-label",
+			desc:   "Come to our event!\nVenue: The Great Hall\nSee you there!",
+			want:   "The Great Hall",
 			wantOK: true,
 		},
 		{
-			name: "address-label",
-			desc: "Address: 100 King St W, Toronto, ON M5X 1A9",
-			want: "100 King St W, Toronto, ON M5X 1A9",
+			name:   "address-label",
+			desc:   "Address: 100 King St W, Toronto, ON M5X 1A9",
+			want:   "100 King St W, Toronto, ON M5X 1A9",
 			wantOK: true,
 		},
 		{
-			name: "meet-at pattern",
-			desc: "We will meet at Trinity Bellwoods Park main gate at 6pm. Bring snacks.",
-			want: "Trinity Bellwoods Park main gate at 6pm",
+			name:   "meet-at pattern",
+			desc:   "We will meet at Trinity Bellwoods Park main gate at 6pm. Bring snacks.",
+			want:   "Trinity Bellwoods Park main gate at 6pm",
 			wantOK: true,
 		},
 		{
-			name: "meet-near pattern",
-			desc: "Let's meet near the CN Tower entrance on Front St. Dress warmly.",
-			want: "the CN Tower entrance on Front St",
+			name:   "meet-near pattern",
+			desc:   "Let's meet near the CN Tower entrance on Front St. Dress warmly.",
+			want:   "the CN Tower entrance on Front St",
 			wantOK: true,
 		},
 		{
-			name: "meet-in-front-of pattern",
-			desc: "Meet in front of the ROM main entrance at 7pm sharp.",
-			want: "the ROM main entrance at 7pm sharp",
+			name:   "meet-in-front-of pattern",
+			desc:   "Meet in front of the ROM main entrance at 7pm sharp.",
+			want:   "the ROM main entrance at 7pm sharp",
 			wantOK: true,
 		},
 		{
-			name: "meet-outside pattern",
-			desc: "Meet outside the AGO on Dundas St.",
-			want: "the AGO on Dundas St",
+			name:   "meet-outside pattern",
+			desc:   "Meet outside the AGO on Dundas St.",
+			want:   "the AGO on Dundas St",
 			wantOK: true,
 		},
 		{
-			name: "meet-inside pattern",
-			desc: "Meet inside the Eaton Centre food court.",
-			want: "the Eaton Centre food court",
+			name:   "meet-inside pattern",
+			desc:   "Meet inside the Eaton Centre food court.",
+			want:   "the Eaton Centre food court",
 			wantOK: true,
 		},
 		{
-			name: "starting-point label",
-			desc: "Starting point: High Park main entrance",
-			want: "High Park main entrance",
+			name:   "starting-point label",
+			desc:   "Starting point: High Park main entrance",
+			want:   "High Park main entrance",
 			wantOK: true,
 		},
 		{
-			name: "start-location label",
-			desc: "Start location: Nathan Phillips Square",
-			want: "Nathan Phillips Square",
+			name:   "start-location label",
+			desc:   "Start location: Nathan Phillips Square",
+			want:   "Nathan Phillips Square",
 			wantOK: true,
 		},
 		{
-			name: "first match wins - meetup-location before location-label",
-			desc: "Meetup Location: Downtown Library\nLocation: Not this one",
-			want: "Downtown Library",
+			name:   "first match wins - meetup-location before location-label",
+			desc:   "Meetup Location: Downtown Library\nLocation: Not this one",
+			want:   "Downtown Library",
 			wantOK: true,
 		},
 		{
-			name: "no match",
-			desc: "Come hang out with us!",
+			name:   "no match",
+			desc:   "Come hang out with us!",
 			wantOK: false,
 		},
 		{
-			name: "empty description",
-			desc: "",
+			name:   "empty description",
+			desc:   "",
 			wantOK: false,
 		},
 	}
