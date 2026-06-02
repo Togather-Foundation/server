@@ -40,7 +40,7 @@ func init() {
 	scrapeCmd.AddCommand(scrapeFailuresCmd)
 	scrapeFailuresCmd.Flags().StringVar(&failuresSource, "source", "", "Source name for per-source diagnostics")
 	scrapeFailuresCmd.Flags().IntVar(&failuresLimit, "limit", 0, "Maximum sources to return (0 = all)")
-	scrapeFailuresCmd.Flags().StringVar(&failuresStatus, "status", "", "Filter by run status (e.g. error, failed)")
+	scrapeFailuresCmd.Flags().StringVar(&failuresStatus, "status", "", "Filter by run status (e.g. running, completed, failed)")
 	scrapeFailuresCmd.Flags().BoolVar(&failuresJSON, "json", false, "Output as JSON")
 }
 
@@ -87,7 +87,7 @@ func runScrapeFailures(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: 30 * time.Second}
 	out := cmd.OutOrStdout()
 
 	if failuresJSON && failuresSource != "" {
@@ -191,10 +191,10 @@ func doGET(client *http.Client, url, authKey string) ([]byte, error) {
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized {
-		return nil, fmt.Errorf("authentication failed (401): %s", string(body))
+		return nil, fmt.Errorf("authentication failed (401)")
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 
 	return body, nil
@@ -285,7 +285,7 @@ func printTable(out io.Writer, resp *allDiagnosticsResponse) {
 }
 
 func truncateError(msg string, maxLen int) string {
-	if len(msg) <= maxLen {
+	if maxLen < 4 || len(msg) <= maxLen {
 		return msg
 	}
 	return msg[:maxLen-3] + "..."

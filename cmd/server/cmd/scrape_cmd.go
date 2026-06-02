@@ -113,8 +113,10 @@ func init() {
 // parseServerConfig resolves server URL and auth key from flags + env vars.
 // Resolution chains:
 //
-//	server: --server flag → TOGATHER_BASE_URL env → scrapeServerURL var → "http://localhost:8080"
-//	key:    --key flag → TOGATHER_ADMIN_TOKEN env → SEL_API_KEY env → scrapeAPIKey var → ""
+//	server: serverFlag param → TOGATHER_BASE_URL env → SEL_SERVER_URL env → "http://localhost:8080"
+//	key:    keyFlag param → TOGATHER_ADMIN_TOKEN env → SEL_API_KEY env → ""
+//
+// Callers should pass the cobra flag variables (scrapeServerURL, scrapeAPIKey) as the flag params.
 func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey string, err error) {
 	config.LoadEnvFile(".env")
 	config.LoadEnvFile("deploy/docker/.env")
@@ -124,7 +126,7 @@ func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey st
 		serverURL = os.Getenv("TOGATHER_BASE_URL")
 	}
 	if serverURL == "" {
-		serverURL = scrapeServerURL
+		serverURL = os.Getenv("SEL_SERVER_URL")
 	}
 	if serverURL == "" {
 		serverURL = "http://localhost:8080"
@@ -136,9 +138,6 @@ func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey st
 	}
 	if authKey == "" {
 		authKey = os.Getenv("SEL_API_KEY")
-	}
-	if authKey == "" {
-		authKey = scrapeAPIKey
 	}
 
 	if serverURL == "" && authKey == "" {
