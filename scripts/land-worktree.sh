@@ -17,20 +17,27 @@ if [ $# -ne 1 ]; then
     exit 1
 fi
 
-WORKTREE="$1"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TARGET="$(cd "$WORKTREE" 2>/dev/null && pwd || echo "")"
+WORKTREE_REL="$1"
 
-if [ -n "$TARGET" ] && [ "$TARGET" = "$REPO_ROOT" ]; then
+# Resolve relative to REPO_ROOT so CWD doesn't affect path resolution
+case "$WORKTREE_REL" in
+    /*) WORKTREE="$WORKTREE_REL" ;;
+    *)  WORKTREE="$REPO_ROOT/$WORKTREE_REL" ;;
+esac
+
+if [ "$WORKTREE" = "$REPO_ROOT" ]; then
     echo "Error: worktree path resolves to the main repo root — refusing to remove."
     exit 1
 fi
 
 echo "[land-worktree] Repo root:  $REPO_ROOT"
-if [ -n "$TARGET" ]; then
-    echo "[land-worktree] Worktree:   $TARGET"
+echo "[land-worktree] Worktree:   $WORKTREE"
+
+if [ ! -d "$WORKTREE" ]; then
+    echo "[land-worktree] Worktree directory not found — may already be removed."
 else
-    echo "[land-worktree] Worktree:   $WORKTREE (not accessible, may already be removed)"
+    echo "[land-worktree] Worktree directory exists"
 fi
 echo ""
 
@@ -45,7 +52,7 @@ echo "Removing worktree..."
 if git worktree remove --force "$WORKTREE" 2>/dev/null; then
     echo "  removed $WORKTREE"
 else
-    echo "  skip   $WORKTREE (already removed or not a worktree)"
+    echo "  skip   $WORKTREE (not a registered worktree or already removed)"
 fi
 
 # ---------------------------------------------------------------------------
@@ -54,7 +61,7 @@ fi
 
 echo ""
 echo "Pruning stale worktree references..."
-git worktree prune
+git worktree prune || echo "  warn   git worktree prune failed (non-fatal)"
 echo "  pruned"
 
 # ---------------------------------------------------------------------------
@@ -64,7 +71,7 @@ echo "  pruned"
 echo ""
 echo "Cleaning agent output..."
 if [ -x "$REPO_ROOT/scripts/agent-cleanup.sh" ]; then
-    "$REPO_ROOT/scripts/agent-cleanup.sh"
+    "$REPO_ROOT/scripts/agent-cleanup.sh" || echo "  warn   agent-cleanup.sh failed (non-fatal)"
 else
     echo "  skip   agent-cleanup.sh not found"
 fi
