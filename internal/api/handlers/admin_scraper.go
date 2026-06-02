@@ -71,7 +71,6 @@ type scraperSourceResponse struct {
 	LastRunErrorMessage string     `json:"last_run_error_message,omitempty"`
 }
 
-
 // toScraperSourceResponse converts a ListScraperSourcesWithLatestRunRow to a scraperSourceResponse.
 func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) scraperSourceResponse {
 	resp := scraperSourceResponse{
@@ -531,7 +530,6 @@ func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Re
 	}, "application/json")
 }
 
-
 // GetSourceDiagnostics handles GET /api/v1/admin/scraper/sources/{name}/diagnostics.
 // Returns the latest run, last successful run (for comparison when latest failed),
 // and a configurable list of recent runs.
@@ -597,7 +595,6 @@ func (h *AdminScraperHandler) GetSourceDiagnostics(w http.ResponseWriter, r *htt
 
 	writeJSON(w, http.StatusOK, resp, "application/json")
 }
-
 
 // GetAllDiagnostics handles GET /api/v1/admin/scraper/diagnostics.
 // Returns recent scraper runs across all sources with optional filters.
