@@ -159,7 +159,7 @@ var SampleSources = []Source{
 	{Name: "Eventbrite", BaseURL: "https://www.eventbrite.ca", Type: "JSONLD"},
 	{Name: "Meetup", BaseURL: "https://www.meetup.com", Type: "JSONLD"},
 	{Name: "Lu.ma", BaseURL: "https://lu.ma", Type: "ICS"},
-	{Name: "Squarespace", BaseURL: "https://example.com", Type: "API"},
+	{Name: "Squarespace", BaseURL: "https://www.squarespace.com", Type: "API"},
 	{Name: "BlogTO", BaseURL: "https://www.blogto.com", Type: "API"},
 	{Name: "Exclaim", BaseURL: "https://exclaim.ca", Type: "API"},
 	{Name: "Showpass", BaseURL: "https://www.showpass.com", Type: "API"},
@@ -293,8 +293,8 @@ func (g *Generator) RandomEventInput() events.EventInput {
 			EventID: fmt.Sprintf("evt-%d", g.rng.Intn(100000)),
 			Name:    source.Name,
 		},
-		Image:    fmt.Sprintf("https://images.example.com/events/%d.jpg", g.rng.Intn(1000)),
-		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		Image:    unsplashImage(g.rng.Intn(11)),
+		URL:      fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
 		Keywords: g.randomKeywords(category),
 		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
@@ -606,8 +606,8 @@ func (g *Generator) EventInputReversedDates() events.EventInput {
 			EventID: fmt.Sprintf("evt-reversed-%d", g.rng.Intn(100000)),
 			Name:    source.Name,
 		},
-		Image:    fmt.Sprintf("https://images.example.com/events/%d.jpg", g.rng.Intn(1000)),
-		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		Image:    unsplashImage(g.rng.Intn(11)),
+		URL:      fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
 		Keywords: g.randomKeywords(category),
 		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
@@ -642,8 +642,8 @@ func (g *Generator) EventInputMissingVenue() events.EventInput {
 			EventID: fmt.Sprintf("evt-novenue-%d", g.rng.Intn(100000)),
 			Name:    source.Name,
 		},
-		Image:    fmt.Sprintf("https://images.example.com/events/%d.jpg", g.rng.Intn(1000)),
-		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		Image:    unsplashImage(g.rng.Intn(11)),
+		URL:      fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
 		Keywords: g.randomKeywords(category),
 		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
@@ -685,8 +685,8 @@ func (g *Generator) EventInputLikelyDuplicate() events.EventInput {
 			EventID: fmt.Sprintf("evt-dupe-%d", g.rng.Intn(100000)),
 			Name:    source.Name,
 		},
-		Image:    fmt.Sprintf("https://images.example.com/events/%d.jpg", g.rng.Intn(1000)),
-		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		Image:    unsplashImage(g.rng.Intn(11)),
+		URL:      fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
 		Keywords: []string{"community", "meetup", "weekly", "toronto"},
 		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
@@ -719,7 +719,7 @@ func (g *Generator) EventInputMultipleWarnings() events.EventInput {
 			Name:    source.Name,
 		},
 		// Missing: Image (should trigger review)
-		URL:      fmt.Sprintf("https://example.com/events/%d", g.rng.Intn(100000)),
+		URL:      fmt.Sprintf("%s/events/%d", source.BaseURL, g.rng.Intn(100000)),
 		Keywords: g.randomKeywords(category),
 		License:  "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
@@ -927,7 +927,7 @@ type ReviewEventScenario struct {
 	Events      []events.EventInput // Events in this scenario group
 }
 
-// reviewSources returns source configs that are safe for staging (no example.com domains).
+// reviewSources returns source configs for staging-safe review fixture events.
 // These are separate from SampleSources to guarantee no blocked domains appear.
 var reviewSources = []Source{
 	{Name: "Eventbrite", BaseURL: "https://www.eventbrite.ca", Type: "JSONLD"},
@@ -968,7 +968,7 @@ func reviewSourceURL(src Source, fixtureID string) (string, string) {
 // together (e.g. a base series + its near-duplicate).
 //
 // All URLs use real-looking domains (eventbrite.ca, meetup.com, lu.ma, etc.) and
-// image URLs use images.unsplash.com. No example.com domains are used.
+// image URLs use images.unsplash.com.
 func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	// Fixed anchor time: next Monday at 10:00 AM (deterministic regardless of when tests run).
 	// We compute the upcoming Monday from the generator's baseTime.
