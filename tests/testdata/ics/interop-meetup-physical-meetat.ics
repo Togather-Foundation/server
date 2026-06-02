@@ -1,0 +1,13 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Meetup Meet At//EN
+BEGIN:VEVENT
+UID:meetup-meetat@example.org
+SUMMARY:Toronto Picnic in the Park
+DTSTART:20270115T120000Z
+DTEND:20270115T150000Z
+DESCRIPTION:Outdoor picnic social.\n\nMeet at Trinity Bellwoods Park main gate at noon. We'll find a spot on the south field near the cherry blossoms. Bring a blanket and snacks to share!
+URL:https://www.meetup.com/toronto-social/events/789012/
+ORGANIZER;CN=Toronto Social Group:mailto:social@example.org
+END:VEVENT
+END:VCALENDAR
