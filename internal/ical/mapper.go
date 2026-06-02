@@ -59,6 +59,7 @@ type MapperOptions struct {
 	TrustLevel      int                // Assigned trust level
 	License         string             // Default "CC0-1.0"
 	Timezone        string             // Fallback TZ for floating times (IANA name)
+	CountryCode     string             // Default country code for address decomposition (default: "CA")
 	DefaultLocation *events.PlaceInput // Fallback location when VEVENT LOCATION is empty
 	HorizonDays     int                // RRULE expansion window (default: 90)
 	MaxOccurrences  int                // Safety cap on expanded occurrences (default: 100)
@@ -289,7 +290,7 @@ func mapSingleEvent(ev ParsedEvent, startTime, endTime time.Time, fallbackLoc *t
 	eventURL := normalizeURL(ev.URL, &warnings, ev.UID)
 
 	// Location.
-	location := buildLocation(ev, opts.DefaultLocation)
+	location, virtualLoc := buildLocation(ev, opts)
 
 	// Organizer.
 	organizer := buildOrganizer(ev)
@@ -312,16 +313,17 @@ func mapSingleEvent(ev ParsedEvent, startTime, endTime time.Time, fallbackLoc *t
 	}
 
 	return &events.EventInput{
-		Name:        name,
-		Description: description,
-		StartDate:   startDate,
-		EndDate:     endDate,
-		URL:         eventURL,
-		Location:    location,
-		Organizer:   organizer,
-		Keywords:    keywords,
-		License:     opts.License,
-		Source:      source,
+		Name:            name,
+		Description:     description,
+		StartDate:       startDate,
+		EndDate:         endDate,
+		URL:             eventURL,
+		Location:        location,
+		VirtualLocation: virtualLoc,
+		Organizer:       organizer,
+		Keywords:        keywords,
+		License:         opts.License,
+		Source:          source,
 	}, warnings
 }
 
@@ -364,32 +366,56 @@ func normalizeURL(rawURL string, warnings *[]string, uid string) string {
 	return rawURL
 }
 
-// buildLocation constructs a PlaceInput from the parsed event.
-// Falls back to DefaultLocation when LOCATION is empty.
-func buildLocation(ev ParsedEvent, defaultLocation *events.PlaceInput) *events.PlaceInput {
-	hasLocation := ev.Location != ""
-	hasGeo := ev.HasGeo
-
-	if !hasLocation && !hasGeo {
-		// No location data in the event — use default.
-		if defaultLocation != nil {
-			// Return a copy to avoid mutation.
-			loc := *defaultLocation
-			return &loc
+// buildLocation constructs a PlaceInput and/or VirtualLocationInput from the
+// parsed event. Resolution order:
+//  1. ev.Location present → PlaceInput (with Geo if also present)
+//  2. ev.HasGeo only (no name) → PlaceInput with coordinates only
+//  3. ev.Description → check virtual signals first, then location patterns
+//  4. opts.DefaultLocation fallback → copy of PlaceInput
+//  5. nil, nil (reject)
+func buildLocation(ev ParsedEvent, opts MapperOptions) (*events.PlaceInput, *events.VirtualLocationInput) {
+	if ev.Location != "" {
+		loc := &events.PlaceInput{Name: sanitize.Text(ev.Location)}
+		if ev.HasGeo {
+			loc.Latitude = ev.GeoLat
+			loc.Longitude = ev.GeoLon
 		}
-		return nil
+		return loc, nil
 	}
 
-	loc := &events.PlaceInput{}
-	if hasLocation {
-		loc.Name = sanitize.Text(ev.Location)
-	}
-	if hasGeo {
-		loc.Latitude = ev.GeoLat
-		loc.Longitude = ev.GeoLon
+	if ev.HasGeo {
+		return &events.PlaceInput{Latitude: ev.GeoLat, Longitude: ev.GeoLon}, nil
 	}
 
-	return loc
+	if ev.Description != "" {
+		if IsVirtualDescription(ev.Description) {
+			return nil, &events.VirtualLocationInput{URL: ev.URL}
+		}
+		if extracted, ok := ExtractLocationFromDescription(ev.Description); ok {
+			var decomposeOpts DecomposeOpts
+			if opts.DefaultLocation != nil {
+				decomposeOpts.DefaultLocality = opts.DefaultLocation.AddressLocality
+				decomposeOpts.DefaultRegion = opts.DefaultLocation.AddressRegion
+				decomposeOpts.DefaultCountry = opts.DefaultLocation.AddressCountry
+			}
+			if decomposeOpts.DefaultCountry == "" {
+				decomposeOpts.DefaultCountry = strings.ToUpper(opts.CountryCode)
+			}
+			loc := DecomposeLocation(extracted, decomposeOpts)
+			return &loc, nil
+		}
+	}
+
+	if opts.DefaultLocation != nil {
+		loc := *opts.DefaultLocation
+		return &loc, nil
+	}
+
+	if ev.URL != "" {
+		return nil, &events.VirtualLocationInput{URL: ev.URL}
+	}
+
+	return nil, nil
 }
 
 // buildOrganizer constructs an OrganizationInput from the parsed event.

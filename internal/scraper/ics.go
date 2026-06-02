@@ -58,11 +58,12 @@ func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig 
 
 	// 3. Build mapper options from source config.
 	opts := ical.MapperOptions{
-		SourceURL:  cfg.URL,
-		SourceName: cfg.Name,
-		TrustLevel: cfg.TrustLevel,
-		License:    cfg.License,
-		Timezone:   cfg.Timezone,
+		SourceURL:   cfg.URL,
+		SourceName:  cfg.Name,
+		TrustLevel:  cfg.TrustLevel,
+		License:     cfg.License,
+		Timezone:    cfg.Timezone,
+		CountryCode: "CA",
 	}
 
 	if opts.License == "" {

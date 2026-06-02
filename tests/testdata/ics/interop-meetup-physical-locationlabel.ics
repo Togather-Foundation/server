@@ -1,0 +1,13 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Meetup Location Label//EN
+BEGIN:VEVENT
+UID:meetup-locationlabel@example.org
+SUMMARY:Toronto Photography Walk
+DTSTART:20270115T170000Z
+DTEND:20270115T190000Z
+DESCRIPTION:Join us for a photography walk downtown.\n\nLocation: Finch Subway Station\n\nBring your camera and tripod. We'll explore the area around the station and capture some great shots.
+URL:https://www.meetup.com/toronto-photography/events/123456/
+ORGANIZER;CN=Toronto Photo Group:mailto:photo@example.org
+END:VEVENT
+END:VCALENDAR

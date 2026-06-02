@@ -1,0 +1,13 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Meetup Zoom//EN
+BEGIN:VEVENT
+UID:meetup-zoom@example.org
+SUMMARY:Toronto Tech Virtual Meetup
+DTSTART:20270115T190000Z
+DTEND:20270115T210000Z
+DESCRIPTION:Join us for a virtual tech talk.\n\nZoom link: https://zoom.us/j/123456789\n\nAgenda:\n- Introductions\n- Tech Talk\n- Q&A
+URL:https://zoom.us/j/123456789
+ORGANIZER;CN=Toronto Tech Group:mailto:info@example.org
+END:VEVENT
+END:VCALENDAR

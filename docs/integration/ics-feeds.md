@@ -1,7 +1,7 @@
 # ICS Feed Operations Runbook
 
-**Version:** 1.1
-**Date:** 2026-04-17
+**Version:** 1.2
+**Date:** 2026-06-02
 **Status:** Implemented
 
 This runbook covers onboarding, configuring, and troubleshooting ICS (iCalendar) feed
@@ -225,7 +225,56 @@ ingestion — they are advisory signals for debugging.
 | `RRULE capped at N occurrences (UID: <uid>)` | RRULE expansion exceeded `ICS_MAX_OCCURRENCES` limit | Increase `ICS_MAX_OCCURRENCES` env var (default: 100) if more occurrences are needed, or widen `ICS_HORIZON_DAYS` (default: 90). |
 | `unparseable EXDATE (UID: <uid>)` | EXDATE value has an invalid date format | The feed has malformed date exclusions. The EXDATE is skipped; the event is still ingested without the exclusion. |
 | `expected text/calendar, got text/html` | Feed URL is a landing page or challenge page | Re-check the URL. Try the feed directly with `curl -H "Accept: text/calendar" <URL>`. |
-| `invalid location: location or virtualLocation required` | VEVENT has no `LOCATION` property and the mapper cannot derive a virtualLocation | (1) Add `default_location:` block to config if the source always uses the same venue. (2) Wait for `srv-ia1w3` (ICS mapper: `URL → virtualLocation`) to recover events that have a Meetup/event URL but no venue. Affects all Meetup ICS feeds. |
+| `invalid location: location or virtualLocation required` | VEVENT has no `LOCATION` property and the mapper cannot derive a location or virtualLocation from DESCRIPTION or DefaultLocation | (1) Add `default_location:` block to config if the source always uses the same venue. (2) If the DESCRIPTION contains a virtual signal (zoom, virtual, online, etc.), the event URL is automatically mapped to `virtualLocation` — no config changes needed. (3) If the DESCRIPTION contains a venue label (e.g. `Location: Finch Station`), the venue name is extracted and used as `PlaceInput`. (4) If none of the above apply, the event is rejected. |
+
+### Location Resolution Order
+
+The ICS mapper (`internal/ical/mapper.go` — `buildLocation()`) resolves location
+through five stages, in priority order:
+
+1. **LOCATION property** (step 1) — If the VEVENT has a `LOCATION` field, it is used
+   as `PlaceInput.Name`. If `GEO` coordinates are also present, they are attached.
+2. **GEO-only** (step 2) — If no `LOCATION` but `GEO` coordinates are present, a
+   `PlaceInput` with only lat/lon is created.
+3. **DESCRIPTION extraction** (step 3) — If no LOCATION or GEO, the DESCRIPTION is
+   scanned:
+   - **Virtual signals first**: If the description contains keywords like `zoom`,
+     `virtual`, `online`, `webinar`, `livestream`, `live stream`, `microsoft teams`,
+     `google meet`, `teams meeting`, or `zoom meeting`, the event's URL is mapped to
+     `VirtualLocationInput`.
+   - **Physical venue patterns**: If no virtual signals, 8 regex patterns search
+     for venue labels: `Meetup Location:`, `Meet up point:`, `Location:`,
+     `Venue:`, `Address:`, `Meet at/near/...`, `Starting point:`, and
+     `Start location:`. The first match is used as the venue name.
+4. **DefaultLocation fallback** (step 4) — If `default_location` is configured in
+   the source YAML, it is used as a copy of `PlaceInput`.
+5. **Rejection** (step 5) — If none of the above produce a location, both
+   `Location` and `VirtualLocation` are nil, and the event is rejected by the
+   ingest API.
+
+When a venue name is extracted from DESCRIPTION (step 3), the `DecomposeLocation`
+helper creates a `PlaceInput` with `Name` and `StreetAddress` both set to the
+extracted text. Missing address components (`addressLocality`, `addressRegion`,
+`addressCountry`) are filled from `default_location` if configured, with a fallback
+to `MapperOptions.CountryCode` (default: `"CA"`). Full geocoding decomposition
+(e.g. parsing `"123 Main St, Toronto, ON M5V 1A1"`) is handled downstream by the
+geocoding pipeline.
+
+### Virtual Signal Keywords
+
+The following case-insensitive keywords in a DESCRIPTION trigger `VirtualLocationInput`
+mapping:
+
+- `zoom`
+- `virtual`
+- `online`
+- `webinar`
+- `livestream`
+- `live stream`
+- `microsoft teams`
+- `google meet`
+- `teams meeting`
+- `zoom meeting`
 
 ## 6. Recurrence Sanity Checks
 

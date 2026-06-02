@@ -5,7 +5,7 @@ inspecting an unknown site's DOM, check the recognition cheatsheet below to iden
 the platform. If a match is found, use the known selectors and headless flags as a
 starting point rather than deriving everything from scratch.
 
-**Last updated:** 2026-04-17
+**Last updated:** 2026-06-02
 
 ---
 
@@ -1026,18 +1026,39 @@ every event in the feed is rejected with `invalid location: location or virtualL
 All 19 Meetup groups in Cohort 1 failed for this reason.
 
 **Root cause**: Meetup has been reducing ICS field coverage since ~2023. The `URL` field
-pointing to the meetup event page IS present in the feed but is not mapped to
-`virtualLocation` by the ICS mapper (tracked as `srv-ia1w3`).
+pointing to the meetup event page IS present in the feed.
+
+**Resolution (implemented in `srv-ia1w3`, 2026-06):** The ICS mapper now performs
+DESCRIPTION-based location extraction for events with no `LOCATION` property:
+
+1. **Virtual event detection**: If the DESCRIPTION contains any of the virtual signal
+   keywords (`zoom`, `virtual`, `online`, `webinar`, `livestream`, `live stream`,
+   `microsoft teams`, `google meet`, `teams meeting`, `zoom meeting`), the event's
+   URL is automatically mapped to `virtualLocation`. This covers online-only Meetup
+   groups.
+
+2. **Physical venue extraction**: If no virtual signals are found, the DESCRIPTION is
+   scanned for venue labels using 8 regex patterns (`Location:`, `Venue:`,
+   `Meetup Location:`, `Meet up point:`, `Address:`, `Meet at/near/...`,
+   `Starting point:`, `Start location:`). The first match is used as the venue name
+   in a `PlaceInput`, with optional address defaults filled from the source's
+   `default_location` config.
+
+3. **`default_location` fallback**: If DESCRIPTION extraction produces nothing,
+   the source's `default_location` config (if set) is used as a copy of `PlaceInput`.
+
+See [ics-feeds.md §5 — Location Resolution Order](ics-feeds.md#location-resolution-order)
+for the full five-stage resolution pipeline.
 
 **Remediation options** (choose based on group type):
 
-1. **`default_location` in config** (physical-venue groups): Works for groups that always
-   meet at the same trailhead, coworking space, or venue. Add `default_location:` block to
-   the YAML config. Not viable for groups with rotating or online-only venues.
+1. **No config needed for online-only groups**: Virtual signals in the DESCRIPTION
+   are detected automatically. All online Meetup groups should ingest without changes.
 
-2. **ICS mapper `URL → virtualLocation` fix** (online groups): When bead `srv-ia1w3` is
-   merged, the mapper will use the Meetup event URL as `virtualLocation` for events lacking
-   `LOCATION`. This will unblock all 19 Meetup groups automatically.
+2. **`default_location` in config** (physical-venue groups with rotating venues): If
+   the DESCRIPTION does not contain a recognizable venue label, add a
+   `default_location:` block to the YAML config. Groups that always meet at the same
+   trailhead, coworking space, or venue can use this for a complete address.
 
 3. **Meetup API** (preferred if access is available): Meetup's GraphQL API returns
    structured location data that the ICS feed omits. Requires venue or group admin
