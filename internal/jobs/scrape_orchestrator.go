@@ -137,25 +137,25 @@ type eligibleSource struct {
 func filterEligibleSources(ctx context.Context, logger *slog.Logger, sources []postgres.ListScraperSourcesWithLatestRunRow, skipUpToDate bool) []eligibleSource {
 	var eligible []eligibleSource
 	for _, src := range sources {
-		if src.Schedule != "daily" && src.Schedule != "weekly" {
+		if src.ScraperSource.Schedule != "daily" && src.ScraperSource.Schedule != "weekly" {
 			continue
 		}
 
 		if skipUpToDate && src.LastRunStatus == "completed" && src.LastRunCompletedAt.Valid {
 			freshDuration := 24 * time.Hour
-			if src.Schedule == "weekly" {
+			if src.ScraperSource.Schedule == "weekly" {
 				freshDuration = 7 * 24 * time.Hour
 			}
 			if time.Since(src.LastRunCompletedAt.Time) < freshDuration {
 				logger.DebugContext(ctx, "scrape_orchestrator: skipping up-to-date source",
-					"source", src.Name, "schedule", src.Schedule, "last_completed", src.LastRunCompletedAt.Time)
+					"source", src.ScraperSource.Name, "schedule", src.ScraperSource.Schedule, "last_completed", src.LastRunCompletedAt.Time)
 				continue
 			}
 		}
 
 		eligible = append(eligible, eligibleSource{
-			name:     src.Name,
-			schedule: src.Schedule,
+			name:     src.ScraperSource.Name,
+			schedule: src.ScraperSource.Schedule,
 			lastRun:  &src,
 		})
 	}
