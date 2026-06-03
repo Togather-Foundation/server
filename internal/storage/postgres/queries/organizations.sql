@@ -1,24 +1,7 @@
 -- SQLc queries for organizations domain.
 
 -- name: ListOrganizationsByCreatedAt :many
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.created_at,
-       o.updated_at
+SELECT sqlc.embed(o)
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND (sqlc.narg('city')::text IS NULL OR o.address_locality ILIKE '%' || sqlc.narg('city') || '%')
@@ -32,24 +15,7 @@ SELECT o.id,
  LIMIT sqlc.arg('limit');
 
 -- name: ListOrganizationsByCreatedAtDesc :many
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.created_at,
-       o.updated_at
+SELECT sqlc.embed(o)
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND (sqlc.narg('city')::text IS NULL OR o.address_locality ILIKE '%' || sqlc.narg('city') || '%')
@@ -63,24 +29,7 @@ SELECT o.id,
  LIMIT sqlc.arg('limit');
 
 -- name: ListOrganizationsByName :many
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.created_at,
-       o.updated_at
+SELECT sqlc.embed(o)
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND (sqlc.narg('city')::text IS NULL OR o.address_locality ILIKE '%' || sqlc.narg('city') || '%')
@@ -94,24 +43,7 @@ SELECT o.id,
  LIMIT sqlc.arg('limit');
 
 -- name: ListOrganizationsByNameDesc :many
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.created_at,
-       o.updated_at
+SELECT sqlc.embed(o)
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND (sqlc.narg('city')::text IS NULL OR o.address_locality ILIKE '%' || sqlc.narg('city') || '%')
@@ -125,26 +57,7 @@ SELECT o.id,
  LIMIT sqlc.arg('limit');
 
 -- name: GetOrganizationByULID :one
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.deleted_at,
-       o.deletion_reason,
-       o.created_at,
-       o.updated_at
+SELECT sqlc.embed(o)
   FROM organizations o
  WHERE o.ulid = $1;
 
@@ -189,7 +102,7 @@ UPDATE organizations
        updated_at = now()
  WHERE ulid = $1
    AND deleted_at IS NULL
-RETURNING id, ulid, name, legal_name, description, email, telephone, url, address_locality, address_region, address_country, street_address, postal_code, organization_type, federation_uri, alternate_name, created_at, updated_at;
+RETURNING sqlc.embed(organizations);
 
 -- name: CountAllOrganizations :one
 SELECT COUNT(*) FROM organizations WHERE deleted_at IS NULL;

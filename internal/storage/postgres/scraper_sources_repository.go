@@ -86,7 +86,7 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		return nil, fmt.Errorf("upsert scraper source %q: %w", params.Name, err)
 	}
 
-	return rowToSource(upsertRowToScraperSource(row)), nil
+	return row.ScraperSource.toDomain(), nil
 }
 
 // GetByName returns a scraper source by unique name.
@@ -98,7 +98,7 @@ func (r *ScraperSourceRepository) GetByName(ctx context.Context, name string) (*
 		}
 		return nil, fmt.Errorf("get scraper source %q: %w", name, err)
 	}
-	return rowToSource(getByNameRowToScraperSource(row)), nil
+	return row.ScraperSource.toDomain(), nil
 }
 
 // List returns all scraper sources, optionally filtered by enabled status.
@@ -115,7 +115,7 @@ func (r *ScraperSourceRepository) List(ctx context.Context, enabled *bool) ([]sc
 
 	sources := make([]scraper.Source, 0, len(rows))
 	for _, row := range rows {
-		sources = append(sources, *rowToSource(listRowToScraperSource(row)))
+		sources = append(sources, *row.ScraperSource.toDomain())
 	}
 	return sources, nil
 }
@@ -178,7 +178,7 @@ func (r *ScraperSourceRepository) ListByOrg(ctx context.Context, orgID string) (
 	}
 	sources := make([]scraper.Source, 0, len(rows))
 	for _, row := range rows {
-		sources = append(sources, *rowToSource(listByOrgRowToScraperSource(row)))
+		sources = append(sources, *row.ScraperSource.toDomain())
 	}
 	return sources, nil
 }
@@ -225,195 +225,63 @@ func (r *ScraperSourceRepository) ListByPlace(ctx context.Context, placeID strin
 	}
 	sources := make([]scraper.Source, 0, len(rows))
 	for _, row := range rows {
-		sources = append(sources, *rowToSource(listByPlaceRowToScraperSource(row)))
+		sources = append(sources, *row.ScraperSource.toDomain())
 	}
 	return sources, nil
 }
 
-// rowToSource converts a SQLc ScraperSource model to the domain Source type.
-func rowToSource(row ScraperSource) *scraper.Source {
-	s := &scraper.Source{
-		ID:         row.ID,
-		Name:       row.Name,
-		URL:        row.Url,
-		URLs:       row.Urls,
-		Tier:       int(row.Tier),
-		Schedule:   row.Schedule,
-		TrustLevel: int(row.TrustLevel),
-		License:    row.License,
-		Enabled:    row.Enabled,
-		MaxPages:   int(row.MaxPages),
-		Selectors:  row.Selectors,
-		CreatedAt:  row.CreatedAt.Time,
-		UpdatedAt:  row.UpdatedAt.Time,
-		// New scalar fields
-		EventURLPattern:               row.EventUrlPattern,
-		SkipMultiSessionCheck:         row.SkipMultiSessionCheck,
-		MultiSessionDurationThreshold: row.MultiSessionDurationThreshold,
-		FollowEventURLs:               row.FollowEventUrls,
-		Timezone:                      row.Timezone,
-		// Headless fields
-		HeadlessWaitTimeoutMs:   int(row.HeadlessWaitTimeoutMs),
-		HeadlessHeaders:         row.HeadlessHeaders,
-		HeadlessRateLimitMs:     int(row.HeadlessRateLimitMs),
-		HeadlessWaitNetworkIdle: row.HeadlessWaitNetworkIdle,
-		HeadlessUndetected:      row.HeadlessUndetected,
-		HeadlessIframe:          row.HeadlessIframe,
-		HeadlessIntercept:       row.HeadlessIntercept,
-		// GraphQL fields (Tier 3)
-		GraphQLConfig: row.GraphqlConfig,
-		// REST fields (Tier 3)
-		RestConfig: row.RestConfig,
-		// Sitemap fields (URL discovery)
-		SitemapConfig: row.SitemapConfig,
-		// Default location fallback
-		DefaultLocation: row.DefaultLocation,
-		// Extraction method
-		ExtractionMethod: row.ExtractionMethod,
-		// ICS per-source overrides
-		InsecureSkipVerify:    row.InsecureSkipVerify,
-		RequestTimeoutSeconds: int(row.RequestTimeoutSeconds),
-		MaxBodyBytes:          row.MaxBodyBytes,
+// toDomain converts the SQLc ScraperSource table model to the domain Source type.
+func (s *ScraperSource) toDomain() *scraper.Source {
+	src := &scraper.Source{
+		ID:                            s.ID,
+		Name:                          s.Name,
+		URL:                           s.Url,
+		URLs:                          s.Urls,
+		Tier:                          int(s.Tier),
+		Schedule:                      s.Schedule,
+		TrustLevel:                    int(s.TrustLevel),
+		License:                       s.License,
+		Enabled:                       s.Enabled,
+		MaxPages:                      int(s.MaxPages),
+		Selectors:                     s.Selectors,
+		CreatedAt:                     s.CreatedAt.Time,
+		UpdatedAt:                     s.UpdatedAt.Time,
+		EventURLPattern:               s.EventUrlPattern,
+		SkipMultiSessionCheck:         s.SkipMultiSessionCheck,
+		MultiSessionDurationThreshold: s.MultiSessionDurationThreshold,
+		FollowEventURLs:               s.FollowEventUrls,
+		Timezone:                      s.Timezone,
+		HeadlessWaitTimeoutMs:         int(s.HeadlessWaitTimeoutMs),
+		HeadlessHeaders:               s.HeadlessHeaders,
+		HeadlessRateLimitMs:           int(s.HeadlessRateLimitMs),
+		HeadlessWaitNetworkIdle:       s.HeadlessWaitNetworkIdle,
+		HeadlessUndetected:            s.HeadlessUndetected,
+		HeadlessIframe:                s.HeadlessIframe,
+		HeadlessIntercept:             s.HeadlessIntercept,
+		GraphQLConfig:                 s.GraphqlConfig,
+		RestConfig:                    s.RestConfig,
+		SitemapConfig:                 s.SitemapConfig,
+		DefaultLocation:               s.DefaultLocation,
+		ExtractionMethod:              s.ExtractionMethod,
+		InsecureSkipVerify:            s.InsecureSkipVerify,
+		RequestTimeoutSeconds:         int(s.RequestTimeoutSeconds),
+		MaxBodyBytes:                  s.MaxBodyBytes,
 	}
-	if row.Notes.Valid {
-		s.Notes = row.Notes.String
+	if s.Notes.Valid {
+		src.Notes = s.Notes.String
 	}
-	if row.LastScrapedAt.Valid {
-		t := row.LastScrapedAt.Time
-		s.LastScrapedAt = &t
+	if s.LastScrapedAt.Valid {
+		t := s.LastScrapedAt.Time
+		src.LastScrapedAt = &t
 	}
-	if row.HeadlessWaitSelector.Valid {
-		s.HeadlessWaitSelector = row.HeadlessWaitSelector.String
+	if s.HeadlessWaitSelector.Valid {
+		src.HeadlessWaitSelector = s.HeadlessWaitSelector.String
 	}
-	if row.HeadlessPaginationBtn.Valid {
-		s.HeadlessPaginationBtn = row.HeadlessPaginationBtn.String
+	if s.HeadlessPaginationBtn.Valid {
+		src.HeadlessPaginationBtn = s.HeadlessPaginationBtn.String
 	}
-	if row.EventDomain.Valid {
-		s.Domain = row.EventDomain.String
+	if s.EventDomain.Valid {
+		src.Domain = s.EventDomain.String
 	}
-	return s
-}
-
-// The following helpers convert SQLc-generated query-specific row types into the
-// canonical ScraperSource model so that rowToSource can remain a single function.
-// All row types have identical fields — SQLc generates distinct types per query.
-
-func upsertRowToScraperSource(r UpsertScraperSourceRow) ScraperSource {
-	return ScraperSource{
-		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
-		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
-		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
-		Selectors: r.Selectors, Notes: r.Notes,
-		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
-		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
-		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
-		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
-		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
-		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
-		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
-		HeadlessIntercept: r.HeadlessIntercept,
-		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:    r.DefaultLocation,
-		EventDomain:        r.EventDomain,
-		ExtractionMethod:   r.ExtractionMethod,
-		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
-		MaxBodyBytes: r.MaxBodyBytes,
-	}
-}
-
-func getByNameRowToScraperSource(r GetScraperSourceByNameRow) ScraperSource {
-	return ScraperSource{
-		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
-		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
-		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
-		Selectors: r.Selectors, Notes: r.Notes,
-		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
-		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
-		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
-		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
-		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
-		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
-		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
-		HeadlessIntercept: r.HeadlessIntercept,
-		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:    r.DefaultLocation,
-		EventDomain:        r.EventDomain,
-		ExtractionMethod:   r.ExtractionMethod,
-		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
-		MaxBodyBytes: r.MaxBodyBytes,
-	}
-}
-
-func listRowToScraperSource(r ListScraperSourcesRow) ScraperSource {
-	return ScraperSource{
-		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
-		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
-		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
-		Selectors: r.Selectors, Notes: r.Notes,
-		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
-		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
-		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
-		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
-		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
-		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
-		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
-		HeadlessIntercept: r.HeadlessIntercept,
-		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:    r.DefaultLocation,
-		EventDomain:        r.EventDomain,
-		ExtractionMethod:   r.ExtractionMethod,
-		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
-		MaxBodyBytes: r.MaxBodyBytes,
-	}
-}
-
-func listByOrgRowToScraperSource(r ListScraperSourcesByOrgRow) ScraperSource {
-	return ScraperSource{
-		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
-		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
-		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
-		Selectors: r.Selectors, Notes: r.Notes,
-		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
-		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
-		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
-		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
-		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
-		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
-		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
-		HeadlessIntercept: r.HeadlessIntercept,
-		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:    r.DefaultLocation,
-		EventDomain:        r.EventDomain,
-		ExtractionMethod:   r.ExtractionMethod,
-		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
-		MaxBodyBytes: r.MaxBodyBytes,
-	}
-}
-
-func listByPlaceRowToScraperSource(r ListScraperSourcesByPlaceRow) ScraperSource {
-	return ScraperSource{
-		ID: r.ID, Name: r.Name, Url: r.Url, Urls: r.Urls,
-		Tier: r.Tier, Schedule: r.Schedule, TrustLevel: r.TrustLevel,
-		License: r.License, Enabled: r.Enabled, MaxPages: r.MaxPages,
-		Selectors: r.Selectors, Notes: r.Notes,
-		EventUrlPattern: r.EventUrlPattern, SkipMultiSessionCheck: r.SkipMultiSessionCheck,
-		MultiSessionDurationThreshold: r.MultiSessionDurationThreshold,
-		FollowEventUrls:               r.FollowEventUrls, Timezone: r.Timezone,
-		LastScrapedAt: r.LastScrapedAt, CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
-		HeadlessWaitSelector: r.HeadlessWaitSelector, HeadlessWaitTimeoutMs: r.HeadlessWaitTimeoutMs,
-		HeadlessPaginationBtn: r.HeadlessPaginationBtn, HeadlessHeaders: r.HeadlessHeaders,
-		HeadlessRateLimitMs: r.HeadlessRateLimitMs, HeadlessWaitNetworkIdle: r.HeadlessWaitNetworkIdle,
-		HeadlessUndetected: r.HeadlessUndetected, HeadlessIframe: r.HeadlessIframe,
-		HeadlessIntercept: r.HeadlessIntercept,
-		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
-		DefaultLocation:    r.DefaultLocation,
-		EventDomain:        r.EventDomain,
-		ExtractionMethod:   r.ExtractionMethod,
-		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
-		MaxBodyBytes: r.MaxBodyBytes,
-	}
+	return src
 }

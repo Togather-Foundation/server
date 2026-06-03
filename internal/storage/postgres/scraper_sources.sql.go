@@ -22,58 +22,12 @@ func (q *Queries) DeleteScraperSource(ctx context.Context, name string) error {
 }
 
 const getScraperSourceByID = `-- name: GetScraperSourceByID :one
-SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
-       max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-       multi_session_duration_threshold, follow_event_urls, timezone,
-       last_scraped_at, created_at, updated_at,
-       headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms,
-       headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-        graphql_config, rest_config, sitemap_config, default_location,
-        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
-  FROM scraper_sources
+SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain FROM scraper_sources
  WHERE id = $1
 `
 
 type GetScraperSourceByIDRow struct {
-	ID                            int64              `json:"id"`
-	Name                          string             `json:"name"`
-	Url                           string             `json:"url"`
-	Urls                          []string           `json:"urls"`
-	Tier                          int32              `json:"tier"`
-	Schedule                      string             `json:"schedule"`
-	TrustLevel                    int32              `json:"trust_level"`
-	License                       string             `json:"license"`
-	EventDomain                   pgtype.Text        `json:"event_domain"`
-	Enabled                       bool               `json:"enabled"`
-	MaxPages                      int32              `json:"max_pages"`
-	Selectors                     []byte             `json:"selectors"`
-	Notes                         pgtype.Text        `json:"notes"`
-	EventUrlPattern               string             `json:"event_url_pattern"`
-	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
-	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
-	FollowEventUrls               bool               `json:"follow_event_urls"`
-	Timezone                      string             `json:"timezone"`
-	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
-	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
-	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
-	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
-	HeadlessHeaders               []byte             `json:"headless_headers"`
-	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
-	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
-	HeadlessUndetected            bool               `json:"headless_undetected"`
-	HeadlessIframe                []byte             `json:"headless_iframe"`
-	HeadlessIntercept             []byte             `json:"headless_intercept"`
-	GraphqlConfig                 []byte             `json:"graphql_config"`
-	RestConfig                    []byte             `json:"rest_config"`
-	SitemapConfig                 []byte             `json:"sitemap_config"`
-	DefaultLocation               []byte             `json:"default_location"`
-	ExtractionMethod              string             `json:"extraction_method"`
-	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
-	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
-	MaxBodyBytes                  int64              `json:"max_body_bytes"`
+	ScraperSource ScraperSource `json:"scraper_source"`
 }
 
 // Get a single scraper source by primary key.
@@ -81,101 +35,55 @@ func (q *Queries) GetScraperSourceByID(ctx context.Context, id int64) (GetScrape
 	row := q.db.QueryRow(ctx, getScraperSourceByID, id)
 	var i GetScraperSourceByIDRow
 	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Url,
-		&i.Urls,
-		&i.Tier,
-		&i.Schedule,
-		&i.TrustLevel,
-		&i.License,
-		&i.EventDomain,
-		&i.Enabled,
-		&i.MaxPages,
-		&i.Selectors,
-		&i.Notes,
-		&i.EventUrlPattern,
-		&i.SkipMultiSessionCheck,
-		&i.MultiSessionDurationThreshold,
-		&i.FollowEventUrls,
-		&i.Timezone,
-		&i.LastScrapedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.HeadlessWaitSelector,
-		&i.HeadlessWaitTimeoutMs,
-		&i.HeadlessPaginationBtn,
-		&i.HeadlessHeaders,
-		&i.HeadlessRateLimitMs,
-		&i.HeadlessWaitNetworkIdle,
-		&i.HeadlessUndetected,
-		&i.HeadlessIframe,
-		&i.HeadlessIntercept,
-		&i.GraphqlConfig,
-		&i.RestConfig,
-		&i.SitemapConfig,
-		&i.DefaultLocation,
-		&i.ExtractionMethod,
-		&i.InsecureSkipVerify,
-		&i.RequestTimeoutSeconds,
-		&i.MaxBodyBytes,
+		&i.ScraperSource.ID,
+		&i.ScraperSource.Name,
+		&i.ScraperSource.Url,
+		&i.ScraperSource.Tier,
+		&i.ScraperSource.Schedule,
+		&i.ScraperSource.TrustLevel,
+		&i.ScraperSource.License,
+		&i.ScraperSource.Enabled,
+		&i.ScraperSource.MaxPages,
+		&i.ScraperSource.Selectors,
+		&i.ScraperSource.Notes,
+		&i.ScraperSource.LastScrapedAt,
+		&i.ScraperSource.CreatedAt,
+		&i.ScraperSource.UpdatedAt,
+		&i.ScraperSource.HeadlessWaitSelector,
+		&i.ScraperSource.HeadlessWaitTimeoutMs,
+		&i.ScraperSource.HeadlessPaginationBtn,
+		&i.ScraperSource.HeadlessHeaders,
+		&i.ScraperSource.HeadlessRateLimitMs,
+		&i.ScraperSource.GraphqlConfig,
+		&i.ScraperSource.RestConfig,
+		&i.ScraperSource.SitemapConfig,
+		&i.ScraperSource.Urls,
+		&i.ScraperSource.EventUrlPattern,
+		&i.ScraperSource.SkipMultiSessionCheck,
+		&i.ScraperSource.MultiSessionDurationThreshold,
+		&i.ScraperSource.FollowEventUrls,
+		&i.ScraperSource.Timezone,
+		&i.ScraperSource.HeadlessWaitNetworkIdle,
+		&i.ScraperSource.HeadlessUndetected,
+		&i.ScraperSource.HeadlessIframe,
+		&i.ScraperSource.HeadlessIntercept,
+		&i.ScraperSource.DefaultLocation,
+		&i.ScraperSource.ExtractionMethod,
+		&i.ScraperSource.InsecureSkipVerify,
+		&i.ScraperSource.RequestTimeoutSeconds,
+		&i.ScraperSource.MaxBodyBytes,
+		&i.ScraperSource.EventDomain,
 	)
 	return i, err
 }
 
 const getScraperSourceByName = `-- name: GetScraperSourceByName :one
-SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
-       max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-       multi_session_duration_threshold, follow_event_urls, timezone,
-       last_scraped_at, created_at, updated_at,
-       headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms,
-       headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-        graphql_config, rest_config, sitemap_config, default_location,
-        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
-  FROM scraper_sources
+SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain FROM scraper_sources
  WHERE name = $1
 `
 
 type GetScraperSourceByNameRow struct {
-	ID                            int64              `json:"id"`
-	Name                          string             `json:"name"`
-	Url                           string             `json:"url"`
-	Urls                          []string           `json:"urls"`
-	Tier                          int32              `json:"tier"`
-	Schedule                      string             `json:"schedule"`
-	TrustLevel                    int32              `json:"trust_level"`
-	License                       string             `json:"license"`
-	EventDomain                   pgtype.Text        `json:"event_domain"`
-	Enabled                       bool               `json:"enabled"`
-	MaxPages                      int32              `json:"max_pages"`
-	Selectors                     []byte             `json:"selectors"`
-	Notes                         pgtype.Text        `json:"notes"`
-	EventUrlPattern               string             `json:"event_url_pattern"`
-	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
-	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
-	FollowEventUrls               bool               `json:"follow_event_urls"`
-	Timezone                      string             `json:"timezone"`
-	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
-	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
-	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
-	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
-	HeadlessHeaders               []byte             `json:"headless_headers"`
-	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
-	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
-	HeadlessUndetected            bool               `json:"headless_undetected"`
-	HeadlessIframe                []byte             `json:"headless_iframe"`
-	HeadlessIntercept             []byte             `json:"headless_intercept"`
-	GraphqlConfig                 []byte             `json:"graphql_config"`
-	RestConfig                    []byte             `json:"rest_config"`
-	SitemapConfig                 []byte             `json:"sitemap_config"`
-	DefaultLocation               []byte             `json:"default_location"`
-	ExtractionMethod              string             `json:"extraction_method"`
-	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
-	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
-	MaxBodyBytes                  int64              `json:"max_body_bytes"`
+	ScraperSource ScraperSource `json:"scraper_source"`
 }
 
 // Get a single scraper source by unique name.
@@ -183,44 +91,44 @@ func (q *Queries) GetScraperSourceByName(ctx context.Context, name string) (GetS
 	row := q.db.QueryRow(ctx, getScraperSourceByName, name)
 	var i GetScraperSourceByNameRow
 	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Url,
-		&i.Urls,
-		&i.Tier,
-		&i.Schedule,
-		&i.TrustLevel,
-		&i.License,
-		&i.EventDomain,
-		&i.Enabled,
-		&i.MaxPages,
-		&i.Selectors,
-		&i.Notes,
-		&i.EventUrlPattern,
-		&i.SkipMultiSessionCheck,
-		&i.MultiSessionDurationThreshold,
-		&i.FollowEventUrls,
-		&i.Timezone,
-		&i.LastScrapedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.HeadlessWaitSelector,
-		&i.HeadlessWaitTimeoutMs,
-		&i.HeadlessPaginationBtn,
-		&i.HeadlessHeaders,
-		&i.HeadlessRateLimitMs,
-		&i.HeadlessWaitNetworkIdle,
-		&i.HeadlessUndetected,
-		&i.HeadlessIframe,
-		&i.HeadlessIntercept,
-		&i.GraphqlConfig,
-		&i.RestConfig,
-		&i.SitemapConfig,
-		&i.DefaultLocation,
-		&i.ExtractionMethod,
-		&i.InsecureSkipVerify,
-		&i.RequestTimeoutSeconds,
-		&i.MaxBodyBytes,
+		&i.ScraperSource.ID,
+		&i.ScraperSource.Name,
+		&i.ScraperSource.Url,
+		&i.ScraperSource.Tier,
+		&i.ScraperSource.Schedule,
+		&i.ScraperSource.TrustLevel,
+		&i.ScraperSource.License,
+		&i.ScraperSource.Enabled,
+		&i.ScraperSource.MaxPages,
+		&i.ScraperSource.Selectors,
+		&i.ScraperSource.Notes,
+		&i.ScraperSource.LastScrapedAt,
+		&i.ScraperSource.CreatedAt,
+		&i.ScraperSource.UpdatedAt,
+		&i.ScraperSource.HeadlessWaitSelector,
+		&i.ScraperSource.HeadlessWaitTimeoutMs,
+		&i.ScraperSource.HeadlessPaginationBtn,
+		&i.ScraperSource.HeadlessHeaders,
+		&i.ScraperSource.HeadlessRateLimitMs,
+		&i.ScraperSource.GraphqlConfig,
+		&i.ScraperSource.RestConfig,
+		&i.ScraperSource.SitemapConfig,
+		&i.ScraperSource.Urls,
+		&i.ScraperSource.EventUrlPattern,
+		&i.ScraperSource.SkipMultiSessionCheck,
+		&i.ScraperSource.MultiSessionDurationThreshold,
+		&i.ScraperSource.FollowEventUrls,
+		&i.ScraperSource.Timezone,
+		&i.ScraperSource.HeadlessWaitNetworkIdle,
+		&i.ScraperSource.HeadlessUndetected,
+		&i.ScraperSource.HeadlessIframe,
+		&i.ScraperSource.HeadlessIntercept,
+		&i.ScraperSource.DefaultLocation,
+		&i.ScraperSource.ExtractionMethod,
+		&i.ScraperSource.InsecureSkipVerify,
+		&i.ScraperSource.RequestTimeoutSeconds,
+		&i.ScraperSource.MaxBodyBytes,
+		&i.ScraperSource.EventDomain,
 	)
 	return i, err
 }
@@ -260,59 +168,13 @@ func (q *Queries) LinkPlaceScraperSource(ctx context.Context, arg LinkPlaceScrap
 }
 
 const listScraperSources = `-- name: ListScraperSources :many
-SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
-       max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-       multi_session_duration_threshold, follow_event_urls, timezone,
-       last_scraped_at, created_at, updated_at,
-       headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-       headless_headers, headless_rate_limit_ms,
-       headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-        graphql_config, rest_config, sitemap_config, default_location,
-        extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
-  FROM scraper_sources
+SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain FROM scraper_sources
  WHERE ($1::boolean IS NULL OR enabled = $1)
  ORDER BY name ASC
 `
 
 type ListScraperSourcesRow struct {
-	ID                            int64              `json:"id"`
-	Name                          string             `json:"name"`
-	Url                           string             `json:"url"`
-	Urls                          []string           `json:"urls"`
-	Tier                          int32              `json:"tier"`
-	Schedule                      string             `json:"schedule"`
-	TrustLevel                    int32              `json:"trust_level"`
-	License                       string             `json:"license"`
-	EventDomain                   pgtype.Text        `json:"event_domain"`
-	Enabled                       bool               `json:"enabled"`
-	MaxPages                      int32              `json:"max_pages"`
-	Selectors                     []byte             `json:"selectors"`
-	Notes                         pgtype.Text        `json:"notes"`
-	EventUrlPattern               string             `json:"event_url_pattern"`
-	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
-	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
-	FollowEventUrls               bool               `json:"follow_event_urls"`
-	Timezone                      string             `json:"timezone"`
-	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
-	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
-	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
-	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
-	HeadlessHeaders               []byte             `json:"headless_headers"`
-	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
-	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
-	HeadlessUndetected            bool               `json:"headless_undetected"`
-	HeadlessIframe                []byte             `json:"headless_iframe"`
-	HeadlessIntercept             []byte             `json:"headless_intercept"`
-	GraphqlConfig                 []byte             `json:"graphql_config"`
-	RestConfig                    []byte             `json:"rest_config"`
-	SitemapConfig                 []byte             `json:"sitemap_config"`
-	DefaultLocation               []byte             `json:"default_location"`
-	ExtractionMethod              string             `json:"extraction_method"`
-	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
-	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
-	MaxBodyBytes                  int64              `json:"max_body_bytes"`
+	ScraperSource ScraperSource `json:"scraper_source"`
 }
 
 // List all scraper sources, optionally filtered by enabled flag.
@@ -326,44 +188,44 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 	for rows.Next() {
 		var i ListScraperSourcesRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Url,
-			&i.Urls,
-			&i.Tier,
-			&i.Schedule,
-			&i.TrustLevel,
-			&i.License,
-			&i.EventDomain,
-			&i.Enabled,
-			&i.MaxPages,
-			&i.Selectors,
-			&i.Notes,
-			&i.EventUrlPattern,
-			&i.SkipMultiSessionCheck,
-			&i.MultiSessionDurationThreshold,
-			&i.FollowEventUrls,
-			&i.Timezone,
-			&i.LastScrapedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.HeadlessWaitSelector,
-			&i.HeadlessWaitTimeoutMs,
-			&i.HeadlessPaginationBtn,
-			&i.HeadlessHeaders,
-			&i.HeadlessRateLimitMs,
-			&i.HeadlessWaitNetworkIdle,
-			&i.HeadlessUndetected,
-			&i.HeadlessIframe,
-			&i.HeadlessIntercept,
-			&i.GraphqlConfig,
-			&i.RestConfig,
-			&i.SitemapConfig,
-			&i.DefaultLocation,
-			&i.ExtractionMethod,
-			&i.InsecureSkipVerify,
-			&i.RequestTimeoutSeconds,
-			&i.MaxBodyBytes,
+			&i.ScraperSource.ID,
+			&i.ScraperSource.Name,
+			&i.ScraperSource.Url,
+			&i.ScraperSource.Tier,
+			&i.ScraperSource.Schedule,
+			&i.ScraperSource.TrustLevel,
+			&i.ScraperSource.License,
+			&i.ScraperSource.Enabled,
+			&i.ScraperSource.MaxPages,
+			&i.ScraperSource.Selectors,
+			&i.ScraperSource.Notes,
+			&i.ScraperSource.LastScrapedAt,
+			&i.ScraperSource.CreatedAt,
+			&i.ScraperSource.UpdatedAt,
+			&i.ScraperSource.HeadlessWaitSelector,
+			&i.ScraperSource.HeadlessWaitTimeoutMs,
+			&i.ScraperSource.HeadlessPaginationBtn,
+			&i.ScraperSource.HeadlessHeaders,
+			&i.ScraperSource.HeadlessRateLimitMs,
+			&i.ScraperSource.GraphqlConfig,
+			&i.ScraperSource.RestConfig,
+			&i.ScraperSource.SitemapConfig,
+			&i.ScraperSource.Urls,
+			&i.ScraperSource.EventUrlPattern,
+			&i.ScraperSource.SkipMultiSessionCheck,
+			&i.ScraperSource.MultiSessionDurationThreshold,
+			&i.ScraperSource.FollowEventUrls,
+			&i.ScraperSource.Timezone,
+			&i.ScraperSource.HeadlessWaitNetworkIdle,
+			&i.ScraperSource.HeadlessUndetected,
+			&i.ScraperSource.HeadlessIframe,
+			&i.ScraperSource.HeadlessIntercept,
+			&i.ScraperSource.DefaultLocation,
+			&i.ScraperSource.ExtractionMethod,
+			&i.ScraperSource.InsecureSkipVerify,
+			&i.ScraperSource.RequestTimeoutSeconds,
+			&i.ScraperSource.MaxBodyBytes,
+			&i.ScraperSource.EventDomain,
 		); err != nil {
 			return nil, err
 		}
@@ -376,60 +238,14 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 }
 
 const listScraperSourcesByOrg = `-- name: ListScraperSourcesByOrg :many
-SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
-       s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
-       s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
-       s.last_scraped_at, s.created_at, s.updated_at,
-       s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-       s.headless_headers, s.headless_rate_limit_ms,
-       s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
-       s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-       s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes
-  FROM scraper_sources s
+SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = $1
  ORDER BY s.name ASC
 `
 
 type ListScraperSourcesByOrgRow struct {
-	ID                            int64              `json:"id"`
-	Name                          string             `json:"name"`
-	Url                           string             `json:"url"`
-	Urls                          []string           `json:"urls"`
-	Tier                          int32              `json:"tier"`
-	Schedule                      string             `json:"schedule"`
-	TrustLevel                    int32              `json:"trust_level"`
-	License                       string             `json:"license"`
-	EventDomain                   pgtype.Text        `json:"event_domain"`
-	Enabled                       bool               `json:"enabled"`
-	MaxPages                      int32              `json:"max_pages"`
-	Selectors                     []byte             `json:"selectors"`
-	Notes                         pgtype.Text        `json:"notes"`
-	EventUrlPattern               string             `json:"event_url_pattern"`
-	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
-	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
-	FollowEventUrls               bool               `json:"follow_event_urls"`
-	Timezone                      string             `json:"timezone"`
-	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
-	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
-	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
-	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
-	HeadlessHeaders               []byte             `json:"headless_headers"`
-	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
-	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
-	HeadlessUndetected            bool               `json:"headless_undetected"`
-	HeadlessIframe                []byte             `json:"headless_iframe"`
-	HeadlessIntercept             []byte             `json:"headless_intercept"`
-	GraphqlConfig                 []byte             `json:"graphql_config"`
-	RestConfig                    []byte             `json:"rest_config"`
-	SitemapConfig                 []byte             `json:"sitemap_config"`
-	DefaultLocation               []byte             `json:"default_location"`
-	ExtractionMethod              string             `json:"extraction_method"`
-	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
-	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
-	MaxBodyBytes                  int64              `json:"max_body_bytes"`
+	ScraperSource ScraperSource `json:"scraper_source"`
 }
 
 // List all scraper sources linked to a given organization.
@@ -443,44 +259,44 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 	for rows.Next() {
 		var i ListScraperSourcesByOrgRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Url,
-			&i.Urls,
-			&i.Tier,
-			&i.Schedule,
-			&i.TrustLevel,
-			&i.License,
-			&i.EventDomain,
-			&i.Enabled,
-			&i.MaxPages,
-			&i.Selectors,
-			&i.Notes,
-			&i.EventUrlPattern,
-			&i.SkipMultiSessionCheck,
-			&i.MultiSessionDurationThreshold,
-			&i.FollowEventUrls,
-			&i.Timezone,
-			&i.LastScrapedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.HeadlessWaitSelector,
-			&i.HeadlessWaitTimeoutMs,
-			&i.HeadlessPaginationBtn,
-			&i.HeadlessHeaders,
-			&i.HeadlessRateLimitMs,
-			&i.HeadlessWaitNetworkIdle,
-			&i.HeadlessUndetected,
-			&i.HeadlessIframe,
-			&i.HeadlessIntercept,
-			&i.GraphqlConfig,
-			&i.RestConfig,
-			&i.SitemapConfig,
-			&i.DefaultLocation,
-			&i.ExtractionMethod,
-			&i.InsecureSkipVerify,
-			&i.RequestTimeoutSeconds,
-			&i.MaxBodyBytes,
+			&i.ScraperSource.ID,
+			&i.ScraperSource.Name,
+			&i.ScraperSource.Url,
+			&i.ScraperSource.Tier,
+			&i.ScraperSource.Schedule,
+			&i.ScraperSource.TrustLevel,
+			&i.ScraperSource.License,
+			&i.ScraperSource.Enabled,
+			&i.ScraperSource.MaxPages,
+			&i.ScraperSource.Selectors,
+			&i.ScraperSource.Notes,
+			&i.ScraperSource.LastScrapedAt,
+			&i.ScraperSource.CreatedAt,
+			&i.ScraperSource.UpdatedAt,
+			&i.ScraperSource.HeadlessWaitSelector,
+			&i.ScraperSource.HeadlessWaitTimeoutMs,
+			&i.ScraperSource.HeadlessPaginationBtn,
+			&i.ScraperSource.HeadlessHeaders,
+			&i.ScraperSource.HeadlessRateLimitMs,
+			&i.ScraperSource.GraphqlConfig,
+			&i.ScraperSource.RestConfig,
+			&i.ScraperSource.SitemapConfig,
+			&i.ScraperSource.Urls,
+			&i.ScraperSource.EventUrlPattern,
+			&i.ScraperSource.SkipMultiSessionCheck,
+			&i.ScraperSource.MultiSessionDurationThreshold,
+			&i.ScraperSource.FollowEventUrls,
+			&i.ScraperSource.Timezone,
+			&i.ScraperSource.HeadlessWaitNetworkIdle,
+			&i.ScraperSource.HeadlessUndetected,
+			&i.ScraperSource.HeadlessIframe,
+			&i.ScraperSource.HeadlessIntercept,
+			&i.ScraperSource.DefaultLocation,
+			&i.ScraperSource.ExtractionMethod,
+			&i.ScraperSource.InsecureSkipVerify,
+			&i.ScraperSource.RequestTimeoutSeconds,
+			&i.ScraperSource.MaxBodyBytes,
+			&i.ScraperSource.EventDomain,
 		); err != nil {
 			return nil, err
 		}
@@ -493,60 +309,14 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 }
 
 const listScraperSourcesByPlace = `-- name: ListScraperSourcesByPlace :many
-SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
-       s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
-       s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
-       s.last_scraped_at, s.created_at, s.updated_at,
-       s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-       s.headless_headers, s.headless_rate_limit_ms,
-       s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
-       s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-       s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes
-  FROM scraper_sources s
+SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = $1
  ORDER BY s.name ASC
 `
 
 type ListScraperSourcesByPlaceRow struct {
-	ID                            int64              `json:"id"`
-	Name                          string             `json:"name"`
-	Url                           string             `json:"url"`
-	Urls                          []string           `json:"urls"`
-	Tier                          int32              `json:"tier"`
-	Schedule                      string             `json:"schedule"`
-	TrustLevel                    int32              `json:"trust_level"`
-	License                       string             `json:"license"`
-	EventDomain                   pgtype.Text        `json:"event_domain"`
-	Enabled                       bool               `json:"enabled"`
-	MaxPages                      int32              `json:"max_pages"`
-	Selectors                     []byte             `json:"selectors"`
-	Notes                         pgtype.Text        `json:"notes"`
-	EventUrlPattern               string             `json:"event_url_pattern"`
-	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
-	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
-	FollowEventUrls               bool               `json:"follow_event_urls"`
-	Timezone                      string             `json:"timezone"`
-	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
-	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
-	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
-	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
-	HeadlessHeaders               []byte             `json:"headless_headers"`
-	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
-	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
-	HeadlessUndetected            bool               `json:"headless_undetected"`
-	HeadlessIframe                []byte             `json:"headless_iframe"`
-	HeadlessIntercept             []byte             `json:"headless_intercept"`
-	GraphqlConfig                 []byte             `json:"graphql_config"`
-	RestConfig                    []byte             `json:"rest_config"`
-	SitemapConfig                 []byte             `json:"sitemap_config"`
-	DefaultLocation               []byte             `json:"default_location"`
-	ExtractionMethod              string             `json:"extraction_method"`
-	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
-	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
-	MaxBodyBytes                  int64              `json:"max_body_bytes"`
+	ScraperSource ScraperSource `json:"scraper_source"`
 }
 
 // List all scraper sources linked to a given place.
@@ -560,44 +330,44 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 	for rows.Next() {
 		var i ListScraperSourcesByPlaceRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Url,
-			&i.Urls,
-			&i.Tier,
-			&i.Schedule,
-			&i.TrustLevel,
-			&i.License,
-			&i.EventDomain,
-			&i.Enabled,
-			&i.MaxPages,
-			&i.Selectors,
-			&i.Notes,
-			&i.EventUrlPattern,
-			&i.SkipMultiSessionCheck,
-			&i.MultiSessionDurationThreshold,
-			&i.FollowEventUrls,
-			&i.Timezone,
-			&i.LastScrapedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.HeadlessWaitSelector,
-			&i.HeadlessWaitTimeoutMs,
-			&i.HeadlessPaginationBtn,
-			&i.HeadlessHeaders,
-			&i.HeadlessRateLimitMs,
-			&i.HeadlessWaitNetworkIdle,
-			&i.HeadlessUndetected,
-			&i.HeadlessIframe,
-			&i.HeadlessIntercept,
-			&i.GraphqlConfig,
-			&i.RestConfig,
-			&i.SitemapConfig,
-			&i.DefaultLocation,
-			&i.ExtractionMethod,
-			&i.InsecureSkipVerify,
-			&i.RequestTimeoutSeconds,
-			&i.MaxBodyBytes,
+			&i.ScraperSource.ID,
+			&i.ScraperSource.Name,
+			&i.ScraperSource.Url,
+			&i.ScraperSource.Tier,
+			&i.ScraperSource.Schedule,
+			&i.ScraperSource.TrustLevel,
+			&i.ScraperSource.License,
+			&i.ScraperSource.Enabled,
+			&i.ScraperSource.MaxPages,
+			&i.ScraperSource.Selectors,
+			&i.ScraperSource.Notes,
+			&i.ScraperSource.LastScrapedAt,
+			&i.ScraperSource.CreatedAt,
+			&i.ScraperSource.UpdatedAt,
+			&i.ScraperSource.HeadlessWaitSelector,
+			&i.ScraperSource.HeadlessWaitTimeoutMs,
+			&i.ScraperSource.HeadlessPaginationBtn,
+			&i.ScraperSource.HeadlessHeaders,
+			&i.ScraperSource.HeadlessRateLimitMs,
+			&i.ScraperSource.GraphqlConfig,
+			&i.ScraperSource.RestConfig,
+			&i.ScraperSource.SitemapConfig,
+			&i.ScraperSource.Urls,
+			&i.ScraperSource.EventUrlPattern,
+			&i.ScraperSource.SkipMultiSessionCheck,
+			&i.ScraperSource.MultiSessionDurationThreshold,
+			&i.ScraperSource.FollowEventUrls,
+			&i.ScraperSource.Timezone,
+			&i.ScraperSource.HeadlessWaitNetworkIdle,
+			&i.ScraperSource.HeadlessUndetected,
+			&i.ScraperSource.HeadlessIframe,
+			&i.ScraperSource.HeadlessIntercept,
+			&i.ScraperSource.DefaultLocation,
+			&i.ScraperSource.ExtractionMethod,
+			&i.ScraperSource.InsecureSkipVerify,
+			&i.ScraperSource.RequestTimeoutSeconds,
+			&i.ScraperSource.MaxBodyBytes,
+			&i.ScraperSource.EventDomain,
 		); err != nil {
 			return nil, err
 		}
@@ -610,16 +380,7 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 }
 
 const listScraperSourcesWithLatestRun = `-- name: ListScraperSourcesWithLatestRun :many
-SELECT
-  s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
-  s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
-  s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
-  s.last_scraped_at, s.created_at, s.updated_at,
-  s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn,
-  s.headless_headers, s.headless_rate_limit_ms,
-  s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept,
-  s.graphql_config, s.rest_config, s.sitemap_config, s.default_location,
-  s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes,
+SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,
@@ -642,52 +403,15 @@ ORDER BY s.name ASC
 `
 
 type ListScraperSourcesWithLatestRunRow struct {
-	ID                            int64              `json:"id"`
-	Name                          string             `json:"name"`
-	Url                           string             `json:"url"`
-	Urls                          []string           `json:"urls"`
-	Tier                          int32              `json:"tier"`
-	Schedule                      string             `json:"schedule"`
-	TrustLevel                    int32              `json:"trust_level"`
-	License                       string             `json:"license"`
-	EventDomain                   pgtype.Text        `json:"event_domain"`
-	Enabled                       bool               `json:"enabled"`
-	MaxPages                      int32              `json:"max_pages"`
-	Selectors                     []byte             `json:"selectors"`
-	Notes                         pgtype.Text        `json:"notes"`
-	EventUrlPattern               string             `json:"event_url_pattern"`
-	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
-	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
-	FollowEventUrls               bool               `json:"follow_event_urls"`
-	Timezone                      string             `json:"timezone"`
-	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
-	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
-	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
-	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
-	HeadlessHeaders               []byte             `json:"headless_headers"`
-	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
-	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
-	HeadlessUndetected            bool               `json:"headless_undetected"`
-	HeadlessIframe                []byte             `json:"headless_iframe"`
-	HeadlessIntercept             []byte             `json:"headless_intercept"`
-	GraphqlConfig                 []byte             `json:"graphql_config"`
-	RestConfig                    []byte             `json:"rest_config"`
-	SitemapConfig                 []byte             `json:"sitemap_config"`
-	DefaultLocation               []byte             `json:"default_location"`
-	ExtractionMethod              string             `json:"extraction_method"`
-	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
-	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
-	MaxBodyBytes                  int64              `json:"max_body_bytes"`
-	LastRunStartedAt              pgtype.Timestamptz `json:"last_run_started_at"`
-	LastRunCompletedAt            pgtype.Timestamptz `json:"last_run_completed_at"`
-	LastRunStatus                 string             `json:"last_run_status"`
-	LastRunEventsFound            int32              `json:"last_run_events_found"`
-	LastRunEventsNew              int32              `json:"last_run_events_new"`
-	LastRunEventsDup              int32              `json:"last_run_events_dup"`
-	LastRunEventsFailed           int32              `json:"last_run_events_failed"`
-	LastRunErrorMessage           pgtype.Text        `json:"last_run_error_message"`
+	ScraperSource       ScraperSource      `json:"scraper_source"`
+	LastRunStartedAt    pgtype.Timestamptz `json:"last_run_started_at"`
+	LastRunCompletedAt  pgtype.Timestamptz `json:"last_run_completed_at"`
+	LastRunStatus       string             `json:"last_run_status"`
+	LastRunEventsFound  int32              `json:"last_run_events_found"`
+	LastRunEventsNew    int32              `json:"last_run_events_new"`
+	LastRunEventsDup    int32              `json:"last_run_events_dup"`
+	LastRunEventsFailed int32              `json:"last_run_events_failed"`
+	LastRunErrorMessage pgtype.Text        `json:"last_run_error_message"`
 }
 
 // List all scraper sources with their most recent run stats embedded.
@@ -704,44 +428,44 @@ func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled p
 	for rows.Next() {
 		var i ListScraperSourcesWithLatestRunRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Url,
-			&i.Urls,
-			&i.Tier,
-			&i.Schedule,
-			&i.TrustLevel,
-			&i.License,
-			&i.EventDomain,
-			&i.Enabled,
-			&i.MaxPages,
-			&i.Selectors,
-			&i.Notes,
-			&i.EventUrlPattern,
-			&i.SkipMultiSessionCheck,
-			&i.MultiSessionDurationThreshold,
-			&i.FollowEventUrls,
-			&i.Timezone,
-			&i.LastScrapedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.HeadlessWaitSelector,
-			&i.HeadlessWaitTimeoutMs,
-			&i.HeadlessPaginationBtn,
-			&i.HeadlessHeaders,
-			&i.HeadlessRateLimitMs,
-			&i.HeadlessWaitNetworkIdle,
-			&i.HeadlessUndetected,
-			&i.HeadlessIframe,
-			&i.HeadlessIntercept,
-			&i.GraphqlConfig,
-			&i.RestConfig,
-			&i.SitemapConfig,
-			&i.DefaultLocation,
-			&i.ExtractionMethod,
-			&i.InsecureSkipVerify,
-			&i.RequestTimeoutSeconds,
-			&i.MaxBodyBytes,
+			&i.ScraperSource.ID,
+			&i.ScraperSource.Name,
+			&i.ScraperSource.Url,
+			&i.ScraperSource.Tier,
+			&i.ScraperSource.Schedule,
+			&i.ScraperSource.TrustLevel,
+			&i.ScraperSource.License,
+			&i.ScraperSource.Enabled,
+			&i.ScraperSource.MaxPages,
+			&i.ScraperSource.Selectors,
+			&i.ScraperSource.Notes,
+			&i.ScraperSource.LastScrapedAt,
+			&i.ScraperSource.CreatedAt,
+			&i.ScraperSource.UpdatedAt,
+			&i.ScraperSource.HeadlessWaitSelector,
+			&i.ScraperSource.HeadlessWaitTimeoutMs,
+			&i.ScraperSource.HeadlessPaginationBtn,
+			&i.ScraperSource.HeadlessHeaders,
+			&i.ScraperSource.HeadlessRateLimitMs,
+			&i.ScraperSource.GraphqlConfig,
+			&i.ScraperSource.RestConfig,
+			&i.ScraperSource.SitemapConfig,
+			&i.ScraperSource.Urls,
+			&i.ScraperSource.EventUrlPattern,
+			&i.ScraperSource.SkipMultiSessionCheck,
+			&i.ScraperSource.MultiSessionDurationThreshold,
+			&i.ScraperSource.FollowEventUrls,
+			&i.ScraperSource.Timezone,
+			&i.ScraperSource.HeadlessWaitNetworkIdle,
+			&i.ScraperSource.HeadlessUndetected,
+			&i.ScraperSource.HeadlessIframe,
+			&i.ScraperSource.HeadlessIntercept,
+			&i.ScraperSource.DefaultLocation,
+			&i.ScraperSource.ExtractionMethod,
+			&i.ScraperSource.InsecureSkipVerify,
+			&i.ScraperSource.RequestTimeoutSeconds,
+			&i.ScraperSource.MaxBodyBytes,
+			&i.ScraperSource.EventDomain,
 			&i.LastRunStartedAt,
 			&i.LastRunCompletedAt,
 			&i.LastRunStatus,
@@ -766,15 +490,7 @@ UPDATE scraper_sources
    SET enabled    = $1,
        updated_at = NOW()
  WHERE name = $2
-RETURNING id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
-           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-           multi_session_duration_threshold, follow_event_urls, timezone,
-           last_scraped_at, created_at, updated_at,
-           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-           headless_headers, headless_rate_limit_ms,
-           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-           graphql_config, rest_config, sitemap_config, default_location,
-           extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
+RETURNING scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain
 `
 
 type SetScraperSourceEnabledParams struct {
@@ -783,44 +499,7 @@ type SetScraperSourceEnabledParams struct {
 }
 
 type SetScraperSourceEnabledRow struct {
-	ID                            int64              `json:"id"`
-	Name                          string             `json:"name"`
-	Url                           string             `json:"url"`
-	Urls                          []string           `json:"urls"`
-	Tier                          int32              `json:"tier"`
-	Schedule                      string             `json:"schedule"`
-	TrustLevel                    int32              `json:"trust_level"`
-	License                       string             `json:"license"`
-	EventDomain                   pgtype.Text        `json:"event_domain"`
-	Enabled                       bool               `json:"enabled"`
-	MaxPages                      int32              `json:"max_pages"`
-	Selectors                     []byte             `json:"selectors"`
-	Notes                         pgtype.Text        `json:"notes"`
-	EventUrlPattern               string             `json:"event_url_pattern"`
-	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
-	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
-	FollowEventUrls               bool               `json:"follow_event_urls"`
-	Timezone                      string             `json:"timezone"`
-	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
-	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
-	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
-	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
-	HeadlessHeaders               []byte             `json:"headless_headers"`
-	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
-	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
-	HeadlessUndetected            bool               `json:"headless_undetected"`
-	HeadlessIframe                []byte             `json:"headless_iframe"`
-	HeadlessIntercept             []byte             `json:"headless_intercept"`
-	GraphqlConfig                 []byte             `json:"graphql_config"`
-	RestConfig                    []byte             `json:"rest_config"`
-	SitemapConfig                 []byte             `json:"sitemap_config"`
-	DefaultLocation               []byte             `json:"default_location"`
-	ExtractionMethod              string             `json:"extraction_method"`
-	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
-	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
-	MaxBodyBytes                  int64              `json:"max_body_bytes"`
+	ScraperSource ScraperSource `json:"scraper_source"`
 }
 
 // Enable or disable a scraper source by name. Returns the updated row.
@@ -828,44 +507,44 @@ func (q *Queries) SetScraperSourceEnabled(ctx context.Context, arg SetScraperSou
 	row := q.db.QueryRow(ctx, setScraperSourceEnabled, arg.Enabled, arg.Name)
 	var i SetScraperSourceEnabledRow
 	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Url,
-		&i.Urls,
-		&i.Tier,
-		&i.Schedule,
-		&i.TrustLevel,
-		&i.License,
-		&i.EventDomain,
-		&i.Enabled,
-		&i.MaxPages,
-		&i.Selectors,
-		&i.Notes,
-		&i.EventUrlPattern,
-		&i.SkipMultiSessionCheck,
-		&i.MultiSessionDurationThreshold,
-		&i.FollowEventUrls,
-		&i.Timezone,
-		&i.LastScrapedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.HeadlessWaitSelector,
-		&i.HeadlessWaitTimeoutMs,
-		&i.HeadlessPaginationBtn,
-		&i.HeadlessHeaders,
-		&i.HeadlessRateLimitMs,
-		&i.HeadlessWaitNetworkIdle,
-		&i.HeadlessUndetected,
-		&i.HeadlessIframe,
-		&i.HeadlessIntercept,
-		&i.GraphqlConfig,
-		&i.RestConfig,
-		&i.SitemapConfig,
-		&i.DefaultLocation,
-		&i.ExtractionMethod,
-		&i.InsecureSkipVerify,
-		&i.RequestTimeoutSeconds,
-		&i.MaxBodyBytes,
+		&i.ScraperSource.ID,
+		&i.ScraperSource.Name,
+		&i.ScraperSource.Url,
+		&i.ScraperSource.Tier,
+		&i.ScraperSource.Schedule,
+		&i.ScraperSource.TrustLevel,
+		&i.ScraperSource.License,
+		&i.ScraperSource.Enabled,
+		&i.ScraperSource.MaxPages,
+		&i.ScraperSource.Selectors,
+		&i.ScraperSource.Notes,
+		&i.ScraperSource.LastScrapedAt,
+		&i.ScraperSource.CreatedAt,
+		&i.ScraperSource.UpdatedAt,
+		&i.ScraperSource.HeadlessWaitSelector,
+		&i.ScraperSource.HeadlessWaitTimeoutMs,
+		&i.ScraperSource.HeadlessPaginationBtn,
+		&i.ScraperSource.HeadlessHeaders,
+		&i.ScraperSource.HeadlessRateLimitMs,
+		&i.ScraperSource.GraphqlConfig,
+		&i.ScraperSource.RestConfig,
+		&i.ScraperSource.SitemapConfig,
+		&i.ScraperSource.Urls,
+		&i.ScraperSource.EventUrlPattern,
+		&i.ScraperSource.SkipMultiSessionCheck,
+		&i.ScraperSource.MultiSessionDurationThreshold,
+		&i.ScraperSource.FollowEventUrls,
+		&i.ScraperSource.Timezone,
+		&i.ScraperSource.HeadlessWaitNetworkIdle,
+		&i.ScraperSource.HeadlessUndetected,
+		&i.ScraperSource.HeadlessIframe,
+		&i.ScraperSource.HeadlessIntercept,
+		&i.ScraperSource.DefaultLocation,
+		&i.ScraperSource.ExtractionMethod,
+		&i.ScraperSource.InsecureSkipVerify,
+		&i.ScraperSource.RequestTimeoutSeconds,
+		&i.ScraperSource.MaxBodyBytes,
+		&i.ScraperSource.EventDomain,
 	)
 	return i, err
 }
@@ -1009,15 +688,7 @@ ON CONFLICT (name) DO UPDATE SET
   request_timeout_seconds          = EXCLUDED.request_timeout_seconds,
   max_body_bytes           = EXCLUDED.max_body_bytes,
   updated_at               = NOW()
-RETURNING id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
-           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-           multi_session_duration_threshold, follow_event_urls, timezone,
-           last_scraped_at, created_at, updated_at,
-           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-           headless_headers, headless_rate_limit_ms,
-           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-           graphql_config, rest_config, sitemap_config, default_location,
-           extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
+RETURNING scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain
 `
 
 type UpsertScraperSourceParams struct {
@@ -1059,44 +730,7 @@ type UpsertScraperSourceParams struct {
 }
 
 type UpsertScraperSourceRow struct {
-	ID                            int64              `json:"id"`
-	Name                          string             `json:"name"`
-	Url                           string             `json:"url"`
-	Urls                          []string           `json:"urls"`
-	Tier                          int32              `json:"tier"`
-	Schedule                      string             `json:"schedule"`
-	TrustLevel                    int32              `json:"trust_level"`
-	License                       string             `json:"license"`
-	EventDomain                   pgtype.Text        `json:"event_domain"`
-	Enabled                       bool               `json:"enabled"`
-	MaxPages                      int32              `json:"max_pages"`
-	Selectors                     []byte             `json:"selectors"`
-	Notes                         pgtype.Text        `json:"notes"`
-	EventUrlPattern               string             `json:"event_url_pattern"`
-	SkipMultiSessionCheck         bool               `json:"skip_multi_session_check"`
-	MultiSessionDurationThreshold string             `json:"multi_session_duration_threshold"`
-	FollowEventUrls               bool               `json:"follow_event_urls"`
-	Timezone                      string             `json:"timezone"`
-	LastScrapedAt                 pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt                     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt                     pgtype.Timestamptz `json:"updated_at"`
-	HeadlessWaitSelector          pgtype.Text        `json:"headless_wait_selector"`
-	HeadlessWaitTimeoutMs         int32              `json:"headless_wait_timeout_ms"`
-	HeadlessPaginationBtn         pgtype.Text        `json:"headless_pagination_btn"`
-	HeadlessHeaders               []byte             `json:"headless_headers"`
-	HeadlessRateLimitMs           int32              `json:"headless_rate_limit_ms"`
-	HeadlessWaitNetworkIdle       bool               `json:"headless_wait_network_idle"`
-	HeadlessUndetected            bool               `json:"headless_undetected"`
-	HeadlessIframe                []byte             `json:"headless_iframe"`
-	HeadlessIntercept             []byte             `json:"headless_intercept"`
-	GraphqlConfig                 []byte             `json:"graphql_config"`
-	RestConfig                    []byte             `json:"rest_config"`
-	SitemapConfig                 []byte             `json:"sitemap_config"`
-	DefaultLocation               []byte             `json:"default_location"`
-	ExtractionMethod              string             `json:"extraction_method"`
-	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
-	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
-	MaxBodyBytes                  int64              `json:"max_body_bytes"`
+	ScraperSource ScraperSource `json:"scraper_source"`
 }
 
 // SQLc queries for scraper_sources and linkage tables.
@@ -1141,44 +775,44 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 	)
 	var i UpsertScraperSourceRow
 	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.Url,
-		&i.Urls,
-		&i.Tier,
-		&i.Schedule,
-		&i.TrustLevel,
-		&i.License,
-		&i.EventDomain,
-		&i.Enabled,
-		&i.MaxPages,
-		&i.Selectors,
-		&i.Notes,
-		&i.EventUrlPattern,
-		&i.SkipMultiSessionCheck,
-		&i.MultiSessionDurationThreshold,
-		&i.FollowEventUrls,
-		&i.Timezone,
-		&i.LastScrapedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.HeadlessWaitSelector,
-		&i.HeadlessWaitTimeoutMs,
-		&i.HeadlessPaginationBtn,
-		&i.HeadlessHeaders,
-		&i.HeadlessRateLimitMs,
-		&i.HeadlessWaitNetworkIdle,
-		&i.HeadlessUndetected,
-		&i.HeadlessIframe,
-		&i.HeadlessIntercept,
-		&i.GraphqlConfig,
-		&i.RestConfig,
-		&i.SitemapConfig,
-		&i.DefaultLocation,
-		&i.ExtractionMethod,
-		&i.InsecureSkipVerify,
-		&i.RequestTimeoutSeconds,
-		&i.MaxBodyBytes,
+		&i.ScraperSource.ID,
+		&i.ScraperSource.Name,
+		&i.ScraperSource.Url,
+		&i.ScraperSource.Tier,
+		&i.ScraperSource.Schedule,
+		&i.ScraperSource.TrustLevel,
+		&i.ScraperSource.License,
+		&i.ScraperSource.Enabled,
+		&i.ScraperSource.MaxPages,
+		&i.ScraperSource.Selectors,
+		&i.ScraperSource.Notes,
+		&i.ScraperSource.LastScrapedAt,
+		&i.ScraperSource.CreatedAt,
+		&i.ScraperSource.UpdatedAt,
+		&i.ScraperSource.HeadlessWaitSelector,
+		&i.ScraperSource.HeadlessWaitTimeoutMs,
+		&i.ScraperSource.HeadlessPaginationBtn,
+		&i.ScraperSource.HeadlessHeaders,
+		&i.ScraperSource.HeadlessRateLimitMs,
+		&i.ScraperSource.GraphqlConfig,
+		&i.ScraperSource.RestConfig,
+		&i.ScraperSource.SitemapConfig,
+		&i.ScraperSource.Urls,
+		&i.ScraperSource.EventUrlPattern,
+		&i.ScraperSource.SkipMultiSessionCheck,
+		&i.ScraperSource.MultiSessionDurationThreshold,
+		&i.ScraperSource.FollowEventUrls,
+		&i.ScraperSource.Timezone,
+		&i.ScraperSource.HeadlessWaitNetworkIdle,
+		&i.ScraperSource.HeadlessUndetected,
+		&i.ScraperSource.HeadlessIframe,
+		&i.ScraperSource.HeadlessIntercept,
+		&i.ScraperSource.DefaultLocation,
+		&i.ScraperSource.ExtractionMethod,
+		&i.ScraperSource.InsecureSkipVerify,
+		&i.ScraperSource.RequestTimeoutSeconds,
+		&i.ScraperSource.MaxBodyBytes,
+		&i.ScraperSource.EventDomain,
 	)
 	return i, err
 }

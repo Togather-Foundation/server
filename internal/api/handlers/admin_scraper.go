@@ -74,14 +74,14 @@ type scraperSourceResponse struct {
 // toScraperSourceResponse converts a ListScraperSourcesWithLatestRunRow to a scraperSourceResponse.
 func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) scraperSourceResponse {
 	resp := scraperSourceResponse{
-		ID:                  row.ID,
-		Name:                row.Name,
-		URL:                 row.Url,
-		Tier:                row.Tier,
-		Schedule:            row.Schedule,
-		License:             row.License,
-		Enabled:             row.Enabled,
-		ExtractionMethod:    row.ExtractionMethod,
+		ID:                  row.ScraperSource.ID,
+		Name:                row.ScraperSource.Name,
+		URL:                 row.ScraperSource.Url,
+		Tier:                row.ScraperSource.Tier,
+		Schedule:            row.ScraperSource.Schedule,
+		License:             row.ScraperSource.License,
+		Enabled:             row.ScraperSource.Enabled,
+		ExtractionMethod:    row.ScraperSource.ExtractionMethod,
 		LastRunStatus:       row.LastRunStatus,
 		LastRunEventsFound:  row.LastRunEventsFound,
 		LastRunEventsNew:    row.LastRunEventsNew,
@@ -105,14 +105,14 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 // scraperSourceFromSetEnabled converts a postgres.SetScraperSourceEnabledRow to a scraperSourceResponse.
 func scraperSourceFromSetEnabled(s postgres.SetScraperSourceEnabledRow) scraperSourceResponse {
 	return scraperSourceResponse{
-		ID:               s.ID,
-		Name:             s.Name,
-		URL:              s.Url,
-		Tier:             s.Tier,
-		Schedule:         s.Schedule,
-		License:          s.License,
-		Enabled:          s.Enabled,
-		ExtractionMethod: s.ExtractionMethod,
+		ID:               s.ScraperSource.ID,
+		Name:             s.ScraperSource.Name,
+		URL:              s.ScraperSource.Url,
+		Tier:             s.ScraperSource.Tier,
+		Schedule:         s.ScraperSource.Schedule,
+		License:          s.ScraperSource.License,
+		Enabled:          s.ScraperSource.Enabled,
+		ExtractionMethod: s.ScraperSource.ExtractionMethod,
 	}
 }
 
@@ -226,7 +226,7 @@ func (h *AdminScraperHandler) TriggerScrape(w http.ResponseWriter, r *http.Reque
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to look up scraper source", fmt.Errorf("get scraper source name=%s: %w", name, err), h.Env)
 		return
 	}
-	if !src.Enabled {
+	if !src.ScraperSource.Enabled {
 		problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Scraper source is disabled", nil, h.Env)
 		return
 	}

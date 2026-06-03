@@ -167,13 +167,15 @@ func TestAdminScraperHandler_ListSources(t *testing.T) {
 
 	makeRow := func(name string) postgres.ListScraperSourcesWithLatestRunRow {
 		return postgres.ListScraperSourcesWithLatestRunRow{
-			ID:                  1,
-			Name:                name,
-			Url:                 "https://example.com",
-			Tier:                1,
-			Enabled:             true,
-			Schedule:            "daily",
-			License:             "CC0",
+			ScraperSource: postgres.ScraperSource{
+				ID:       1,
+				Name:     name,
+				Url:      "https://example.com",
+				Tier:     1,
+				Enabled:  true,
+				Schedule: "daily",
+				License:  "CC0",
+			},
 			LastRunStatus:       "completed",
 			LastRunStartedAt:    nowTs(),
 			LastRunCompletedAt:  nowTs(),
@@ -358,7 +360,7 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 		{
 			name:         "returns 503 when RiverClient is nil (not configured)",
 			sourceName:   "my-source",
-			getSourceRow: postgres.GetScraperSourceByNameRow{Enabled: true},
+			getSourceRow: postgres.GetScraperSourceByNameRow{ScraperSource: postgres.ScraperSource{Enabled: true}},
 			wantStatus:   http.StatusServiceUnavailable,
 		},
 		{
@@ -370,7 +372,7 @@ func TestAdminScraperHandler_TriggerScrape(t *testing.T) {
 		{
 			name:         "returns 409 when source is disabled",
 			sourceName:   "disabled-source",
-			getSourceRow: postgres.GetScraperSourceByNameRow{Enabled: false},
+			getSourceRow: postgres.GetScraperSourceByNameRow{ScraperSource: postgres.ScraperSource{Enabled: false}},
 			wantStatus:   http.StatusConflict,
 		},
 	}
@@ -418,7 +420,7 @@ func TestAdminScraperHandler_TriggerScrape_WithRiver(t *testing.T) {
 		t.Parallel()
 
 		inserter := &fakeRiverInserter{}
-		q := &fakeScraperQueries{getSourceRow: postgres.GetScraperSourceByNameRow{Enabled: true}}
+		q := &fakeScraperQueries{getSourceRow: postgres.GetScraperSourceByNameRow{ScraperSource: postgres.ScraperSource{Enabled: true}}}
 		h := &AdminScraperHandler{
 			Queries:     q,
 			Logger:      zerolog.Nop(),
@@ -439,7 +441,7 @@ func TestAdminScraperHandler_TriggerScrape_WithRiver(t *testing.T) {
 		t.Parallel()
 
 		inserter := &fakeRiverInserter{err: errStubNotImplemented}
-		q := &fakeScraperQueries{getSourceRow: postgres.GetScraperSourceByNameRow{Enabled: true}}
+		q := &fakeScraperQueries{getSourceRow: postgres.GetScraperSourceByNameRow{ScraperSource: postgres.ScraperSource{Enabled: true}}}
 		h := &AdminScraperHandler{
 			Queries:     q,
 			Logger:      zerolog.Nop(),
@@ -476,7 +478,7 @@ func TestAdminScraperHandler_SetSourceEnabled(t *testing.T) {
 			name:          "enables a disabled source",
 			sourceName:    "my-source",
 			body:          map[string]any{"enabled": true},
-			setEnabledRow: postgres.SetScraperSourceEnabledRow{ID: 1, Name: "my-source", Enabled: true, Url: "https://example.com", License: "CC0", Schedule: "daily", Tier: 1},
+			setEnabledRow: postgres.SetScraperSourceEnabledRow{ScraperSource: postgres.ScraperSource{ID: 1, Name: "my-source", Enabled: true, Url: "https://example.com", License: "CC0", Schedule: "daily", Tier: 1}},
 			wantStatus:    http.StatusOK,
 			wantEnabled:   true,
 		},
@@ -484,7 +486,7 @@ func TestAdminScraperHandler_SetSourceEnabled(t *testing.T) {
 			name:          "disables an enabled source",
 			sourceName:    "my-source",
 			body:          map[string]any{"enabled": false},
-			setEnabledRow: postgres.SetScraperSourceEnabledRow{ID: 1, Name: "my-source", Enabled: false, Url: "https://example.com", License: "CC0", Schedule: "daily", Tier: 1},
+			setEnabledRow: postgres.SetScraperSourceEnabledRow{ScraperSource: postgres.ScraperSource{ID: 1, Name: "my-source", Enabled: false, Url: "https://example.com", License: "CC0", Schedule: "daily", Tier: 1}},
 			wantStatus:    http.StatusOK,
 			wantEnabled:   false,
 		},

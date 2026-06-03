@@ -23,9 +23,9 @@ func TestFilterEligibleSources(t *testing.T) {
 		t.Parallel()
 
 		sources := []postgres.ListScraperSourcesWithLatestRunRow{
-			{ID: 1, Name: "daily-src", Schedule: "daily", Enabled: true},
-			{ID: 2, Name: "weekly-src", Schedule: "weekly", Enabled: true},
-			{ID: 3, Name: "manual-src", Schedule: "manual", Enabled: true},
+			{ScraperSource: postgres.ScraperSource{ID: 1, Name: "daily-src", Schedule: "daily", Enabled: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 2, Name: "weekly-src", Schedule: "weekly", Enabled: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 3, Name: "manual-src", Schedule: "manual", Enabled: true}},
 		}
 
 		eligible := filterEligibleSources(context.Background(), logger, sources, false)
@@ -40,10 +40,10 @@ func TestFilterEligibleSources(t *testing.T) {
 
 		now := time.Now()
 		sources := []postgres.ListScraperSourcesWithLatestRunRow{
-			{ID: 1, Name: "fresh-daily", Schedule: "daily", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
-			{ID: 2, Name: "stale-daily", Schedule: "daily", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-48 * time.Hour), Valid: true}},
-			{ID: 3, Name: "fresh-weekly", Schedule: "weekly", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
-			{ID: 4, Name: "stale-weekly", Schedule: "weekly", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-8 * 24 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 1, Name: "fresh-daily", Schedule: "daily", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 2, Name: "stale-daily", Schedule: "daily", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-48 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 3, Name: "fresh-weekly", Schedule: "weekly", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 4, Name: "stale-weekly", Schedule: "weekly", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-8 * 24 * time.Hour), Valid: true}},
 		}
 
 		eligible := filterEligibleSources(context.Background(), logger, sources, true)
@@ -58,8 +58,8 @@ func TestFilterEligibleSources(t *testing.T) {
 
 		now := time.Now()
 		sources := []postgres.ListScraperSourcesWithLatestRunRow{
-			{ID: 1, Name: "almost-fresh", Schedule: "daily", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-23 * time.Hour), Valid: true}},
-			{ID: 2, Name: "just-stale", Schedule: "daily", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-25 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 1, Name: "almost-fresh", Schedule: "daily", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-23 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 2, Name: "just-stale", Schedule: "daily", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-25 * time.Hour), Valid: true}},
 		}
 
 		eligible := filterEligibleSources(context.Background(), logger, sources, true)
@@ -73,8 +73,8 @@ func TestFilterEligibleSources(t *testing.T) {
 
 		now := time.Now()
 		sources := []postgres.ListScraperSourcesWithLatestRunRow{
-			{ID: 1, Name: "almost-fresh", Schedule: "weekly", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-6 * 24 * time.Hour), Valid: true}},
-			{ID: 2, Name: "just-stale", Schedule: "weekly", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-8 * 24 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 1, Name: "almost-fresh", Schedule: "weekly", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-6 * 24 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 2, Name: "just-stale", Schedule: "weekly", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-8 * 24 * time.Hour), Valid: true}},
 		}
 
 		eligible := filterEligibleSources(context.Background(), logger, sources, true)
@@ -88,8 +88,8 @@ func TestFilterEligibleSources(t *testing.T) {
 
 		now := time.Now()
 		sources := []postgres.ListScraperSourcesWithLatestRunRow{
-			{ID: 1, Name: "failed-recent", Schedule: "daily", Enabled: true, LastRunStatus: "failed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
-			{ID: 2, Name: "running-recent", Schedule: "daily", Enabled: true, LastRunStatus: "running", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 1, Name: "failed-recent", Schedule: "daily", Enabled: true}, LastRunStatus: "failed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
+			{ScraperSource: postgres.ScraperSource{ID: 2, Name: "running-recent", Schedule: "daily", Enabled: true}, LastRunStatus: "running", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
 		}
 
 		eligible := filterEligibleSources(context.Background(), logger, sources, true)
@@ -128,9 +128,9 @@ func TestScrapeOrchestratorWorker_EnqueuesFirstSourceWithChainMetadata(t *testin
 	t.Parallel()
 
 	sources := []postgres.ListScraperSourcesWithLatestRunRow{
-		{ID: 1, Name: "source-a", Schedule: "daily", Enabled: true},
-		{ID: 2, Name: "source-b", Schedule: "daily", Enabled: true},
-		{ID: 3, Name: "source-c", Schedule: "weekly", Enabled: true},
+		{ScraperSource: postgres.ScraperSource{ID: 1, Name: "source-a", Schedule: "daily", Enabled: true}},
+		{ScraperSource: postgres.ScraperSource{ID: 2, Name: "source-b", Schedule: "daily", Enabled: true}},
+		{ScraperSource: postgres.ScraperSource{ID: 3, Name: "source-c", Schedule: "weekly", Enabled: true}},
 	}
 
 	// We can't easily test the full Work() method without a River client in context,
@@ -154,10 +154,10 @@ func TestScrapeOrchestratorWorker_SkipUpToDateFiltersCorrectly(t *testing.T) {
 
 	now := time.Now()
 	sources := []postgres.ListScraperSourcesWithLatestRunRow{
-		{ID: 1, Name: "fresh-daily", Schedule: "daily", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
-		{ID: 2, Name: "stale-daily", Schedule: "daily", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-48 * time.Hour), Valid: true}},
-		{ID: 3, Name: "fresh-weekly", Schedule: "weekly", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
-		{ID: 4, Name: "stale-weekly", Schedule: "weekly", Enabled: true, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-8 * 24 * time.Hour), Valid: true}},
+		{ScraperSource: postgres.ScraperSource{ID: 1, Name: "fresh-daily", Schedule: "daily", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
+		{ScraperSource: postgres.ScraperSource{ID: 2, Name: "stale-daily", Schedule: "daily", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-48 * time.Hour), Valid: true}},
+		{ScraperSource: postgres.ScraperSource{ID: 3, Name: "fresh-weekly", Schedule: "weekly", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-1 * time.Hour), Valid: true}},
+		{ScraperSource: postgres.ScraperSource{ID: 4, Name: "stale-weekly", Schedule: "weekly", Enabled: true}, LastRunStatus: "completed", LastRunCompletedAt: pgtype.Timestamptz{Time: now.Add(-8 * 24 * time.Hour), Valid: true}},
 	}
 
 	eligible := filterEligibleSources(context.Background(), slog.Default(), sources, true)
@@ -218,6 +218,6 @@ type mockSourcesReader struct{}
 
 func (m *mockSourcesReader) ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]postgres.ListScraperSourcesWithLatestRunRow, error) {
 	return []postgres.ListScraperSourcesWithLatestRunRow{
-		{ID: 1, Name: "source-a", Schedule: "daily", Enabled: true},
+		{ScraperSource: postgres.ScraperSource{ID: 1, Name: "source-a", Schedule: "daily", Enabled: true}},
 	}, nil
 }

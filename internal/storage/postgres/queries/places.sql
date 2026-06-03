@@ -1,25 +1,7 @@
 -- SQLc queries for places domain.
 
 -- name: ListPlacesByCreatedAt :many
-SELECT p.id,
-       p.ulid,
-       p.name,
-       p.description,
-       p.street_address,
-       p.address_locality,
-       p.address_region,
-       p.postal_code,
-       p.address_country,
-       p.latitude,
-       p.longitude,
-       p.telephone,
-       p.email,
-       p.url,
-       p.maximum_attendee_capacity,
-       p.venue_type,
-       p.federation_uri,
-       p.created_at,
-       p.updated_at
+SELECT sqlc.embed(p)
   FROM places p
  WHERE p.deleted_at IS NULL
    AND (sqlc.narg('city')::text IS NULL OR p.address_locality ILIKE '%' || sqlc.narg('city') || '%')
@@ -33,25 +15,7 @@ SELECT p.id,
  LIMIT sqlc.arg('limit');
 
 -- name: ListPlacesByCreatedAtDesc :many
-SELECT p.id,
-       p.ulid,
-       p.name,
-       p.description,
-       p.street_address,
-       p.address_locality,
-       p.address_region,
-       p.postal_code,
-       p.address_country,
-       p.latitude,
-       p.longitude,
-       p.telephone,
-       p.email,
-       p.url,
-       p.maximum_attendee_capacity,
-       p.venue_type,
-       p.federation_uri,
-       p.created_at,
-       p.updated_at
+SELECT sqlc.embed(p)
   FROM places p
  WHERE p.deleted_at IS NULL
    AND (sqlc.narg('city')::text IS NULL OR p.address_locality ILIKE '%' || sqlc.narg('city') || '%')
@@ -65,25 +29,7 @@ SELECT p.id,
  LIMIT sqlc.arg('limit');
 
 -- name: ListPlacesByName :many
-SELECT p.id,
-       p.ulid,
-       p.name,
-       p.description,
-       p.street_address,
-       p.address_locality,
-       p.address_region,
-       p.postal_code,
-       p.address_country,
-       p.latitude,
-       p.longitude,
-       p.telephone,
-       p.email,
-       p.url,
-       p.maximum_attendee_capacity,
-       p.venue_type,
-       p.federation_uri,
-       p.created_at,
-       p.updated_at
+SELECT sqlc.embed(p)
   FROM places p
  WHERE p.deleted_at IS NULL
    AND (sqlc.narg('city')::text IS NULL OR p.address_locality ILIKE '%' || sqlc.narg('city') || '%')
@@ -97,25 +43,7 @@ SELECT p.id,
  LIMIT sqlc.arg('limit');
 
 -- name: ListPlacesByNameDesc :many
-SELECT p.id,
-       p.ulid,
-       p.name,
-       p.description,
-       p.street_address,
-       p.address_locality,
-       p.address_region,
-       p.postal_code,
-       p.address_country,
-       p.latitude,
-       p.longitude,
-       p.telephone,
-       p.email,
-       p.url,
-       p.maximum_attendee_capacity,
-       p.venue_type,
-       p.federation_uri,
-       p.created_at,
-       p.updated_at
+SELECT sqlc.embed(p)
   FROM places p
  WHERE p.deleted_at IS NULL
    AND (sqlc.narg('city')::text IS NULL OR p.address_locality ILIKE '%' || sqlc.narg('city') || '%')
@@ -129,27 +57,7 @@ SELECT p.id,
  LIMIT sqlc.arg('limit');
 
 -- name: GetPlaceByULID :one
-SELECT p.id,
-       p.ulid,
-       p.name,
-       p.description,
-       p.street_address,
-       p.address_locality,
-       p.address_region,
-       p.postal_code,
-       p.address_country,
-       p.latitude,
-       p.longitude,
-       p.telephone,
-       p.email,
-       p.url,
-       p.maximum_attendee_capacity,
-       p.venue_type,
-       p.federation_uri,
-       p.deleted_at,
-       p.deletion_reason,
-       p.created_at,
-       p.updated_at
+SELECT sqlc.embed(p)
   FROM places p
  WHERE p.ulid = $1;
 
@@ -194,7 +102,7 @@ UPDATE places
        updated_at = now()
  WHERE ulid = $1
    AND deleted_at IS NULL
-RETURNING id, ulid, name, description, street_address, address_locality, address_region, postal_code, address_country, latitude, longitude, telephone, email, url, maximum_attendee_capacity, venue_type, federation_uri, created_at, updated_at;
+RETURNING sqlc.embed(places);
 
 -- name: CountAllPlaces :one
 SELECT COUNT(*) FROM places WHERE deleted_at IS NULL;

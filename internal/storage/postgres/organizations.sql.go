@@ -49,77 +49,44 @@ func (q *Queries) CreateOrganizationTombstone(ctx context.Context, arg CreateOrg
 }
 
 const getOrganizationByULID = `-- name: GetOrganizationByULID :one
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.deleted_at,
-       o.deletion_reason,
-       o.created_at,
-       o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
   FROM organizations o
  WHERE o.ulid = $1
 `
 
 type GetOrganizationByULIDRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	Ulid             string             `json:"ulid"`
-	Name             string             `json:"name"`
-	LegalName        pgtype.Text        `json:"legal_name"`
-	Description      pgtype.Text        `json:"description"`
-	Email            pgtype.Text        `json:"email"`
-	Telephone        pgtype.Text        `json:"telephone"`
-	Url              pgtype.Text        `json:"url"`
-	AddressLocality  pgtype.Text        `json:"address_locality"`
-	AddressRegion    pgtype.Text        `json:"address_region"`
-	AddressCountry   pgtype.Text        `json:"address_country"`
-	StreetAddress    pgtype.Text        `json:"street_address"`
-	PostalCode       pgtype.Text        `json:"postal_code"`
-	OrganizationType pgtype.Text        `json:"organization_type"`
-	FederationUri    pgtype.Text        `json:"federation_uri"`
-	AlternateName    pgtype.Text        `json:"alternate_name"`
-	DeletedAt        pgtype.Timestamptz `json:"deleted_at"`
-	DeletionReason   pgtype.Text        `json:"deletion_reason"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Organization Organization `json:"organization"`
 }
 
 func (q *Queries) GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error) {
 	row := q.db.QueryRow(ctx, getOrganizationByULID, ulid)
 	var i GetOrganizationByULIDRow
 	err := row.Scan(
-		&i.ID,
-		&i.Ulid,
-		&i.Name,
-		&i.LegalName,
-		&i.Description,
-		&i.Email,
-		&i.Telephone,
-		&i.Url,
-		&i.AddressLocality,
-		&i.AddressRegion,
-		&i.AddressCountry,
-		&i.StreetAddress,
-		&i.PostalCode,
-		&i.OrganizationType,
-		&i.FederationUri,
-		&i.AlternateName,
-		&i.DeletedAt,
-		&i.DeletionReason,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.Organization.ID,
+		&i.Organization.Ulid,
+		&i.Organization.Name,
+		&i.Organization.LegalName,
+		&i.Organization.AlternateName,
+		&i.Organization.Description,
+		&i.Organization.Email,
+		&i.Organization.Telephone,
+		&i.Organization.Url,
+		&i.Organization.StreetAddress,
+		&i.Organization.AddressLocality,
+		&i.Organization.AddressRegion,
+		&i.Organization.PostalCode,
+		&i.Organization.AddressCountry,
+		&i.Organization.OrganizationType,
+		&i.Organization.FoundingDate,
+		&i.Organization.OriginNodeID,
+		&i.Organization.Confidence,
+		&i.Organization.CreatedAt,
+		&i.Organization.UpdatedAt,
+		&i.Organization.DeletedAt,
+		&i.Organization.DeletionReason,
+		&i.Organization.FederationUri,
+		&i.Organization.NormalizedName,
+		&i.Organization.MergedIntoID,
 	)
 	return i, err
 }
@@ -156,24 +123,7 @@ func (q *Queries) GetOrganizationTombstoneByULID(ctx context.Context, ulid strin
 
 const listOrganizationsByCreatedAt = `-- name: ListOrganizationsByCreatedAt :many
 
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.created_at,
-       o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
@@ -196,24 +146,7 @@ type ListOrganizationsByCreatedAtParams struct {
 }
 
 type ListOrganizationsByCreatedAtRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	Ulid             string             `json:"ulid"`
-	Name             string             `json:"name"`
-	LegalName        pgtype.Text        `json:"legal_name"`
-	Description      pgtype.Text        `json:"description"`
-	Email            pgtype.Text        `json:"email"`
-	Telephone        pgtype.Text        `json:"telephone"`
-	Url              pgtype.Text        `json:"url"`
-	AddressLocality  pgtype.Text        `json:"address_locality"`
-	AddressRegion    pgtype.Text        `json:"address_region"`
-	AddressCountry   pgtype.Text        `json:"address_country"`
-	StreetAddress    pgtype.Text        `json:"street_address"`
-	PostalCode       pgtype.Text        `json:"postal_code"`
-	OrganizationType pgtype.Text        `json:"organization_type"`
-	FederationUri    pgtype.Text        `json:"federation_uri"`
-	AlternateName    pgtype.Text        `json:"alternate_name"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Organization Organization `json:"organization"`
 }
 
 // SQLc queries for organizations domain.
@@ -233,24 +166,31 @@ func (q *Queries) ListOrganizationsByCreatedAt(ctx context.Context, arg ListOrga
 	for rows.Next() {
 		var i ListOrganizationsByCreatedAtRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Ulid,
-			&i.Name,
-			&i.LegalName,
-			&i.Description,
-			&i.Email,
-			&i.Telephone,
-			&i.Url,
-			&i.AddressLocality,
-			&i.AddressRegion,
-			&i.AddressCountry,
-			&i.StreetAddress,
-			&i.PostalCode,
-			&i.OrganizationType,
-			&i.FederationUri,
-			&i.AlternateName,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Organization.ID,
+			&i.Organization.Ulid,
+			&i.Organization.Name,
+			&i.Organization.LegalName,
+			&i.Organization.AlternateName,
+			&i.Organization.Description,
+			&i.Organization.Email,
+			&i.Organization.Telephone,
+			&i.Organization.Url,
+			&i.Organization.StreetAddress,
+			&i.Organization.AddressLocality,
+			&i.Organization.AddressRegion,
+			&i.Organization.PostalCode,
+			&i.Organization.AddressCountry,
+			&i.Organization.OrganizationType,
+			&i.Organization.FoundingDate,
+			&i.Organization.OriginNodeID,
+			&i.Organization.Confidence,
+			&i.Organization.CreatedAt,
+			&i.Organization.UpdatedAt,
+			&i.Organization.DeletedAt,
+			&i.Organization.DeletionReason,
+			&i.Organization.FederationUri,
+			&i.Organization.NormalizedName,
+			&i.Organization.MergedIntoID,
 		); err != nil {
 			return nil, err
 		}
@@ -263,24 +203,7 @@ func (q *Queries) ListOrganizationsByCreatedAt(ctx context.Context, arg ListOrga
 }
 
 const listOrganizationsByCreatedAtDesc = `-- name: ListOrganizationsByCreatedAtDesc :many
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.created_at,
-       o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
@@ -303,24 +226,7 @@ type ListOrganizationsByCreatedAtDescParams struct {
 }
 
 type ListOrganizationsByCreatedAtDescRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	Ulid             string             `json:"ulid"`
-	Name             string             `json:"name"`
-	LegalName        pgtype.Text        `json:"legal_name"`
-	Description      pgtype.Text        `json:"description"`
-	Email            pgtype.Text        `json:"email"`
-	Telephone        pgtype.Text        `json:"telephone"`
-	Url              pgtype.Text        `json:"url"`
-	AddressLocality  pgtype.Text        `json:"address_locality"`
-	AddressRegion    pgtype.Text        `json:"address_region"`
-	AddressCountry   pgtype.Text        `json:"address_country"`
-	StreetAddress    pgtype.Text        `json:"street_address"`
-	PostalCode       pgtype.Text        `json:"postal_code"`
-	OrganizationType pgtype.Text        `json:"organization_type"`
-	FederationUri    pgtype.Text        `json:"federation_uri"`
-	AlternateName    pgtype.Text        `json:"alternate_name"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Organization Organization `json:"organization"`
 }
 
 func (q *Queries) ListOrganizationsByCreatedAtDesc(ctx context.Context, arg ListOrganizationsByCreatedAtDescParams) ([]ListOrganizationsByCreatedAtDescRow, error) {
@@ -339,24 +245,31 @@ func (q *Queries) ListOrganizationsByCreatedAtDesc(ctx context.Context, arg List
 	for rows.Next() {
 		var i ListOrganizationsByCreatedAtDescRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Ulid,
-			&i.Name,
-			&i.LegalName,
-			&i.Description,
-			&i.Email,
-			&i.Telephone,
-			&i.Url,
-			&i.AddressLocality,
-			&i.AddressRegion,
-			&i.AddressCountry,
-			&i.StreetAddress,
-			&i.PostalCode,
-			&i.OrganizationType,
-			&i.FederationUri,
-			&i.AlternateName,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Organization.ID,
+			&i.Organization.Ulid,
+			&i.Organization.Name,
+			&i.Organization.LegalName,
+			&i.Organization.AlternateName,
+			&i.Organization.Description,
+			&i.Organization.Email,
+			&i.Organization.Telephone,
+			&i.Organization.Url,
+			&i.Organization.StreetAddress,
+			&i.Organization.AddressLocality,
+			&i.Organization.AddressRegion,
+			&i.Organization.PostalCode,
+			&i.Organization.AddressCountry,
+			&i.Organization.OrganizationType,
+			&i.Organization.FoundingDate,
+			&i.Organization.OriginNodeID,
+			&i.Organization.Confidence,
+			&i.Organization.CreatedAt,
+			&i.Organization.UpdatedAt,
+			&i.Organization.DeletedAt,
+			&i.Organization.DeletionReason,
+			&i.Organization.FederationUri,
+			&i.Organization.NormalizedName,
+			&i.Organization.MergedIntoID,
 		); err != nil {
 			return nil, err
 		}
@@ -369,24 +282,7 @@ func (q *Queries) ListOrganizationsByCreatedAtDesc(ctx context.Context, arg List
 }
 
 const listOrganizationsByName = `-- name: ListOrganizationsByName :many
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.created_at,
-       o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
@@ -409,24 +305,7 @@ type ListOrganizationsByNameParams struct {
 }
 
 type ListOrganizationsByNameRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	Ulid             string             `json:"ulid"`
-	Name             string             `json:"name"`
-	LegalName        pgtype.Text        `json:"legal_name"`
-	Description      pgtype.Text        `json:"description"`
-	Email            pgtype.Text        `json:"email"`
-	Telephone        pgtype.Text        `json:"telephone"`
-	Url              pgtype.Text        `json:"url"`
-	AddressLocality  pgtype.Text        `json:"address_locality"`
-	AddressRegion    pgtype.Text        `json:"address_region"`
-	AddressCountry   pgtype.Text        `json:"address_country"`
-	StreetAddress    pgtype.Text        `json:"street_address"`
-	PostalCode       pgtype.Text        `json:"postal_code"`
-	OrganizationType pgtype.Text        `json:"organization_type"`
-	FederationUri    pgtype.Text        `json:"federation_uri"`
-	AlternateName    pgtype.Text        `json:"alternate_name"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Organization Organization `json:"organization"`
 }
 
 func (q *Queries) ListOrganizationsByName(ctx context.Context, arg ListOrganizationsByNameParams) ([]ListOrganizationsByNameRow, error) {
@@ -445,24 +324,31 @@ func (q *Queries) ListOrganizationsByName(ctx context.Context, arg ListOrganizat
 	for rows.Next() {
 		var i ListOrganizationsByNameRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Ulid,
-			&i.Name,
-			&i.LegalName,
-			&i.Description,
-			&i.Email,
-			&i.Telephone,
-			&i.Url,
-			&i.AddressLocality,
-			&i.AddressRegion,
-			&i.AddressCountry,
-			&i.StreetAddress,
-			&i.PostalCode,
-			&i.OrganizationType,
-			&i.FederationUri,
-			&i.AlternateName,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Organization.ID,
+			&i.Organization.Ulid,
+			&i.Organization.Name,
+			&i.Organization.LegalName,
+			&i.Organization.AlternateName,
+			&i.Organization.Description,
+			&i.Organization.Email,
+			&i.Organization.Telephone,
+			&i.Organization.Url,
+			&i.Organization.StreetAddress,
+			&i.Organization.AddressLocality,
+			&i.Organization.AddressRegion,
+			&i.Organization.PostalCode,
+			&i.Organization.AddressCountry,
+			&i.Organization.OrganizationType,
+			&i.Organization.FoundingDate,
+			&i.Organization.OriginNodeID,
+			&i.Organization.Confidence,
+			&i.Organization.CreatedAt,
+			&i.Organization.UpdatedAt,
+			&i.Organization.DeletedAt,
+			&i.Organization.DeletionReason,
+			&i.Organization.FederationUri,
+			&i.Organization.NormalizedName,
+			&i.Organization.MergedIntoID,
 		); err != nil {
 			return nil, err
 		}
@@ -475,24 +361,7 @@ func (q *Queries) ListOrganizationsByName(ctx context.Context, arg ListOrganizat
 }
 
 const listOrganizationsByNameDesc = `-- name: ListOrganizationsByNameDesc :many
-SELECT o.id,
-       o.ulid,
-       o.name,
-       o.legal_name,
-       o.description,
-       o.email,
-       o.telephone,
-       o.url,
-       o.address_locality,
-       o.address_region,
-       o.address_country,
-       o.street_address,
-       o.postal_code,
-       o.organization_type,
-       o.federation_uri,
-       o.alternate_name,
-       o.created_at,
-       o.updated_at
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
@@ -515,24 +384,7 @@ type ListOrganizationsByNameDescParams struct {
 }
 
 type ListOrganizationsByNameDescRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	Ulid             string             `json:"ulid"`
-	Name             string             `json:"name"`
-	LegalName        pgtype.Text        `json:"legal_name"`
-	Description      pgtype.Text        `json:"description"`
-	Email            pgtype.Text        `json:"email"`
-	Telephone        pgtype.Text        `json:"telephone"`
-	Url              pgtype.Text        `json:"url"`
-	AddressLocality  pgtype.Text        `json:"address_locality"`
-	AddressRegion    pgtype.Text        `json:"address_region"`
-	AddressCountry   pgtype.Text        `json:"address_country"`
-	StreetAddress    pgtype.Text        `json:"street_address"`
-	PostalCode       pgtype.Text        `json:"postal_code"`
-	OrganizationType pgtype.Text        `json:"organization_type"`
-	FederationUri    pgtype.Text        `json:"federation_uri"`
-	AlternateName    pgtype.Text        `json:"alternate_name"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Organization Organization `json:"organization"`
 }
 
 func (q *Queries) ListOrganizationsByNameDesc(ctx context.Context, arg ListOrganizationsByNameDescParams) ([]ListOrganizationsByNameDescRow, error) {
@@ -551,24 +403,31 @@ func (q *Queries) ListOrganizationsByNameDesc(ctx context.Context, arg ListOrgan
 	for rows.Next() {
 		var i ListOrganizationsByNameDescRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Ulid,
-			&i.Name,
-			&i.LegalName,
-			&i.Description,
-			&i.Email,
-			&i.Telephone,
-			&i.Url,
-			&i.AddressLocality,
-			&i.AddressRegion,
-			&i.AddressCountry,
-			&i.StreetAddress,
-			&i.PostalCode,
-			&i.OrganizationType,
-			&i.FederationUri,
-			&i.AlternateName,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Organization.ID,
+			&i.Organization.Ulid,
+			&i.Organization.Name,
+			&i.Organization.LegalName,
+			&i.Organization.AlternateName,
+			&i.Organization.Description,
+			&i.Organization.Email,
+			&i.Organization.Telephone,
+			&i.Organization.Url,
+			&i.Organization.StreetAddress,
+			&i.Organization.AddressLocality,
+			&i.Organization.AddressRegion,
+			&i.Organization.PostalCode,
+			&i.Organization.AddressCountry,
+			&i.Organization.OrganizationType,
+			&i.Organization.FoundingDate,
+			&i.Organization.OriginNodeID,
+			&i.Organization.Confidence,
+			&i.Organization.CreatedAt,
+			&i.Organization.UpdatedAt,
+			&i.Organization.DeletedAt,
+			&i.Organization.DeletionReason,
+			&i.Organization.FederationUri,
+			&i.Organization.NormalizedName,
+			&i.Organization.MergedIntoID,
 		); err != nil {
 			return nil, err
 		}
@@ -614,7 +473,7 @@ UPDATE organizations
        updated_at = now()
  WHERE ulid = $1
    AND deleted_at IS NULL
-RETURNING id, ulid, name, legal_name, description, email, telephone, url, address_locality, address_region, address_country, street_address, postal_code, organization_type, federation_uri, alternate_name, created_at, updated_at
+RETURNING organizations.id, organizations.ulid, organizations.name, organizations.legal_name, organizations.alternate_name, organizations.description, organizations.email, organizations.telephone, organizations.url, organizations.street_address, organizations.address_locality, organizations.address_region, organizations.postal_code, organizations.address_country, organizations.organization_type, organizations.founding_date, organizations.origin_node_id, organizations.confidence, organizations.created_at, organizations.updated_at, organizations.deleted_at, organizations.deletion_reason, organizations.federation_uri, organizations.normalized_name, organizations.merged_into_id
 `
 
 type UpdateOrganizationParams struct {
@@ -632,24 +491,7 @@ type UpdateOrganizationParams struct {
 }
 
 type UpdateOrganizationRow struct {
-	ID               pgtype.UUID        `json:"id"`
-	Ulid             string             `json:"ulid"`
-	Name             string             `json:"name"`
-	LegalName        pgtype.Text        `json:"legal_name"`
-	Description      pgtype.Text        `json:"description"`
-	Email            pgtype.Text        `json:"email"`
-	Telephone        pgtype.Text        `json:"telephone"`
-	Url              pgtype.Text        `json:"url"`
-	AddressLocality  pgtype.Text        `json:"address_locality"`
-	AddressRegion    pgtype.Text        `json:"address_region"`
-	AddressCountry   pgtype.Text        `json:"address_country"`
-	StreetAddress    pgtype.Text        `json:"street_address"`
-	PostalCode       pgtype.Text        `json:"postal_code"`
-	OrganizationType pgtype.Text        `json:"organization_type"`
-	FederationUri    pgtype.Text        `json:"federation_uri"`
-	AlternateName    pgtype.Text        `json:"alternate_name"`
-	CreatedAt        pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	Organization Organization `json:"organization"`
 }
 
 func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (UpdateOrganizationRow, error) {
@@ -668,24 +510,31 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 	)
 	var i UpdateOrganizationRow
 	err := row.Scan(
-		&i.ID,
-		&i.Ulid,
-		&i.Name,
-		&i.LegalName,
-		&i.Description,
-		&i.Email,
-		&i.Telephone,
-		&i.Url,
-		&i.AddressLocality,
-		&i.AddressRegion,
-		&i.AddressCountry,
-		&i.StreetAddress,
-		&i.PostalCode,
-		&i.OrganizationType,
-		&i.FederationUri,
-		&i.AlternateName,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.Organization.ID,
+		&i.Organization.Ulid,
+		&i.Organization.Name,
+		&i.Organization.LegalName,
+		&i.Organization.AlternateName,
+		&i.Organization.Description,
+		&i.Organization.Email,
+		&i.Organization.Telephone,
+		&i.Organization.Url,
+		&i.Organization.StreetAddress,
+		&i.Organization.AddressLocality,
+		&i.Organization.AddressRegion,
+		&i.Organization.PostalCode,
+		&i.Organization.AddressCountry,
+		&i.Organization.OrganizationType,
+		&i.Organization.FoundingDate,
+		&i.Organization.OriginNodeID,
+		&i.Organization.Confidence,
+		&i.Organization.CreatedAt,
+		&i.Organization.UpdatedAt,
+		&i.Organization.DeletedAt,
+		&i.Organization.DeletionReason,
+		&i.Organization.FederationUri,
+		&i.Organization.NormalizedName,
+		&i.Organization.MergedIntoID,
 	)
 	return i, err
 }
