@@ -29,7 +29,7 @@ type SourceConfig struct {
 	Schedule   string   `yaml:"schedule"          json:"schedule"`
 	TrustLevel int      `yaml:"trust_level"       json:"trust_level"`
 	License    string   `yaml:"license"           json:"license"`
-	// Domain is the default event_domain for events from this source (arts, music, culture, sports, community, education, general). Empty means use the DB default 'arts'.
+	// Domain is the default event_domain for events scraped from this source. Valid values: arts, music, culture, sports, community, education, general. Empty means no override; events fall back to schema.org @type-to-domain mapping (defaulting to 'arts').
 	Domain          string         `yaml:"domain,omitempty"   json:"domain,omitempty"`
 	Enabled         bool           `yaml:"enabled"           json:"enabled"`
 	EventURLPattern string         `yaml:"event_url_pattern" json:"event_url_pattern"`
@@ -669,6 +669,15 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		}
 	default:
 		errs = append(errs, fmt.Sprintf("extraction_method: must be \"\" (default), \"scraper\", or \"ics\", got %q", cfg.ExtractionMethod))
+	}
+
+	if cfg.Domain != "" {
+		switch cfg.Domain {
+		case "arts", "music", "culture", "sports", "community", "education", "general":
+			// valid
+		default:
+			warnings = append(warnings, fmt.Sprintf("source %q has invalid domain %q (valid: arts, music, culture, sports, community, education, general)", cfg.Name, cfg.Domain))
+		}
 	}
 
 	if cfg.MaxPages < 0 {

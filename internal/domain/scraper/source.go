@@ -14,14 +14,15 @@ var ErrNotFound = errors.New("scraper source not found")
 // Source is the domain type for a scraper source configuration stored in the DB.
 // It mirrors the scraper_sources table and maps to/from SourceConfig YAML files.
 type Source struct {
-	ID                            int64
-	Name                          string
-	URL                           string
-	URLs                          []string
-	Tier                          int
-	Schedule                      string
-	TrustLevel                    int
-	License                       string
+	ID         int64
+	Name       string
+	URL        string
+	URLs       []string
+	Tier       int
+	Schedule   string
+	TrustLevel int
+	License    string
+	// Domain default event_domain for events scraped from this source.
 	Domain                        string
 	Enabled                       bool
 	MaxPages                      int
