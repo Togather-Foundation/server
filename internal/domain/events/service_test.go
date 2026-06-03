@@ -513,6 +513,59 @@ func TestParseFilters_MultipleAliasesMultipleWarnings(t *testing.T) {
 	require.Len(t, warnings, 2)
 }
 
+// ─── srv-of0g3: search alias ──────────────────────────────────────────────────
+
+func TestParseFilters_SearchAlias(t *testing.T) {
+	t.Run("search alias alone produces query and warning", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("start_date", "2026-06-01")
+		values.Set("search", "foo")
+
+		filters, _, warnings, err := ParseFilters(values, nil)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", filters.Query)
+		require.Len(t, warnings, 2) // one for start_date, one for search
+		var found bool
+		for _, w := range warnings {
+			if strings.Contains(w, "search") && strings.Contains(w, "q") {
+				found = true
+			}
+		}
+		require.True(t, found, "expected warning about search alias")
+	})
+
+	t.Run("canonical q wins over search alias", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("startDate", "2026-06-01")
+		values.Set("q", "foo")
+		values.Set("search", "bar")
+
+		filters, _, warnings, err := ParseFilters(values, nil)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", filters.Query)
+		for _, w := range warnings {
+			require.NotContains(t, w, "search", "no search warning when canonical q is present")
+		}
+	})
+
+	t.Run("canonical q alone produces no warning", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("startDate", "2026-06-01")
+		values.Set("q", "foo")
+
+		filters, _, warnings, err := ParseFilters(values, nil)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", filters.Query)
+		for _, w := range warnings {
+			require.NotContains(t, w, "search")
+			require.NotContains(t, w, "q")
+		}
+	})
+}
+
 // ─── srv-1uvo0: nil-loc guard coverage ───────────────────────────────────────
 
 // TestParseFilters_NilLocEqualsUTC asserts that passing loc=nil produces the

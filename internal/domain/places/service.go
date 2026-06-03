@@ -9,6 +9,7 @@ import (
 	"time"
 
 	paginationpkg "github.com/Togather-Foundation/server/internal/api/pagination"
+	"github.com/Togather-Foundation/server/internal/domain"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 )
 
@@ -60,9 +61,12 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 	_ = loc // loc reserved for future use; places params are already snake_case
 	filters := Filters{}
 	pagination := Pagination{Limit: 50}
+	var warnings []string
+
+	q := domain.ResolveAlias(values, "q", "search", &warnings)
+	filters.Query = strings.TrimSpace(q)
 
 	filters.City = strings.TrimSpace(values.Get("city"))
-	filters.Query = strings.TrimSpace(values.Get("q"))
 
 	// Parse sort parameter (default: created_at)
 	sort := strings.ToLower(strings.TrimSpace(values.Get("sort")))
@@ -125,7 +129,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 	}
 	pagination.After = after
 
-	return filters, pagination, nil, nil
+	return filters, pagination, warnings, nil
 }
 
 func parseLimit(values url.Values) (int, error) {
