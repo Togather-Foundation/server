@@ -219,19 +219,25 @@ func printTable(out io.Writer, resp *apitypes.AllDiagnosticsResponse) {
 	}
 
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "SOURCE\tTIER\tSTATUS\tEVENTS\tFAILED\tERROR")
+	_, _ = fmt.Fprintln(w, "SOURCE\tTIER\tSTATUS\tEVENTS\tFAILED")
 
 	statusCounts := map[string]int{}
+	type errInfo struct{ name, msg string }
+	var errors []errInfo
+
 	for _, item := range resp.Items {
 		statusCounts[item.Status]++
 
 		tier := fmt.Sprintf("%d", item.Tier)
 		eventsFound := fmt.Sprintf("%d", item.EventsFound)
 		eventsFailed := fmt.Sprintf("%d", item.EventsFailed)
-		errMsg := truncateError(item.ErrorMessage, 60)
 
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			item.SourceName, tier, item.Status, eventsFound, eventsFailed, errMsg)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			item.SourceName, tier, item.Status, eventsFound, eventsFailed)
+
+		if item.ErrorMessage != "" {
+			errors = append(errors, errInfo{item.SourceName, item.ErrorMessage})
+		}
 	}
 
 	_ = w.Flush()
@@ -240,11 +246,12 @@ func printTable(out io.Writer, resp *apitypes.AllDiagnosticsResponse) {
 	for status, count := range statusCounts {
 		_, _ = fmt.Fprintf(out, "%d sources %s\n", count, status)
 	}
-}
 
-func truncateError(msg string, maxLen int) string {
-	if maxLen < 4 || len(msg) <= maxLen {
-		return msg
+	if len(errors) > 0 {
+		_, _ = fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out, "Errors:")
+		for _, e := range errors {
+			_, _ = fmt.Fprintf(out, "  %s: %s\n", e.name, e.msg)
+		}
 	}
-	return msg[:maxLen-3] + "..."
 }

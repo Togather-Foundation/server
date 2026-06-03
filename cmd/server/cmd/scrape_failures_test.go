@@ -82,7 +82,7 @@ func TestScrapeFailuresTable(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "SOURCE") || !strings.Contains(output, "TIER") || !strings.Contains(output, "STATUS") {
+	if !strings.Contains(output, "SOURCE") || !strings.Contains(output, "TIER") || !strings.Contains(output, "STATUS") || !strings.Contains(output, "FAILED") {
 		t.Error("table header missing")
 	}
 	if !strings.Contains(output, "source-a") {
@@ -91,8 +91,15 @@ func TestScrapeFailuresTable(t *testing.T) {
 	if !strings.Contains(output, "source-b") {
 		t.Error("source-b missing from table")
 	}
-	if strings.Contains(output, "a very long error message that should be truncated to approximately sixty characters") {
-		t.Error("long error message was not truncated")
+	if !strings.Contains(output, "Errors:") {
+		t.Error("errors section missing")
+	}
+	if !strings.Contains(output, "source-a: connection timeout after 30 seconds") {
+		t.Error("full error for source-a missing from errors section")
+	}
+	// The long error should appear in full (not truncated) in the errors section
+	if !strings.Contains(output, "source-b: a very long error message that should be truncated to approximately sixty characters in the table output") {
+		t.Error("full error for source-b missing from errors section")
 	}
 	if !strings.Contains(output, "2 sources error") {
 		t.Errorf("summary line missing or wrong, got:\n%s", output)
@@ -547,29 +554,6 @@ func restoreEnv(key, value string) {
 		_ = os.Setenv(key, value)
 	} else {
 		_ = os.Unsetenv(key)
-	}
-}
-
-func TestTruncateError(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		maxLen   int
-		expected string
-	}{
-		{"short", "hello", 10, "hello"},
-		{"exact", "1234567890", 10, "1234567890"},
-		{"long", "this is a very long error message that exceeds sixty characters", 60, "this is a very long error message that exceeds sixty char..."},
-		{"empty", "", 10, ""},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := truncateError(tt.input, tt.maxLen)
-			if result != tt.expected {
-				t.Errorf("expected %q (len=%d), got %q (len=%d)", tt.expected, len(tt.expected), result, len(result))
-			}
-		})
 	}
 }
 
