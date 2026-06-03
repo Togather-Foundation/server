@@ -22,6 +22,7 @@ type Source struct {
 	Schedule                      string
 	TrustLevel                    int
 	License                       string
+	Domain                        string
 	Enabled                       bool
 	MaxPages                      int
 	Selectors                     []byte // JSONB: encoded SelectorConfig; nil for Tier 0
@@ -69,6 +70,7 @@ type UpsertParams struct {
 	Schedule                      string
 	TrustLevel                    int
 	License                       string
+	Domain                        string
 	Enabled                       bool
 	MaxPages                      int
 	Selectors                     []byte

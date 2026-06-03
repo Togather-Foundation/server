@@ -102,6 +102,11 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		}
 	}
 
+	// Apply per-source default event_domain if none was set from JSON-LD @type.
+	if evt.EventDomain == "" && source.Domain != "" {
+		evt.EventDomain = source.Domain
+	}
+
 	return evt, nil
 }
 
@@ -215,7 +220,7 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig, now time.Time) (events
 	startDate, endDate := normalizeStartDate(raw, source.GetTimezone(), now)
 
 	if startDate == "" {
-		return events.EventInput{}, fmt.Errorf("raw event has no startDate")
+		return events.EventInput{}, fmt.Errorf("raw event has no startDate: %q", raw.StartDate)
 	}
 
 	multiSessionThreshold, err := parseMultiSessionThreshold(source.MultiSessionDurationThreshold)
@@ -249,6 +254,7 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig, now time.Time) (events
 			Name:    source.Name,
 			License: source.License,
 		},
+		EventDomain: source.Domain,
 	}, nil
 }
 
@@ -341,6 +347,7 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 			Name:    source.Name,
 			License: source.License,
 		},
+		EventDomain: source.Domain,
 	}
 
 	return input, nil

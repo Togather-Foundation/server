@@ -75,6 +75,12 @@ trust_level: 7
 # If unknown, omit this field (defaults to empty / unset).
 license: "CC0-1.0"
 
+# domain: Default event_domain for events from this source (default: unset, DB default 'arts').
+# Valid values: arts, music, culture, sports, community, education, general.
+# Setting this ensures all events from this source get classified consistently.
+# When empty, the event's schema.org @type-to-domain mapping is used, falling back to 'arts'.
+# domain: arts
+
 # enabled: Set to false to temporarily disable without deleting the file.
 enabled: true
 

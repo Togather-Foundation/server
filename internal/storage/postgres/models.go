@@ -514,6 +514,7 @@ type ScraperSource struct {
 	InsecureSkipVerify            bool               `json:"insecure_skip_verify"`
 	RequestTimeoutSeconds         int32              `json:"request_timeout_seconds"`
 	MaxBodyBytes                  int64              `json:"max_body_bytes"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 }
 
 type ScraperSubmission struct {

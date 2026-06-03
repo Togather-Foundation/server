@@ -23,12 +23,14 @@ type SourceConfig struct {
 	// set, URL is not validated and not used for fetching — GetURLs() returns
 	// URLs instead, and URL is stored only as human-readable metadata (e.g. in
 	// scraper_run records). See also: ValidateConfig for the url-skip behaviour.
-	URL             string         `yaml:"url"               json:"url"`
-	URLs            []string       `yaml:"urls,omitempty"    json:"urls,omitempty"`
-	Tier            int            `yaml:"tier"              json:"tier"`
-	Schedule        string         `yaml:"schedule"          json:"schedule"`
-	TrustLevel      int            `yaml:"trust_level"       json:"trust_level"`
-	License         string         `yaml:"license"           json:"license"`
+	URL        string   `yaml:"url"               json:"url"`
+	URLs       []string `yaml:"urls,omitempty"    json:"urls,omitempty"`
+	Tier       int      `yaml:"tier"              json:"tier"`
+	Schedule   string   `yaml:"schedule"          json:"schedule"`
+	TrustLevel int      `yaml:"trust_level"       json:"trust_level"`
+	License    string   `yaml:"license"           json:"license"`
+	// Domain is the default event_domain for events from this source (arts, music, culture, sports, community, education, general). Empty means use the DB default 'arts'.
+	Domain          string         `yaml:"domain,omitempty"   json:"domain,omitempty"`
 	Enabled         bool           `yaml:"enabled"           json:"enabled"`
 	EventURLPattern string         `yaml:"event_url_pattern" json:"event_url_pattern"`
 	MaxPages        int            `yaml:"max_pages"         json:"max_pages"`

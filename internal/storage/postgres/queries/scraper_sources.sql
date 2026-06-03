@@ -3,7 +3,7 @@
 -- name: UpsertScraperSource :one
 -- Insert or update a scraper source by name (used by 'server scrape sync').
 INSERT INTO scraper_sources (
-  name, url, urls, tier, schedule, trust_level, license, enabled,
+  name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
   max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
   multi_session_duration_threshold, follow_event_urls, timezone,
   last_scraped_at,
@@ -27,6 +27,7 @@ INSERT INTO scraper_sources (
   sqlc.arg('schedule'),
   sqlc.arg('trust_level'),
   sqlc.arg('license'),
+  sqlc.arg('event_domain'),
   sqlc.arg('enabled'),
   sqlc.arg('max_pages'),
   sqlc.arg('selectors'),
@@ -63,6 +64,7 @@ ON CONFLICT (name) DO UPDATE SET
   schedule                 = EXCLUDED.schedule,
   trust_level              = EXCLUDED.trust_level,
   license                  = EXCLUDED.license,
+  event_domain             = EXCLUDED.event_domain,
   max_pages                = EXCLUDED.max_pages,
   selectors                = EXCLUDED.selectors,
   notes                    = EXCLUDED.notes,
@@ -90,19 +92,19 @@ ON CONFLICT (name) DO UPDATE SET
   request_timeout_seconds          = EXCLUDED.request_timeout_seconds,
   max_body_bytes           = EXCLUDED.max_body_bytes,
   updated_at               = NOW()
-RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
-          max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-          multi_session_duration_threshold, follow_event_urls, timezone,
-          last_scraped_at, created_at, updated_at,
-          headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-          headless_headers, headless_rate_limit_ms,
-          headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-          graphql_config, rest_config, sitemap_config, default_location,
-          extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes;
+RETURNING id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
+           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+           multi_session_duration_threshold, follow_event_urls, timezone,
+           last_scraped_at, created_at, updated_at,
+           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+           headless_headers, headless_rate_limit_ms,
+           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+           graphql_config, rest_config, sitemap_config, default_location,
+           extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes;
 
 -- name: GetScraperSourceByName :one
 -- Get a single scraper source by unique name.
-SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
        max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
        multi_session_duration_threshold, follow_event_urls, timezone,
        last_scraped_at, created_at, updated_at,
@@ -116,7 +118,7 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
 
 -- name: GetScraperSourceByID :one
 -- Get a single scraper source by primary key.
-SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
        max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
        multi_session_duration_threshold, follow_event_urls, timezone,
        last_scraped_at, created_at, updated_at,
@@ -130,7 +132,7 @@ SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
 
 -- name: ListScraperSources :many
 -- List all scraper sources, optionally filtered by enabled flag.
-SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
        max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
        multi_session_duration_threshold, follow_event_urls, timezone,
        last_scraped_at, created_at, updated_at,
@@ -156,15 +158,15 @@ UPDATE scraper_sources
    SET enabled    = sqlc.arg('enabled'),
        updated_at = NOW()
  WHERE name = sqlc.arg('name')
-RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
-          max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-          multi_session_duration_threshold, follow_event_urls, timezone,
-          last_scraped_at, created_at, updated_at,
-          headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-          headless_headers, headless_rate_limit_ms,
-          headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-          graphql_config, rest_config, sitemap_config, default_location,
-          extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes;
+RETURNING id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
+           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+           multi_session_duration_threshold, follow_event_urls, timezone,
+           last_scraped_at, created_at, updated_at,
+           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+           headless_headers, headless_rate_limit_ms,
+           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+           graphql_config, rest_config, sitemap_config, default_location,
+           extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes;
 
 -- name: DeleteScraperSource :exec
 -- Delete a scraper source by name.
@@ -184,7 +186,7 @@ DELETE FROM org_scraper_sources
 
 -- name: ListScraperSourcesByOrg :many
 -- List all scraper sources linked to a given organization.
-SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
        s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
        s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
        s.last_scraped_at, s.created_at, s.updated_at,
@@ -212,7 +214,7 @@ DELETE FROM place_scraper_sources
 
 -- name: ListScraperSourcesByPlace :many
 -- List all scraper sources linked to a given place.
-SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
        s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
        s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
        s.last_scraped_at, s.created_at, s.updated_at,
@@ -232,7 +234,7 @@ SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license
 -- has never been run). status and event counts use COALESCE to return non-nullable
 -- defaults so SQLc generates simple string/int32 types for those columns.
 SELECT
-  s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+  s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
   s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
   s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
   s.last_scraped_at, s.created_at, s.updated_at,
