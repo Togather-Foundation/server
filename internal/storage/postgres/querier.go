@@ -17,7 +17,7 @@ type Querier interface {
 	// Mark review as approved
 	ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error)
 	CheckAPIKeyOwnership(ctx context.Context, arg CheckAPIKeyOwnershipParams) (bool, error)
-	// Archive old approved/superseded/merged reviews (90 day retention)
+	// Archive old approved/superseded/merged/dismissed reviews (90 day retention)
 	CleanupArchivedReviews(ctx context.Context) error
 	// Delete expired cache entries
 	CleanupExpiredCache(ctx context.Context) (pgconn.CommandTag, error)

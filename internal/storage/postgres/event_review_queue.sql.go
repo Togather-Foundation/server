@@ -58,11 +58,11 @@ func (q *Queries) ApproveReview(ctx context.Context, arg ApproveReviewParams) (E
 
 const cleanupArchivedReviews = `-- name: CleanupArchivedReviews :exec
 DELETE FROM event_review_queue
- WHERE status IN ('approved', 'superseded', 'merged')
+ WHERE status IN ('approved', 'superseded', 'merged', 'dismissed')
    AND reviewed_at < NOW() - INTERVAL '90 days'
 `
 
-// Archive old approved/superseded/merged reviews (90 day retention)
+// Archive old approved/superseded/merged/dismissed reviews (90 day retention)
 func (q *Queries) CleanupArchivedReviews(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, cleanupArchivedReviews)
 	return err

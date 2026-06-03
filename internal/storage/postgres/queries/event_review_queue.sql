@@ -185,9 +185,9 @@ DELETE FROM event_review_queue
    AND event_start_time < NOW();
 
 -- name: CleanupArchivedReviews :exec
--- Archive old approved/superseded/merged reviews (90 day retention)
+-- Archive old approved/superseded/merged/dismissed reviews (90 day retention)
 DELETE FROM event_review_queue
- WHERE status IN ('approved', 'superseded', 'merged')
+ WHERE status IN ('approved', 'superseded', 'merged', 'dismissed')
    AND reviewed_at < NOW() - INTERVAL '90 days';
 
 -- name: MarkUnreviewedEventsAsDeleted :exec
