@@ -651,6 +651,104 @@ func TestInferYear(t *testing.T) {
 	}
 }
 
+// ── splitTimeRange ────────────────────────────────────────────────────
+
+func TestSplitTimeRange(t *testing.T) {
+	t.Parallel()
+
+	loc, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		input     string
+		wantNil   bool
+		wantTimes []parsedTime
+	}{
+		{
+			name:    "AM/PM propagation from end to start",
+			input:   "1 - 3:30 pm",
+			wantNil: false,
+			wantTimes: []parsedTime{
+				{hour: 13, minute: 0},
+				{hour: 15, minute: 30},
+			},
+		},
+		{
+			name:    "AM/PM propagation from start to end",
+			input:   "4 PM - 5",
+			wantNil: false,
+			wantTimes: []parsedTime{
+				{hour: 16, minute: 0},
+				{hour: 17, minute: 0},
+			},
+		},
+		{
+			name:    "both sides have AM/PM",
+			input:   "10:00 am - 2:00 pm",
+			wantNil: false,
+			wantTimes: []parsedTime{
+				{hour: 10, minute: 0},
+				{hour: 14, minute: 0},
+			},
+		},
+		{
+			name:    "month name rejection (both sides)",
+			input:   "Jan - Mar",
+			wantNil: true,
+		},
+		{
+			name:    "month name in first part",
+			input:   "January 15 - 5:00 pm",
+			wantNil: true,
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantNil: true,
+		},
+		{
+			name:    "single time (non-range)",
+			input:   "3:30 pm",
+			wantNil: true,
+		},
+		{
+			name:    "malformed with extra text",
+			input:   "foo bar baz",
+			wantNil: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := splitTimeRange(tc.input, loc, testNow())
+
+			if tc.wantNil {
+				if got != nil {
+					t.Errorf("splitTimeRange(%q) = %+v, want nil", tc.input, got)
+				}
+				return
+			}
+
+			if len(got) != len(tc.wantTimes) {
+				t.Fatalf("splitTimeRange(%q) returned %d times, want %d: %+v",
+					tc.input, len(got), len(tc.wantTimes), got)
+			}
+
+			for i := range got {
+				if got[i].hour != tc.wantTimes[i].hour || got[i].minute != tc.wantTimes[i].minute {
+					t.Errorf("splitTimeRange(%q)[%d] = %d:%02d, want %d:%02d",
+						tc.input, i, got[i].hour, got[i].minute,
+						tc.wantTimes[i].hour, tc.wantTimes[i].minute)
+				}
+			}
+		})
+	}
+}
+
 // ── helpers ───────────────────────────────────────────────────────────
 
 func TestNormalizeWhitespace(t *testing.T) {
