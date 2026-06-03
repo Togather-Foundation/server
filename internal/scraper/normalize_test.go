@@ -958,7 +958,7 @@ func TestNormalizeRawEvent(t *testing.T) {
 			},
 			source:     testSource,
 			wantErr:    true,
-			wantErrMsg: "raw event has no startDate",
+			wantErrMsg: `raw event has no startDate: ""`,
 		},
 		{
 			name: "location string creates PlaceInput",
