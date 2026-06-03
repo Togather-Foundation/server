@@ -3170,6 +3170,26 @@ components:
           type: integer
         error_message:
           type: string
+        event_failures:
+          type: array
+          description: Per-event ingest failure details from the run metadata
+          items:
+            $ref: '#/components/schemas/EventFailure'
+
+    EventFailure:
+      type: object
+      description: An individual event ingest failure within a scraper run
+      properties:
+        index:
+          type: integer
+          description: Zero-based index of the event in the scrape batch that failed
+        url:
+          type: string
+          format: uri
+          description: Source URL of the event that failed to ingest
+        message:
+          type: string
+          description: Error message describing why the event failed to ingest
 
     SourceDiagnostics:
       type: object

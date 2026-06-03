@@ -65,6 +65,41 @@ go run ./cmd/server scrape source harbourfront-centre \
 
 For full scraper documentation, see [scraper.md](integration/scraper.md).
 
+### `server scrape failures` (diagnostics)
+
+**Purpose**: Show failing scraper sources via the admin diagnostics API. No manual curl or JSON parsing needed.
+
+**Usage**:
+```bash
+source .agent-keys/staging
+
+# Table of all failing sources
+server scrape failures --server $TOGATHER_BASE_URL
+
+# Deep dive into a specific source (latest + last successful run)
+server scrape failures --source harbourfront-centre --server $TOGATHER_BASE_URL
+
+# JSON output for scripting
+server scrape failures --json --server $TOGATHER_BASE_URL
+```
+
+**Table output:**
+```
+SOURCE              TIER  STATUS   EVENTS  FAILED
+harbourfront-centre  1     failed   0       0
+meetup-music         0     failed   12      5
+---
+2 sources failed
+
+Errors:
+  harbourfront-centre: CSS selector returned empty result
+  meetup-music: invalid location: location or virtualLocation required
+```
+
+**Deep dive output** includes full error, event_failures list with indices, and comparison against last successful run.
+
+For full reference, see `server scrape failures --help` or [scraper.md](integration/scraper.md).
+
 **Output**:
 ```
 ========================================

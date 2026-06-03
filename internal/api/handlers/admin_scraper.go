@@ -16,6 +16,7 @@ import (
 	"github.com/riverqueue/river/rivertype"
 	"github.com/rs/zerolog"
 
+	"github.com/Togather-Foundation/server/internal/api/apitypes"
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -70,30 +71,6 @@ type scraperSourceResponse struct {
 	LastRunErrorMessage string     `json:"last_run_error_message,omitempty"`
 }
 
-// eventFailureResponse is a single per-event ingest failure within a scraper run.
-type eventFailureResponse struct {
-	Index   int    `json:"index"`
-	URL     string `json:"url,omitempty"`
-	Message string `json:"message"`
-}
-
-// scraperRunResponse is the JSON representation of a single scraper run.
-type scraperRunResponse struct {
-	ID            int64                  `json:"id"`
-	SourceName    string                 `json:"source_name"`
-	SourceURL     string                 `json:"source_url"`
-	Tier          int32                  `json:"tier"`
-	Status        string                 `json:"status"`
-	StartedAt     *time.Time             `json:"started_at,omitempty"`
-	CompletedAt   *time.Time             `json:"completed_at,omitempty"`
-	EventsFound   int32                  `json:"events_found"`
-	EventsNew     int32                  `json:"events_new"`
-	EventsDup     int32                  `json:"events_dup"`
-	EventsFailed  int32                  `json:"events_failed"`
-	ErrorMessage  string                 `json:"error_message,omitempty"`
-	EventFailures []eventFailureResponse `json:"event_failures,omitempty"`
-}
-
 // toScraperSourceResponse converts a ListScraperSourcesWithLatestRunRow to a scraperSourceResponse.
 func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) scraperSourceResponse {
 	resp := scraperSourceResponse{
@@ -139,9 +116,9 @@ func scraperSourceFromSetEnabled(s postgres.SetScraperSourceEnabledRow) scraperS
 	}
 }
 
-// toScraperRunResponse converts a postgres.ScraperRun to a scraperRunResponse.
-func toScraperRunResponse(run postgres.ScraperRun) scraperRunResponse {
-	resp := scraperRunResponse{
+// toScraperRunResponse converts a postgres.ScraperRun to a apitypes.ScraperRunResponse.
+func toScraperRunResponse(run postgres.ScraperRun) apitypes.ScraperRunResponse {
+	resp := apitypes.ScraperRunResponse{
 		ID:           run.ID,
 		SourceName:   run.SourceName,
 		SourceURL:    run.SourceUrl,
@@ -166,7 +143,7 @@ func toScraperRunResponse(run postgres.ScraperRun) scraperRunResponse {
 	// Unmarshal per-event failure details from the metadata JSONB column.
 	if len(run.Metadata) > 0 {
 		var meta struct {
-			EventFailures []eventFailureResponse `json:"event_failures"`
+			EventFailures []apitypes.EventFailureResponse `json:"event_failures"`
 		}
 		if err := json.Unmarshal(run.Metadata, &meta); err == nil && len(meta.EventFailures) > 0 {
 			resp.EventFailures = meta.EventFailures
@@ -217,13 +194,13 @@ func (h *AdminScraperHandler) ListSourceRuns(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	items := make([]scraperRunResponse, 0, len(runs))
+	items := make([]apitypes.ScraperRunResponse, 0, len(runs))
 	for _, run := range runs {
 		items = append(items, toScraperRunResponse(run))
 	}
 
 	writeJSON(w, http.StatusOK, struct {
-		Items []scraperRunResponse `json:"items"`
+		Items []apitypes.ScraperRunResponse `json:"items"`
 	}{Items: items}, "application/json")
 }
 
@@ -553,14 +530,6 @@ func (h *AdminScraperHandler) TriggerAllScrape(w http.ResponseWriter, r *http.Re
 	}, "application/json")
 }
 
-// diagnosticsResponse is the JSON response for source diagnostics.
-type diagnosticsResponse struct {
-	SourceName        string               `json:"source_name"`
-	LatestRun         *scraperRunResponse  `json:"latest_run"`
-	LastSuccessfulRun *scraperRunResponse  `json:"last_successful_run,omitempty"`
-	RecentRuns        []scraperRunResponse `json:"recent_runs"`
-}
-
 // GetSourceDiagnostics handles GET /api/v1/admin/scraper/sources/{name}/diagnostics.
 // Returns the latest run, last successful run (for comparison when latest failed),
 // and a configurable list of recent runs.
@@ -582,9 +551,9 @@ func (h *AdminScraperHandler) GetSourceDiagnostics(w http.ResponseWriter, r *htt
 	latest, err := h.Queries.GetLatestScraperRunBySource(r.Context(), name)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			writeJSON(w, http.StatusOK, diagnosticsResponse{
+			writeJSON(w, http.StatusOK, apitypes.DiagnosticsResponse{
 				SourceName: name,
-				RecentRuns: []scraperRunResponse{},
+				RecentRuns: []apitypes.ScraperRunResponse{},
 			}, "application/json")
 			return
 		}
@@ -593,10 +562,10 @@ func (h *AdminScraperHandler) GetSourceDiagnostics(w http.ResponseWriter, r *htt
 		return
 	}
 
-	resp := diagnosticsResponse{
+	resp := apitypes.DiagnosticsResponse{
 		SourceName: name,
 		LatestRun:  runPtr(toScraperRunResponse(latest)),
-		RecentRuns: make([]scraperRunResponse, 0),
+		RecentRuns: make([]apitypes.ScraperRunResponse, 0),
 	}
 
 	if latest.Status == "failed" {
@@ -625,12 +594,6 @@ func (h *AdminScraperHandler) GetSourceDiagnostics(w http.ResponseWriter, r *htt
 	}
 
 	writeJSON(w, http.StatusOK, resp, "application/json")
-}
-
-// allDiagnosticsResponse is the JSON response for cross-source diagnostics.
-type allDiagnosticsResponse struct {
-	Items []scraperRunResponse `json:"items"`
-	Total int                  `json:"total"`
 }
 
 // GetAllDiagnostics handles GET /api/v1/admin/scraper/diagnostics.
@@ -664,17 +627,17 @@ func (h *AdminScraperHandler) GetAllDiagnostics(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	items := make([]scraperRunResponse, 0, len(runs))
+	items := make([]apitypes.ScraperRunResponse, 0, len(runs))
 	for _, run := range runs {
 		items = append(items, toScraperRunResponse(run))
 	}
 
-	writeJSON(w, http.StatusOK, allDiagnosticsResponse{
+	writeJSON(w, http.StatusOK, apitypes.AllDiagnosticsResponse{
 		Items: items,
 		Total: len(items),
 	}, "application/json")
 }
 
-func runPtr(r scraperRunResponse) *scraperRunResponse {
+func runPtr(r apitypes.ScraperRunResponse) *apitypes.ScraperRunResponse {
 	return &r
 }

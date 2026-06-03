@@ -344,6 +344,99 @@ server scrape export --sources configs/sources
 
 See [Config Storage: YAML + Database](#config-storage-yaml--database).
 
+### `server scrape failures`
+
+Query the admin scraper diagnostics API and present failing scraper sources in
+table, JSON, or per-source deep-dive format.
+
+This command requires admin authentication — it calls the
+`GET /api/v1/admin/scraper/diagnostics` and
+`GET /api/v1/admin/scraper/sources/{name}/diagnostics` endpoints. For staging
+access, source the auto-generated credentials file:
+
+```bash
+source .agent-keys/staging
+```
+
+**Auth resolution chain:**
+`--key` flag → `TOGATHER_ADMIN_TOKEN` env var → `SEL_API_KEY` env var.
+
+**Server URL resolution chain:**
+`--server` flag → `TOGATHER_BASE_URL` env var → `SEL_SERVER_URL` env var → `http://localhost:8080`.
+
+**Flags:**
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `--source` | string | `""` | Source name for per-source diagnostics (deep-dive mode) |
+| `--limit` | int | `0` | Maximum sources to return (0 = all) |
+| `--status` | string | `""` | Filter by run status (e.g. `running`, `completed`, `failed`) |
+| `--json` | bool | `false` | Output as JSON instead of table/deep-dive format |
+
+The persistent flags `--server` and `--key` (see [Persistent Flags](#persistent-flags)) also apply.
+
+**Output modes:**
+
+| Mode | Trigger | Output |
+|------|---------|--------|
+| Table (default) | No `--json`, no `--source` | Tab-separated table: `SOURCE`, `TIER`, `STATUS`, `EVENTS`, `FAILED`, `ERROR`. Includes a status-count summary footer. |
+| JSON | `--json` (no `--source`) | Raw JSON array from the diagnostics endpoint. |
+| Deep dive | `--source <name>` (no `--json`) | Structured per-source view with latest run, last successful run, event failures, and ICS warnings. |
+| Source JSON | `--json --source <name>` | Raw JSON object from the per-source diagnostics endpoint. |
+
+**Examples:**
+
+```bash
+# Table of all failing sources (requires admin auth)
+# source .agent-keys/staging  # provides TOGATHER_ADMIN_TOKEN + TOGATHER_BASE_URL
+server scrape failures
+
+# Table, filtered by status
+server scrape failures --status failed
+
+# Table, limited to 10 sources
+server scrape failures --limit 10
+
+# JSON output for scripting/automation
+server scrape failures --json | jq '.items[] | {source: .source_name, status: .status}'
+
+# Deep dive into a single source
+server scrape failures --source harbourfront-centre
+
+# JSON for a single source
+server scrape failures --json --source harbourfront-centre
+
+# Explicit auth and server URL
+server scrape failures --server https://staging.toronto.togather.foundation --key "$TOGATHER_ADMIN_TOKEN"
+```
+
+**Table output example:**
+
+```
+SOURCE                          TIER  STATUS   EVENTS  FAILED  ERROR
+harbourfront-centre              1     failed   0       0      connection refused
+some-venue                       0     failed   12      3      HTTP 502
+
+---
+1 sources running
+4 sources failed
+```
+
+**Deep-dive output example:**
+
+```
+Source: harbourfront-centre
+URL: https://harbourfrontcentre.com/whats-on/
+Tier: 1
+
+Latest run (2026-06-01T14:30:00Z UTC) — failed
+  Error: connection refused
+  Events found: 0 | new: 0 | dup: 0 | failed: 0
+
+Last successful run (2026-05-31T14:30:00Z UTC) — completed
+  Events found: 106 | new: 5 | dup: 101 | failed: 0
+```
+
 ---
 
 ## Tiered Extraction

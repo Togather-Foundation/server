@@ -214,6 +214,9 @@ When asked to add, fix, or debug a scraper source config:
 2. **For single-source deep work**, use the Task tool with `subagent_type: "scraper-worker"`.
 3. **After writing configs**, sync to DB: `server scrape sync` (YAML changes are ignored
    at runtime until synced — the scraper reads from the database by default).
+4. **To inspect scraper health**, use `server scrape failures` — queries the admin
+   diagnostics API and shows failing sources with full error messages. Source
+   `.agent-keys/staging` first for auth.
 
 Key docs:
 - `docs/integration/scraper.md` — full scraper guide including config storage model and CLI reference
