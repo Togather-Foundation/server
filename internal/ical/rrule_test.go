@@ -265,6 +265,22 @@ func TestExpandRRule_EmptyRRule_ExcludedByExdate(t *testing.T) {
 	}
 }
 
+func TestExpandRRule_DtstartBeyondHorizon(t *testing.T) {
+	t.Parallel()
+
+	dtstart := time.Now().Add(120 * 24 * time.Hour).Truncate(time.Second)
+
+	occurrences, _, err := ExpandRRule("FREQ=WEEKLY", dtstart, nil, nil, RRuleOptions{
+		HorizonDays: 90,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(occurrences) != 0 {
+		t.Errorf("expected 0 occurrences (dtstart beyond horizon), got %d", len(occurrences))
+	}
+}
+
 func TestExpandRRule_DefaultOptions(t *testing.T) {
 	t.Parallel()
 	dtstart := futureStart().Truncate(time.Second)

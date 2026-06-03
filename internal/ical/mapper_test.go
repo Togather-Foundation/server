@@ -942,6 +942,49 @@ func TestMapToEventInputs_RRULECappedWarning(t *testing.T) {
 	}
 }
 
+func TestMapToEventInputs_RecurringBeyondHorizonWarning(t *testing.T) {
+	t.Parallel()
+
+	dtstart := time.Now().Add(120 * 24 * time.Hour).Truncate(time.Second)
+	cal := &ParsedCalendar{
+		Events: []ParsedEvent{
+			{
+				UID:     "beyond-horizon-test",
+				Summary: "Far Future Event",
+				Start:   dtstart,
+				End:     dtstart.Add(time.Hour),
+				RRULE:   "FREQ=WEEKLY",
+			},
+		},
+	}
+
+	opts := defaultMapperOpts()
+	opts.Now = time.Now()
+	opts.HorizonDays = 90
+
+	results, warnings, err := MapToEventInputs(context.Background(), cal, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(results) != 0 {
+		t.Fatalf("expected 0 events, got %d", len(results))
+	}
+
+	found := false
+	for _, w := range warnings {
+		if len(w) > 0 && w[0] == 'R' {
+			if fmt.Sprintf("RRULE expanded to zero occurrences (UID: %s) — all outside the %d-day horizon or in the past", "beyond-horizon-test", 90) == w {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected 'zero occurrences' warning, got warnings: %v", warnings)
+	}
+}
+
 func TestDeriveSeriesEnd(t *testing.T) {
 	t.Parallel()
 
