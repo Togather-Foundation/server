@@ -7,7 +7,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/llmsafe"
 )
 
-func TestSanitizeCardHTML(t *testing.T) {
+func TestSanitizeCardHTMLViaLLMSafe(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -146,6 +146,7 @@ func TestFormatInspectResultSafe_UniqueNonces(t *testing.T) {
 	out2 := FormatInspectResultSafe(r)
 
 	extractNonce := func(s string) string {
+		t.Helper()
 		idx := strings.Index(s, "<<<INSPECT_")
 		if idx < 0 {
 			t.Fatal("no boundary marker found")

@@ -118,6 +118,7 @@ func TestWrapWithBoundary_UniqueNonces(t *testing.T) {
 	out2 := WrapWithBoundary("data", "INSPECT")
 
 	extractNonce := func(s string) string {
+		t.Helper()
 		idx := strings.Index(s, "<<<INSPECT_")
 		if idx < 0 {
 			t.Fatal("no boundary marker found")
@@ -215,6 +216,17 @@ func TestSanitizeHTML(t *testing.T) {
 
 func TestWrapUntrustedFields(t *testing.T) {
 	t.Parallel()
+
+	t.Run("empty map", func(t *testing.T) {
+		t.Parallel()
+		result := WrapUntrustedFields(map[string]string{}, "UNTRUSTED")
+		if result == nil {
+			t.Error("result is nil, want empty map")
+		}
+		if len(result) != 0 {
+			t.Errorf("result map size = %d, want 0", len(result))
+		}
+	})
 
 	fields := map[string]string{
 		"title":   "<h1>Hello World</h1>",
