@@ -546,6 +546,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	if cfg.Server.ShutdownPoolCloseTimeout <= 0 {
+		return Config{}, fmt.Errorf("SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS must be positive, got %v", cfg.Server.ShutdownPoolCloseTimeout)
+	}
+
 	// CORS configuration
 	env := cfg.Environment
 	if env == "development" || env == "test" {

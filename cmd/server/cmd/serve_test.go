@@ -199,10 +199,11 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name        string
-		databaseURL string
-		jwtSecret   string
-		expectError bool
+		name                  string
+		databaseURL           string
+		jwtSecret             string
+		shutdownPoolTimeout   string
+		expectError           bool
 	}{
 		{
 			name:        "missing DATABASE_URL",
@@ -223,6 +224,13 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 			expectError: true,
 		},
 		{
+			name:                "SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS is zero",
+			databaseURL:         "postgres://test",
+			jwtSecret:           "test-secret-at-least-32-characters-long",
+			shutdownPoolTimeout: "0",
+			expectError:         true,
+		},
+		{
 			name:        "valid config",
 			databaseURL: "postgres://test",
 			jwtSecret:   "test-secret-at-least-32-characters-long",
@@ -239,6 +247,9 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 			}
 			if tt.jwtSecret != "" {
 				_ = os.Setenv("JWT_SECRET", tt.jwtSecret)
+			}
+			if tt.shutdownPoolTimeout != "" {
+				t.Setenv("SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS", tt.shutdownPoolTimeout)
 			}
 
 			_, err := loadConfig()
@@ -271,7 +282,8 @@ func TestClosePoolWithTimeout(t *testing.T) {
 		{
 			name: "pool close times out",
 			closeFn: func() {
-				select {} // block forever
+				block := make(chan struct{})
+				<-block // blocks forever; channel becomes unreachable after test, GC cleans up
 			},
 			timeout:       10 * time.Millisecond,
 			wantOnTimeout: true,
