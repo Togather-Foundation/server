@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,15 +15,30 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func setupFailuresCmd(args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
+var scrapeTestMu sync.Mutex
+
+func setupFailuresCmd(t *testing.T, args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
+
+	var origParent *cobra.Command
+	if scrapeCmd.HasParent() {
+		origParent = scrapeCmd.Parent()
+		origParent.RemoveCommand(scrapeCmd)
+	}
+
+	t.Cleanup(func() {
+		if origParent != nil {
+			if scrapeCmd.HasParent() {
+				scrapeCmd.Parent().RemoveCommand(scrapeCmd)
+			}
+			origParent.AddCommand(scrapeCmd)
+		}
+	})
+
 	failuresSource = ""
 	failuresLimit = 0
 	failuresStatus = ""
 	failuresJSON = false
-
-	if scrapeCmd.HasParent() {
-		scrapeCmd.Parent().RemoveCommand(scrapeCmd)
-	}
 
 	testRoot := &cobra.Command{Use: "server"}
 	testRoot.AddCommand(scrapeCmd)
@@ -37,6 +53,9 @@ func setupFailuresCmd(args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buff
 }
 
 func TestScrapeFailuresTable(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	now := time.Now()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -76,7 +95,7 @@ func TestScrapeFailuresTable(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "test-key"
 
-	cmd, buf, _ := setupFailuresCmd([]string{"scrape", "failures"})
+	cmd, buf, _ := setupFailuresCmd(t, []string{"scrape", "failures"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,6 +126,9 @@ func TestScrapeFailuresTable(t *testing.T) {
 }
 
 func TestScrapeFailuresJSON(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	now := time.Now()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -135,7 +157,7 @@ func TestScrapeFailuresJSON(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "test-key"
 
-	cmd, buf, _ := setupFailuresCmd([]string{"scrape", "failures", "--json"})
+	cmd, buf, _ := setupFailuresCmd(t, []string{"scrape", "failures", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -154,6 +176,9 @@ func TestScrapeFailuresJSON(t *testing.T) {
 }
 
 func TestScrapeFailuresJSONWithSource(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	now := time.Now()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -181,7 +206,7 @@ func TestScrapeFailuresJSONWithSource(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "test-key"
 
-	cmd, buf, _ := setupFailuresCmd([]string{"scrape", "failures", "--json", "--source", "mysource"})
+	cmd, buf, _ := setupFailuresCmd(t, []string{"scrape", "failures", "--json", "--source", "mysource"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,6 +222,9 @@ func TestScrapeFailuresJSONWithSource(t *testing.T) {
 }
 
 func TestScrapeFailuresDeepDive(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	now := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -239,7 +267,7 @@ func TestScrapeFailuresDeepDive(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "test-key"
 
-	cmd, buf, _ := setupFailuresCmd([]string{"scrape", "failures", "--source", "mysource"})
+	cmd, buf, _ := setupFailuresCmd(t, []string{"scrape", "failures", "--source", "mysource"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -271,6 +299,9 @@ func TestScrapeFailuresDeepDive(t *testing.T) {
 }
 
 func TestScrapeFailuresDeepDiveNoRuns(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(apitypes.DiagnosticsResponse{
@@ -285,7 +316,7 @@ func TestScrapeFailuresDeepDiveNoRuns(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "test-key"
 
-	cmd, buf, _ := setupFailuresCmd([]string{"scrape", "failures", "--source", "mysource"})
+	cmd, buf, _ := setupFailuresCmd(t, []string{"scrape", "failures", "--source", "mysource"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -300,6 +331,9 @@ func TestScrapeFailuresDeepDiveNoRuns(t *testing.T) {
 }
 
 func TestScrapeFailuresEmpty(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(apitypes.AllDiagnosticsResponse{
@@ -315,7 +349,7 @@ func TestScrapeFailuresEmpty(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "test-key"
 
-	cmd, buf, _ := setupFailuresCmd([]string{"scrape", "failures"})
+	cmd, buf, _ := setupFailuresCmd(t, []string{"scrape", "failures"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -327,6 +361,9 @@ func TestScrapeFailuresEmpty(t *testing.T) {
 }
 
 func TestScrapeFailuresServerError(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte("internal error"))
@@ -339,7 +376,7 @@ func TestScrapeFailuresServerError(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "test-key"
 
-	cmd, _, _ := setupFailuresCmd([]string{"scrape", "failures"})
+	cmd, _, _ := setupFailuresCmd(t, []string{"scrape", "failures"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 500 response")
@@ -349,6 +386,9 @@ func TestScrapeFailuresServerError(t *testing.T) {
 }
 
 func TestScrapeFailuresAuthError(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error": "invalid token"}`))
@@ -361,7 +401,7 @@ func TestScrapeFailuresAuthError(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "bad-key"
 
-	cmd, _, _ := setupFailuresCmd([]string{"scrape", "failures"})
+	cmd, _, _ := setupFailuresCmd(t, []string{"scrape", "failures"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 401 response")
@@ -374,13 +414,16 @@ func TestScrapeFailuresAuthError(t *testing.T) {
 }
 
 func TestScrapeFailuresConnectionRefused(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	origServer := scrapeServerURL
 	origKey := scrapeAPIKey
 	defer func() { scrapeServerURL = origServer; scrapeAPIKey = origKey }()
 	scrapeServerURL = "http://127.0.0.1:1"
 	scrapeAPIKey = "test-key"
 
-	cmd, _, _ := setupFailuresCmd([]string{"scrape", "failures"})
+	cmd, _, _ := setupFailuresCmd(t, []string{"scrape", "failures"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for connection refused")
@@ -390,6 +433,9 @@ func TestScrapeFailuresConnectionRefused(t *testing.T) {
 }
 
 func TestScrapeFailuresWithStatusFilter(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	now := time.Now()
 	var requestPath string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -410,7 +456,7 @@ func TestScrapeFailuresWithStatusFilter(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = "test-key"
 
-	cmd, buf, _ := setupFailuresCmd([]string{"scrape", "failures", "--status", "failed", "--limit", "5"})
+	cmd, buf, _ := setupFailuresCmd(t, []string{"scrape", "failures", "--status", "failed", "--limit", "5"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -429,6 +475,9 @@ func TestScrapeFailuresWithStatusFilter(t *testing.T) {
 }
 
 func TestScrapeFailuresWithEnvToken(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	origToken := os.Getenv("TOGATHER_ADMIN_TOKEN")
 	defer func() {
 		if origToken != "" {
@@ -466,7 +515,7 @@ func TestScrapeFailuresWithEnvToken(t *testing.T) {
 	scrapeServerURL = server.URL
 	scrapeAPIKey = ""
 
-	cmd, _, _ := setupFailuresCmd([]string{"scrape", "failures"})
+	cmd, _, _ := setupFailuresCmd(t, []string{"scrape", "failures"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -477,13 +526,16 @@ func TestScrapeFailuresWithEnvToken(t *testing.T) {
 }
 
 func TestParseServerConfig(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	origBaseURL := os.Getenv("TOGATHER_BASE_URL")
 	origAdminToken := os.Getenv("TOGATHER_ADMIN_TOKEN")
 	origSELKey := os.Getenv("SEL_API_KEY")
 	defer func() {
-		restoreEnv("TOGATHER_BASE_URL", origBaseURL)
-		restoreEnv("TOGATHER_ADMIN_TOKEN", origAdminToken)
-		restoreEnv("SEL_API_KEY", origSELKey)
+		restoreEnv(t, "TOGATHER_BASE_URL", origBaseURL)
+		restoreEnv(t, "TOGATHER_ADMIN_TOKEN", origAdminToken)
+		restoreEnv(t, "SEL_API_KEY", origSELKey)
 	}()
 	_ = os.Unsetenv("TOGATHER_BASE_URL")
 	_ = os.Unsetenv("TOGATHER_ADMIN_TOKEN")
@@ -549,7 +601,8 @@ func TestParseServerConfig(t *testing.T) {
 	})
 }
 
-func restoreEnv(key, value string) {
+func restoreEnv(t *testing.T, key, value string) {
+	t.Helper()
 	if value != "" {
 		_ = os.Setenv(key, value)
 	} else {
@@ -558,6 +611,9 @@ func restoreEnv(key, value string) {
 }
 
 func TestScrapeFailuresFlagRegistration(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	cmd := scrapeFailuresCmd
 	flags := []string{"source", "limit", "status", "json"}
 	for _, flag := range flags {
@@ -571,6 +627,9 @@ func TestScrapeFailuresFlagRegistration(t *testing.T) {
 }
 
 func TestScrapeFailuresHasServerAndKeyPersistentFlags(t *testing.T) {
+	t.Parallel()
+	scrapeTestMu.Lock()
+	t.Cleanup(func() { scrapeTestMu.Unlock() })
 	pf := scrapeCmd.PersistentFlags()
 	if pf.Lookup("server") == nil {
 		t.Error("scrapeCmd missing --server persistent flag")
