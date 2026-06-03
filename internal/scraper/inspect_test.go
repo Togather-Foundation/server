@@ -3,9 +3,11 @@ package scraper
 import (
 	"strings"
 	"testing"
+
+	"github.com/Togather-Foundation/server/internal/llmsafe"
 )
 
-func TestSanitizeCardHTML(t *testing.T) {
+func TestSanitizeCardHTMLViaLLMSafe(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -68,9 +70,9 @@ func TestSanitizeCardHTML(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := sanitizeCardHTML(tc.html)
+			got := llmsafe.SanitizeHTML(tc.html)
 			if got != tc.want {
-				t.Errorf("sanitizeCardHTML():\n  got:  %q\n  want: %q", got, tc.want)
+				t.Errorf("llmsafe.SanitizeHTML():\n  got:  %q\n  want: %q", got, tc.want)
 			}
 		})
 	}
@@ -144,6 +146,7 @@ func TestFormatInspectResultSafe_UniqueNonces(t *testing.T) {
 	out2 := FormatInspectResultSafe(r)
 
 	extractNonce := func(s string) string {
+		t.Helper()
 		idx := strings.Index(s, "<<<INSPECT_")
 		if idx < 0 {
 			t.Fatal("no boundary marker found")
@@ -282,7 +285,7 @@ func TestGenerateBoundaryNonce(t *testing.T) {
 	// Test that nonces are the expected format and unique.
 	seen := make(map[string]bool)
 	for range 100 {
-		nonce := generateBoundaryNonce()
+		nonce := llmsafe.GenerateBoundaryNonce()
 		if len(nonce) != 16 {
 			t.Errorf("nonce length = %d, want 16", len(nonce))
 		}
