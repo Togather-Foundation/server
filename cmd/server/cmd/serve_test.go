@@ -5,6 +5,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/rs/zerolog"
 )
 
 func TestServeCommandHelp(t *testing.T) {
@@ -196,10 +199,11 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name        string
-		databaseURL string
-		jwtSecret   string
-		expectError bool
+		name                string
+		databaseURL         string
+		jwtSecret           string
+		shutdownPoolTimeout string
+		expectError         bool
 	}{
 		{
 			name:        "missing DATABASE_URL",
@@ -220,6 +224,13 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 			expectError: true,
 		},
 		{
+			name:                "SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS is zero",
+			databaseURL:         "postgres://test",
+			jwtSecret:           "test-secret-at-least-32-characters-long",
+			shutdownPoolTimeout: "0",
+			expectError:         true,
+		},
+		{
 			name:        "valid config",
 			databaseURL: "postgres://test",
 			jwtSecret:   "test-secret-at-least-32-characters-long",
@@ -237,6 +248,9 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 			if tt.jwtSecret != "" {
 				_ = os.Setenv("JWT_SECRET", tt.jwtSecret)
 			}
+			if tt.shutdownPoolTimeout != "" {
+				t.Setenv("SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS", tt.shutdownPoolTimeout)
+			}
 
 			_, err := loadConfig()
 
@@ -245,6 +259,59 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestClosePoolWithTimeout(t *testing.T) {
+	logger := zerolog.Nop()
+
+	tests := []struct {
+		name          string
+		closeFn       func()
+		timeout       time.Duration
+		wantOnTimeout bool
+	}{
+		{
+			name:          "pool closes normally",
+			closeFn:       func() {},
+			timeout:       50 * time.Millisecond,
+			wantOnTimeout: false,
+		},
+		{
+			name: "pool close times out",
+			closeFn: func() {
+				block := make(chan struct{})
+				<-block // blocks forever; channel becomes unreachable after test, GC cleans up
+			},
+			timeout:       10 * time.Millisecond,
+			wantOnTimeout: true,
+		},
+		{
+			name: "pool close after partial wait",
+			closeFn: func() {
+				time.Sleep(5 * time.Millisecond)
+			},
+			timeout:       50 * time.Millisecond,
+			wantOnTimeout: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			onTimeoutCalled := false
+			onTimeout := func() {
+				onTimeoutCalled = true
+			}
+
+			closePoolWithTimeout(logger, tt.closeFn, tt.timeout, onTimeout)
+
+			if tt.wantOnTimeout && !onTimeoutCalled {
+				t.Errorf("expected onTimeout to be called")
+			}
+			if !tt.wantOnTimeout && onTimeoutCalled {
+				t.Errorf("expected onTimeout NOT to be called")
 			}
 		})
 	}
