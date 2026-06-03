@@ -614,13 +614,21 @@ locations for date/time information.
 1. Each selector in `date_selectors` extracts text from within the event card
    (selectors that don't match are recorded as empty — index `i` always
    corresponds to `date_selectors[i]`)
-2. Text fragments are classified as date-only, time-only, or combined
-3. The assembler strips ordinal suffixes (`1st`, `2nd`, `3rd`, `th`), removes
+2. **Pipe-separated fragments** (`date|time`): If a selector's text contains a
+   pipe character (`|`), the fragment is split on `|` and each part is parsed
+   independently — useful when a single DOM element contains both a date and a
+   time separated by a pipe (e.g. `<span>March 5, 2026 | 7:30 PM</span>`)
+3. Text fragments are classified as date-only, time-only, or combined
+4. **Time range detection**: The assembler detects time ranges using dash/en-dash
+   separators with AM/PM propagation (e.g. `"7:00 - 9:00 PM"` → start time 7:00 PM,
+   end time 9:00 PM). When a time range is found, both sides contribute to start/end
+   assembly.
+5. The assembler strips ordinal suffixes (`1st`, `2nd`, `3rd`, `th`), removes
    day-of-week prefixes, recognises month names, and handles 12h/24h time formats
-4. First date + first time = `startDate`; second time (if present) = `endDate`
-5. Missing year is inferred (current year, or next year if >30 days in the past)
-6. Timezone comes from `DEFAULT_TIMEZONE` env var (default: `America/Toronto`)
-7. When selectors fail, quality warnings include first-container diagnostics
+6. First date + first time = `startDate`; second time or second date = `endDate`
+7. Missing year is inferred (current year, or next year if >30 days in the past)
+8. Timezone comes from `DEFAULT_TIMEZONE` env var (default: `America/Toronto`)
+9. When selectors fail, quality warnings include first-container diagnostics
    showing exactly what each selector found (see [Quality Warnings](#quality-warnings))
 
 When `date_selectors` is set, it takes priority over `start_date`/`end_date`.
@@ -885,6 +893,7 @@ at debug level and the URL is left empty.
 | `event_url_pattern` | `""` | Colly URL allow-list pattern |
 | `max_pages` | `10` | Tier 1 pagination limit |
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
+| `domain` | `""` | Default `event_domain` for events from this source. Valid values: `arts`, `music`, `culture`, `sports`, `community`, `education`, `general`. When empty, falls back to schema.org `@type`-to-domain mapping (defaulting to `arts`). |
 | `timezone` | `""` | IANA timezone for date parsing (e.g. `"America/Toronto"`). Overrides `DEFAULT_TIMEZONE` env var. Falls back to `America/Toronto` if neither is set. |
 | `selectors` | — | Required when `tier: 1` or `tier: 2` |
 | `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
