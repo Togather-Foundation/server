@@ -76,5 +76,30 @@ else
     echo "  skip   agent-cleanup.sh not found"
 fi
 
+# ---------------------------------------------------------------------------
+# 4. Restore ./server symlink to main binary
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "Restoring ./server symlink to main binary..."
+SERVER_LINK="$REPO_ROOT/server"
+MAIN_BINARY="$REPO_ROOT/bin/togather-server"
+
+if [ -L "$SERVER_LINK" ]; then
+    current_target="$(readlink "$SERVER_LINK" 2>/dev/null || echo "unknown")"
+    echo "  current ./server -> $current_target"
+    rm -f "$SERVER_LINK"
+fi
+
+if [ -x "$MAIN_BINARY" ]; then
+    ln -s "$MAIN_BINARY" "$SERVER_LINK"
+    echo "  restored ./server -> $MAIN_BINARY"
+elif [ -f "$MAIN_BINARY" ]; then
+    ln -s "$MAIN_BINARY" "$SERVER_LINK"
+    echo "  restored ./server -> $MAIN_BINARY (not executable, run 'make build')"
+else
+    echo "  skip   main binary not found at $MAIN_BINARY (run 'make build' on main)"
+fi
+
 echo ""
 echo "[land-worktree] Done."

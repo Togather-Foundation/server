@@ -136,5 +136,28 @@ mkdir_if_missing "tmp"
 mkdir_if_missing ".agent-output"
 mkdir_if_missing ".ci-logs"
 
+# ---------------------------------------------------------------------------
+# 5. Convenience symlink: ./server → worktree binary
+#    So you can always use './server' regardless of which worktree is active.
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "Linking ./server to worktree binary..."
+SERVER_LINK="$REPO_ROOT/server"
+WT_BINARY="$TARGET/bin/togather-server"
+
+if [ -L "$SERVER_LINK" ]; then
+    rm -f "$SERVER_LINK"
+    echo "  removed old ./server symlink"
+elif [ -e "$SERVER_LINK" ]; then
+    echo "  warn   ./server exists as a real file — not replacing"
+fi
+
+if [ ! -e "$SERVER_LINK" ] && [ ! -L "$SERVER_LINK" ]; then
+    ln -s "$WT_BINARY" "$SERVER_LINK"
+    echo "  linked ./server -> $WT_BINARY"
+    echo "  Run './server --help' to verify."
+fi
+
 echo ""
 echo "[worktree-setup] Done. Run 'make build' in the worktree to verify."
