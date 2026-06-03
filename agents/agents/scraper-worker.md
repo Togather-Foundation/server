@@ -80,6 +80,7 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - `wixBiSession` or `data-hook=` → Wix → **Tier 2**
 - `data-events-calendar-app` → eventscalendar.co → **Tier 2** (`wait_network_idle: true`)
 - `<title>Just a moment...</title>`, `window._cf_chl_opt`, or `id="challenge-error-text"` in curl output → Cloudflare → add `undetected: true`
+- **Domain inference** — what `event_domain` should this source use? Music venues → "music", art galleries/theatres → "arts", festivals → "culture", community groups → "community", etc.
 - `showclix.com` links or S3 bucket URLs containing `eventsbucket` → Showclix → **Tier 3** REST (S3 bucket JSON feed; T3 REST always beats T2 CSS for Showclix — the calendar DOM is fragile)
 
 If a known platform is matched, skip or abbreviate DOM inspection — use the known selectors/tier as a starting point.
@@ -269,6 +270,7 @@ Based on the inspect output, reason about the DOM structure and propose values f
 | `url` | Selector for the `<a>` linking to the event detail page. |
 | `image` | Selector for the event thumbnail `<img>`. Leave empty if not present. |
 | `pagination` | Selector for the "next page" link. Leave empty if single-page. |
+| `domain` | Sets the default `event_domain` for all events from this source. Valid values: `arts`, `music`, `culture`, `sports`, `community`, `education`, `general`. Default: `arts` (via schema.org `@type` mapping). |
 | `wait_selector` | **(Tier 2 only)** Must target the populated event container, NOT `body`. Using `body` causes the wait to resolve instantly, before async widgets load. Find the widget's container class/ID. |
 
 **CSS Modules / hashed class names:** If class names follow the pattern `word-XXXXX`
@@ -387,6 +389,8 @@ tier: 0
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general (default: arts via @type mapping)
+domain: arts
 enabled: true
 ```
 
@@ -401,6 +405,8 @@ tier: 1
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general (default: arts via @type mapping)
+domain: arts
 enabled: true
 max_pages: 3
 selectors:
@@ -424,6 +430,8 @@ tier: 2
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general (default: arts via @type mapping)
+domain: arts
 enabled: true
 max_pages: 3
 headless:
@@ -459,6 +467,8 @@ tier: 3
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general (default: arts via @type mapping)
+domain: arts
 enabled: true
 graphql:
   endpoint: "https://graphql.datocms.com/"
@@ -477,6 +487,8 @@ tier: 3
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general (default: arts via @type mapping)
+domain: arts
 enabled: true
 rest:
   endpoint: "<API_URL>"
@@ -500,6 +512,8 @@ tier: 3
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general (default: arts via @type mapping)
+domain: arts
 enabled: true
 rest:
   endpoint: "{{api_endpoint}}"
@@ -580,6 +594,8 @@ tier: 1                              # tier used for each detail page (0, 1, or 
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general (default: arts via @type mapping)
+domain: arts
 enabled: true
 sitemap:
   url: "<sitemap-XML-URL>"
@@ -647,7 +663,7 @@ Return a structured report — do **not** run `git add`, `git commit`, or `git p
 ### Result line (required)
 
 ```
-RESULT | <URL> | <name> | <event_count> | <status> | <notes>
+RESULT | <URL> | <name> | <event_count> | <domain> | <status> | <notes>
 ```
 
 Where `status` = `written` (enabled=true), `failed` (kept disabled), or `downgraded` (tier changed).

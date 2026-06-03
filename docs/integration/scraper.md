@@ -542,6 +542,7 @@ fully-documented template. Sources starting with `_` are ignored by the loader.
 name: "My Arts Venue"
 url: "https://example.com/events"
 tier: 0
+domain: arts
 enabled: true
 ```
 
@@ -555,6 +556,7 @@ urls:
   - "https://example.com/events/music"
   - "https://example.com/events/theatre"
 tier: 0
+domain: arts
 enabled: true
 ```
 
@@ -570,6 +572,7 @@ tier: 1
 schedule: "daily"         # daily | weekly | manual
 trust_level: 5            # 1–10, maps to SEL source trust
 license: "CC-BY-4.0"
+domain: arts
 enabled: true
 event_url_pattern: "/events/*"   # Colly URL filter
 max_pages: 10                    # Pagination safety limit
@@ -755,6 +758,7 @@ event ingestion — they are advisory signals for selector debugging.
 name: "JS-Rendered Venue"
 url: "https://example.com/events"
 tier: 2
+domain: arts
 enabled: true
 
 headless:
@@ -792,6 +796,7 @@ extraction from cross-origin iframes such as Ticket Spot (Wix embed) and Elevent
 name: "DatoCMS Venue"
 url: "https://example.com/events"   # Canonical source URL (informational)
 tier: 3
+domain: arts
 enabled: true
 
 graphql:
@@ -831,6 +836,7 @@ logged at debug level and the URL is left empty.
 name: "showpass-venue"
 url: "https://example.showpass.com"  # Canonical source URL (informational)
 tier: 3
+domain: arts
 enabled: true
 
 rest:
@@ -853,6 +859,7 @@ rest:
 - name: "Venue Name (Showclix)"
   url: "https://venuename.com/events"
   tier: 3
+  domain: arts
   rest:
     endpoint: "https://venuenameeventsbucket.s3.amazonaws.com/events.json"
     results_field: "."                 # Bare array: entire response is the results array
@@ -1003,6 +1010,7 @@ scrape. Events from all pages are aggregated into a single `ScrapeResult` per so
 name: "wix-venue"
 url: "https://wix-venue.ca/events"        # metadata only (not scraped directly)
 tier: 0
+domain: arts
 enabled: true
 schedule: "daily"
 sitemap:
@@ -1018,6 +1026,7 @@ sitemap:
 name: "css-detail-venue"
 url: "https://example.com"
 tier: 1
+domain: arts
 enabled: true
 sitemap:
   url: "https://example.com/sitemap.xml"
@@ -1502,7 +1511,9 @@ Use the `/configure-source` OpenCode slash command (see `agents/commands/configu
 ```
 
 The command inspects the URL, proposes CSS selectors, validates live, checks the
-org database for a match, and writes `configs/sources/<name>.yaml`. It runs up to
+org database for a match, and writes `configs/sources/<name>.yaml`. It also infers
+the source's primary domain (arts, music, culture, etc.) from the site content and
+sets the `domain` field accordingly. It runs up to
 5 URLs in parallel via subagents. See [Agentic Scraping Workflow](#agentic-scraping-workflow)
 for a detailed comparison of `/configure-source` vs `scraper-worker` and when to
 use each.

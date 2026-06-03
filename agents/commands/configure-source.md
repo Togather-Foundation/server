@@ -69,6 +69,7 @@ containing:
 
 - **URL** — the target URL to process
 - **Conflict policy** — `skip`, `overwrite`, or `ask` (resolved in Step 2)
+- **Domain** — infer `event_domain` from the site content (music venue → "music", art gallery → "arts", etc.) and set `domain:` in the config
 - **No-git reminder** — reinforce that the worker must not run git commands
 
 Example dispatch prompt:
@@ -108,9 +109,9 @@ After all batches complete, print:
 ```
 ## Selector Generation Results
 
-| URL | Name | Events | Status | Notes |
-|-----|------|--------|--------|-------|
-| ... | ...  | ...    | ✓ written / ✗ failed / — skipped / ⚠ js-rendered | ... |
+| URL | Name | Events | Domain | Status | Notes |
+|-----|------|--------|--------|--------|-------|
+| ... | ...  | ...    | ...    | ✓ written / ✗ failed / — skipped / ⚠ js-rendered | ... |
 ```
 
 If any workers reported issues, print them in a consolidated section:
