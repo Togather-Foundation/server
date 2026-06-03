@@ -199,11 +199,11 @@ func TestLoadConfigMissingRequiredVars(t *testing.T) {
 	}()
 
 	tests := []struct {
-		name                  string
-		databaseURL           string
-		jwtSecret             string
-		shutdownPoolTimeout   string
-		expectError           bool
+		name                string
+		databaseURL         string
+		jwtSecret           string
+		shutdownPoolTimeout string
+		expectError         bool
 	}{
 		{
 			name:        "missing DATABASE_URL",
