@@ -192,9 +192,14 @@ func occurrenceDispatchPath(warningsJSON []byte) (string, error) {
 	return "unsupported", nil
 }
 
+const ReviewedBySystem = "system"
+
 // recomputeLifecycleAfterReview checks whether the given event (which must be in
 // pending_review state) still has unresolved pending review rows. If none remain,
 // the lifecycle is promoted to "published". Must be called inside an active transaction.
+//
+// GetPendingReviewByEventUlid returns (nil, nil) when no pending review exists —
+// it does NOT return ErrNotFound. The nil/nil check below is the correct signal.
 func (s *AdminService) recomputeLifecycleAfterReview(ctx context.Context, txRepo Repository, eventULID string, event *Event) error {
 	if event.LifecycleState != "pending_review" {
 		return nil
@@ -1855,7 +1860,7 @@ func (s *AdminService) consolidateRetireEvents(
 	}
 
 	// Step 6: Dismiss pending reviews for retired events.
-	dismissedIDs, err = txRepo.DismissPendingReviewsByEventULIDs(ctx, retireULIDs, "system")
+	dismissedIDs, err = txRepo.DismissPendingReviewsByEventULIDs(ctx, retireULIDs, ReviewedBySystem)
 	if err != nil {
 		return nil, nil, fmt.Errorf("dismiss pending reviews for retired events: %w", err)
 	}
@@ -1981,7 +1986,7 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 
 	if len(filtered) == 0 {
 		// All warnings stripped — dismiss the entry and publish the canonical.
-		if _, dismissErr := txRepo.MergeReview(ctx, entry.ID, "system", canonicalEvent.ULID); dismissErr != nil {
+		if _, dismissErr := txRepo.MergeReview(ctx, entry.ID, ReviewedBySystem, canonicalEvent.ULID); dismissErr != nil {
 			return dismissedIDs, fmt.Errorf("dismiss canonical review entry %d after stripping dup warnings: %w", entry.ID, dismissErr)
 		}
 		dismissedIDs = append(dismissedIDs, entry.ID)
