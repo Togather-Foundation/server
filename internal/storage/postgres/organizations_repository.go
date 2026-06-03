@@ -93,7 +93,7 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 			}
 			items = make([]organizations.Organization, 0, len(rows))
 			for _, row := range rows {
-				items = append(items, sqlcOrganizationRowToDomain(&row))
+				items = append(items, row.Organization.toDomain())
 			}
 		} else {
 			params := ListOrganizationsByNameParams{
@@ -109,7 +109,7 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 			}
 			items = make([]organizations.Organization, 0, len(rows))
 			for _, row := range rows {
-				items = append(items, sqlcOrganizationRowToDomain(&row))
+				items = append(items, row.Organization.toDomain())
 			}
 		}
 	} else {
@@ -127,7 +127,7 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 			}
 			items = make([]organizations.Organization, 0, len(rows))
 			for _, row := range rows {
-				items = append(items, sqlcOrganizationRowToDomain(&row))
+				items = append(items, row.Organization.toDomain())
 			}
 		} else {
 			params := ListOrganizationsByCreatedAtParams{
@@ -143,7 +143,7 @@ func (r *OrganizationRepository) List(ctx context.Context, filters organizations
 			}
 			items = make([]organizations.Organization, 0, len(rows))
 			for _, row := range rows {
-				items = append(items, sqlcOrganizationRowToDomain(&row))
+				items = append(items, row.Organization.toDomain())
 			}
 		}
 	}
@@ -169,8 +169,8 @@ func (r *OrganizationRepository) GetByULID(ctx context.Context, ulid string) (*o
 		return nil, fmt.Errorf("get organization: %w", err)
 	}
 
-	org := sqlcOrganizationRowToDomain(&row)
-	if row.DeletedAt.Valid {
+	org := row.Organization.toDomain()
+	if row.Organization.DeletedAt.Valid {
 		org.Lifecycle = "deleted"
 	}
 	return &org, nil
@@ -223,31 +223,8 @@ func (r *OrganizationRepository) Update(ctx context.Context, ulid string, params
 		return nil, fmt.Errorf("update organization: %w", err)
 	}
 
-	var orgID string
-	_ = row.ID.Scan(&orgID)
-
-	org := &organizations.Organization{
-		ID:               orgID,
-		ULID:             row.Ulid,
-		Name:             row.Name,
-		LegalName:        row.LegalName.String,
-		Description:      row.Description.String,
-		URL:              row.Url.String,
-		Email:            row.Email.String,
-		Telephone:        row.Telephone.String,
-		AddressLocality:  row.AddressLocality.String,
-		AddressRegion:    row.AddressRegion.String,
-		AddressCountry:   row.AddressCountry.String,
-		StreetAddress:    row.StreetAddress.String,
-		PostalCode:       row.PostalCode.String,
-		OrganizationType: row.OrganizationType.String,
-		FederationURI:    row.FederationUri.String,
-		AlternateName:    row.AlternateName.String,
-		CreatedAt:        row.CreatedAt.Time,
-		UpdatedAt:        row.UpdatedAt.Time,
-	}
-
-	return org, nil
+	org := row.Organization.toDomain()
+	return &org, nil
 }
 
 // SoftDelete marks an organization as deleted
@@ -327,144 +304,33 @@ func (r *OrganizationRepository) GetTombstoneByULID(ctx context.Context, ulid st
 	return tombstone, nil
 }
 
-// sqlcOrganizationRowToDomain converts SQLc-generated row types to organizations.Organization domain struct.
-func sqlcOrganizationRowToDomain(row interface{}) organizations.Organization {
-	// Extract fields based on concrete type
-	var id pgtype.UUID
-	var ulid, name string
-	var legalName, description, email, telephone, url pgtype.Text
-	var addressLocality, addressRegion, addressCountry, streetAddress, postalCode pgtype.Text
-	var organizationType, federationURI, alternateName pgtype.Text
-	var createdAt, updatedAt pgtype.Timestamptz
-
-	switch r := row.(type) {
-	case *ListOrganizationsByCreatedAtRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		legalName = r.LegalName
-		description = r.Description
-		email = r.Email
-		telephone = r.Telephone
-		url = r.Url
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		addressCountry = r.AddressCountry
-		streetAddress = r.StreetAddress
-		postalCode = r.PostalCode
-		organizationType = r.OrganizationType
-		federationURI = r.FederationUri
-		alternateName = r.AlternateName
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	case *ListOrganizationsByCreatedAtDescRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		legalName = r.LegalName
-		description = r.Description
-		email = r.Email
-		telephone = r.Telephone
-		url = r.Url
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		addressCountry = r.AddressCountry
-		streetAddress = r.StreetAddress
-		postalCode = r.PostalCode
-		organizationType = r.OrganizationType
-		federationURI = r.FederationUri
-		alternateName = r.AlternateName
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	case *ListOrganizationsByNameRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		legalName = r.LegalName
-		description = r.Description
-		email = r.Email
-		telephone = r.Telephone
-		url = r.Url
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		addressCountry = r.AddressCountry
-		streetAddress = r.StreetAddress
-		postalCode = r.PostalCode
-		organizationType = r.OrganizationType
-		federationURI = r.FederationUri
-		alternateName = r.AlternateName
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	case *ListOrganizationsByNameDescRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		legalName = r.LegalName
-		description = r.Description
-		email = r.Email
-		telephone = r.Telephone
-		url = r.Url
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		addressCountry = r.AddressCountry
-		streetAddress = r.StreetAddress
-		postalCode = r.PostalCode
-		organizationType = r.OrganizationType
-		federationURI = r.FederationUri
-		alternateName = r.AlternateName
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	case *GetOrganizationByULIDRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		legalName = r.LegalName
-		description = r.Description
-		email = r.Email
-		telephone = r.Telephone
-		url = r.Url
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		addressCountry = r.AddressCountry
-		streetAddress = r.StreetAddress
-		postalCode = r.PostalCode
-		organizationType = r.OrganizationType
-		federationURI = r.FederationUri
-		alternateName = r.AlternateName
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	}
-
-	// Extract UUID string representation
-	// Note: Use String() method, not Scan() which reads FROM source not TO destination
-	orgID := ""
-	if id.Valid {
-		orgID = uuid.UUID(id.Bytes).String()
-	}
-
+// toDomain converts the SQLc Organization table model to the domain Organization type.
+func (o *Organization) toDomain() organizations.Organization {
 	org := organizations.Organization{
-		ID:               orgID,
-		ULID:             ulid,
-		Name:             name,
-		LegalName:        pgtextToString(legalName),
-		Description:      pgtextToString(description),
-		Email:            pgtextToString(email),
-		Telephone:        pgtextToString(telephone),
-		URL:              pgtextToString(url),
-		AddressLocality:  pgtextToString(addressLocality),
-		AddressRegion:    pgtextToString(addressRegion),
-		AddressCountry:   pgtextToString(addressCountry),
-		StreetAddress:    pgtextToString(streetAddress),
-		PostalCode:       pgtextToString(postalCode),
-		OrganizationType: pgtextToString(organizationType),
-		FederationURI:    pgtextToString(federationURI),
-		AlternateName:    pgtextToString(alternateName),
+		Name:             o.Name,
+		ULID:             o.Ulid,
+		LegalName:        pgtextToString(o.LegalName),
+		Description:      pgtextToString(o.Description),
+		Email:            pgtextToString(o.Email),
+		Telephone:        pgtextToString(o.Telephone),
+		URL:              pgtextToString(o.Url),
+		AddressLocality:  pgtextToString(o.AddressLocality),
+		AddressRegion:    pgtextToString(o.AddressRegion),
+		AddressCountry:   pgtextToString(o.AddressCountry),
+		StreetAddress:    pgtextToString(o.StreetAddress),
+		PostalCode:       pgtextToString(o.PostalCode),
+		OrganizationType: pgtextToString(o.OrganizationType),
+		FederationURI:    pgtextToString(o.FederationUri),
+		AlternateName:    pgtextToString(o.AlternateName),
 	}
-	if createdAt.Valid {
-		org.CreatedAt = createdAt.Time
+	if o.ID.Valid {
+		org.ID = uuid.UUID(o.ID.Bytes).String()
 	}
-	if updatedAt.Valid {
-		org.UpdatedAt = updatedAt.Time
+	if o.CreatedAt.Valid {
+		org.CreatedAt = o.CreatedAt.Time
+	}
+	if o.UpdatedAt.Valid {
+		org.UpdatedAt = o.UpdatedAt.Time
 	}
 	return org
 }

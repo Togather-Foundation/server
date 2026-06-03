@@ -190,7 +190,7 @@ SELECT p.id, p.ulid, p.name, p.description,
 				}
 				items = make([]places.Place, 0, len(rows))
 				for _, row := range rows {
-					items = append(items, sqlcPlaceRowToDomain(&row))
+					items = append(items, row.Place.toDomain())
 				}
 			} else {
 				params := ListPlacesByNameParams{
@@ -206,7 +206,7 @@ SELECT p.id, p.ulid, p.name, p.description,
 				}
 				items = make([]places.Place, 0, len(rows))
 				for _, row := range rows {
-					items = append(items, sqlcPlaceRowToDomain(&row))
+					items = append(items, row.Place.toDomain())
 				}
 			}
 		} else {
@@ -224,7 +224,7 @@ SELECT p.id, p.ulid, p.name, p.description,
 				}
 				items = make([]places.Place, 0, len(rows))
 				for _, row := range rows {
-					items = append(items, sqlcPlaceRowToDomain(&row))
+					items = append(items, row.Place.toDomain())
 				}
 			} else {
 				params := ListPlacesByCreatedAtParams{
@@ -240,7 +240,7 @@ SELECT p.id, p.ulid, p.name, p.description,
 				}
 				items = make([]places.Place, 0, len(rows))
 				for _, row := range rows {
-					items = append(items, sqlcPlaceRowToDomain(&row))
+					items = append(items, row.Place.toDomain())
 				}
 			}
 		}
@@ -321,8 +321,8 @@ func (r *PlaceRepository) GetByULID(ctx context.Context, ulid string) (*places.P
 		return nil, fmt.Errorf("get place: %w", err)
 	}
 
-	place := sqlcPlaceRowToDomain(&row)
-	if row.DeletedAt.Valid {
+	place := row.Place.toDomain()
+	if row.Place.DeletedAt.Valid {
 		place.Lifecycle = "deleted"
 	}
 	return &place, nil
@@ -359,153 +359,33 @@ func placeRowToDomain(row *placeRow) places.Place {
 	return place
 }
 
-// sqlcPlaceRowToDomain converts a SQLc-generated row to a places.Place domain struct.
-// This works with any of the ListPlacesByXXX row types since they all have the same structure.
-func sqlcPlaceRowToDomain(row interface{}) places.Place {
-	// Extract fields based on concrete type
-	var id pgtype.UUID
-	var ulid, name string
-	var description, streetAddress, addressLocality, addressRegion, postalCode, addressCountry pgtype.Text
-	var latitude, longitude pgtype.Numeric
-	var telephone, email, url pgtype.Text
-	var maximumAttendeeCapacity pgtype.Int4
-	var venueType, federationURI pgtype.Text
-	var createdAt, updatedAt pgtype.Timestamptz
-
-	switch r := row.(type) {
-	case *ListPlacesByCreatedAtRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		description = r.Description
-		streetAddress = r.StreetAddress
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		postalCode = r.PostalCode
-		addressCountry = r.AddressCountry
-		latitude = r.Latitude
-		longitude = r.Longitude
-		telephone = r.Telephone
-		email = r.Email
-		url = r.Url
-		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
-		venueType = r.VenueType
-		federationURI = r.FederationUri
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	case *ListPlacesByCreatedAtDescRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		description = r.Description
-		streetAddress = r.StreetAddress
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		postalCode = r.PostalCode
-		addressCountry = r.AddressCountry
-		latitude = r.Latitude
-		longitude = r.Longitude
-		telephone = r.Telephone
-		email = r.Email
-		url = r.Url
-		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
-		venueType = r.VenueType
-		federationURI = r.FederationUri
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	case *ListPlacesByNameRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		description = r.Description
-		streetAddress = r.StreetAddress
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		postalCode = r.PostalCode
-		addressCountry = r.AddressCountry
-		latitude = r.Latitude
-		longitude = r.Longitude
-		telephone = r.Telephone
-		email = r.Email
-		url = r.Url
-		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
-		venueType = r.VenueType
-		federationURI = r.FederationUri
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	case *ListPlacesByNameDescRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		description = r.Description
-		streetAddress = r.StreetAddress
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		postalCode = r.PostalCode
-		addressCountry = r.AddressCountry
-		latitude = r.Latitude
-		longitude = r.Longitude
-		telephone = r.Telephone
-		email = r.Email
-		url = r.Url
-		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
-		venueType = r.VenueType
-		federationURI = r.FederationUri
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	case *GetPlaceByULIDRow:
-		id = r.ID
-		ulid = r.Ulid
-		name = r.Name
-		description = r.Description
-		streetAddress = r.StreetAddress
-		addressLocality = r.AddressLocality
-		addressRegion = r.AddressRegion
-		postalCode = r.PostalCode
-		addressCountry = r.AddressCountry
-		latitude = r.Latitude
-		longitude = r.Longitude
-		telephone = r.Telephone
-		email = r.Email
-		url = r.Url
-		maximumAttendeeCapacity = r.MaximumAttendeeCapacity
-		venueType = r.VenueType
-		federationURI = r.FederationUri
-		createdAt = r.CreatedAt
-		updatedAt = r.UpdatedAt
-	}
-
-	// Extract UUID string representation
-	// Note: Use String() method, not Scan() which reads FROM source not TO destination
-	placeID := ""
-	if id.Valid {
-		placeID = uuid.UUID(id.Bytes).String()
-	}
-
+func (p *Place) toDomain() places.Place {
 	place := places.Place{
-		ID:                      placeID,
-		ULID:                    ulid,
-		Name:                    name,
-		Description:             pgtextToString(description),
-		StreetAddress:           pgtextToString(streetAddress),
-		City:                    pgtextToString(addressLocality),
-		Region:                  pgtextToString(addressRegion),
-		PostalCode:              pgtextToString(postalCode),
-		Country:                 pgtextToString(addressCountry),
-		Latitude:                numericToFloat64Ptr(latitude),
-		Longitude:               numericToFloat64Ptr(longitude),
-		Telephone:               pgtextToString(telephone),
-		Email:                   pgtextToString(email),
-		URL:                     pgtextToString(url),
-		MaximumAttendeeCapacity: int4Ptr(maximumAttendeeCapacity),
-		VenueType:               pgtextToString(venueType),
-		FederationURI:           pgtextToString(federationURI),
+		Name:                    p.Name,
+		ULID:                    p.Ulid,
+		Description:             pgtextToString(p.Description),
+		StreetAddress:           pgtextToString(p.StreetAddress),
+		City:                    pgtextToString(p.AddressLocality),
+		Region:                  pgtextToString(p.AddressRegion),
+		PostalCode:              pgtextToString(p.PostalCode),
+		Country:                 pgtextToString(p.AddressCountry),
+		Latitude:                numericToFloat64Ptr(p.Latitude),
+		Longitude:               numericToFloat64Ptr(p.Longitude),
+		Telephone:               pgtextToString(p.Telephone),
+		Email:                   pgtextToString(p.Email),
+		URL:                     pgtextToString(p.Url),
+		MaximumAttendeeCapacity: int4Ptr(p.MaximumAttendeeCapacity),
+		VenueType:               pgtextToString(p.VenueType),
+		FederationURI:           pgtextToString(p.FederationUri),
 	}
-	if createdAt.Valid {
-		place.CreatedAt = createdAt.Time
+	if p.ID.Valid {
+		place.ID = uuid.UUID(p.ID.Bytes).String()
 	}
-	if updatedAt.Valid {
-		place.UpdatedAt = updatedAt.Time
+	if p.CreatedAt.Valid {
+		place.CreatedAt = p.CreatedAt.Time
+	}
+	if p.UpdatedAt.Valid {
+		place.UpdatedAt = p.UpdatedAt.Time
 	}
 	return place
 }
@@ -579,32 +459,8 @@ func (r *PlaceRepository) Update(ctx context.Context, ulid string, params places
 		return nil, fmt.Errorf("update place: %w", err)
 	}
 
-	var placeID string
-	_ = row.ID.Scan(&placeID)
-
-	place := &places.Place{
-		ID:                      placeID,
-		ULID:                    row.Ulid,
-		Name:                    row.Name,
-		Description:             row.Description.String,
-		StreetAddress:           row.StreetAddress.String,
-		City:                    row.AddressLocality.String,
-		Region:                  row.AddressRegion.String,
-		PostalCode:              row.PostalCode.String,
-		Country:                 row.AddressCountry.String,
-		Latitude:                numericToFloat64Ptr(row.Latitude),
-		Longitude:               numericToFloat64Ptr(row.Longitude),
-		Telephone:               row.Telephone.String,
-		Email:                   row.Email.String,
-		URL:                     row.Url.String,
-		MaximumAttendeeCapacity: int4Ptr(row.MaximumAttendeeCapacity),
-		VenueType:               row.VenueType.String,
-		FederationURI:           row.FederationUri.String,
-		CreatedAt:               row.CreatedAt.Time,
-		UpdatedAt:               row.UpdatedAt.Time,
-	}
-
-	return place, nil
+	place := row.Place.toDomain()
+	return &place, nil
 }
 
 // SoftDelete marks a place as deleted
