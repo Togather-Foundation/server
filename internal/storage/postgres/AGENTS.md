@@ -49,9 +49,32 @@ if row.Description.Valid {
 }
 ```
 
-### 6. Multi-query sort pattern
+### 6. Multi-query sort pattern → use `sqlc.embed()` + `toDomain()`
 
-When ORDER BY is parameterized, create separate named SQLc queries per sort/order combo (e.g. `ListPlacesByCreatedAt`, `ListPlacesByCreatedAtDesc`). Repository selects via type switch. See `places_repository.go:396`.
+When multiple queries return the same column set (e.g. sort variants, filter variants), use `sqlc.embed()` to share a single model struct across all query row types, then add a `toDomain()` method on that model:
+
+```sql
+-- name: ListPlacesByName :many
+SELECT sqlc.embed(places) FROM places WHERE ... ORDER BY name ASC;
+
+-- name: ListPlacesByCreatedAt :many
+SELECT sqlc.embed(places) FROM places WHERE ... ORDER BY created_at DESC;
+```
+
+```go
+// toDomain converts the SQLc table model to the domain type.
+func (p *Place) toDomain() places.Place {
+    return places.Place{ID: p.Ulid, Name: p.Name, ...}
+}
+```
+
+All call sites become identical: `row.Place.toDomain()`. One method to maintain per model — never write per-query converters or type-switch functions.
+
+For JOIN queries that return extra columns (e.g. `LEFT JOIN LATERAL`), use `sqlc.embed(alias)` for the shared model and list extra columns separately:
+```sql
+SELECT sqlc.embed(s), r.started_at, r.status
+FROM scraper_sources s LEFT JOIN LATERAL (...) r ON true;
+```
 
 ### 7. INET columns → `netip.Addr`
 
