@@ -350,6 +350,11 @@ func (m *MockRepository) DismissWarningMatchByReviewID(ctx context.Context, id i
 	return args.Error(0)
 }
 
+func (m *MockRepository) DismissAllCompanionWarnings(ctx context.Context, reviewID int, eventULID string) (bool, error) {
+	args := m.Called(ctx, reviewID, eventULID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockRepository) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
 	args := m.Called(ctx, eventID, startTime, endTime)
 	return args.Bool(0), args.Error(1)

@@ -220,6 +220,10 @@ func (s stubEventsRepo) DismissWarningMatchByReviewID(_ context.Context, _ int, 
 	return nil
 }
 
+func (s stubEventsRepo) DismissAllCompanionWarnings(_ context.Context, _ int, _ string) (bool, error) {
+	return false, nil
+}
+
 func (s stubEventsRepo) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
 	return false, nil
 }

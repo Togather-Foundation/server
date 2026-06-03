@@ -1044,7 +1044,7 @@ paths:
           description: Filter by review status (defaults to 'pending')
           schema:
             type: string
-            enum: [pending, approved, rejected, merged]
+            enum: [pending, approved, rejected, merged, dismissed]
             default: pending
         - name: cursor
           in: query
@@ -3868,11 +3868,12 @@ components:
           description: Validation warnings that triggered review
         status:
           type: string
-          enum: [pending, approved, rejected, merged]
+          enum: [pending, approved, rejected, merged, dismissed]
           description: >
             Current review status. `pending` = awaiting decision; `approved` = event published;
             `rejected` = event deleted; `merged` = event absorbed into another event
-            (via add-occurrence or consolidation).
+            (via add-occurrence or consolidation); `dismissed` = companion review resolved
+            via consolidation.
         createdAt:
           type: string
           format: date-time
@@ -3911,11 +3912,12 @@ components:
           description: Event ULID
         status:
           type: string
-          enum: [pending, approved, rejected, merged]
+          enum: [pending, approved, rejected, merged, dismissed]
           description: >
             Current review status. `pending` = awaiting decision; `approved` = event published;
             `rejected` = event deleted; `merged` = event absorbed into another event
-            (via add-occurrence or consolidation).
+            (via add-occurrence or consolidation); `dismissed` = companion review resolved
+            via consolidation.
         warnings:
           type: array
           items:

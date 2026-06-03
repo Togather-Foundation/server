@@ -331,3 +331,55 @@ UPDATE event_review_queue
        ),
        updated_at = NOW()
  WHERE id = sqlc.arg('review_id')::int;
+
+-- name: DismissAllCompanionWarnings :one
+-- Atomically strips all companion warning entries referencing the given event_ulid
+-- from a specific review row. Handles three warning types:
+--   near_duplicate_of_new_event  — stripped when duplicate_of_event_id matches
+--   potential_duplicate          — specific match entries filtered; warning nullified when matches empty
+--   cross_week_series_companion  — stripped when details->>'companion_ulid' matches
+-- Also clears duplicate_of_event_id if it points to the given event.
+-- Returns true (warnings_empty) when the resulting warnings array is empty after stripping.
+WITH target_event AS (
+  SELECT id FROM events WHERE ulid = sqlc.arg('event_ulid') LIMIT 1
+),
+stripped AS (
+  SELECT COALESCE(jsonb_agg(new_w ORDER BY idx), '[]'::jsonb) AS warnings
+  FROM (
+    SELECT idx,
+           CASE
+             WHEN w->>'code' = 'potential_duplicate' THEN (
+               SELECT CASE WHEN jsonb_array_length(rebuilt) = 0 THEN NULL
+                           ELSE jsonb_set(w, '{details,matches}', rebuilt)
+                      END
+               FROM (
+                 SELECT COALESCE(jsonb_agg(m), '[]'::jsonb) AS rebuilt
+                 FROM jsonb_array_elements(w->'details'->'matches') m
+                 WHERE m->>'ulid' <> sqlc.arg('event_ulid')::text
+               ) _
+             )
+             WHEN w->>'code' = 'cross_week_series_companion'
+                  AND w->'details'->>'companion_ulid' = sqlc.arg('event_ulid')::text THEN NULL
+             ELSE w
+           END AS new_w
+    FROM event_review_queue rq,
+         jsonb_array_elements(rq.warnings) WITH ORDINALITY AS t(w, idx)
+    WHERE rq.id = sqlc.arg('review_id')::int
+      AND NOT (
+        w->>'code' = 'near_duplicate_of_new_event'
+        AND rq.duplicate_of_event_id = (SELECT id FROM target_event)
+      )
+  ) sub
+  WHERE new_w IS NOT NULL
+)
+UPDATE event_review_queue
+   SET warnings = stripped.warnings,
+       duplicate_of_event_id = CASE
+         WHEN duplicate_of_event_id = (SELECT id FROM target_event) THEN NULL
+         ELSE duplicate_of_event_id
+       END,
+       updated_at = NOW()
+  FROM stripped
+ WHERE id = sqlc.arg('review_id')::int
+   AND status = 'pending'
+RETURNING (stripped.warnings = '[]'::jsonb) AS warnings_empty;

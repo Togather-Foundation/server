@@ -168,6 +168,7 @@ type mockTransactionalRepo struct {
 	dismissPendingReviewsByEventULIDsFunc           func(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error)
 	createReviewQueueEntryFunc                      func(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
 	updateReviewQueueEntryFunc                      func(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
+	dismissAllCompanionWarningsFunc                 func(ctx context.Context, reviewID int, eventULID string) (bool, error)
 	findByDedupHashFunc                             func(ctx context.Context, dedupHash string) (*Event, error)
 	findNearDuplicatesFunc                          func(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
 	findSeriesCompanionFunc                         func(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
@@ -398,6 +399,12 @@ func (m *mockTransactionalRepo) DismissCompanionWarningMatch(_ context.Context, 
 }
 func (m *mockTransactionalRepo) DismissWarningMatchByReviewID(_ context.Context, _ int, _ string) error {
 	return nil
+}
+func (m *mockTransactionalRepo) DismissAllCompanionWarnings(ctx context.Context, reviewID int, eventULID string) (bool, error) {
+	if m.dismissAllCompanionWarningsFunc != nil {
+		return m.dismissAllCompanionWarningsFunc(ctx, reviewID, eventULID)
+	}
+	return false, nil
 }
 func (m *mockTransactionalRepo) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
 	if m.checkOccurrenceOverlapFunc != nil {
@@ -1044,6 +1051,13 @@ func TestApproveEventWithReview_DismissesCompanionNearDupEntry(t *testing.T) {
 			companionApproveID = id
 		}
 		return &ReviewQueueEntry{ID: id, Status: "approved"}, nil
+	}
+
+	repo.dismissAllCompanionWarningsFunc = func(_ context.Context, reviewID int, eventULID string) (bool, error) {
+		if reviewID == companionReview.ID && eventULID == approvedULID {
+			return true, nil // all warnings stripped → approve
+		}
+		return false, nil
 	}
 
 	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
