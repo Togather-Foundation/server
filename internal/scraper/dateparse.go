@@ -40,10 +40,31 @@ func assembleDateTimeParts(parts []string, timezone string, now time.Time) (star
 
 	loc := loadTimezone(timezone)
 
+	// Pre-process: expand pipe-separated date|time parts so the date
+	// and time halves are parsed independently.
+	var processed []string
+	for _, part := range parts {
+		part = normalizeWhitespace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, "|") {
+			subParts := strings.Split(part, "|")
+			for _, sp := range subParts {
+				sp = strings.TrimSpace(sp)
+				if sp != "" {
+					processed = append(processed, sp)
+				}
+			}
+		} else {
+			processed = append(processed, part)
+		}
+	}
+
 	var dates []parsedDate
 	var times []parsedTime
 
-	for _, part := range parts {
+	for _, part := range processed {
 		part = normalizeWhitespace(part)
 		if part == "" {
 			continue
@@ -75,6 +96,12 @@ func assembleDateTimeParts(parts []string, timezone string, now time.Time) (star
 					}
 				}
 			}
+			continue
+		}
+
+		// Try splitting time ranges ("1 - 3:30 pm", "7:00 - 9:00 PM").
+		if timeRangeParts := splitTimeRange(part, loc, now); len(timeRangeParts) > 0 {
+			times = append(times, timeRangeParts...)
 			continue
 		}
 
@@ -313,7 +340,10 @@ func splitDateRange(s string) []string {
 	if len(parts) == 2 {
 		left := strings.TrimSpace(parts[0])
 		right := strings.TrimSpace(parts[1])
-		if left != "" && right != "" {
+		// Reject splits where neither side has a month name — these are
+		// time ranges (e.g. "1 - 3:30 pm") or other non-date splits.
+		if left != "" && right != "" &&
+			(monthNamePattern.MatchString(left) || monthNamePattern.MatchString(right)) {
 			return []string{left, right}
 		}
 	}
@@ -331,6 +361,59 @@ var monthNamePattern = regexp.MustCompile(
 func extractMonthName(s string) string {
 	m := monthNamePattern.FindString(s)
 	return m
+}
+
+// ── Time range splitting ──────────────────────────────────────────────
+
+// ampmPattern extracts AM/PM markers from time strings.
+var ampmPattern = regexp.MustCompile(`(?i)\b(am|pm|a\.m\.|p\.m\.)\b`)
+
+// splitTimeRange detects and extracts time ranges like "1 - 3:30 pm" or
+// "7:00 - 9:00 PM". Returns parsedTime values for both sides of the range,
+// propagating AM/PM markers from one side to the other when needed.
+// Returns nil if the string does not look like a time range.
+func splitTimeRange(s string, loc *time.Location, now time.Time) []parsedTime {
+	// If the string has a month name, it might be a date range — don't
+	// treat it as a time range.
+	if monthNamePattern.MatchString(s) {
+		return nil
+	}
+
+	parts := rangeSeparator.Split(s, 2)
+	if len(parts) != 2 {
+		return nil
+	}
+	left := strings.TrimSpace(parts[0])
+	right := strings.TrimSpace(parts[1])
+	if left == "" || right == "" {
+		return nil
+	}
+
+	// At least one side must have a recognizable time pattern.
+	if !hasTimePattern(left) && !hasTimePattern(right) {
+		return nil
+	}
+
+	// Propagate AM/PM from the side that has it to the side that doesn't.
+	leftAMPM := ampmPattern.FindString(left)
+	rightAMPM := ampmPattern.FindString(right)
+	if leftAMPM == "" && rightAMPM != "" {
+		left = left + " " + rightAMPM
+	} else if rightAMPM == "" && leftAMPM != "" {
+		right = right + " " + leftAMPM
+	}
+
+	var times []parsedTime
+	for _, ts := range []string{left, right} {
+		_, t, ok := parseFuzzy(ts, loc, now)
+		if ok && t != nil {
+			times = append(times, *t)
+		}
+	}
+	if len(times) == 0 {
+		return nil
+	}
+	return times
 }
 
 // ── Assembly helpers ──────────────────────────────────────────────────

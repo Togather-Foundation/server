@@ -130,6 +130,50 @@ func TestParseFuzzy(t *testing.T) {
 
 // ── splitDateRange ────────────────────────────────────────────────────
 
+func TestSplitDateRange_TimeRangeNotDateRange(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		input string
+		want  bool // true = should be a range, false = should NOT split
+	}{
+		{
+			name:  "time range with AM/PM is not a date range",
+			input: "1 - 3:30 pm",
+			want:  false,
+		},
+		{
+			name:  "time range with no month names is not a date range",
+			input: "7:00 - 9:00 PM",
+			want:  false,
+		},
+		{
+			name:  "date range with month names still works",
+			input: "Jan 20 - Mar 1, 2026",
+			want:  true,
+		},
+		{
+			name:  "date range with one month name still works",
+			input: "Feb 3 - Mar 8, 2026",
+			want:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := splitDateRange(tc.input)
+			if tc.want && got == nil {
+				t.Errorf("splitDateRange(%q) = nil, want non-nil (should be recognized as date range)", tc.input)
+			}
+			if !tc.want && got != nil {
+				t.Errorf("splitDateRange(%q) = %v, want nil (time range should not be split as date range)", tc.input, got)
+			}
+		})
+	}
+}
+
 func TestSplitDateRange(t *testing.T) {
 	t.Parallel()
 
@@ -291,6 +335,78 @@ func TestAssembleDateTimeParts(t *testing.T) {
 			parts:     []string{"Feb 3 - Mar 8, 2026"},
 			wantStart: "2026-02-03T00:00:00-",
 			wantEnd:   "2026-03-08T00:00:00-",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			start, end := assembleDateTimeParts(tc.parts, tz, testNow())
+
+			if tc.wantStart == "" {
+				if start != "" {
+					t.Errorf("start = %q, want empty", start)
+				}
+				return
+			}
+
+			if !hasPrefix(start, tc.wantStart) {
+				t.Errorf("start = %q, want prefix %q", start, tc.wantStart)
+			}
+			if tc.wantEnd != "" && !hasPrefix(end, tc.wantEnd) {
+				t.Errorf("end = %q, want prefix %q", end, tc.wantEnd)
+			}
+			if tc.wantEnd == "" && end != "" {
+				t.Errorf("end = %q, want empty", end)
+			}
+		})
+	}
+}
+
+// ── assembleDateTimeParts pipe-separated ──────────────────────────────
+
+func TestAssembleDateTimeParts_PipeSeparatedDate(t *testing.T) {
+	t.Parallel()
+
+	tz := "America/Toronto"
+
+	tests := []struct {
+		name      string
+		parts     []string
+		wantStart string
+		wantEnd   string
+	}{
+		{
+			name:      "simple pipe: date | time",
+			parts:     []string{"March 15, 2026 | 2:00 PM"},
+			wantStart: "2026-03-15T14:00:00-",
+		},
+		{
+			name:      "koffler-arts style: pipe between date and time range",
+			parts:     []string{"Sunday March 29 | 1 - 3:30 pm"},
+			wantStart: "2026-03-29T13:00:00-", // March 29 at 1pm (time range start)
+			wantEnd:   "2026-03-29T15:30:00-", // March 29 at 3:30pm (time range end)
+		},
+		{
+			name:      "date range still works (no pipe)",
+			parts:     []string{"Jan 20 - Mar 1, 2026"},
+			wantStart: "2026-01-20T00:00:00-",
+			wantEnd:   "2026-03-01T00:00:00-",
+		},
+		{
+			name:      "pipe at start (empty left side)",
+			parts:     []string{"| March 15, 2026 2:00 PM"},
+			wantStart: "2026-03-15T14:00:00-",
+		},
+		{
+			name:      "pipe at end (empty right side)",
+			parts:     []string{"March 15, 2026 2:00 PM |"},
+			wantStart: "2026-03-15T14:00:00-",
+		},
+		{
+			name:      "no pipe: normal date+time passes through",
+			parts:     []string{"March 5, 2026 9:30 PM"},
+			wantStart: "2026-03-05T21:30:00-",
 		},
 	}
 
