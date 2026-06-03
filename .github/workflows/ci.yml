@@ -9,7 +9,7 @@ on:
   workflow_dispatch:  # Manual trigger for running full test suite
 
 env:
-  GO_VERSION: "1.25.10"
+  GO_VERSION: "1.26.4"
   COVERAGE_THRESHOLD: 35
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
