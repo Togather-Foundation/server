@@ -163,10 +163,6 @@ func init() {
 
 // setupReconciliation initializes database connection and reconciliation service
 func setupReconciliation() (*pgxpool.Pool, *kg.ReconciliationService, error) {
-	// Load .env files
-	config.LoadEnvFile(".env")
-	config.LoadEnvFile("deploy/docker/.env")
-
 	// Load config
 	cfg, err := config.Load()
 	if err != nil {

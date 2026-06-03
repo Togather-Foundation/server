@@ -118,9 +118,6 @@ func init() {
 //
 // Callers should pass the cobra flag variables (scrapeServerURL, scrapeAPIKey) as the flag params.
 func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey string, err error) {
-	config.LoadEnvFile(".env")
-	config.LoadEnvFile("deploy/docker/.env")
-
 	serverURL = serverFlag
 	if serverURL == "" {
 		serverURL = os.Getenv("TOGATHER_BASE_URL")
@@ -150,9 +147,6 @@ func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey st
 // loadScrapeConfig loads environment files and resolves server URL and API key
 // from flags or environment variables.
 func loadScrapeConfig() (serverURL, apiKey string, err error) {
-	config.LoadEnvFile(".env")
-	config.LoadEnvFile("deploy/docker/.env")
-
 	serverURL = scrapeServerURL
 	if serverURL == "" {
 		serverURL = os.Getenv("SEL_SERVER_URL")
