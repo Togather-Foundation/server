@@ -416,14 +416,24 @@ This is **expected behavior** during:
 2. Health endpoint returns 503
 3. Load balancer stops sending new traffic
 4. Existing requests complete (up to 30s grace period)
-5. Container exits cleanly
+5. Background workers (River, usage recorder) stop
+6. Database pool closes with a timeout guard
+
+**Pool close timeout:**
+
+The database pool close (`pgxpool.Close`) is wrapped with a timeout to prevent the server from hanging indefinitely if connections are not returned. If `pool.Close()` does not return within `SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS` (default: 10s), the server logs a warning and calls `os.Exit(1)` to force exit.
+
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS` | `10` | Max seconds to wait for pool.Close() before forced exit. Must be positive. Rejects zero/negative values at startup. |
 
 **If stuck in shutdown:**
 ```bash
 # Check for hung connections
     docker exec togather-server-<slot> netstat -an | grep :8080
 
-# Force restart if necessary (last resort)
+# The server will self-exit after SHUTDOWN_POOL_CLOSE_TIMEOUT_SECONDS (default 10s).
+# Force restart only if the container has not exited within that window (last resort):
    docker restart togather-server-<slot>
 ```
 
