@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +27,11 @@ The server supports:
 - JSON-LD export with Schema.org vocabulary
 - Federation with other SEL nodes
 - Knowledge graph reconciliation (Artsdata, Wikidata)`,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			config.LoadEnvFile(".env")
+			config.LoadEnvFile("deploy/docker/.env")
+			return nil
+		},
 		// Run the serve command by default if no subcommand is specified
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// If no subcommand provided, run serve by default

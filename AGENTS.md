@@ -225,6 +225,8 @@ Key docs:
 
 Do NOT manually write scraper configs from scratch — always use `/configure-source` or `scraper-worker`, which handle platform detection, tier selection, live validation, and org database lookup.
 
+The `domain` field sets the default `event_domain` (`arts`, `music`, `culture`, `sports`, `community`, `education`, `general`) for all events from a source.
+
 ## Entry Points
 
 - `cmd/` — binary entrypoint

@@ -7,6 +7,7 @@ tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
+domain: arts
 enabled: true
 max_pages: 2
 headless:

@@ -2370,6 +2370,7 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 				Schedule:                      params.Schedule,
 				TrustLevel:                    params.TrustLevel,
 				License:                       params.License,
+				Domain:                        params.Domain,
 				Enabled:                       params.Enabled,
 				MaxPages:                      params.MaxPages,
 				Selectors:                     params.Selectors,

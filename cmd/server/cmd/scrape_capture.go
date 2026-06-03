@@ -100,9 +100,6 @@ Examples:
 			return fmt.Errorf("invalid --format %q: must be html, inspect, or json", scrapeCaptureFormat)
 		}
 
-		// Load env (.env, deploy/docker/.env).
-		_, _, _ = loadScrapeConfig() // side-effect: loads env files
-
 		// Check headless is enabled before attempting to construct the extractor.
 		// Also checked internally by RodExtractor; early check here provides clearer UX.
 		if os.Getenv("SCRAPER_HEADLESS_ENABLED") != "true" {

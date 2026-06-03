@@ -22,7 +22,7 @@ func (q *Queries) DeleteScraperSource(ctx context.Context, name string) error {
 }
 
 const getScraperSourceByID = `-- name: GetScraperSourceByID :one
-SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
        max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
        multi_session_duration_threshold, follow_event_urls, timezone,
        last_scraped_at, created_at, updated_at,
@@ -44,6 +44,7 @@ type GetScraperSourceByIDRow struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -88,6 +89,7 @@ func (q *Queries) GetScraperSourceByID(ctx context.Context, id int64) (GetScrape
 		&i.Schedule,
 		&i.TrustLevel,
 		&i.License,
+		&i.EventDomain,
 		&i.Enabled,
 		&i.MaxPages,
 		&i.Selectors,
@@ -122,7 +124,7 @@ func (q *Queries) GetScraperSourceByID(ctx context.Context, id int64) (GetScrape
 }
 
 const getScraperSourceByName = `-- name: GetScraperSourceByName :one
-SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
        max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
        multi_session_duration_threshold, follow_event_urls, timezone,
        last_scraped_at, created_at, updated_at,
@@ -144,6 +146,7 @@ type GetScraperSourceByNameRow struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -188,6 +191,7 @@ func (q *Queries) GetScraperSourceByName(ctx context.Context, name string) (GetS
 		&i.Schedule,
 		&i.TrustLevel,
 		&i.License,
+		&i.EventDomain,
 		&i.Enabled,
 		&i.MaxPages,
 		&i.Selectors,
@@ -256,7 +260,7 @@ func (q *Queries) LinkPlaceScraperSource(ctx context.Context, arg LinkPlaceScrap
 }
 
 const listScraperSources = `-- name: ListScraperSources :many
-SELECT id, name, url, urls, tier, schedule, trust_level, license, enabled,
+SELECT id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
        max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
        multi_session_duration_threshold, follow_event_urls, timezone,
        last_scraped_at, created_at, updated_at,
@@ -279,6 +283,7 @@ type ListScraperSourcesRow struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -329,6 +334,7 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 			&i.Schedule,
 			&i.TrustLevel,
 			&i.License,
+			&i.EventDomain,
 			&i.Enabled,
 			&i.MaxPages,
 			&i.Selectors,
@@ -370,7 +376,7 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 }
 
 const listScraperSourcesByOrg = `-- name: ListScraperSourcesByOrg :many
-SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
        s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
        s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
        s.last_scraped_at, s.created_at, s.updated_at,
@@ -394,6 +400,7 @@ type ListScraperSourcesByOrgRow struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -444,6 +451,7 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 			&i.Schedule,
 			&i.TrustLevel,
 			&i.License,
+			&i.EventDomain,
 			&i.Enabled,
 			&i.MaxPages,
 			&i.Selectors,
@@ -485,7 +493,7 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 }
 
 const listScraperSourcesByPlace = `-- name: ListScraperSourcesByPlace :many
-SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+SELECT s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
        s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
        s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
        s.last_scraped_at, s.created_at, s.updated_at,
@@ -509,6 +517,7 @@ type ListScraperSourcesByPlaceRow struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -559,6 +568,7 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 			&i.Schedule,
 			&i.TrustLevel,
 			&i.License,
+			&i.EventDomain,
 			&i.Enabled,
 			&i.MaxPages,
 			&i.Selectors,
@@ -601,7 +611,7 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 
 const listScraperSourcesWithLatestRun = `-- name: ListScraperSourcesWithLatestRun :many
 SELECT
-  s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.enabled,
+  s.id, s.name, s.url, s.urls, s.tier, s.schedule, s.trust_level, s.license, s.event_domain, s.enabled,
   s.max_pages, s.selectors, s.notes, s.event_url_pattern, s.skip_multi_session_check,
   s.multi_session_duration_threshold, s.follow_event_urls, s.timezone,
   s.last_scraped_at, s.created_at, s.updated_at,
@@ -640,6 +650,7 @@ type ListScraperSourcesWithLatestRunRow struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -701,6 +712,7 @@ func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled p
 			&i.Schedule,
 			&i.TrustLevel,
 			&i.License,
+			&i.EventDomain,
 			&i.Enabled,
 			&i.MaxPages,
 			&i.Selectors,
@@ -754,15 +766,15 @@ UPDATE scraper_sources
    SET enabled    = $1,
        updated_at = NOW()
  WHERE name = $2
-RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
-          max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-          multi_session_duration_threshold, follow_event_urls, timezone,
-          last_scraped_at, created_at, updated_at,
-          headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-          headless_headers, headless_rate_limit_ms,
-          headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-          graphql_config, rest_config, sitemap_config, default_location,
-          extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
+RETURNING id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
+           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+           multi_session_duration_threshold, follow_event_urls, timezone,
+           last_scraped_at, created_at, updated_at,
+           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+           headless_headers, headless_rate_limit_ms,
+           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+           graphql_config, rest_config, sitemap_config, default_location,
+           extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
 `
 
 type SetScraperSourceEnabledParams struct {
@@ -779,6 +791,7 @@ type SetScraperSourceEnabledRow struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -823,6 +836,7 @@ func (q *Queries) SetScraperSourceEnabled(ctx context.Context, arg SetScraperSou
 		&i.Schedule,
 		&i.TrustLevel,
 		&i.License,
+		&i.EventDomain,
 		&i.Enabled,
 		&i.MaxPages,
 		&i.Selectors,
@@ -906,7 +920,7 @@ func (q *Queries) UpdateScraperSourceLastScraped(ctx context.Context, name strin
 const upsertScraperSource = `-- name: UpsertScraperSource :one
 
 INSERT INTO scraper_sources (
-  name, url, urls, tier, schedule, trust_level, license, enabled,
+  name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
   max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
   multi_session_duration_threshold, follow_event_urls, timezone,
   last_scraped_at,
@@ -957,6 +971,7 @@ INSERT INTO scraper_sources (
   $32,
   $33,
   $34,
+  $35,
   NOW()
 )
 ON CONFLICT (name) DO UPDATE SET
@@ -966,6 +981,7 @@ ON CONFLICT (name) DO UPDATE SET
   schedule                 = EXCLUDED.schedule,
   trust_level              = EXCLUDED.trust_level,
   license                  = EXCLUDED.license,
+  event_domain             = EXCLUDED.event_domain,
   max_pages                = EXCLUDED.max_pages,
   selectors                = EXCLUDED.selectors,
   notes                    = EXCLUDED.notes,
@@ -993,15 +1009,15 @@ ON CONFLICT (name) DO UPDATE SET
   request_timeout_seconds          = EXCLUDED.request_timeout_seconds,
   max_body_bytes           = EXCLUDED.max_body_bytes,
   updated_at               = NOW()
-RETURNING id, name, url, urls, tier, schedule, trust_level, license, enabled,
-          max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
-          multi_session_duration_threshold, follow_event_urls, timezone,
-          last_scraped_at, created_at, updated_at,
-          headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
-          headless_headers, headless_rate_limit_ms,
-          headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
-          graphql_config, rest_config, sitemap_config, default_location,
-          extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
+RETURNING id, name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
+           max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+           multi_session_duration_threshold, follow_event_urls, timezone,
+           last_scraped_at, created_at, updated_at,
+           headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
+           headless_headers, headless_rate_limit_ms,
+           headless_wait_network_idle, headless_undetected, headless_iframe, headless_intercept,
+           graphql_config, rest_config, sitemap_config, default_location,
+           extraction_method, insecure_skip_verify, request_timeout_seconds, max_body_bytes
 `
 
 type UpsertScraperSourceParams struct {
@@ -1012,6 +1028,7 @@ type UpsertScraperSourceParams struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -1050,6 +1067,7 @@ type UpsertScraperSourceRow struct {
 	Schedule                      string             `json:"schedule"`
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
+	EventDomain                   pgtype.Text        `json:"event_domain"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -1092,6 +1110,7 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		arg.Schedule,
 		arg.TrustLevel,
 		arg.License,
+		arg.EventDomain,
 		arg.Enabled,
 		arg.MaxPages,
 		arg.Selectors,
@@ -1130,6 +1149,7 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		&i.Schedule,
 		&i.TrustLevel,
 		&i.License,
+		&i.EventDomain,
 		&i.Enabled,
 		&i.MaxPages,
 		&i.Selectors,

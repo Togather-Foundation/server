@@ -6,5 +6,6 @@ tier: 0
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
+domain: arts
 enabled: false
 max_pages: 3

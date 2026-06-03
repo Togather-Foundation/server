@@ -11,6 +11,7 @@ tier: 2
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
+domain: arts
 enabled: false
 max_pages: 2
 selectors:

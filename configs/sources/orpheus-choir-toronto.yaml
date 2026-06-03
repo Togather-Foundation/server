@@ -19,6 +19,7 @@ tier: 1
 schedule: "manual"
 trust_level: 6
 license: "CC0-1.0"
+domain: music
 enabled: false
 selectors:
   event_list: "body"

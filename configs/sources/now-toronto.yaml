@@ -9,5 +9,6 @@ extraction_method: ics
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+domain: culture
 timezone: "America/Toronto"
 enabled: true

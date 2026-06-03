@@ -23,12 +23,14 @@ type SourceConfig struct {
 	// set, URL is not validated and not used for fetching — GetURLs() returns
 	// URLs instead, and URL is stored only as human-readable metadata (e.g. in
 	// scraper_run records). See also: ValidateConfig for the url-skip behaviour.
-	URL             string         `yaml:"url"               json:"url"`
-	URLs            []string       `yaml:"urls,omitempty"    json:"urls,omitempty"`
-	Tier            int            `yaml:"tier"              json:"tier"`
-	Schedule        string         `yaml:"schedule"          json:"schedule"`
-	TrustLevel      int            `yaml:"trust_level"       json:"trust_level"`
-	License         string         `yaml:"license"           json:"license"`
+	URL        string   `yaml:"url"               json:"url"`
+	URLs       []string `yaml:"urls,omitempty"    json:"urls,omitempty"`
+	Tier       int      `yaml:"tier"              json:"tier"`
+	Schedule   string   `yaml:"schedule"          json:"schedule"`
+	TrustLevel int      `yaml:"trust_level"       json:"trust_level"`
+	License    string   `yaml:"license"           json:"license"`
+	// Domain is the default event_domain for events scraped from this source. Valid values: arts, music, culture, sports, community, education, general. Empty means no override; events fall back to schema.org @type-to-domain mapping (defaulting to 'arts').
+	Domain          string         `yaml:"domain,omitempty"   json:"domain,omitempty"`
 	Enabled         bool           `yaml:"enabled"           json:"enabled"`
 	EventURLPattern string         `yaml:"event_url_pattern" json:"event_url_pattern"`
 	MaxPages        int            `yaml:"max_pages"         json:"max_pages"`
@@ -667,6 +669,15 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		}
 	default:
 		errs = append(errs, fmt.Sprintf("extraction_method: must be \"\" (default), \"scraper\", or \"ics\", got %q", cfg.ExtractionMethod))
+	}
+
+	if cfg.Domain != "" {
+		switch cfg.Domain {
+		case "arts", "music", "culture", "sports", "community", "education", "general":
+			// valid
+		default:
+			warnings = append(warnings, fmt.Sprintf("source %q has invalid domain %q (valid: arts, music, culture, sports, community, education, general)", cfg.Name, cfg.Domain))
+		}
 	}
 
 	if cfg.MaxPages < 0 {

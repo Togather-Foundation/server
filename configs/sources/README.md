@@ -26,6 +26,12 @@ directly. For detailed ICS configuration, see [ics-feeds.md](ics-feeds.md).
 | `headless.rate_limit_ms` | int | 1000 | Delay between page loads in ms. |
 | `headless.headers` | map[string]string | — | Extra HTTP headers to inject (e.g. `Accept-Language`). |
 
+## Top-Level Fields
+
+| Field | Type | Default | Valid Values | Notes |
+|-------|------|---------|--------------|-------|
+| `domain` | string | `arts` | `arts`, `music`, `culture`, `sports`, `community`, `education`, `general` | Sets the default `event_domain` for all events from this source. Falls back to schema.org `@type` mapping (defaults to `arts`) when empty. |
+
 ## Status Summary
 
 ### Tier 0 (ICS / JSON-LD extraction)

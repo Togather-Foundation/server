@@ -157,7 +157,7 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 			}
 
 			if len(occurrences) == 0 {
-				// All occurrences in the past or excluded.
+				warnings = append(warnings, fmt.Sprintf("RRULE expanded to zero occurrences (UID: %s) — all outside the %d-day horizon or in the past", ev.UID, horizonDays))
 				continue
 			}
 

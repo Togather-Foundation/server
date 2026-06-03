@@ -47,6 +47,7 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		Schedule:                      params.Schedule,
 		TrustLevel:                    int32(params.TrustLevel),
 		License:                       params.License,
+		EventDomain:                   pgtype.Text{String: params.Domain, Valid: params.Domain != ""},
 		Enabled:                       params.Enabled,
 		MaxPages:                      int32(params.MaxPages),
 		Selectors:                     params.Selectors,
@@ -287,6 +288,9 @@ func rowToSource(row ScraperSource) *scraper.Source {
 	if row.HeadlessPaginationBtn.Valid {
 		s.HeadlessPaginationBtn = row.HeadlessPaginationBtn.String
 	}
+	if row.EventDomain.Valid {
+		s.Domain = row.EventDomain.String
+	}
 	return s
 }
 
@@ -311,6 +315,7 @@ func upsertRowToScraperSource(r UpsertScraperSourceRow) ScraperSource {
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
 		DefaultLocation:    r.DefaultLocation,
+		EventDomain:        r.EventDomain,
 		ExtractionMethod:   r.ExtractionMethod,
 		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
 		MaxBodyBytes: r.MaxBodyBytes,
@@ -334,6 +339,7 @@ func getByNameRowToScraperSource(r GetScraperSourceByNameRow) ScraperSource {
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
 		DefaultLocation:    r.DefaultLocation,
+		EventDomain:        r.EventDomain,
 		ExtractionMethod:   r.ExtractionMethod,
 		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
 		MaxBodyBytes: r.MaxBodyBytes,
@@ -357,6 +363,7 @@ func listRowToScraperSource(r ListScraperSourcesRow) ScraperSource {
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
 		DefaultLocation:    r.DefaultLocation,
+		EventDomain:        r.EventDomain,
 		ExtractionMethod:   r.ExtractionMethod,
 		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
 		MaxBodyBytes: r.MaxBodyBytes,
@@ -380,6 +387,7 @@ func listByOrgRowToScraperSource(r ListScraperSourcesByOrgRow) ScraperSource {
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
 		DefaultLocation:    r.DefaultLocation,
+		EventDomain:        r.EventDomain,
 		ExtractionMethod:   r.ExtractionMethod,
 		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
 		MaxBodyBytes: r.MaxBodyBytes,
@@ -403,6 +411,7 @@ func listByPlaceRowToScraperSource(r ListScraperSourcesByPlaceRow) ScraperSource
 		HeadlessIntercept: r.HeadlessIntercept,
 		GraphqlConfig:     r.GraphqlConfig, RestConfig: r.RestConfig, SitemapConfig: r.SitemapConfig,
 		DefaultLocation:    r.DefaultLocation,
+		EventDomain:        r.EventDomain,
 		ExtractionMethod:   r.ExtractionMethod,
 		InsecureSkipVerify: r.InsecureSkipVerify, RequestTimeoutSeconds: r.RequestTimeoutSeconds,
 		MaxBodyBytes: r.MaxBodyBytes,

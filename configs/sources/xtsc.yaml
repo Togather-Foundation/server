@@ -21,6 +21,7 @@ tier: 1
 schedule: "weekly"
 trust_level: 6
 license: "CC0-1.0"
+domain: sports
 enabled: false
 max_pages: 2
 selectors:

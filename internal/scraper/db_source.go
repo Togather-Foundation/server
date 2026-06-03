@@ -37,6 +37,7 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		Schedule:   src.Schedule,
 		TrustLevel: src.TrustLevel,
 		License:    src.License,
+		Domain:     src.Domain,
 		Enabled:    src.Enabled,
 		MaxPages:   src.MaxPages,
 		Notes:      src.Notes,

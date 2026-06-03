@@ -8,6 +8,7 @@ tier: 1
 schedule: "daily"
 trust_level: 5
 license: "CC0-1.0"
+domain: arts
 enabled: true
 sitemap:
   url: "https://tarragontheatre.com/wp-sitemap-posts-post-1.xml"

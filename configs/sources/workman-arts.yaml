@@ -18,6 +18,7 @@ tier: 3
 schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
+domain: arts
 enabled: true
 rest:
   endpoint: "https://www.showpass.com/api/public/events/?venue=10892"
