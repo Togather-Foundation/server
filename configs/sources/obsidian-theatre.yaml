@@ -31,6 +31,7 @@ tier: 2
 schedule: "weekly"
 trust_level: 8
 license: "CC0-1.0"
+domain: arts
 enabled: false
 max_pages: 3
 headless:

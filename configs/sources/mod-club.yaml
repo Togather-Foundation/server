@@ -6,5 +6,6 @@ tier: 0
 schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
+domain: music
 enabled: true
 max_pages: 3

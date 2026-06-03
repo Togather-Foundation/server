@@ -11,6 +11,7 @@ tier: 1
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
+domain: arts
 enabled: true
 max_pages: 3
 # All Gardiner Museum events take place at the Gardiner Museum itself.

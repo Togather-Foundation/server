@@ -18,6 +18,7 @@ max_body_bytes: 15000000
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
+domain: education
 enabled: true
 timezone: "America/Toronto"
 

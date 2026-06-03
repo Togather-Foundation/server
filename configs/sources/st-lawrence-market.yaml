@@ -9,6 +9,7 @@ tier: 2
 schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
+domain: community
 enabled: false
 headless:
   wait_selector: ".event_list > div"

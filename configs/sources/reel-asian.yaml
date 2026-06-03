@@ -12,6 +12,7 @@ tier: 1
 schedule: "daily"
 trust_level: 6
 license: "CC0-1.0"
+domain: arts
 enabled: false
 max_pages: 1
 timezone: "America/Toronto"

@@ -4,6 +4,7 @@ extraction_method: ics
 schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
+domain: arts
 timezone: "America/Toronto"
 enabled: false
 # Disabled: global ICS feed with no Toronto filter — ingests events from NYC, SF, London, etc.

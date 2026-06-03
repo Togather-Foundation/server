@@ -10,6 +10,7 @@ tier: 1
 schedule: "weekly"
 trust_level: 7
 license: "CC0-1.0"
+domain: arts
 enabled: true
 sitemap:
   url: "https://passemuraille.ca/sitemap_index.xml"

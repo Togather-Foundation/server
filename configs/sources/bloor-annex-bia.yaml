@@ -11,6 +11,7 @@ tier: 1
 schedule: "weekly"
 trust_level: 4
 license: "CC0-1.0"
+domain: community
 enabled: false
 max_pages: 2
 selectors:

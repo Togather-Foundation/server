@@ -9,6 +9,7 @@ tier: 3
 schedule: "daily"
 trust_level: 6
 license: "CC0-1.0"
+domain: arts
 enabled: true
 # East End Arts programs are held at various East Toronto venues; the API
 # does not include structured location data so use the org as fallback.

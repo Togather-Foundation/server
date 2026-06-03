@@ -11,6 +11,7 @@ tier: 0
 schedule: "daily"
 trust_level: 6
 license: "CC0-1.0"
+domain: music
 enabled: true
 max_pages: 5
 follow_event_urls: true

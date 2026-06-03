@@ -4,6 +4,7 @@ tier: 1
 schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
+domain: arts
 enabled: true
 max_pages: 3
 # Organization match: no match found in database
