@@ -2833,7 +2833,7 @@ components:
     query:
       name: q
       in: query
-      description: Free-text search on name and description
+      description: Free-text search on name and description. Aliased by `search`.
       schema:
         type: string
 

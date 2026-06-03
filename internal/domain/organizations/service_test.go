@@ -141,3 +141,43 @@ func assertFilterError(t *testing.T, err error, field string, message string) {
 
 	require.Failf(t, "unexpected error type", "err=%T %v", err, err)
 }
+
+func TestParseFilters_SearchAlias(t *testing.T) {
+	t.Run("search alias alone produces query and warning", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("search", "foo")
+
+		filters, _, warnings, err := ParseFilters(values, nil)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", filters.Query)
+		require.Len(t, warnings, 1)
+		require.Contains(t, warnings[0], "search")
+		require.Contains(t, warnings[0], "q")
+	})
+
+	t.Run("canonical q wins over search alias", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("q", "foo")
+		values.Set("search", "bar")
+
+		filters, _, warnings, err := ParseFilters(values, nil)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", filters.Query)
+		for _, w := range warnings {
+			require.NotContains(t, w, "search", "no search warning when canonical q is present")
+		}
+	})
+
+	t.Run("canonical q alone produces no warning", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("q", "foo")
+
+		filters, _, warnings, err := ParseFilters(values, nil)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo", filters.Query)
+		require.Empty(t, warnings)
+	})
+}

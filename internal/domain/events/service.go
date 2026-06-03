@@ -9,6 +9,7 @@ import (
 	"time"
 
 	paginationpkg "github.com/Togather-Foundation/server/internal/api/pagination"
+	"github.com/Togather-Foundation/server/internal/domain"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 )
 
@@ -44,19 +45,6 @@ func (e FilterError) Error() string {
 	return fmt.Sprintf("invalid %s: %s", e.Field, e.Message)
 }
 
-// resolveAlias checks if a snake_case alias is present when the canonical camelCase param is absent.
-// If so, it appends a warning and returns the alias value.
-func resolveAlias(values url.Values, canonical, alias string, warnings *[]string) string {
-	if values.Get(canonical) != "" {
-		return values.Get(canonical)
-	}
-	if v := values.Get(alias); v != "" {
-		*warnings = append(*warnings, fmt.Sprintf("Unrecognised parameter alias %q — use %q instead", alias, canonical))
-		return v
-	}
-	return ""
-}
-
 func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, []string, error) {
 	if loc == nil {
 		loc = time.UTC
@@ -67,12 +55,12 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 	var warnings []string
 
 	// Resolve snake_case aliases before parsing.
-	startDateRaw := resolveAlias(values, "startDate", "start_date", &warnings)
-	endDateRaw := resolveAlias(values, "endDate", "end_date", &warnings)
-	venueIDRaw := resolveAlias(values, "venueId", "venue_id", &warnings)
-	organizerIDRaw := resolveAlias(values, "organizerId", "organizer_id", &warnings)
-	stateRaw := resolveAlias(values, "state", "lifecycle_state", &warnings)
-	domainRaw := resolveAlias(values, "domain", "event_domain", &warnings)
+	startDateRaw := domain.ResolveAlias(values, "startDate", "start_date", &warnings)
+	endDateRaw := domain.ResolveAlias(values, "endDate", "end_date", &warnings)
+	venueIDRaw := domain.ResolveAlias(values, "venueId", "venue_id", &warnings)
+	organizerIDRaw := domain.ResolveAlias(values, "organizerId", "organizer_id", &warnings)
+	stateRaw := domain.ResolveAlias(values, "state", "lifecycle_state", &warnings)
+	domainRaw := domain.ResolveAlias(values, "domain", "event_domain", &warnings)
 
 	startDate, err := parseDate("startDate", startDateRaw, loc)
 	if err != nil {
@@ -120,7 +108,8 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 		}
 	}
 
-	filters.Query = strings.TrimSpace(values.Get("q"))
+	q := domain.ResolveAlias(values, "q", "search", &warnings)
+	filters.Query = strings.TrimSpace(q)
 
 	filters.Domain = parseDomainFromString(domainRaw)
 	if filters.Domain == "" {
