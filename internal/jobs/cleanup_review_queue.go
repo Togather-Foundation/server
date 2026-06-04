@@ -23,7 +23,7 @@ func (ReviewQueueCleanupArgs) Kind() string { return JobKindReviewQueueCleanup }
 // 1. Delete rejected reviews 7 days after event ends (grace period for resubmission)
 // 2. Mark unreviewed events as deleted when event starts (too late to review)
 // 3. Delete pending reviews for past events
-// 4. Archive approved/superseded reviews after 90 days
+// 4. Archive approved/superseded/merged/dismissed reviews after 90 days
 type ReviewQueueCleanupWorker struct {
 	river.WorkerDefaults[ReviewQueueCleanupArgs]
 	Repo   events.Repository
@@ -167,12 +167,12 @@ func (w ReviewQueueCleanupWorker) cleanupUnreviewedEvents(ctx context.Context) (
 	return result.RowsAffected(), nil
 }
 
-// cleanupArchivedReviews deletes approved/superseded reviews after 90 days.
+// cleanupArchivedReviews deletes approved/superseded/merged/dismissed reviews after 90 days.
 // These are historical records - we don't need them forever.
 func (w ReviewQueueCleanupWorker) cleanupArchivedReviews(ctx context.Context) (int64, error) {
 	const deleteQuery = `
 		DELETE FROM event_review_queue
-		WHERE status IN ('approved', 'superseded')
+		WHERE status IN ('approved', 'superseded', 'merged', 'dismissed')
 		AND reviewed_at < NOW() - INTERVAL '90 days'
 	`
 
