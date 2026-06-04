@@ -381,9 +381,9 @@ Three different mechanisms handle companion review cleanup, each with different 
 
 ### G1: `dismissed` Status Not Covered by CleanupArchivedReviews
 
-**Severity:** Low (eventual table bloat) — **PARTIALLY FIXED**
+**Severity:** Low (eventual table bloat) — **FIXED**
 
-The SQLc query `CleanupArchivedReviews` (`event_review_queue.sql:189`) now includes `dismissed` in its IN clause. However, the River job at `internal/jobs/cleanup_review_queue.go:172` uses its own raw SQL (`DELETE ... WHERE status IN ('approved', 'superseded')`) and does **not** call the SQLc query — so `dismissed` and `merged` entries are still never cleaned up by the running job. To fully close this gap, the River job's raw SQL must be updated to include `'dismissed'` and `'merged'`, or switched to call `CleanupExpiredReviews` directly.
+Both the SQLc query `CleanupArchivedReviews` and the River job's raw SQL now include `dismissed` and `merged` in their status filters.
 
 ### G2: Recompute Logic Centralised
 
