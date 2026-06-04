@@ -168,7 +168,7 @@ Events requiring review are stored with:
 All endpoints in `internal/api/handlers/admin_review_queue.go` (694 lines).
 
 **GET `/api/v1/admin/review-queue`** - List reviews
-- Query params: `status` (pending/approved/rejected/merged, default: pending), `limit` (1-100, default 50), `cursor`
+- Query params: `status` (pending/approved/rejected/merged/dismissed, default: pending), `limit` (1-100, default 50), `cursor`
 - Returns: Paginated list of review entries with warnings and metadata
 - Example: [admin_review_queue.go:75](file:///home/ryankelln/Documents/Projects/Art/togather/server/internal/api/handlers/admin_review_queue.go:75)
 
