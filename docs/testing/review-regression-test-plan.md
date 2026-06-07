@@ -631,7 +631,9 @@ Consolidate each same-day pair independently — earlier time (Morning, 6am) as 
    - [ ] Response 200 with `retired` containing the retired ULID.
    - [ ] `review_entries_dismissed` lists any dismissed review IDs.
    - [ ] Retired event: `lifecycle_state = 'deleted'`, tombstone with `deletion_reason = 'consolidated'` and `superseded_by_uri` pointing to canonical.
-   - [ ] Canonical event: unchanged (same occurrences, same data), `lifecycle_state` reflects post-consolidation validation.
+   - [ ] Canonical event: unchanged (same occurrences, same data), `lifecycle_state` reflects post-consolidation recompute:
+     - If the canonical had a pending review row whose warnings all referenced the now-retired event(s), that review is dismissed and lifecycle becomes `published`.
+     - If the canonical had other unresolved pending reviews (e.g., `reversed_dates` unrelated to the retired events), lifecycle stays `pending_review`.
 
 **Test B — Create Path:**
 

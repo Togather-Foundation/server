@@ -58,11 +58,11 @@ func (q *Queries) ApproveReview(ctx context.Context, arg ApproveReviewParams) (E
 
 const cleanupArchivedReviews = `-- name: CleanupArchivedReviews :exec
 DELETE FROM event_review_queue
- WHERE status IN ('approved', 'superseded', 'merged')
+ WHERE status IN ('approved', 'superseded', 'merged', 'dismissed')
    AND reviewed_at < NOW() - INTERVAL '90 days'
 `
 
-// Archive old approved/superseded/merged reviews (90 day retention)
+// Archive old approved/superseded/merged/dismissed reviews (90 day retention)
 func (q *Queries) CleanupArchivedReviews(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, cleanupArchivedReviews)
 	return err
@@ -185,6 +185,73 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 		&i.DuplicateOfEventID,
 	)
 	return i, err
+}
+
+const dismissAllCompanionWarnings = `-- name: DismissAllCompanionWarnings :one
+WITH target_event AS (
+  SELECT id FROM events WHERE ulid = $2 LIMIT 1
+),
+stripped AS (
+  SELECT COALESCE(jsonb_agg(new_w ORDER BY idx), '[]'::jsonb) AS warnings
+  FROM (
+    SELECT idx,
+           CASE
+             WHEN w->>'code' = 'potential_duplicate' THEN (
+               SELECT CASE WHEN jsonb_array_length(rebuilt) = 0 THEN NULL
+                           ELSE jsonb_set(w, '{details,matches}', rebuilt)
+                      END
+               FROM (
+                 SELECT COALESCE(jsonb_agg(m), '[]'::jsonb) AS rebuilt
+                 FROM jsonb_array_elements(w->'details'->'matches') m
+                 WHERE m->>'ulid' <> $2::text
+               ) _
+             )
+             WHEN w->>'code' = 'cross_week_series_companion'
+                  AND w->'details'->>'companion_ulid' = $2::text THEN NULL
+             ELSE w
+           END AS new_w
+    FROM event_review_queue rq,
+         jsonb_array_elements(rq.warnings) WITH ORDINALITY AS t(w, idx)
+    WHERE rq.id = $1::int
+      AND NOT (
+        w->>'code' = 'near_duplicate_of_new_event'
+        AND rq.duplicate_of_event_id = (SELECT id FROM target_event)
+      )
+  ) sub
+  WHERE new_w IS NOT NULL
+)
+UPDATE event_review_queue
+   SET warnings = stripped.warnings,
+       duplicate_of_event_id = CASE
+         WHEN duplicate_of_event_id = (SELECT id FROM target_event) THEN NULL
+         ELSE duplicate_of_event_id
+       END,
+       updated_at = NOW()
+  FROM stripped
+ WHERE id = $1::int
+   AND status = 'pending'
+RETURNING (stripped.warnings = '[]'::jsonb) AS warnings_empty
+`
+
+type DismissAllCompanionWarningsParams struct {
+	ReviewID  int32  `json:"review_id"`
+	EventUlid string `json:"event_ulid"`
+}
+
+// Atomically strips all companion warning entries referencing the given event_ulid
+// from a specific review row. Handles three warning types:
+//
+//	near_duplicate_of_new_event  — stripped when duplicate_of_event_id matches
+//	potential_duplicate          — specific match entries filtered; warning nullified when matches empty
+//	cross_week_series_companion  — stripped when details->>'companion_ulid' matches
+//
+// Also clears duplicate_of_event_id if it points to the given event.
+// Returns true (warnings_empty) when the resulting warnings array is empty after stripping.
+func (q *Queries) DismissAllCompanionWarnings(ctx context.Context, arg DismissAllCompanionWarningsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, dismissAllCompanionWarnings, arg.ReviewID, arg.EventUlid)
+	var warnings_empty bool
+	err := row.Scan(&warnings_empty)
+	return warnings_empty, err
 }
 
 const dismissCompanionWarningMatch = `-- name: DismissCompanionWarningMatch :exec

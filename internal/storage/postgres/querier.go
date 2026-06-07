@@ -17,7 +17,7 @@ type Querier interface {
 	// Mark review as approved
 	ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error)
 	CheckAPIKeyOwnership(ctx context.Context, arg CheckAPIKeyOwnershipParams) (bool, error)
-	// Archive old approved/superseded/merged reviews (90 day retention)
+	// Archive old approved/superseded/merged/dismissed reviews (90 day retention)
 	CleanupArchivedReviews(ctx context.Context) error
 	// Delete expired cache entries
 	CleanupExpiredCache(ctx context.Context) (pgconn.CommandTag, error)
@@ -92,6 +92,14 @@ type Querier interface {
 	// Delete a scraper source by name.
 	DeleteScraperSource(ctx context.Context, name string) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
+	// Atomically strips all companion warning entries referencing the given event_ulid
+	// from a specific review row. Handles three warning types:
+	//   near_duplicate_of_new_event  — stripped when duplicate_of_event_id matches
+	//   potential_duplicate          — specific match entries filtered; warning nullified when matches empty
+	//   cross_week_series_companion  — stripped when details->>'companion_ulid' matches
+	// Also clears duplicate_of_event_id if it points to the given event.
+	// Returns true (warnings_empty) when the resulting warnings array is empty after stripping.
+	DismissAllCompanionWarnings(ctx context.Context, arg DismissAllCompanionWarningsParams) (bool, error)
 	// Atomically remove any potential_duplicate match entry whose ulid equals event_ulid
 	// from the companion's pending review queue entry, identified by the companion's event ULID.
 	// Rebuilds the warnings JSONB in one UPDATE — no read-modify-write race.

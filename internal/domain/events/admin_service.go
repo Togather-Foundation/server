@@ -192,6 +192,33 @@ func occurrenceDispatchPath(warningsJSON []byte) (string, error) {
 	return "unsupported", nil
 }
 
+const ReviewedBySystem = "system"
+
+// recomputeLifecycleAfterReview checks whether the given event (which must be in
+// pending_review state) still has unresolved pending review rows. If none remain,
+// the lifecycle is promoted to "published". Must be called inside an active transaction.
+//
+// GetPendingReviewByEventUlid returns (nil, nil) when no pending review exists —
+// it does NOT return ErrNotFound. The nil/nil check below is the correct signal.
+func (s *AdminService) recomputeLifecycleAfterReview(ctx context.Context, txRepo Repository, eventULID string, event *Event) error {
+	if event.LifecycleState != "pending_review" {
+		return nil
+	}
+	remaining, err := txRepo.GetPendingReviewByEventUlid(ctx, eventULID)
+	if err != nil {
+		return fmt.Errorf("check remaining reviews for %s: %w", eventULID, err)
+	}
+	if remaining == nil {
+		published := "published"
+		if _, err := txRepo.UpdateEvent(ctx, eventULID, UpdateEventParams{
+			LifecycleState: &published,
+		}); err != nil {
+			return fmt.Errorf("publish event %s after review recompute: %w", eventULID, err)
+		}
+	}
+	return nil
+}
+
 // AddOccurrenceFromReview atomically adds the review entry's event occurrence to a target
 // recurring-series event, soft-deletes the review's own event, and marks the review
 // as "merged" — all in a single database transaction.
@@ -509,27 +536,9 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		}
 	}
 
-	// Recompute whether the target event should leave review.  The add-occurrence
-	// action resolved the primary review (and its companion, if any), but the target
-	// may have OTHER unresolved pending review rows (e.g., a second flagged
-	// occurrence on the same series).  Only restore the lifecycle to "published" if
-	// no further pending review rows remain.
-	if target.LifecycleState == "pending_review" {
-		remaining, remErr := txRepo.GetPendingReviewByEventUlid(ctx, targetEventULID)
-		if remErr != nil && !errors.Is(remErr, ErrNotFound) {
-			return nil, fmt.Errorf("recheck pending review for target %s: %w", targetEventULID, remErr)
-		}
-		if remaining == nil {
-			publishedState := "published"
-			if _, err := txRepo.UpdateEvent(ctx, targetEventULID, UpdateEventParams{
-				LifecycleState: &publishedState,
-			}); err != nil {
-				return nil, fmt.Errorf("restore target lifecycle to published: %w", err)
-			}
-		}
-		// If remaining != nil, other unresolved issues exist — leave lifecycle
-		// as pending_review so the event stays invisible to the public API until
-		// all review rows are resolved.
+	// Recompute whether the target event should leave review.
+	if err := s.recomputeLifecycleAfterReview(ctx, txRepo, targetEventULID, target); err != nil {
+		return nil, err
 	}
 
 	if err := txCommitter.Commit(ctx); err != nil {
@@ -846,27 +855,9 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		return nil, nil, fmt.Errorf("update near-dup review status: %w", err)
 	}
 
-	// Step 11: Recompute whether the target event should leave review.  The
-	// add-occurrence action resolved the near-dup review (and its companion, if
-	// any), but the target may have OTHER unresolved pending review rows (e.g., a
-	// second flagged occurrence on the same series).  Only restore the lifecycle to
-	// "published" if no further pending review rows remain.
-	if target.LifecycleState == "pending_review" {
-		remaining, remErr := txRepo.GetPendingReviewByEventUlid(ctx, targetEventULID)
-		if remErr != nil && !errors.Is(remErr, ErrNotFound) {
-			return nil, nil, fmt.Errorf("recheck pending review for target %s: %w", targetEventULID, remErr)
-		}
-		if remaining == nil {
-			publishedState := "published"
-			if _, err := txRepo.UpdateEvent(ctx, targetEventULID, UpdateEventParams{
-				LifecycleState: &publishedState,
-			}); err != nil {
-				return nil, nil, fmt.Errorf("restore target lifecycle to published: %w", err)
-			}
-		}
-		// If remaining != nil, other unresolved issues exist — leave lifecycle
-		// as pending_review so the event stays invisible to the public API until
-		// all review rows are resolved.
+	// Step 11: Recompute whether the target event should leave review.
+	if err := s.recomputeLifecycleAfterReview(ctx, txRepo, targetEventULID, target); err != nil {
+		return nil, nil, err
 	}
 
 	if err := txCommitter.Commit(ctx); err != nil {
@@ -1096,26 +1087,13 @@ func (s *AdminService) MergeEventsWithReview(ctx context.Context, params MergeEv
 		return nil, fmt.Errorf("update review status: %w", err)
 	}
 
-	// Recompute whether the primary event should leave pending_review.  The merge
-	// resolved the companion review (if any), but the primary may have OTHER
-	// unresolved review rows.  Only restore lifecycle to "published" if none remain.
+	// Recompute whether the primary event should leave pending_review.
 	primary, primaryErr := txRepo.GetByULID(ctx, params.PrimaryULID)
 	if primaryErr != nil {
 		return nil, fmt.Errorf("get primary event post-merge: %w", primaryErr)
 	}
-	if primary.LifecycleState == "pending_review" {
-		remaining, remErr := txRepo.GetPendingReviewByEventUlid(ctx, params.PrimaryULID)
-		if remErr != nil && !errors.Is(remErr, ErrNotFound) {
-			return nil, fmt.Errorf("recheck pending review for primary %s: %w", params.PrimaryULID, remErr)
-		}
-		if remaining == nil {
-			publishedState := "published"
-			if _, err := txRepo.UpdateEvent(ctx, params.PrimaryULID, UpdateEventParams{
-				LifecycleState: &publishedState,
-			}); err != nil {
-				return nil, fmt.Errorf("restore primary lifecycle to published: %w", err)
-			}
-		}
+	if err := s.recomputeLifecycleAfterReview(ctx, txRepo, params.PrimaryULID, primary); err != nil {
+		return nil, err
 	}
 
 	// Commit transaction — all operations succeed or none do
@@ -1320,10 +1298,13 @@ func (s *AdminService) ApproveEventWithReview(ctx context.Context, eventULID str
 	return reviewEntry, nil
 }
 
-// approveStripCompanionDupWarning removes the near-dup warning(s) that reference
-// approvedEventULID from the companion review entry.  If stripping leaves zero
-// warnings the entry is dismissed (approved) and the companion event is published.
-// Returns the updated companion review entry (nil if unchanged/not applicable).
+// approveStripCompanionDupWarning atomically removes all companion warning entries
+// that reference approvedEventULID from the companion review entry. Uses a single
+// SQL UPDATE with JSONB manipulation — no Go-level read-modify-write.
+//
+// If the resulting warnings array is empty, the companion review is approved and
+// the companion event is published. Otherwise, the query already compacted the
+// warnings and cleared duplicate_of_event_id, so the caller has nothing more to do.
 //
 // Must be called inside an active transaction. The companion review row must
 // already be locked via LockReviewQueueEntryForUpdate.
@@ -1334,62 +1315,12 @@ func (s *AdminService) approveStripCompanionDupWarning(
 	approvedEventULID string,
 	reviewedBy string,
 ) (*ReviewQueueEntry, error) {
-	var warnings []ValidationWarning
-	if len(companion.Warnings) > 0 {
-		if err := json.Unmarshal(companion.Warnings, &warnings); err != nil {
-			log.Warn().Err(err).
-				Int("companion_review_id", companion.ID).
-				Msg("ApproveEventWithReview: failed to parse companion warnings; skipping strip")
-			return nil, nil
-		}
+	warningsEmpty, err := txRepo.DismissAllCompanionWarnings(ctx, companion.ID, approvedEventULID)
+	if err != nil {
+		return nil, fmt.Errorf("dismiss companion warnings for review %d event %s: %w", companion.ID, approvedEventULID, err)
 	}
 
-	// Filter out dup warnings that reference the just-approved event.
-	filtered := warnings[:0]
-	changed := false
-	for _, w := range warnings {
-		referencesApproved := false
-		switch w.Code {
-		case "near_duplicate_of_new_event":
-			// The warning message embeds the new event ULID, and duplicate_of_event_id
-			// is set on the entry itself.  Strip if this warning's companion is the
-			// just-approved event.
-			if companion.DuplicateOfEventULID != nil && *companion.DuplicateOfEventULID == approvedEventULID {
-				referencesApproved = true
-			}
-		case "potential_duplicate":
-			// potential_duplicate carries matches[].ulid in Details.
-			if details, ok := w.Details["matches"]; ok {
-				matchesRaw, _ := json.Marshal(details)
-				var matchList []map[string]any
-				if json.Unmarshal(matchesRaw, &matchList) == nil {
-					for _, m := range matchList {
-						if ulid, ok := m["ulid"].(string); ok && ulid == approvedEventULID {
-							referencesApproved = true
-							break
-						}
-					}
-				}
-			}
-		case "cross_week_series_companion":
-			if companionULID, ok := w.Details["companion_ulid"].(string); ok && companionULID == approvedEventULID {
-				referencesApproved = true
-			}
-		}
-		if referencesApproved {
-			changed = true
-			// Do not append — strip this warning.
-		} else {
-			filtered = append(filtered, w)
-		}
-	}
-
-	if !changed {
-		return nil, nil
-	}
-
-	if len(filtered) == 0 {
-		// All warnings stripped — dismiss the companion entry and publish its event.
+	if warningsEmpty {
 		entry, dismissErr := txRepo.ApproveReview(ctx, companion.ID, reviewedBy, nil)
 		if dismissErr != nil {
 			return nil, dismissErr
@@ -1403,19 +1334,8 @@ func (s *AdminService) approveStripCompanionDupWarning(
 		return entry, nil
 	}
 
-	// Warnings remain — update the entry with pruned warnings, clear duplicate_of_event_id
-	// if it still points at the just-approved event.
-	updatedJSON, err := json.Marshal(filtered)
-	if err != nil {
-		return nil, fmt.Errorf("marshal pruned companion warnings: %w", err)
-	}
-	clearDup := companion.DuplicateOfEventULID != nil && *companion.DuplicateOfEventULID == approvedEventULID
-	if _, err := txRepo.UpdateReviewQueueEntry(ctx, companion.ID, ReviewQueueUpdateParams{
-		Warnings:         &updatedJSON,
-		ClearDuplicateOf: clearDup,
-	}); err != nil {
-		return nil, fmt.Errorf("update companion review entry %d with pruned warnings: %w", companion.ID, err)
-	}
+	// Warnings remain — the atomic query already handled pruning the JSONB
+	// warnings array and clearing duplicate_of_event_id.
 	return nil, nil
 }
 
@@ -1820,6 +1740,13 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		}
 	}
 
+	// Step 8: Recompute lifecycle — if the canonical was already pending_review
+	// before consolidation, check whether any pre-existing pending reviews remain
+	// after the consolidation work above. If none remain, publish.
+	if err := s.recomputeLifecycleAfterReview(ctx, txRepo, canonicalEvent.ULID, canonicalEvent); err != nil {
+		return nil, err
+	}
+
 	// Step 9: Commit transaction.
 	if err := txCommitter.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit transaction: %w", err)
@@ -1933,7 +1860,7 @@ func (s *AdminService) consolidateRetireEvents(
 	}
 
 	// Step 6: Dismiss pending reviews for retired events.
-	dismissedIDs, err = txRepo.DismissPendingReviewsByEventULIDs(ctx, retireULIDs, "system")
+	dismissedIDs, err = txRepo.DismissPendingReviewsByEventULIDs(ctx, retireULIDs, ReviewedBySystem)
 	if err != nil {
 		return nil, nil, fmt.Errorf("dismiss pending reviews for retired events: %w", err)
 	}
@@ -2059,7 +1986,7 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 
 	if len(filtered) == 0 {
 		// All warnings stripped — dismiss the entry and publish the canonical.
-		if _, dismissErr := txRepo.MergeReview(ctx, entry.ID, "system", canonicalEvent.ULID); dismissErr != nil {
+		if _, dismissErr := txRepo.MergeReview(ctx, entry.ID, ReviewedBySystem, canonicalEvent.ULID); dismissErr != nil {
 			return dismissedIDs, fmt.Errorf("dismiss canonical review entry %d after stripping dup warnings: %w", entry.ID, dismissErr)
 		}
 		dismissedIDs = append(dismissedIDs, entry.ID)

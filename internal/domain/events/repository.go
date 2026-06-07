@@ -380,6 +380,12 @@ type Repository interface {
 	// DismissCompanionWarningMatch: targets exactly one row to avoid affecting unrelated
 	// pending reviews on the same companion event.
 	DismissWarningMatchByReviewID(ctx context.Context, id int, eventULID string) error
+	// DismissAllCompanionWarnings atomically strips all companion warning entries
+	// (near_duplicate_of_new_event, potential_duplicate, cross_week_series_companion)
+	// referencing the given eventULID from a specific review row. Also clears
+	// duplicate_of_event_id if it points to the given event. Returns true when the
+	// resulting warnings array is empty (all warnings stripped).
+	DismissAllCompanionWarnings(ctx context.Context, reviewID int, eventULID string) (bool, error)
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
 	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)

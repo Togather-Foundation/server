@@ -2778,6 +2778,23 @@ func (r *EventRepository) DismissWarningMatchByReviewID(ctx context.Context, id 
 	return nil
 }
 
+// DismissAllCompanionWarnings atomically strips all companion warning entries
+// (near_duplicate_of_new_event, potential_duplicate, cross_week_series_companion)
+// referencing the given eventULID from a specific review row. Also clears
+// duplicate_of_event_id if it points to the given event. Returns true when the
+// resulting warnings array is empty (all warnings stripped).
+func (r *EventRepository) DismissAllCompanionWarnings(ctx context.Context, reviewID int, eventULID string) (bool, error) {
+	queries := Queries{db: r.queryer()}
+	warningsEmpty, err := queries.DismissAllCompanionWarnings(ctx, DismissAllCompanionWarningsParams{
+		ReviewID:  int32(reviewID),
+		EventUlid: eventULID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("dismiss all companion warnings review_id=%d event=%s: %w", reviewID, eventULID, err)
+	}
+	return warningsEmpty, nil
+}
+
 // ListReviewQueue lists review queue entries with filters and pagination
 func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
 	queries := Queries{db: r.queryer()}
