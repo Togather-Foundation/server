@@ -69,7 +69,7 @@ func runTokenExchange(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("token exchange failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -90,6 +90,6 @@ func runTokenExchange(cmd *cobra.Command, args []string) error {
 		return enc.Encode(result)
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), result.Token)
+	_, _ = fmt.Fprintln(cmd.OutOrStdout(), result.Token)
 	return nil
 }

@@ -169,7 +169,9 @@ Two admin API endpoints provide scraper diagnostics:
 ### All-source diagnostics
 
 ```bash
-curl -H "Authorization: Bearer $TOGATHER_ADMIN_TOKEN" \
+ADMIN_JWT=$(curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
+  "$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token')
+curl -H "Authorization: Bearer $ADMIN_JWT" \
   "$TOGATHER_BASE_URL/api/v1/admin/scraper/diagnostics"
 ```
 
@@ -179,7 +181,9 @@ Returns recent scraper runs across all sources. Supports a `?limit=N` query para
 ### Per-source diagnostics
 
 ```bash
-curl -H "Authorization: Bearer $TOGATHER_ADMIN_TOKEN" \
+ADMIN_JWT=$(curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
+  "$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token')
+curl -H "Authorization: Bearer $ADMIN_JWT" \
   "$TOGATHER_BASE_URL/api/v1/admin/scraper/sources/<name>/diagnostics"
 ```
 
@@ -203,7 +207,7 @@ recent runs for a specific source. Supports `?limit=N` (default: 10, max: 100).
 For staging environments, source credentials from `.agent-keys/staging`:
 ```bash
 source .agent-keys/staging
-# Provides TOGATHER_BASE_URL and TOGATHER_ADMIN_TOKEN
+# Provides TOGATHER_BASE_URL and TOGATHER_ADMIN_API_KEY (exchange for JWT via POST /api/v1/auth/token)
 ```
 
 See [env-management.md](../deploy/env-management.md) for token refresh procedures.
@@ -369,7 +373,9 @@ type RecurrenceRule struct {
 
 5. **Check scraper diagnostics** — look at the latest run status and warnings:
    ```bash
-   curl -H "Authorization: Bearer $TOGATHER_ADMIN_TOKEN" \
+   ADMIN_JWT=$(curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
+     "$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token')
+   curl -H "Authorization: Bearer $ADMIN_JWT" \
      "$TOGATHER_BASE_URL/api/v1/admin/scraper/diagnostics"
    ```
 
