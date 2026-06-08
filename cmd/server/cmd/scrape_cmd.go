@@ -147,36 +147,15 @@ func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey st
 }
 
 // loadScrapeConfig resolves server URL and API key from flags and environment variables.
-// Resolution order mirrors parseServerConfig for consistency across all scrape commands:
-//
-//	server: --server flag → TOGATHER_BASE_URL env → SEL_SERVER_URL env → "http://localhost:8080"
-//	key:    --key/--admin-api-key flag → TOGATHER_ADMIN_TOKEN env → TOGATHER_ADMIN_API_KEY env → SEL_API_KEY env → SEL_INGEST_KEY env → ""
+// Delegates to parseServerConfig and adds SEL_INGEST_KEY as a final auth fallback.
 func loadScrapeConfig() (serverURL, apiKey string, err error) {
-	serverURL = scrapeServerURL
-	if serverURL == "" {
-		serverURL = os.Getenv("TOGATHER_BASE_URL")
-	}
-	if serverURL == "" {
-		serverURL = os.Getenv("SEL_SERVER_URL")
-	}
-	if serverURL == "" {
-		serverURL = "http://localhost:8080"
-	}
-
-	apiKey = scrapeAPIKey
-	if apiKey == "" {
-		apiKey = os.Getenv("TOGATHER_ADMIN_TOKEN")
-	}
-	if apiKey == "" {
-		apiKey = os.Getenv("TOGATHER_ADMIN_API_KEY")
-	}
-	if apiKey == "" {
-		apiKey = os.Getenv("SEL_API_KEY")
+	serverURL, apiKey, err = parseServerConfig(scrapeServerURL, scrapeAPIKey)
+	if err != nil {
+		return "", "", err
 	}
 	if apiKey == "" {
 		apiKey = os.Getenv("SEL_INGEST_KEY")
 	}
-
 	return serverURL, apiKey, nil
 }
 
