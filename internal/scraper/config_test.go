@@ -3094,3 +3094,63 @@ func TestValidateConfigWithWarnings_ICSExtractionMethod(t *testing.T) {
 		assert.Contains(t, err.Error(), "tier 3 requires a graphql or rest config block")
 	})
 }
+
+// --------------------------------------------------------------------------
+// ValidateConfigWithWarnings — domain validation (srv-1h7zk)
+// --------------------------------------------------------------------------
+
+func TestValidateConfigWithWarnings_Domain(t *testing.T) {
+	baseCfg := func() SourceConfig {
+		return SourceConfig{
+			Name:       "Test Source",
+			URL:        "https://example.com/events",
+			Tier:       0,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+			Enabled:    true,
+		}
+	}
+
+	t.Run("empty domain passes", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+	})
+
+	validDomains := []string{"arts", "music", "culture", "sports", "community", "education", "general"}
+	for _, d := range validDomains {
+		d := d
+		t.Run("valid domain "+d, func(t *testing.T) {
+			t.Parallel()
+			cfg := baseCfg()
+			cfg.Domain = d
+			warnings, err := ValidateConfigWithWarnings(cfg)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+		})
+	}
+
+	t.Run("invalid domain foo", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.Domain = "foo"
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "domain: invalid")
+		assert.Contains(t, err.Error(), `"foo"`)
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("rejects whitespace-only domain", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.Domain = "   "
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "domain: invalid")
+		assert.Empty(t, warnings)
+	})
+}

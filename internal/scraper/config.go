@@ -676,7 +676,7 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		case "arts", "music", "culture", "sports", "community", "education", "general":
 			// valid
 		default:
-			warnings = append(warnings, fmt.Sprintf("source %q has invalid domain %q (valid: arts, music, culture, sports, community, education, general)", cfg.Name, cfg.Domain))
+			errs = append(errs, fmt.Sprintf("domain: invalid event_domain %q (valid: arts, music, culture, sports, community, education, general)", cfg.Domain))
 		}
 	}
 
