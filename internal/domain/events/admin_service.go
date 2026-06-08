@@ -1904,12 +1904,7 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 	var warnings []ValidationWarning
 	if len(entry.Warnings) > 0 {
 		if err := json.Unmarshal(entry.Warnings, &warnings); err != nil {
-			// Malformed warnings — log and leave the entry untouched.
-			log.Warn().Err(err).
-				Int("review_id", entry.ID).
-				Str("canonical_ulid", canonicalEvent.ULID).
-				Msg("Consolidate: failed to parse canonical review warnings; skipping strip")
-			return dismissedIDs, nil
+			return dismissedIDs, fmt.Errorf("parse canonical review warnings for event %s: %w", canonicalEvent.ULID, ErrMalformedWarnings)
 		}
 	}
 
@@ -2022,6 +2017,30 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 	return dismissedIDs, nil
 }
 
+// buildReviewPayload constructs a display payload map from the event's fields,
+// suitable for use as OriginalPayload/NormalizedPayload in review queue entries.
+func buildReviewPayload(event *Event) map[string]any {
+	m := map[string]any{
+		"name": event.Name,
+	}
+	if event.Description != "" {
+		m["description"] = event.Description
+	}
+	if event.PublicURL != "" {
+		m["url"] = event.PublicURL
+	}
+	if len(event.Occurrences) > 0 {
+		m["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
+		if event.Occurrences[0].EndTime != nil {
+			m["endDate"] = event.Occurrences[0].EndTime.Format(time.RFC3339)
+		}
+	}
+	if event.PrimaryVenueName != nil {
+		m["location"] = map[string]any{"name": *event.PrimaryVenueName}
+	}
+	return m
+}
+
 // consolidateResolvePending encapsulates step 7 of the Consolidate algorithm:
 // if the canonical event needs review, update its lifecycle to pending_review and
 // create a review queue entry with the supplied warnings.
@@ -2047,24 +2066,7 @@ func (s *AdminService) consolidateResolvePending(
 
 	// Build a display payload from the canonical event's fields so that
 	// OriginalPayload and NormalizedPayload are never nil (NOT NULL columns).
-	payloadMap := map[string]any{
-		"name": canonical.Name,
-	}
-	if canonical.Description != "" {
-		payloadMap["description"] = canonical.Description
-	}
-	if canonical.PublicURL != "" {
-		payloadMap["url"] = canonical.PublicURL
-	}
-	if len(canonical.Occurrences) > 0 {
-		payloadMap["startDate"] = canonical.Occurrences[0].StartTime.Format(time.RFC3339)
-		if canonical.Occurrences[0].EndTime != nil {
-			payloadMap["endDate"] = canonical.Occurrences[0].EndTime.Format(time.RFC3339)
-		}
-	}
-	if canonical.PrimaryVenueName != nil {
-		payloadMap["location"] = map[string]any{"name": *canonical.PrimaryVenueName}
-	}
+	payloadMap := buildReviewPayload(canonical)
 	payloadJSON, err := json.Marshal(payloadMap)
 	if err != nil {
 		return fmt.Errorf("marshal canonical payload for review queue: %w", err)
@@ -2303,24 +2305,7 @@ func (s *AdminService) consolidateRefreshReviewPayload(
 		return nil
 	}
 
-	payloadMap := map[string]any{
-		"name": canonical.Name,
-	}
-	if canonical.Description != "" {
-		payloadMap["description"] = canonical.Description
-	}
-	if canonical.PublicURL != "" {
-		payloadMap["url"] = canonical.PublicURL
-	}
-	if len(canonical.Occurrences) > 0 {
-		payloadMap["startDate"] = canonical.Occurrences[0].StartTime.Format(time.RFC3339)
-		if canonical.Occurrences[0].EndTime != nil {
-			payloadMap["endDate"] = canonical.Occurrences[0].EndTime.Format(time.RFC3339)
-		}
-	}
-	if canonical.PrimaryVenueName != nil {
-		payloadMap["location"] = map[string]any{"name": *canonical.PrimaryVenueName}
-	}
+	payloadMap := buildReviewPayload(canonical)
 	payloadJSON, err := json.Marshal(payloadMap)
 	if err != nil {
 		return fmt.Errorf("marshal canonical payload for review queue refresh: %w", err)

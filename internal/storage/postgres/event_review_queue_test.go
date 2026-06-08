@@ -356,6 +356,49 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 		assert.ErrorIs(t, err, events.ErrNotFound)
 		assert.Nil(t, entry)
 	})
+
+	t.Run("CleanupArchivedDismissedAndMerged", func(t *testing.T) {
+		// Create review entries with dismissed and merged statuses,
+		// manually backdate reviewed_at to >90 days ago.
+		oldDate := time.Now().Add(-100 * 24 * time.Hour)
+		futureStart := time.Now().Add(30 * 24 * time.Hour)
+
+		// Dismissed entry
+		dismissedEventID, _ := reviewQueueTestEvent(t, ctx, repo, place)
+		_ = pool.QueryRow(ctx, `
+			INSERT INTO event_review_queue
+				(event_id, original_payload, normalized_payload, warnings,
+				 event_start_time, status, reviewed_at)
+			VALUES ($1, $2, $2, $3, $4, 'dismissed', $5)
+			RETURNING id
+		`, dismissedEventID, originalPayload, warnings, futureStart, oldDate)
+
+		// Merged entry
+		mergedEventID, _ := reviewQueueTestEvent(t, ctx, repo, place)
+		var mergedID int
+		err := pool.QueryRow(ctx, `
+			INSERT INTO event_review_queue
+				(event_id, original_payload, normalized_payload, warnings,
+				 event_start_time, status, reviewed_at)
+			VALUES ($1, $2, $2, $3, $4, 'merged', $5)
+			RETURNING id
+		`, mergedEventID, originalPayload, warnings, futureStart, oldDate).Scan(&mergedID)
+		require.NoError(t, err)
+
+		// Run cleanup
+		err = repo.CleanupExpiredReviews(ctx)
+		require.NoError(t, err)
+
+		// Both entries should be deleted by CleanupArchivedReviews
+		entry, err := repo.GetReviewQueueEntry(ctx, mergedID)
+		assert.ErrorIs(t, err, events.ErrNotFound)
+		assert.Nil(t, entry)
+
+		// Verify no dismissed reviews remain for the dismissed event
+		remaining, err := repo.GetPendingReviewByEventUlid(ctx, "nonexistent")
+		assert.NoError(t, err)
+		assert.Nil(t, remaining)
+	})
 }
 
 func TestEventRepository_ReviewQueue_Pagination(t *testing.T) {
