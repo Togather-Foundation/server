@@ -2009,6 +2009,8 @@
 
             // Always reload from the server — consolidation can affect multiple entries
             loadEntries();
+            // Refresh all tab badge counts after consolidation
+            refreshAllBadgeCounts();
         } catch (err) {
             console.error('Failed to consolidate events:', err);
             const msg = (err && err.detail) || (err && err.message) || 'Failed to consolidate events';
@@ -3049,6 +3051,26 @@
         const badge = document.querySelector(`[data-action="filter-status"][data-status="${status}"] .badge`);
         if (badge) {
             badge.textContent = count;
+        }
+    }
+
+    /**
+     * Refresh badge counts for all review status tabs
+     * Fetches total counts for pending, approved, rejected, and merged statuses
+     * and updates all tab badge elements. Best-effort: failures are silently ignored.
+     * @async
+     */
+    async function refreshAllBadgeCounts() {
+        const statuses = ['pending', 'approved', 'rejected', 'merged'];
+        for (const status of statuses) {
+            try {
+                const data = await API.reviewQueue.list({ status, limit: 1 });
+                if (data && data.total !== undefined) {
+                    updateBadgeCount(status, data.total);
+                }
+            } catch (_err) {
+                // Best-effort badge refresh; failures are non-critical
+            }
         }
     }
     

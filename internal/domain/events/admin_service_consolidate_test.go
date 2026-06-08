@@ -1064,10 +1064,11 @@ func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *test
 		return true, nil
 	}
 
-	var mergeCallIDs []int
-	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
-		mergeCallIDs = append(mergeCallIDs, id)
-		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
+	// Track ApproveReview calls (used to approve the canonical entry).
+	var approveCallIDs []int
+	repo.approveReviewFunc = func(_ context.Context, id int, _ string, _ *string) (*ReviewQueueEntry, error) {
+		approveCallIDs = append(approveCallIDs, id)
+		return &ReviewQueueEntry{ID: id, Status: "approved"}, nil
 	}
 
 	var updatedLifecycleState string
@@ -1091,14 +1092,15 @@ func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *test
 		t.Fatal("expected non-nil result")
 	}
 
+	// ApproveReview must have been called with the canonical review entry ID.
 	dismissed := false
-	for _, id := range mergeCallIDs {
+	for _, id := range approveCallIDs {
 		if id == 99 {
 			dismissed = true
 		}
 	}
 	if !dismissed {
-		t.Errorf("canonical review entry (id=99) must be dismissed via MergeReview; calls: %v", mergeCallIDs)
+		t.Errorf("canonical review entry (id=99) must be approved via ApproveReview; calls: %v", approveCallIDs)
 	}
 
 	if updatedLifecycleState != "published" {
