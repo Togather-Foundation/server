@@ -552,7 +552,7 @@
             return `
                 <tr data-entry-id="${escapeHtml(String(entry.id))}">
                     <td>
-                        <a href="/admin/events/${entry.eventId}" class="text-reset" data-action="navigate-to-event" data-review-id="${entry.id}">
+                        <a href="/admin/events/${encodeURIComponent(entry.eventId)}" class="text-reset" data-action="navigate-to-event" data-review-id="${entry.id}">
                             ${escapeHtml(eventName)}
                         </a>
                         ${entry.duplicateOfEventUlid ? '<span class="badge bg-purple-lt ms-1" title="Near-duplicate">dup</span>' : ''}
