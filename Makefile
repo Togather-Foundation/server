@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape
+.PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape remote-staging remote-production
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -91,6 +91,12 @@ help:
 	@echo "  make rollback-staging     - Rollback staging to previous deployment"
 	@echo "  make rollback-production  - Rollback production to previous deployment"
 	@echo "  (Or use /release command in OpenCode for agent-assisted changelog generation)"
+	@echo ""
+	@echo "Remote Server Commands (run CLI commands on staging/production):"
+	@echo "  make remote-staging CMD=\"admin-token --duration 8h\""
+	@echo "  make remote-staging CMD=\"api-key create my-agent --role admin\""
+	@echo "  make remote-staging CMD=\"scrape failures\""
+	@echo "  make remote-production CMD=\"events\""
 	@echo ""
 	@echo "Staging Scrape Workflow:"
 	@echo "  make scrape-staging       - Scrape all enabled sources to staging"
@@ -1510,3 +1516,13 @@ staging-reset-scrape: ## Reset staging DB, sync configs, and scrape T0 sources
 		--tier 0 \
 		--server "https://$$NODE_DOMAIN" \
 		--key "$$PERF_AGENT_API_KEY"
+
+# Remote server command execution via SSH + docker exec.
+# Usage: make remote-staging CMD="admin-token --duration 8h"
+remote-staging: ## Run a server command on staging
+	@if [ -z "$(CMD)" ]; then echo "Error: CMD is required. Example: make remote-staging CMD=\"admin-token --duration 8h\""; exit 1; fi
+	scripts/remote.sh staging $(CMD)
+
+remote-production: ## Run a server command on production
+	@if [ -z "$(CMD)" ]; then echo "Error: CMD is required. Example: make remote-production CMD=\"events\""; exit 1; fi
+	scripts/remote.sh production $(CMD)

@@ -77,7 +77,24 @@ curl -H "Authorization: Bearer $TOGATHER_AGENT_API_KEY" \
   "$TOGATHER_BASE_URL/api/v1/events"
 ```
 
-**Refreshing an expired admin token** (no deploy needed, just needs JWT_SECRET):
+**Running server CLI commands on staging/production** (no need to know the active blue/green container):
+
+```bash
+# Via script
+scripts/remote.sh staging admin-token --duration 8h
+scripts/remote.sh staging api-key create my-key --role admin
+scripts/remote.sh staging scrape failures
+scripts/remote.sh staging scrape sync
+
+# Via Makefile
+make remote-staging CMD="admin-token --duration 8h"
+make remote-staging CMD="api-key create my-agent --role admin"
+make remote-production CMD="events"
+```
+
+`scripts/remote.sh` reads `SSH_HOST`/`SSH_USER` from `.deploy.conf.{env}`, auto-discovers the active container, and forwards the command via SSH + docker exec with full stdin/stdout passthrough.
+
+**Refreshing an expired admin token locally** (no deploy needed, just needs JWT_SECRET):
 
 ```bash
 # From local .env
@@ -85,13 +102,6 @@ server admin-token --duration 8h
 
 # From a specific secret
 JWT_SECRET=<value> server admin-token --duration 8h
-```
-
-**Creating a new agent API key manually** (if `.agent-keys` is missing or stale):
-
-```bash
-# On staging
-ssh togather "docker exec togather-server-blue /app/server api-key create my-key --role agent"
 ```
 
 ## Repo-Specific Constraints
