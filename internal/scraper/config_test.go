@@ -2727,7 +2727,7 @@ func TestValidateConfigWithWarnings_DeprecatedDescription(t *testing.T) {
 				c.Selectors.Description = "p.summary"
 				return c
 			}(),
-			wantWarnings: []string{"selectors.description: deprecated", "description_selectors"},
+			wantWarnings: []string{msgDescriptionDeprecated},
 		},
 		{
 			name: "both description and description_selectors set — precedence warning",
@@ -2737,7 +2737,7 @@ func TestValidateConfigWithWarnings_DeprecatedDescription(t *testing.T) {
 				c.Selectors.DescriptionSelectors = []string{".lead", ".full"}
 				return c
 			}(),
-			wantWarnings: []string{"selectors.description: deprecated", "both description and description_selectors", "description takes precedence"},
+			wantWarnings: []string{msgDescriptionDeprecatedBoth},
 		},
 	}
 
@@ -2793,10 +2793,10 @@ selectors:
 		foundDeprecation := false
 		foundBothSet := false
 		for _, w := range warnings {
-			if strings.Contains(w, "selectors.description: deprecated") {
+			if strings.Contains(w, msgDescriptionDeprecated) {
 				foundDeprecation = true
 			}
-			if strings.Contains(w, "both description and description_selectors are set") {
+			if strings.Contains(w, msgDescriptionDeprecatedBoth) {
 				foundBothSet = true
 			}
 		}
@@ -2831,7 +2831,7 @@ selectors:
 
 		foundPrecedence := false
 		for _, w := range warnings {
-			if strings.Contains(w, "description takes precedence") {
+			if strings.Contains(w, msgDescriptionDeprecatedBoth) {
 				foundPrecedence = true
 			}
 		}
@@ -2903,10 +2903,10 @@ func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T)
 		foundDeprecation := false
 		foundBothSet := false
 		for _, w := range warnings {
-			if strings.Contains(w, "selectors.description: deprecated") {
+			if strings.Contains(w, msgDescriptionDeprecated) {
 				foundDeprecation = true
 			}
-			if strings.Contains(w, "both description and description_selectors are set") {
+			if strings.Contains(w, msgDescriptionDeprecatedBoth) {
 				foundBothSet = true
 			}
 		}
@@ -2941,7 +2941,7 @@ func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T)
 
 		foundPrecedence := false
 		for _, w := range warnings {
-			if strings.Contains(w, "description takes precedence") {
+			if strings.Contains(w, msgDescriptionDeprecatedBoth) {
 				foundPrecedence = true
 			}
 		}

@@ -16,6 +16,26 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	msgDescriptionDeprecatedBoth = "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version."
+	msgDescriptionDeprecated     = "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version."
+)
+
+// emitDescriptionDeprecationWarnings logs deprecation warnings for the
+// deprecated selectors.description field via slog.Warn. The key parameter
+// should be "file" when loading from YAML or "source" when loading from DB.
+// The identifier is the file path or source name respectively.
+func emitDescriptionDeprecationWarnings(logger *slog.Logger, key string, identifier string, hadDescription bool, hadDescriptionSelectors bool) {
+	if !hadDescription {
+		return
+	}
+	if hadDescriptionSelectors {
+		logger.Warn("source config warning", key, identifier, "warning", msgDescriptionDeprecatedBoth)
+	} else {
+		logger.Warn("source config warning", key, identifier, "warning", msgDescriptionDeprecated)
+	}
+}
+
 // SourceConfig defines a scrape source loaded from a YAML config file.
 type SourceConfig struct {
 	Name string `yaml:"name"            json:"name"`
@@ -689,9 +709,9 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	// already emitted accurate warnings based on the original input state).
 	if !cfg.normalized && cfg.Selectors.Description != "" {
 		if len(cfg.Selectors.DescriptionSelectors) > 0 {
-			warnings = append(warnings, "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
+			warnings = append(warnings, msgDescriptionDeprecatedBoth)
 		} else {
-			warnings = append(warnings, "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version.")
+			warnings = append(warnings, msgDescriptionDeprecated)
 		}
 	}
 
@@ -845,16 +865,7 @@ func loadFile(path string) (SourceConfig, error) {
 	hadDescription := normalizeDescriptionSelectors(&cfg)
 	cfg.normalized = true
 
-	// Emit accurate deprecation warnings based on original input (before normalization).
-	if hadDescription {
-		if hadDescriptionSelectors {
-			slog.Warn("source config warning", "file", path,
-				"warning", "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
-		} else {
-			slog.Warn("source config warning", "file", path,
-				"warning", "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version.")
-		}
-	}
+	emitDescriptionDeprecationWarnings(slog.Default(), "file", path, hadDescription, hadDescriptionSelectors)
 
 	return cfg, nil
 }
