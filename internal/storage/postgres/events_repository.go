@@ -2801,6 +2801,9 @@ func (r *EventRepository) DismissAllCompanionWarnings(ctx context.Context, revie
 // cross_week_series_companion). Also clears duplicate_of_event_id if it points
 // to a retired event. Companion replacement is handled in Go after this returns.
 func (r *EventRepository) StripRetiredDupWarnings(ctx context.Context, reviewID int, retireULIDs []string) (bool, error) {
+	if len(retireULIDs) == 0 {
+		return false, nil
+	}
 	queries := Queries{db: r.queryer()}
 	warningsEmpty, err := queries.StripRetiredDupWarnings(ctx, StripRetiredDupWarningsParams{
 		ReviewID:    int32(reviewID),
