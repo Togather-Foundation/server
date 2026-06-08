@@ -365,18 +365,18 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 
 		// Dismissed entry
 		dismissedEventID, _ := reviewQueueTestEvent(t, ctx, repo, place)
-		_ = pool.QueryRow(ctx, `
+		_, err := pool.Exec(ctx, `
 			INSERT INTO event_review_queue
 				(event_id, original_payload, normalized_payload, warnings,
 				 event_start_time, status, reviewed_at)
 			VALUES ($1, $2, $2, $3, $4, 'dismissed', $5)
-			RETURNING id
 		`, dismissedEventID, originalPayload, warnings, futureStart, oldDate)
+		require.NoError(t, err)
 
 		// Merged entry
 		mergedEventID, _ := reviewQueueTestEvent(t, ctx, repo, place)
 		var mergedID int
-		err := pool.QueryRow(ctx, `
+		err = pool.QueryRow(ctx, `
 			INSERT INTO event_review_queue
 				(event_id, original_payload, normalized_payload, warnings,
 				 event_start_time, status, reviewed_at)
