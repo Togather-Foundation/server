@@ -82,7 +82,10 @@ func formatScrapeTestOutput(w io.Writer, events []scraper.RawEvent, asJSON bool)
 		if e.Description != "" {
 			desc := e.Description
 			if len(desc) > maxDescriptionLength {
-				desc = desc[:maxDescriptionLength] + "…"
+				runes := []rune(desc)
+				if len(runes) > maxDescriptionLength {
+					desc = string(runes[:maxDescriptionLength]) + "…"
+				}
 			}
 			if _, err := fmt.Fprintf(w, "    Description: %s\n", desc); err != nil {
 				return err
