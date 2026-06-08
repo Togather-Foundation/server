@@ -66,5 +66,5 @@ func (h *TokenHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	buf.WriteTo(w)
+	_, _ = buf.WriteTo(w)
 }
