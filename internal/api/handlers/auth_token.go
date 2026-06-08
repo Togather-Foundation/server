@@ -13,14 +13,12 @@ import (
 
 type TokenHandler struct {
 	JWTManager *auth.JWTManager
-	JWTExpiry  time.Duration
 	Env        string
 }
 
-func NewTokenHandler(jwtManager *auth.JWTManager, jwtExpiry time.Duration, env string) *TokenHandler {
+func NewTokenHandler(jwtManager *auth.JWTManager, env string) *TokenHandler {
 	return &TokenHandler{
 		JWTManager: jwtManager,
-		JWTExpiry:  jwtExpiry,
 		Env:        env,
 	}
 }
@@ -47,13 +45,13 @@ func (h *TokenHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.JWTManager.Generate(key.Name, "admin")
+	token, err := h.JWTManager.Generate(key.ID, "admin")
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
 
-	expiresAt := time.Now().Add(h.JWTExpiry)
+	expiresAt := time.Now().Add(h.JWTManager.Expiry())
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(tokenExchangeResponse{
