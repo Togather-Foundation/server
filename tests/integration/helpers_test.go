@@ -177,6 +177,7 @@ func testConfig(dbURL string) config.Config {
 	cfg.Developer = config.DeveloperConfig{
 		UsageFlushTimeoutSeconds: 2, // Short timeout so CI doesn't hang if pool is busy.
 	}
+	cfg.Auth.TokenExchangeJWTExpiry = 5 * time.Minute
 	return cfg
 }
 
