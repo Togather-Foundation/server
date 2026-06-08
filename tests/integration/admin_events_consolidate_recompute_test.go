@@ -176,8 +176,8 @@ func TestRecomputeAddOccurrenceGoesPublished(t *testing.T) {
 		"canonical should become published after all review warnings are resolved")
 
 	// The review entry should be dismissed.
-	assert.Equal(t, "merged", getReviewStatus(t, env, reviewID),
-		"canonical's review entry should be dismissed (merged)")
+	assert.Equal(t, "approved", getReviewStatus(t, env, reviewID),
+		"canonical's review entry should be dismissed (approved)")
 
 	// The retired event should be deleted.
 	retStatus, _ := getEvent(t, env, retireULID)
@@ -279,8 +279,8 @@ func TestRecomputeMergeGoesPublished(t *testing.T) {
 		"primary should become published after duplicate warning is resolved")
 
 	// The review entry should be dismissed.
-	assert.Equal(t, "merged", getReviewStatus(t, env, reviewID),
-		"primary's review entry should be dismissed (merged)")
+	assert.Equal(t, "approved", getReviewStatus(t, env, reviewID),
+		"primary's review entry should be dismissed (approved)")
 
 	// The duplicate should return 410.
 	retStatus, _ := getEvent(t, env, dupeULID)
@@ -383,7 +383,7 @@ func TestRecomputeConsolidateCanonicalPublished(t *testing.T) {
 		"canonical should become published after all reviews dismissed")
 
 	// The pending review should be dismissed.
-	assert.Equal(t, "merged", getReviewStatus(t, env, reviewID),
+	assert.Equal(t, "approved", getReviewStatus(t, env, reviewID),
 		"canonical's review entry should be dismissed")
 
 	// 0 pending reviews remain.
