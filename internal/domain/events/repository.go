@@ -386,6 +386,13 @@ type Repository interface {
 	// duplicate_of_event_id if it points to the given event. Returns true when the
 	// resulting warnings array is empty (all warnings stripped).
 	DismissAllCompanionWarnings(ctx context.Context, reviewID int, eventULID string) (bool, error)
+
+	// StripRetiredDupWarnings atomically strips all duplicate warning entries
+	// (near_duplicate_of_new_event, potential_duplicate, cross_week_series_companion)
+	// referencing any retired ULID from a specific review row. Also clears
+	// duplicate_of_event_id if it points to a retired event. Returns true when the
+	// resulting warnings array is empty (all warnings stripped).
+	StripRetiredDupWarnings(ctx context.Context, reviewID int32, retireULIDs []string) (bool, error)
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
 	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
