@@ -159,5 +159,38 @@ if [ ! -e "$SERVER_LINK" ] && [ ! -L "$SERVER_LINK" ]; then
     echo "  Run './server --help' to verify."
 fi
 
+# ---------------------------------------------------------------------------
+# 6. Check PostgreSQL connectivity
+#    Postgres integration tests (internal/storage/postgres/) need a running DB.
+#    The worktree inherits DATABASE_URL from .env. Warn if unreachable so agents
+#    know ci-fast will time out on DB tests and can skip to unit tests instead.
+# ---------------------------------------------------------------------------
+
+echo ""
+echo "Checking PostgreSQL connectivity..."
+DB_CHECK_URL=""
+if [ -f "$TARGET/.env" ]; then
+    DB_CHECK_URL="$(grep -E '^DATABASE_URL=' "$TARGET/.env" | head -1 | cut -d= -f2-)"
+elif [ -f "$REPO_ROOT/.env" ]; then
+    DB_CHECK_URL="$(grep -E '^DATABASE_URL=' "$REPO_ROOT/.env" | head -1 | cut -d= -f2-)"
+fi
+
+if [ -z "$DB_CHECK_URL" ]; then
+    echo "  skip   DATABASE_URL not found in .env — postgres tests will fail"
+else
+    if command -v pg_isready >/dev/null 2>&1; then
+        DB_HOST="$(echo "$DB_CHECK_URL" | sed -n 's|.*@\([^:/]*\).*|\1|p')"
+        DB_PORT="$(echo "$DB_CHECK_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')"
+        if [ -z "$DB_PORT" ]; then DB_PORT=5432; fi
+        if [ -n "$DB_HOST" ] && pg_isready -h "$DB_HOST" -p "$DB_PORT" -t 3 >/dev/null 2>&1; then
+            echo "  ok     PostgreSQL reachable at $DB_HOST:$DB_PORT"
+        else
+            echo "  warn   PostgreSQL NOT reachable at ${DB_HOST:-unknown}:${DB_PORT} — postgres tests will fail (unit tests still work)"
+        fi
+    else
+        echo "  skip   pg_isready not found — cannot verify DB connectivity"
+    fi
+fi
+
 echo ""
 echo "[worktree-setup] Done. Run 'make build' in the worktree to verify."
