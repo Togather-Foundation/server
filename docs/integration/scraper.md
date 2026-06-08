@@ -359,7 +359,7 @@ source .agent-keys/staging
 ```
 
 **Auth resolution chain:**
-`--key` flag → `TOGATHER_ADMIN_TOKEN` env var → `SEL_API_KEY` env var.
+`--key` flag → `TOGATHER_ADMIN_API_KEY` env var (STS exchange) → `TOGATHER_ADMIN_TOKEN` env var → `SEL_API_KEY` env var.
 
 **Server URL resolution chain:**
 `--server` flag → `TOGATHER_BASE_URL` env var → `SEL_SERVER_URL` env var → `http://localhost:8080`.
@@ -388,7 +388,7 @@ The persistent flags `--server` and `--key` (see [Persistent Flags](#persistent-
 
 ```bash
 # Table of all failing sources (requires admin auth)
-# source .agent-keys/staging  # provides TOGATHER_ADMIN_TOKEN + TOGATHER_BASE_URL
+# source .agent-keys/staging  # provides TOGATHER_ADMIN_API_KEY + TOGATHER_BASE_URL
 server scrape failures
 
 # Table, filtered by status
@@ -407,7 +407,7 @@ server scrape failures --source harbourfront-centre
 server scrape failures --json --source harbourfront-centre
 
 # Explicit auth and server URL
-server scrape failures --server https://staging.toronto.togather.foundation --key "$TOGATHER_ADMIN_TOKEN"
+server scrape failures --server https://staging.toronto.togather.foundation --key "$TOGATHER_ADMIN_API_KEY"
 ```
 
 **Table output example:**

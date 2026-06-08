@@ -41,6 +41,9 @@ else
     ENVIRONMENT="${ENVIRONMENT:-local}"
 fi
 
+# Admin API key (for admin auth smoke test)
+ADMIN_API_KEY="${ADMIN_API_KEY:-}"
+
 # Configuration
 RETRY_DELAY=2
 
@@ -52,7 +55,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Test counters
-TESTS_TOTAL=19
+TESTS_TOTAL=20
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
@@ -814,6 +817,65 @@ test_dev_portal_accept_invitation() {
     fi
 }
 
+test_admin_auth() {
+    local env="$1"
+    local api_key="$2"
+    local base_url="$3"
+
+    ((TESTS_RUN++)) || true
+    log "INFO" "Test 20/${TESTS_TOTAL}: Admin auth smoke test (${env}) - POST ${base_url}/api/v1/auth/token"
+
+    local exchange_response
+    exchange_response=$(curl -s -w "\n%{http_code}" \
+        -H "Authorization: Bearer ${api_key}" \
+        -H "Accept: application/json" \
+        "${base_url}/api/v1/auth/token")
+
+    local exchange_http_code
+    exchange_http_code=$(echo "$exchange_response" | tail -1)
+    local exchange_body
+    exchange_body=$(echo "$exchange_response" | sed '$d')
+
+    if [ "$exchange_http_code" != "200" ]; then
+        log "FAIL" "Token exchange failed: HTTP ${exchange_http_code}"
+        log "ERROR" "  Response: ${exchange_body}"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+
+    local admin_token
+    admin_token=$(echo "$exchange_body" | jq -r '.token' 2>/dev/null || true)
+    if [ -z "$admin_token" ] || [ "$admin_token" = "null" ]; then
+        log "FAIL" "Token exchange response missing 'token' field"
+        log "ERROR" "  Response: ${exchange_body}"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+    log "SUCCESS" "Token exchange (200 OK, token received)"
+
+    local stats_response
+    stats_response=$(curl -s -w "\n%{http_code}" \
+        -H "Authorization: Bearer ${admin_token}" \
+        -H "Accept: application/json" \
+        "${base_url}/api/v1/admin/stats")
+
+    local stats_http_code
+    stats_http_code=$(echo "$stats_response" | tail -1)
+
+    if [ "$stats_http_code" = "200" ]; then
+        log "SUCCESS" "Admin stats endpoint (200 OK with JWT from STS exchange)"
+    else
+        local stats_body
+        stats_body=$(echo "$stats_response" | sed '$d')
+        log "FAIL" "Admin stats endpoint: HTTP ${stats_http_code}"
+        log "ERROR" "  Response: ${stats_body}"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+
+    return 0
+}
+
 # ============================================================================
 # Main
 # ============================================================================
@@ -894,7 +956,16 @@ main() {
     
     test_dev_portal_accept_invitation
     echo ""
-    
+
+    if [ -n "${ADMIN_API_KEY:-}" ]; then
+        test_admin_auth "$ENVIRONMENT" "$ADMIN_API_KEY" "$BASE_URL"
+    else
+        TESTS_RUN=$((TESTS_RUN + 1))
+        log "WARN" "Test 20/${TESTS_TOTAL}: Skipping admin auth test (ADMIN_API_KEY not set)"
+        ((TESTS_PASSED++)) || true
+    fi
+    echo ""
+
     local end_time=$(date +%s)
     local total_duration=$((end_time - start_time))
     

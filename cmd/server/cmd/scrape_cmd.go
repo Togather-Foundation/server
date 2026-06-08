@@ -70,7 +70,8 @@ func init() {
 
 	// Persistent flags available to all scrape subcommands
 	scrapeCmd.PersistentFlags().StringVar(&scrapeServerURL, "server", "", "SEL server base URL (default: SEL_SERVER_URL or http://localhost:8080)")
-	scrapeCmd.PersistentFlags().StringVar(&scrapeAPIKey, "key", "", "API key for ingest (default: SEL_API_KEY or SEL_INGEST_KEY env var)")
+	scrapeCmd.PersistentFlags().StringVar(&scrapeAPIKey, "key", "", "API key or admin token for ingest (default: TOGATHER_ADMIN_TOKEN, TOGATHER_ADMIN_API_KEY, or SEL_API_KEY env var)")
+	scrapeCmd.PersistentFlags().StringVar(&scrapeAPIKey, "admin-api-key", "", "Admin API key for ingest (alias for --key, uses STS token exchange)")
 	scrapeCmd.PersistentFlags().BoolVar(&scrapeDryRun, "dry-run", false, "display extracted events without submitting")
 	scrapeCmd.PersistentFlags().BoolVar(&scrapeVerbose, "verbose", false, "show individual events in dry-run mode (requires --dry-run)")
 	scrapeCmd.PersistentFlags().IntVar(&scrapeLimit, "limit", 0, "max events per source (0 = no limit)")
@@ -110,13 +111,11 @@ func init() {
 	scrapeFixtureCmd.Flags().BoolVar(&scrapeHeadless, "headless", false, "Force Tier 2 headless browser scraping (requires SCRAPER_HEADLESS_ENABLED=true)")
 }
 
-// parseServerConfig resolves server URL and auth key from flags + env vars.
-// Resolution chains:
+// parseServerConfig resolves server URL and auth key from flags and environment variables.
+// Resolution order:
 //
 //	server: serverFlag param → TOGATHER_BASE_URL env → SEL_SERVER_URL env → "http://localhost:8080"
-//	key:    keyFlag param → TOGATHER_ADMIN_TOKEN env → SEL_API_KEY env → ""
-//
-// Callers should pass the cobra flag variables (scrapeServerURL, scrapeAPIKey) as the flag params.
+//	key:    keyFlag param → TOGATHER_ADMIN_TOKEN env → TOGATHER_ADMIN_API_KEY env → SEL_API_KEY env → ""
 func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey string, err error) {
 	serverURL = serverFlag
 	if serverURL == "" {
@@ -132,6 +131,9 @@ func parseServerConfig(serverFlag, keyFlag string) (serverURL string, authKey st
 	authKey = keyFlag
 	if authKey == "" {
 		authKey = os.Getenv("TOGATHER_ADMIN_TOKEN")
+	}
+	if authKey == "" {
+		authKey = os.Getenv("TOGATHER_ADMIN_API_KEY")
 	}
 	if authKey == "" {
 		authKey = os.Getenv("SEL_API_KEY")

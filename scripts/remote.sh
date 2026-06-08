@@ -7,6 +7,7 @@
 # SSH_USER from .deploy.conf.<env>.
 #
 # Usage:
+#   scripts/remote.sh staging token-exchange         # When TOGATHER_ADMIN_API_KEY is set, runs over HTTPS (no SSH needed)
 #   scripts/remote.sh staging admin-token --duration 8h
 #   scripts/remote.sh staging api-key create my-agent --role admin
 #   scripts/remote.sh staging scrape failures
@@ -14,7 +15,7 @@
 #   scripts/remote.sh production events
 #
 # Shortcuts (optional Makefile targets or aliases):
-#   make remote-staging CMD="admin-token --duration 8h"
+#   make remote-staging CMD="token-exchange"
 #   make remote-production CMD="scrape failures"
 
 set -euo pipefail
@@ -30,9 +31,10 @@ Run a server CLI command on a remote environment.
 
 Arguments:
   env           Target environment: staging or production
-  server args   Arguments to forward to the server binary (e.g. admin-token --duration 8h)
+  server args   Arguments to forward to the server binary (e.g. token-exchange, admin-token --duration 8h)
 
 Examples:
+  $0 staging token-exchange         # When TOGATHER_ADMIN_API_KEY is set, runs over HTTPS (no SSH needed)
   $0 staging admin-token --duration 8h
   $0 staging api-key create my-agent --role admin
   $0 staging scrape failures
@@ -71,6 +73,26 @@ fi
 REMOTE="${SSH_USER}@${SSH_HOST}"
 if [ "$SSH_USER" = "" ]; then
     REMOTE="$SSH_HOST"
+fi
+
+# For token-exchange, if TOGATHER_ADMIN_API_KEY is set locally, we can exchange
+# over HTTPS without SSH (no need to reach into the container).
+FIRST_ARG="$1"
+if [ "$FIRST_ARG" = "token-exchange" ] && [ -n "${TOGATHER_ADMIN_API_KEY:-}" ]; then
+    BASE_URL=$(grep '^TOGATHER_BASE_URL=' ".agent-keys/${ENV}" 2>/dev/null | cut -d= -f2- | tr -d '"')
+    if [ -z "$BASE_URL" ]; then
+        echo "Error: TOGATHER_BASE_URL not found in .agent-keys/${ENV}"
+        exit 1
+    fi
+    RESPONSE=$(curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" "$BASE_URL/api/v1/auth/token")
+    TOKEN=$(echo "$RESPONSE" | jq -r '.token' 2>/dev/null || true)
+    if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+        echo "Error: token exchange failed"
+        echo "Response: $RESPONSE"
+        exit 1
+    fi
+    echo "$TOKEN"
+    exit 0
 fi
 
 CONTAINER=$(ssh "$REMOTE" "docker ps --format '{{.Names}}'" 2>/dev/null | grep '^togather-server-' | head -1)

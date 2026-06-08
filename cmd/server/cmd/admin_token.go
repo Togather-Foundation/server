@@ -28,6 +28,10 @@ Reads JWT_SECRET from the environment or a local .env file, derives the admin
 signing key (same HKDF derivation the server uses), and prints a signed Bearer
 token to stdout.  No database connection is required.
 
+This command is for emergency local use when the database is unavailable.
+For normal operation, use ` + "`server token-exchange`" + ` which exchanges an admin
+API key for a JWT via the STS endpoint (POST /api/v1/auth/token).
+
 The token is valid for the specified duration (default 1h).
 
 Examples:
