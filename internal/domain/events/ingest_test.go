@@ -830,7 +830,7 @@ func (m *MockRepository) DismissAllCompanionWarnings(_ context.Context, _ int, _
 	return false, nil
 }
 
-func (m *MockRepository) StripRetiredDupWarnings(_ context.Context, _ int32, _ []string) (bool, error) {
+func (m *MockRepository) StripRetiredDupWarnings(_ context.Context, _ int, _ []string) (bool, error) {
 	return false, nil
 }
 

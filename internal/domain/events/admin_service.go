@@ -1892,7 +1892,7 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 		return dismissedIDs, nil
 	}
 
-	warningsEmpty, err := txRepo.StripRetiredDupWarnings(ctx, int32(entry.ID), retireULIDs)
+	warningsEmpty, err := txRepo.StripRetiredDupWarnings(ctx, entry.ID, retireULIDs)
 	if err != nil {
 		return dismissedIDs, fmt.Errorf("strip retired dup warnings for review %d: %w", entry.ID, err)
 	}

@@ -978,7 +978,7 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 	}
 
 	var stripCalled bool
-	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int32, retireULIDs []string) (bool, error) {
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
 		stripCalled = true
 		if reviewID != 42 {
 			t.Errorf("StripRetiredDupWarnings called with reviewID=%d, want 42", reviewID)
@@ -1060,7 +1060,7 @@ func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *test
 		return nil, nil
 	}
 
-	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int32, retireULIDs []string) (bool, error) {
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
 		return true, nil
 	}
 
@@ -1135,7 +1135,7 @@ func TestConsolidate_StripRetiredDupWarnings_NoEntryNoop(t *testing.T) {
 		return nil, nil
 	}
 
-	repo.stripRetiredDupWarningsFunc = func(_ context.Context, _ int32, _ []string) (bool, error) {
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, _ int, _ []string) (bool, error) {
 		t.Errorf("StripRetiredDupWarnings must NOT be called when canonical has no pending review")
 		return false, nil
 	}
@@ -1215,7 +1215,7 @@ func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOf
 	}
 
 	var stripCalled bool
-	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int32, retireULIDs []string) (bool, error) {
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
 		stripCalled = true
 		if reviewID != 99 {
 			t.Errorf("StripRetiredDupWarnings called with reviewID=%d, want 99", reviewID)
@@ -1326,6 +1326,14 @@ func TestConsolidate_PostRetirementSeriesCheck_ReplacesStaleCanonicalCompanion(t
 		}
 		return nil, nil
 	}
+	var stripReviewID int
+	var stripRetireULIDs []string
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
+		stripReviewID = reviewID
+		stripRetireULIDs = retireULIDs
+		return false, nil
+	}
+
 	var updatedWarningsJSON []byte
 	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
 		if id == canonReview.ID && params.Warnings != nil {
@@ -1344,6 +1352,12 @@ func TestConsolidate_PostRetirementSeriesCheck_ReplacesStaleCanonicalCompanion(t
 	}
 	if !result.NeedsReview {
 		t.Fatal("expected NeedsReview=true after surviving week companion found")
+	}
+	if stripReviewID != canonReview.ID {
+		t.Errorf("StripRetiredDupWarnings called with reviewID=%d, want %d", stripReviewID, canonReview.ID)
+	}
+	if len(stripRetireULIDs) != 1 || stripRetireULIDs[0] != staleRetiredULID {
+		t.Errorf("StripRetiredDupWarnings called with retireULIDs=%v, want [%s]", stripRetireULIDs, staleRetiredULID)
 	}
 	var found bool
 	for _, w := range result.Warnings {
@@ -1448,6 +1462,14 @@ func TestConsolidate_PostRetirementSeriesCheck_UpsertsCompanionReview(t *testing
 			return nil, nil
 		}
 	}
+	var stripReviewID int
+	var stripRetireULIDs []string
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
+		stripReviewID = reviewID
+		stripRetireULIDs = retireULIDs
+		return false, nil
+	}
+
 	var companionUpdatedWarnings []byte
 	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
 		if id == week1Review.ID && params.Warnings != nil {
@@ -1467,6 +1489,8 @@ func TestConsolidate_PostRetirementSeriesCheck_UpsertsCompanionReview(t *testing
 	if !result.NeedsReview {
 		t.Fatal("expected week2 canonical to need review after finding week1 companion")
 	}
+	_ = stripReviewID
+	_ = stripRetireULIDs
 	if companionUpdatedWarnings == nil {
 		t.Fatal("expected week1 companion review entry to be refreshed")
 	}

@@ -224,7 +224,7 @@ func (s stubEventsRepo) DismissAllCompanionWarnings(_ context.Context, _ int, _ 
 	return false, nil
 }
 
-func (s stubEventsRepo) StripRetiredDupWarnings(_ context.Context, _ int32, _ []string) (bool, error) {
+func (s stubEventsRepo) StripRetiredDupWarnings(_ context.Context, _ int, _ []string) (bool, error) {
 	return false, nil
 }
 

@@ -392,7 +392,7 @@ type Repository interface {
 	// referencing any retired ULID from a specific review row. Also clears
 	// duplicate_of_event_id if it points to a retired event. Returns true when the
 	// resulting warnings array is empty (all warnings stripped).
-	StripRetiredDupWarnings(ctx context.Context, reviewID int32, retireULIDs []string) (bool, error)
+	StripRetiredDupWarnings(ctx context.Context, reviewID int, retireULIDs []string) (bool, error)
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
 	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
