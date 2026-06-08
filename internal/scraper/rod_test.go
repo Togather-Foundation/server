@@ -447,7 +447,7 @@ func TestRodExtractor_RobotsBlocked(t *testing.T) {
 	// Serve a robots.txt that disallows our user agent.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/robots.txt" {
-			_, _ = fmt.Fprintf(w, "User-agent: %s\nDisallow: /\n", scraperUserAgent)
+			_, _ = fmt.Fprintf(w, "User-agent: %s\nDisallow: /\n", ScraperUserAgent)
 			return
 		}
 		_, _ = fmt.Fprint(w, "<html><body></body></html>")

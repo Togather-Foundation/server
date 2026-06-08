@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/Togather-Foundation/server/internal/scraper"
 )
@@ -224,5 +225,67 @@ func TestScrapeTestOutputJSONFullDescription(t *testing.T) {
 
 	if len(parsed) != 1 || parsed[0].Description != longDesc {
 		t.Errorf("json output should preserve full description")
+	}
+}
+
+func TestScrapeTestOutputTruncationUTF8(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		description   string
+		wantTruncated bool
+	}{
+		{
+			name:          "multi-byte char split at byte boundary 120",
+			description:   strings.Repeat("a", 119) + "世界中", // 128 bytes, 122 runes
+			wantTruncated: true,
+		},
+		{
+			name:          "emoji at byte boundary",
+			description:   strings.Repeat("a", 118) + "🎉🎉🎉🎉🎉", // 138 bytes, 123 runes
+			wantTruncated: true,
+		},
+		{
+			name:          "under rune limit but over byte limit",
+			description:   strings.Repeat("é", 61), // 122 bytes, 61 runes
+			wantTruncated: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			events := []scraper.RawEvent{
+				{
+					Name:        "UTF-8 Test",
+					StartDate:   "2026-05-01T19:00:00Z",
+					Description: tt.description,
+				},
+			}
+
+			output, err := captureScrapeTestOutput(events, false)
+			if err != nil {
+				t.Fatalf("error: %v", err)
+			}
+
+			if !utf8.ValidString(output) {
+				t.Error("output contains invalid UTF-8 (multi-byte character was split)")
+			}
+
+			if tt.wantTruncated {
+				if !strings.Contains(output, "…") {
+					t.Error("expected ellipsis for truncated description but not found")
+				}
+				if strings.Contains(output, tt.description) {
+					t.Error("full description should have been truncated but was present")
+				}
+			} else {
+				if !strings.Contains(output, tt.description) {
+					t.Error("description should not have been truncated but was")
+				}
+			}
+		})
 	}
 }

@@ -55,16 +55,7 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 	normalizeDescriptionSelectors(&cfg)
 	cfg.normalized = true
 
-	// Emit deprecation warnings consistent with ValidateConfigWithWarnings.
-	if hadDescription {
-		if hadDescriptionSelectors {
-			slog.Warn("source config warning", "source", src.Name,
-				"warning", "selectors.description: deprecated; both description and description_selectors are set — description takes precedence (description_selectors will be ignored). Use description_selectors only; description will be removed in a future version.")
-		} else {
-			slog.Warn("source config warning", "source", src.Name,
-				"warning", "selectors.description: deprecated — use description_selectors (array) instead. description will be removed in a future version.")
-		}
-	}
+	emitDescriptionDeprecationWarnings(slog.Default(), "source", src.Name, hadDescription, hadDescriptionSelectors)
 
 	cfg.EventURLPattern = src.EventURLPattern
 	cfg.SkipMultiSessionCheck = src.SkipMultiSessionCheck

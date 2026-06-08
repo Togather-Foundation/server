@@ -1922,7 +1922,8 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 	}
 
 	if warningsEmpty {
-		if _, dismissErr := txRepo.MergeReview(ctx, entry.ID, ReviewedBySystem, canonicalEvent.ULID); dismissErr != nil {
+		// All warnings stripped — dismiss the entry and publish the canonical.
+		if _, dismissErr := txRepo.ApproveReview(ctx, entry.ID, ReviewedBySystem, nil); dismissErr != nil {
 			return dismissedIDs, fmt.Errorf("dismiss canonical review entry %d after stripping dup warnings: %w", entry.ID, dismissErr)
 		}
 		dismissedIDs = append(dismissedIDs, entry.ID)

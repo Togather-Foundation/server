@@ -22,7 +22,7 @@ type Source struct {
 	Schedule   string
 	TrustLevel int
 	License    string
-	// Domain default event_domain for events scraped from this source.
+	// Domain is the default event_domain for events scraped from this source. Valid values: arts, music, culture, sports, community, education, general. Empty means no override; events fall back to schema.org @type-to-domain mapping (defaulting to 'arts').
 	Domain                        string
 	Enabled                       bool
 	MaxPages                      int

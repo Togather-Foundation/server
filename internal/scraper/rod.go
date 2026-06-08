@@ -28,7 +28,7 @@ const (
 	rodDefaultWaitTimeout = 10 * time.Second
 	rodDefaultRateLimit   = time.Second
 	rodTimeoutOverhead    = 30 * time.Second // overhead for browser launch, navigation, extraction per page
-	rodUserAgent          = scraperUserAgent // reuse from jsonld.go
+	rodUserAgent          = ScraperUserAgent // reuse from jsonld.go
 )
 
 // rodHardTimeout calculates the hard context timeout for a Rod scrape operation.
@@ -137,7 +137,7 @@ func (e *RodExtractor) ScrapeWithBrowser(ctx context.Context, config SourceConfi
 	// Robots.txt check — reuse existing helper.
 	// Also checked internally by RodExtractor; early check here provides clearer UX.
 	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
-	allowed, robotsErr := RobotsAllowed(ctx, config.URL, scraperUserAgent, robotsClient)
+	allowed, robotsErr := RobotsAllowed(ctx, config.URL, ScraperUserAgent, robotsClient)
 	if robotsErr != nil {
 		e.logger.Warn().Err(robotsErr).Str("url", config.URL).Msg("rod: robots.txt check failed, proceeding as allowed")
 	} else if !allowed {
@@ -1186,7 +1186,7 @@ func (e *RodExtractor) RenderHTMLWithNetwork(ctx context.Context, rawURL, waitSe
 	}
 
 	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
-	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent, robotsClient)
+	allowed, robotsErr := RobotsAllowed(ctx, rawURL, ScraperUserAgent, robotsClient)
 	if robotsErr != nil {
 		e.logger.Warn().Err(robotsErr).Str("url", rawURL).Msg("rod: RenderHTMLWithNetwork: robots.txt check failed, proceeding as allowed")
 	} else if !allowed {
@@ -1283,7 +1283,7 @@ func (e *RodExtractor) RenderHTMLWithConfigAndNetwork(ctx context.Context, confi
 	}
 
 	robotsClient := robotsClientFrom(&http.Client{Timeout: fetchTimeout})
-	allowed, robotsErr := RobotsAllowed(ctx, pageURL, scraperUserAgent, robotsClient)
+	allowed, robotsErr := RobotsAllowed(ctx, pageURL, ScraperUserAgent, robotsClient)
 	if robotsErr != nil {
 		e.logger.Warn().Err(robotsErr).Str("url", pageURL).Msg("rod: RenderHTMLWithConfigAndNetwork: robots.txt check failed, proceeding as allowed")
 	} else if !allowed {
@@ -1442,16 +1442,7 @@ func extractTextOrAttrFromSelection(s *goquery.Selection, selector string) strin
 // split across multiple elements (e.g., summary + full description + more info).
 // Empty selector matches are skipped; if all are empty, returns empty string.
 func extractDescriptionFromSelection(s *goquery.Selection, selectors []string) string {
-	if len(selectors) == 0 {
-		return ""
-	}
-
-	var parts []string
-	for _, sel := range selectors {
-		text := extractTextOrAttrFromSelection(s, sel)
-		if text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, " ")
+	return joinSelectorTexts(selectors, func(sel string) string {
+		return extractTextOrAttrFromSelection(s, sel)
+	})
 }

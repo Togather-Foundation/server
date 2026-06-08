@@ -25,7 +25,7 @@ type CollyExtractor struct {
 // and a 1-second per-domain rate limit.
 func NewCollyExtractor(logger zerolog.Logger) *CollyExtractor {
 	return &CollyExtractor{
-		userAgent: "Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)",
+		userAgent: ScraperUserAgent,
 		rateLimit: time.Second,
 		logger:    logger,
 	}
@@ -546,16 +546,7 @@ func selectionTextBR(s *goquery.Selection) string {
 // split across multiple elements (e.g., summary + full description + more info).
 // Empty selector matches are skipped; if all are empty, returns empty string.
 func extractDescriptionFromSelectors(h *colly.HTMLElement, selectors []string) string {
-	if len(selectors) == 0 {
-		return ""
-	}
-
-	var parts []string
-	for _, sel := range selectors {
-		text := extractTextOrAttr(h, sel)
-		if text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, " ")
+	return joinSelectorTexts(selectors, func(sel string) string {
+		return extractTextOrAttr(h, sel)
+	})
 }

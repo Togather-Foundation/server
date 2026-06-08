@@ -191,6 +191,13 @@ bd update <bead-id-2> --status in_progress  # if multiple beads
 every bash command (`make ci-fast`, `git`, `go build`, etc.). Subagent prompts must
 include the worktree path so they know where to operate.
 
+**Postgres tests in worktrees:** `internal/storage/postgres/` tests need a running
+PostgreSQL instance. If `pg_isready` fails during worktree setup, skip `make ci-fast`
+(the DB tests will hang) and run targeted unit tests instead:
+```bash
+go test -count=1 $(go list ./... | grep -v '/storage/postgres$')
+```
+
 ---
 
 ## Phase 4: IMPLEMENT (TDD)
@@ -207,12 +214,13 @@ update SQLc queries as needed.
 > **Do NOT commit or push any changes. The orchestrator owns all git commits.
 > Write the code, run the tests, fix failures — then stop and reflect.
 > 
-> (Reflect on what you would have done differently: awkward abstractions, 
-> package boundaries,tech debt, performance concerns, test coverage gaps, 
-> missing docs, confusing or missing instructions, etc, and evaluate your 
-> workflow for actionable improvements.)
+> Answer these concrete questions in your response (do not skip or generalize):
+> 1. What was the trickiest decision you made and why?
+> 2. What edge case did you almost miss?
+> 3. What would you do differently if you started over?
+> 4. Is there any tech debt or awkward abstraction you're leaving behind?
 > 
-> Return a summary of what you changed, your reflections, and any remaining issues.**
+> Return a summary of what you changed, your concrete answers above, and any remaining issues.**
 
 After each subagent returns:
 1. `scripts/agent-run.sh make test` -- verify tests pass
@@ -220,12 +228,16 @@ After each subagent returns:
 3. **Triage subagent reflections** -- read them carefully. Fix anything actionable
    before committing (e.g. a missed edge case, a cleanup, a confusing variable name).
    Record non-trivial items that can't be fixed now as beads. Do not silently discard
-   the subagent's observations -- they have context the orchestrator lacks.
-3. Commit: `<type>(<scope>): <description> [<bead-id>]`
+   the subagent's observations — they have context the orchestrator lacks.
+4. **Verify staged diff for sequential agents** — if a file was touched by a prior
+   sequential subagent's commit AND modified by the current subagent, run
+   `git diff --cached <file>` before committing to confirm only the intended changes
+   are staged. Overlapped files can leak changes across commit boundaries.
+5. Commit: `<type>(<scope>): <description> [<bead-id>]`
    (types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`)
    **Never use `git add -A`** — stage specific files with explicit paths.
-4. Mark TodoWrite items complete; update bead notes for significant decisions
-6. If stuck, delegate to `@diagnose`
+6. Mark TodoWrite items complete; update bead notes for significant decisions
+7. If stuck, delegate to `@diagnose`
 
 **Local verification:** After all steps are implemented, run the fast CI gate
 and start the local server to verify the feature works end-to-end:

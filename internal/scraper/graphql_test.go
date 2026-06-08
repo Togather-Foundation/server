@@ -125,7 +125,7 @@ func TestGraphQLExtract_RequestHeaders(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "application/json", gotContentType, "Content-Type must be application/json")
 	assert.Equal(t, "application/json", gotAccept, "Accept must be application/json")
-	assert.Equal(t, scraperUserAgent, gotUserAgent, "User-Agent must be the Togather scraper identity string")
+	assert.Equal(t, ScraperUserAgent, gotUserAgent, "User-Agent must be the Togather scraper identity string")
 }
 
 func TestGraphQLExtract_NoToken(t *testing.T) {

@@ -45,7 +45,7 @@ func Inspect(ctx context.Context, rawURL string, client *http.Client) (*InspectR
 	if err != nil {
 		return nil, fmt.Errorf("inspect: build request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)")
+	req.Header.Set("User-Agent", ScraperUserAgent)
 
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
