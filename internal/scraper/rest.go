@@ -125,7 +125,7 @@ func (e *RestExtractor) fetchPage(
 		return nil, "", fmt.Errorf("rest: creating request for %s: %w", pageURL, err)
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", scraperUserAgent)
+	req.Header.Set("User-Agent", ScraperUserAgent)
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
 	}

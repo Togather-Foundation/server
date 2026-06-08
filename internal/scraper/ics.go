@@ -93,10 +93,7 @@ func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig 
 	return results, allWarnings, nil
 }
 
-// icsDefaultUserAgent is the User-Agent sent for ICS feed requests.
-// A browser-compatible prefix is required by some CDNs (e.g. Meetup.com) that
-// block requests from Go's default "Go-http-client/2.0" UA.
-const icsDefaultUserAgent = "Mozilla/5.0 (compatible; Togather-ICS/1.0)"
+// ICSUserAgent is defined in useragent.go.
 
 // fetchFeed fetches the ICS feed from the given URL with body size limits
 // and redirect handling. extraHeaders are merged on top of the default
@@ -127,7 +124,7 @@ func (e *ICSExtractor) fetchFeed(ctx context.Context, feedURL string, extraHeade
 		return nil, nil, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Accept", "text/calendar")
-	req.Header.Set("User-Agent", icsDefaultUserAgent)
+	req.Header.Set("User-Agent", ICSUserAgent)
 	for k, v := range extraHeaders {
 		req.Header.Set(k, v)
 	}

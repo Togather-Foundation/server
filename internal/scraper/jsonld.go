@@ -16,9 +16,8 @@ import (
 )
 
 const (
-	scraperUserAgent = "Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)"
-	fetchTimeout     = 30 * time.Second
-	robotsTimeout    = 10 * time.Second
+	fetchTimeout  = 30 * time.Second
+	robotsTimeout = 10 * time.Second
 
 	retryMaxAttempts = 3
 	retryBaseDelay   = 2 * time.Second
@@ -59,7 +58,7 @@ func FetchAndExtractJSONLD(ctx context.Context, rawURL string, client *http.Clie
 	// Build a robots client: reuse the transport from the main client (for
 	// caching) but apply the shorter robotsTimeout.
 	robotsClient := robotsClientFrom(client)
-	allowed, robotsErr := RobotsAllowed(ctx, rawURL, scraperUserAgent, robotsClient)
+	allowed, robotsErr := RobotsAllowed(ctx, rawURL, ScraperUserAgent, robotsClient)
 	if robotsErr != nil {
 		// Non-fatal: treat as allowed when robots.txt is unreachable, but log.
 		zerolog.Ctx(ctx).Warn().Err(robotsErr).Str("url", rawURL).Msg("scraper: robots.txt check failed, proceeding as allowed")
@@ -105,7 +104,7 @@ func fetchWithRetry(ctx context.Context, client *http.Client, rawURL string) (*h
 		if err != nil {
 			return nil, fmt.Errorf("creating request for %q: %w", rawURL, err)
 		}
-		req.Header.Set("User-Agent", scraperUserAgent)
+		req.Header.Set("User-Agent", ScraperUserAgent)
 
 		resp, err := client.Do(req)
 		if err != nil {

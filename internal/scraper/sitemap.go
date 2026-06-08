@@ -73,7 +73,7 @@ func fetchSitemapRecursive(ctx context.Context, sitemapURL string, client *http.
 	if err != nil {
 		return nil, fmt.Errorf("create sitemap request: %w", err)
 	}
-	req.Header.Set("User-Agent", "Togather-SEL-Scraper/1.0")
+	req.Header.Set("User-Agent", ScraperUserAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {

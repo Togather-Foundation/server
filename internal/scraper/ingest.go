@@ -151,7 +151,7 @@ func NewIngestClient(baseURL, apiKey string, opts ...IngestClientOption) *Ingest
 		httpClient: &http.Client{
 			Timeout: cfg.HTTPClientTimeout,
 		},
-		userAgent:        "Togather-SEL-Scraper/0.1 (+https://togather.foundation; events@togather.foundation)",
+		userAgent:        ScraperUserAgent,
 		pollBackoffStart: cfg.PollBackoffStart,
 		pollBackoffMax:   cfg.PollBackoffMax,
 		pollTimeout:      cfg.PollTimeout,

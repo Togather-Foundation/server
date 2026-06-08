@@ -207,7 +207,7 @@ func TestRobotsAllowed_NoRobotsFile(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent, nil)
+	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", ScraperUserAgent, nil)
 	require.NoError(t, err)
 	assert.True(t, allowed, "missing robots.txt should allow all")
 }
@@ -223,7 +223,7 @@ func TestRobotsAllowed_AllowAll(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent, nil)
+	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", ScraperUserAgent, nil)
 	require.NoError(t, err)
 	assert.True(t, allowed)
 }
@@ -239,7 +239,7 @@ func TestRobotsAllowed_DisallowAll(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent, nil)
+	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", ScraperUserAgent, nil)
 	require.NoError(t, err)
 	assert.False(t, allowed)
 }
@@ -255,7 +255,7 @@ func TestRobotsAllowed_DisallowSpecificAgent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", scraperUserAgent, nil)
+	allowed, err := RobotsAllowed(context.Background(), srv.URL+"/events", ScraperUserAgent, nil)
 	require.NoError(t, err)
 	assert.False(t, allowed)
 }

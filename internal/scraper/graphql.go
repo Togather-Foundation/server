@@ -67,7 +67,7 @@ func (e *GraphQLExtractor) Extract(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", scraperUserAgent)
+	req.Header.Set("User-Agent", ScraperUserAgent)
 	if cfg.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Token)
 	}
