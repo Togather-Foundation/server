@@ -31,7 +31,7 @@ var (
 	scrapeTestJSON            bool
 )
 
-const maxDescriptionLength = 120
+const maxDescriptionRunes = 120 // truncation limit in runes (not bytes) for UTF-8 safety
 
 func formatScrapeTestOutput(w io.Writer, events []scraper.RawEvent, asJSON bool) error {
 	if len(events) == 0 {
@@ -81,10 +81,10 @@ func formatScrapeTestOutput(w io.Writer, events []scraper.RawEvent, asJSON bool)
 		}
 		if e.Description != "" {
 			desc := e.Description
-			if len(desc) > maxDescriptionLength {
+			if len(desc) > maxDescriptionRunes {
 				runes := []rune(desc)
-				if len(runes) > maxDescriptionLength {
-					desc = string(runes[:maxDescriptionLength]) + "…"
+				if len(runes) > maxDescriptionRunes {
+					desc = string(runes[:maxDescriptionRunes]) + "…"
 				}
 			}
 			if _, err := fmt.Fprintf(w, "    Description: %s\n", desc); err != nil {
