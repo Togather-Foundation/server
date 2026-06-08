@@ -10,6 +10,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTokenExchange(t *testing.T) {
@@ -77,7 +78,13 @@ func TestTokenExchange(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
 				t.Helper()
-				assert.Contains(t, rec.Body.String(), "Server error")
+				assert.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
+				assert.Equal(t, http.StatusInternalServerError, rec.Code)
+				var prob map[string]any
+				require.NoError(t, json.NewDecoder(rec.Body).Decode(&prob))
+				assert.Equal(t, "https://sel.events/problems/server-error", prob["type"])
+				assert.Equal(t, float64(500), prob["status"])
+				assert.Equal(t, "Server error", prob["title"])
 			},
 		},
 		{

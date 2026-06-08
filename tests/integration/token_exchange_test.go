@@ -77,6 +77,9 @@ func TestTokenExchangeAgentKeyForbidden(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
+// insertAdminAPIKey inserts an API key with role='admin' into the test database.
+// Unlike the shared insertAPIKey helper (which uses the default 'agent' role),
+// this creates a key that can be exchanged for admin JWTs via POST /api/v1/auth/token.
 func insertAdminAPIKey(t *testing.T, env *testEnv, name string) string {
 	t.Helper()
 
