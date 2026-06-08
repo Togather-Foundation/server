@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -54,12 +55,16 @@ func (h *TokenHandler) Exchange(w http.ResponseWriter, r *http.Request) {
 
 	expiresAt := time.Now().Add(h.JWTExpiry)
 
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(tokenExchangeResponse{
+		Token:     token,
+		ExpiresAt: expiresAt.UTC().Format(time.RFC3339),
+	}); err != nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(tokenExchangeResponse{
-		Token:     token,
-		ExpiresAt: expiresAt.Format(time.RFC3339),
-	}); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-	}
+	buf.WriteTo(w)
 }

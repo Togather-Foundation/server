@@ -44,6 +44,7 @@ func TestTokenExchange(t *testing.T) {
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
 				var resp struct {
 					Token     string `json:"token"`
 					ExpiresAt string `json:"expires_at"`
@@ -70,6 +71,7 @@ func TestTokenExchange(t *testing.T) {
 			},
 			expectedStatus: http.StatusForbidden,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
 				assert.Contains(t, rec.Body.String(), "Admin API key required")
 			},
 		},
@@ -80,6 +82,7 @@ func TestTokenExchange(t *testing.T) {
 			},
 			expectedStatus: http.StatusUnauthorized,
 			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
 				assert.Contains(t, rec.Body.String(), "Unauthorized")
 			},
 		},

@@ -592,7 +592,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/api/v1/admin/logout", http.HandlerFunc(adminAuthHandler.Logout))
 
 	// Token exchange endpoint - exchanges an admin API key for a short-lived JWT
-	tokenExchange := apiKeyAuth(rateLimitLogin(http.HandlerFunc(tokenHandler.Exchange)))
+	tokenExchange := apiKeyAuth(rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(tokenHandler.Exchange))))
 	mux.Handle("POST /api/v1/auth/token", tokenExchange)
 
 	// Admin event management endpoints (requires JWT auth)
