@@ -198,7 +198,7 @@ Submission → Normalization → Validation → Deduplication → Storage → Re
 - `approved` — set by `ApproveReview` (`events_repository.go:2838`), invoked by `ApproveEventWithReview` (`admin_service.go:1294`) and `FixAndApproveEventWithReview` (`admin_service.go:1616`)
 - `rejected` — set by `RejectReview` (`events_repository.go:2862`), invoked by `RejectEventWithReview` (`admin_service.go:1493`)
 - `merged` — set by `MergeReview` (`events_repository.go:2885`, line 2900), invoked by `MergeEventsWithReview` (`admin_service.go:1094`), `AddOccurrenceFromReview` (line 490), `AddOccurrenceFromReviewNearDup` (line 844)
-- `dismissed` — set by `DismissPendingReviewsByEventULIDs` (`events_repository.go:1557`, line 1562), invoked by consolidation retire logic (`admin_service.go:1936`)
+- `dismissed` — set by `DismissPendingReviewsByEventULIDs` (`events_repository.go:1557`, line 1562), invoked by consolidation retire logic (`admin_service.go:1863`)
 
 **Action Triggers:**
 
@@ -229,14 +229,14 @@ Submission → Normalization → Validation → Deduplication → Storage → Re
 | **merge** | Soft-deleted (`lifecycle_state='deleted'`, tombstone reason `duplicate_merged`, `superseded_by` → primary URI; `admin_service.go:1177-1201`) | Primary enriched with gap-filling data from duplicate (`:1163-1174`). Lifecycle state NOT modified. | Companion review on primary is looked up, locked, and dismissed via `MergeReview` if pending (`:1052-1091`) | `merged` | Yes (via `recomputeLifecycleAfterReview`) | Recompute on primary via shared helper. Companion dismissal passes `primaryULID` not `duplicateULID` to `MergeReview` (`:1083`). |
 | **add-occurrence (forward — `potential_duplicate`)** | Soft-deleted (`lifecycle_state='deleted'`, tombstone reason `absorbed_as_occurrence`, `superseded_by` → target URI; `:452-487`). Occurrences deleted (`:460-462`). | New occurrence created on target from source event's sole occurrence (`:434-450`) | Companion review on target is located via `GetPendingReviewByEventUlidAndDuplicateUlid(targetULID, review.EventULID)`, locked, and dismissed via `MergeReview` if pending (`:266-510`) | `merged` | Yes (via `recomputeLifecycleAfterReview`) | Target lifecycle recomputed via shared helper. Source event must have exactly 1 occurrence (`:359-366`). Dispatch path validated from locked warnings (`:244-256`). |
 | **add-occurrence (near-dup — `near_duplicate_of_new_event`)** | Source = `review.DuplicateOfEventULID` (new event), soft-deleted with `absorbed_as_occurrence` tombstone (`:792-825`). Target = `review.EventULID` (existing series event). | Occurrence added to target from source event's sole occurrence (`:774-789`) | Companion review on source event is located via `GetPendingReviewByEventUlidAndDuplicateUlid(sourceULID, targetULID)`, locked, and dismissed via `MergeReview` if pending (`:628-646`, `:829-838`) | `merged` | Yes (via `recomputeLifecycleAfterReview`) | Reversed semantics from forward path. Target lifecycle recomputed via shared helper. Source dispatched from `DuplicateOfEventULID` field (`:605-608`). |
-| **consolidate** | Each retired event: soft-deleted (`lifecycle_state='deleted'`, tombstone reason `consolidated`, `superseded_by` → canonical URI; `:1906-1933`). All pending reviews dismissed via `DismissPendingReviewsByEventULIDs` → `dismissed` (`:1936`) | Canonical: promoted (`event_ulid`) or created (full ingest pipeline). Cross-week series companion re-synced (`:2183-2274`). Retired dup warnings stripped from canonical's existing review entry (`:1944-2096`) | Retired events' review entries batch-dismissed to `dismissed` (`:1936`). Canonical's companion reviews have retired-warning entries stripped (`:1989-2049`) | Retired entries → `dismissed`; Canonical → `pending` or `published` depending on warnings | Yes (via `recomputeLifecycleAfterReview`) | See Consolidation Decision Table below. Retired events MUST not include the canonical ULID (`:1649-1654`). If `transferOccurrences=true`, occurrences copied to canonical before retire (`:1865-1903`). Recompute now runs in Step 8, checking for any pre-existing pending reviews that were not dismissed. |
+| **consolidate** | Each retired event: soft-deleted (`lifecycle_state='deleted'`, tombstone reason `consolidated`, `superseded_by` → canonical URI; `:1833-1858`). All pending reviews dismissed via `DismissPendingReviewsByEventULIDs` → `dismissed` (`:1862-1866`) | Canonical: promoted (`event_ulid`) or created (full ingest pipeline). Cross-week series companion re-synced (`consolidateSyncSeriesCompanion`; `:2039-2126`). Retired dup warnings stripped from canonical's existing review entry via atomic SQL (`StripRetiredDupWarnings`) then companion replacement in Go (`consolidateStripRetiredDupWarnings`; `:1879-1941`) | Retired events' review entries batch-dismissed to `dismissed` (`:1862-1866`). Canonical's companion reviews have retired-warning entries stripped via atomic SQL then companion replacement in Go (`:1895-1922`) | Retired entries → `dismissed`; Canonical → `pending` or `published` depending on warnings | Yes (via `recomputeLifecycleAfterReview`) | See Consolidation Decision Table below. Retired events MUST not include the canonical ULID (`:1569-1574`). If `transferOccurrences=true`, occurrences copied to canonical before retire (`consolidateRetireEvents`; `:1773-1869`). Recompute now runs in Step 8, checking for any pre-existing pending reviews that were not dismissed. |
 | **cleanup (job)** | Events with expired pending reviews: `lifecycle_state` → `deleted` (`cleanup_review_queue.go:142-148`) then review row deleted (`:162-164`) | N/A | N/A (rows are physically deleted) | Row deleted | No | Runs daily via River (`:17`; `JobKindReviewQueueCleanup`). Three phases: rejected (event end +7d → delete; `:119-135`), pending past start (event deleted + row deleted; `:140-168`), archived (`approved`/`superseded` → delete after 90d; `:171-184`). |
 
 ---
 
 ## 3. Consolidation Decision Table
 
-The `Consolidate` method (`admin_service.go:1640`) is the atomic resolution path for N duplicate events into a single canonical.
+The `Consolidate` method (`admin_service.go:1560`) is the atomic resolution path for N duplicate events into a single canonical.
 
 ### Dispatch Paths
 
@@ -248,28 +248,28 @@ The `Consolidate` method (`admin_service.go:1640`) is the atomic resolution path
 
 ### Retire Processing
 
-Each retired event (`admin_service.go:1840-1942`):
-1. If `transferOccurrences=true`: each occurrence copied to canonical after overlap check (`:1866-1903`)
-2. Soft-deleted with `lifecycle_state='deleted'`, tombstone reason `"consolidated"`, `supersededBy` → canonical URI (`:1906-1933`)
-3. All occurrence rows cleaned up (`:1911`)
-4. All pending review queue entries dismissed → `dismissed` via `DismissPendingReviewsByEventULIDs` (`:1936`)
+Each retired event (`consolidateRetireEvents`, `admin_service.go:1773-1869`):
+1. If `transferOccurrences=true`: each occurrence copied to canonical after overlap check (`:1792-1831`)
+2. Soft-deleted with `lifecycle_state='deleted'`, tombstone reason `"consolidated"`, `supersededBy` → canonical URI (`:1833-1858`)
+3. All occurrence rows cleaned up (`:1838`)
+4. All pending review queue entries dismissed → `dismissed` via `DismissPendingReviewsByEventULIDs` (`:1862-1866`)
 
 ### When consolidateStripRetiredDupWarnings Triggers
 
-`consolidateStripRetiredDupWarnings` (`admin_service.go:1944`) runs on every consolidate. It:
-1. Looks up the canonical's pending review entry via `GetPendingReviewByEventUlid` (`:1961`)
-2. Filters out warnings (`near_duplicate_of_new_event`, `potential_duplicate`, `cross_week_series_companion`) whose matches/companion ULIDs are in the retire set (`:1989-2049`)
-3. Also strips if `entry.DuplicateOfEventULID` points to a retired event (`:2037-2040`)
-4. If **all** warnings stripped → dismisses the review entry (`MergeReview`) and publishes the canonical (`:2060-2074`)
-5. If **some** warnings remain → updates the review entry with pruned warnings + clears `duplicate_of_event_id` if it pointed to a retired event (`:2089-2094`)
+`consolidateStripRetiredDupWarnings` (`admin_service.go:1879`) runs on every consolidate. It:
+1. Looks up the canonical's pending review entry via `GetPendingReviewByEventUlid` (`:1887`)
+2. Delegates to `StripRetiredDupWarnings` (`:1895`) — atomic SQL that strips `near_duplicate_of_new_event`, `potential_duplicate`, and `cross_week_series_companion` warnings whose matches/companion ULIDs are in the retire set; also clears `duplicate_of_event_id` if it pointed to a retired event
+3. If a replacement companion exists, re-reads the entry and replaces stale cross-week companion warnings in Go (`:1900-1922`)
+4. If **all** warnings stripped → dismisses the review entry (`MergeReview`, `:1925`) and publishes the canonical (`:1930-1931`)
+5. If **some** warnings remain → returns (the atomic SQL already persisted the pruned warnings)
 
 ### Series Companion Cross-Linking
 
-`consolidateSyncSeriesCompanion` (`admin_service.go:2183`) re-runs cross-week companion detection against the post-retirement event graph:
-- Finds a surviving companion (not in the retire list) via `FindSeriesCompanion` (`:2197`)
-- Creates a `cross_week_series_companion` warning on the companion event's review entry (`:2218-2271`)
-- If the companion was `published`, flips it to `pending_review` and creates a new review entry (`:2248-2271`)
-- If the companion already had a pending review, updates its warnings with the new cross-week warning (`:2231-2242`)
+`consolidateSyncSeriesCompanion` (`admin_service.go:2039`) re-runs cross-week companion detection against the post-retirement event graph:
+- Finds a surviving companion (not in the retire list) via `FindSeriesCompanion` (`:2049`)
+- Creates a `cross_week_series_companion` warning on the companion event's review entry
+- If the companion was `published`, flips it to `pending_review` and creates a new review entry (`:2100-2123`)
+- If the companion already had a pending review, updates its warnings with the new cross-week warning (`:2084-2092`)
 
 ---
 
@@ -303,7 +303,7 @@ The helper checks `GetPendingReviewByEventUlid` — if it returns `nil` (no pend
 
 ### Consolidate Recompute (Added)
 
-`Consolidate` (`admin_service.go:1640`) now calls `recomputeLifecycleAfterReview` in Step 8 (after `consolidateStripRetiredDupWarnings` and `consolidateSyncSeriesCompanion`). This closes the gap where the canonical could remain `pending_review` with stale pending reviews after consolidation. The recompute accounts for any pre-existing pending reviews that were not dismissed by the consolidation steps.
+`Consolidate` (`admin_service.go:1560`) now calls `recomputeLifecycleAfterReview` in Step 8 (after `consolidateStripRetiredDupWarnings` and `consolidateSyncSeriesCompanion`). This closes the gap where the canonical could remain `pending_review` with stale pending reviews after consolidation. The recompute accounts for any pre-existing pending reviews that were not dismissed by the consolidation steps.
 
 ---
 
@@ -321,7 +321,7 @@ Three different mechanisms handle companion review cleanup, each with different 
 - `AddOccurrenceFromReview` (forward) — dismisses companion on target (`admin_service.go:501`)
 - `AddOccurrenceFromReviewNearDup` (near-dup) — dismisses companion on source (`admin_service.go:830`)
 - `MergeEventsWithReview` (merge) — dismisses companion on primary (`admin_service.go:1083`)
-- `consolidateStripRetiredDupWarnings` — dismisses canonical entry when all warnings stripped (`admin_service.go:2062`)
+- `consolidateStripRetiredDupWarnings` — dismisses canonical entry when all warnings stripped (`admin_service.go:1925`)
 
 **Characteristics:** Full dismissal. Atomic. No race window. Handles all warning types (the whole row is resolved).
 
@@ -363,8 +363,8 @@ Three different mechanisms handle companion review cleanup, each with different 
 | merge (companion dismiss) | Mechanism 1 (MergeReview) | `admin_service.go:1083` |
 | add-occurrence forward (companion dismiss) | Mechanism 1 (MergeReview) | `admin_service.go:501` |
 | add-occurrence near-dup (companion dismiss) | Mechanism 1 (MergeReview) | `admin_service.go:830` |
-| consolidate (retire-list reviews) | `DismissPendingReviewsByEventULIDs` → `dismissed` | `admin_service.go:1936` |
-| consolidate (canonical strip) | Go-level filtering (`consolidateStripRetiredDupWarnings`) | `admin_service.go:1944` |
+| consolidate (retire-list reviews) | `DismissPendingReviewsByEventULIDs` → `dismissed` | `admin_service.go:1863` |
+| consolidate (canonical strip) | Atomic SQL (`StripRetiredDupWarnings`) + Go companion replacement (`consolidateStripRetiredDupWarnings`) | `admin_service.go:1879` |
 
 ### All Three Warning Types Now Handled by Atomic SQL
 
@@ -401,7 +401,7 @@ Each copy follows the same pattern: `GetPendingReviewByEventUlidAndDuplicateUlid
 
 ### G4: Consolidate Now Recomputes
 
-**Status:** FIXED. `Consolidate` (`admin_service.go:1640`) now calls `recomputeLifecycleAfterReview` in Step 8 after `consolidateStripRetiredDupWarnings` and `consolidateSyncSeriesCompanion`. This ensures the canonical event's lifecycle accounts for any pre-existing pending reviews that were not dismissed by the consolidation steps.
+**Status:** FIXED. `Consolidate` (`admin_service.go:1560`) now calls `recomputeLifecycleAfterReview` in Step 8 after `consolidateStripRetiredDupWarnings` and `consolidateSyncSeriesCompanion`. This ensures the canonical event's lifecycle accounts for any pre-existing pending reviews that were not dismissed by the consolidation steps.
 
 ### G5: OpenAPI Spec Now Includes `dismissed`
 
@@ -433,14 +433,14 @@ Each copy follows the same pattern: `GetPendingReviewByEventUlidAndDuplicateUlid
 | `pending_review` | `deleted` | reject | `admin_service.go:1463` |
 | `pending_review` | `deleted` | merge (source event) | `admin_service.go:1177` |
 | `pending_review` | `deleted` | add-occurrence (absorbed event) | `admin_service.go:452` |
-| `pending_review` | `deleted` | consolidate (retired event) | `admin_service.go:1906` |
+| `pending_review` | `deleted` | consolidate (retired event) | `admin_service.go:1833` |
 | `pending_review` | `deleted` | cleanup job (unreviewed past event) | `cleanup_review_queue.go:142-148` |
 | `pending_review` | `pending_review` | fix (with remaining review issues — not applicable; fix always publishes) | — |
-| `pending_review` | `pending_review` | consolidate with needsReview=true | `admin_service.go:2108-2112` |
+| `pending_review` | `pending_review` | consolidate with needsReview=true | `admin_service.go:1970` |
 | `published` | `pending_review` | new review created (near-dup companion back-link) | `ingest.go` (via near-dup cross-linking) |
-| `published` | `pending_review` | consolidate companion re-sync (cross-week series) | `admin_service.go:2248-2254` |
+| `published` | `pending_review` | consolidate companion re-sync (cross-week series) | `admin_service.go:2100-2106` |
 | `published` | `deleted` | delete (admin) | `admin_service.go:2411-2456` |
-| `any` | `deleted` | consolidate retire list | `admin_service.go:1906` |
+| `any` | `deleted` | consolidate retire list | `admin_service.go:1833` |
 
 ### Review Queue Status Transitions
 
