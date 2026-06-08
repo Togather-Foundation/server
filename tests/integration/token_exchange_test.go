@@ -1,21 +1,24 @@
 package integration
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTokenExchangeIntegration(t *testing.T) {
 	env := setupTestEnv(t)
 
-	rawKey := insertAdminAPIKey(t, env, "integration-test-admin-key")
+	rawKey := testhelpers.InsertAPIKeyWithRole(t, env.Pool, env.Context, "integration-test-admin-key", "admin")
+
+	var keyID string
+	err := env.Pool.QueryRow(env.Context, `SELECT id FROM api_keys WHERE prefix = $1`, rawKey[:8]).Scan(&keyID)
+	require.NoError(t, err, "failed to query API key ID")
 
 	req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/auth/token", nil)
 	require.NoError(t, err)
@@ -42,7 +45,7 @@ func TestTokenExchangeIntegration(t *testing.T) {
 	claims, err := jwtMgr.Validate(tokenResp.Token)
 	require.NoError(t, err, "JWT validation failed")
 	require.Equal(t, "admin", claims.Role)
-	require.NotEmpty(t, claims.Subject)
+	require.Equal(t, keyID, claims.Subject, "JWT subject must match the API key ID")
 
 	expiresAt, err := time.Parse(time.RFC3339, tokenResp.ExpiresAt)
 	require.NoError(t, err, "expires_at parsing failed")
@@ -75,26 +78,4 @@ func TestTokenExchangeAgentKeyForbidden(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
-}
-
-// insertAdminAPIKey inserts an API key with role='admin' into the test database.
-// Unlike the shared insertAPIKey helper (which uses the default 'agent' role),
-// this creates a key that can be exchanged for admin JWTs via POST /api/v1/auth/token.
-func insertAdminAPIKey(t *testing.T, env *testEnv, name string) string {
-	t.Helper()
-
-	rawBytes := make([]byte, 16)
-	_, err := rand.Read(rawBytes)
-	require.NoError(t, err)
-	key := hex.EncodeToString(rawBytes)
-	prefix := key[:8]
-	hash := auth.HashAPIKeySHA256(key)
-
-	_, err = env.Pool.Exec(env.Context,
-		`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role) VALUES ($1, $2, $3, $4, $5)`,
-		prefix, hash, auth.HashVersionSHA256, name, string(auth.RoleAdmin),
-	)
-	require.NoError(t, err, "failed to insert admin API key")
-
-	return key
 }
