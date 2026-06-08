@@ -3062,16 +3062,17 @@
      */
     async function refreshAllBadgeCounts() {
         const statuses = ['pending', 'approved', 'rejected', 'merged'];
-        for (const status of statuses) {
-            try {
-                const data = await API.reviewQueue.list({ status, limit: 1 });
-                if (data && data.total !== undefined) {
-                    updateBadgeCount(status, data.total);
-                }
-            } catch (_err) {
-                // Best-effort badge refresh; failures are non-critical
+        const results = await Promise.allSettled(
+            statuses.map(status =>
+                API.reviewQueue.list({ status, limit: 1 }).then(data => ({ status, data }))
+            )
+        );
+        for (const result of results) {
+            if (result.status === 'fulfilled' && result.value.data?.total !== undefined) {
+                updateBadgeCount(result.value.status, result.value.data.total);
             }
         }
+        // Best-effort badge refresh; failures are silently ignored
     }
     
 
