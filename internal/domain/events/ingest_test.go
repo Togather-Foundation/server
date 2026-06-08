@@ -830,6 +830,10 @@ func (m *MockRepository) DismissAllCompanionWarnings(_ context.Context, _ int, _
 	return false, nil
 }
 
+func (m *MockRepository) StripRetiredDupWarnings(_ context.Context, _ int, _ []string) (bool, error) {
+	return false, nil
+}
+
 func (m *MockRepository) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
 	return false, nil
 }

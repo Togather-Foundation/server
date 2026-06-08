@@ -355,6 +355,11 @@ func (m *MockRepository) DismissAllCompanionWarnings(ctx context.Context, review
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockRepository) StripRetiredDupWarnings(ctx context.Context, reviewID int, retireULIDs []string) (bool, error) {
+	args := m.Called(ctx, reviewID, retireULIDs)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockRepository) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
 	args := m.Called(ctx, eventID, startTime, endTime)
 	return args.Bool(0), args.Error(1)

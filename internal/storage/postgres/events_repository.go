@@ -2795,6 +2795,26 @@ func (r *EventRepository) DismissAllCompanionWarnings(ctx context.Context, revie
 	return warningsEmpty, nil
 }
 
+// StripRetiredDupWarnings atomically strips all duplicate warning entries
+// referencing any of the given retireULIDs from a specific review row. Handles
+// three warning types (near_duplicate_of_new_event, potential_duplicate,
+// cross_week_series_companion). Also clears duplicate_of_event_id if it points
+// to a retired event. Companion replacement is handled in Go after this returns.
+func (r *EventRepository) StripRetiredDupWarnings(ctx context.Context, reviewID int, retireULIDs []string) (bool, error) {
+	if len(retireULIDs) == 0 {
+		return false, nil
+	}
+	queries := Queries{db: r.queryer()}
+	warningsEmpty, err := queries.StripRetiredDupWarnings(ctx, StripRetiredDupWarningsParams{
+		ReviewID:    int32(reviewID),
+		RetireUlids: retireULIDs,
+	})
+	if err != nil {
+		return false, fmt.Errorf("strip retired dup warnings review_id=%d: %w", reviewID, err)
+	}
+	return warningsEmpty, nil
+}
+
 // ListReviewQueue lists review queue entries with filters and pagination
 func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
 	queries := Queries{db: r.queryer()}

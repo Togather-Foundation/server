@@ -935,16 +935,14 @@ func TestConsolidate_PromotePath_NearDup_ReviewEntryPayloadsNotNil(t *testing.T)
 
 // TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning verifies that when
 // the canonical event has a pending review entry containing a near_duplicate_of_new_event
-// warning pointing to the retired event, that warning is stripped. If a non-dup warning
-// (multi_session_likely) remains, the entry stays pending with updated warnings.
+// warning pointing to the retired event, the SQL atomically strips the warning but a
+// non-dup warning (multi_session_likely) survives. The entry stays pending — no merge occurs.
 func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) {
 	ctx := context.Background()
 
 	retiredULID := consolidateRetireULID
 	canonULID := consolidateCanonULID
 
-	// Canonical pending review entry: near_duplicate_of_new_event (stale) +
-	// multi_session_likely (unrelated, must survive).
 	initialWarnings, _ := json.Marshal([]ValidationWarning{
 		{
 			Field:   "near_duplicate",
@@ -959,10 +957,9 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 	})
 
 	canonReview := &ReviewQueueEntry{
-		ID:        42,
-		Status:    "pending",
-		EventULID: canonULID,
-		// DuplicateOfEventULID points to the retired event (stale).
+		ID:                   42,
+		Status:               "pending",
+		EventULID:            canonULID,
 		DuplicateOfEventULID: &retiredULID,
 		Warnings:             initialWarnings,
 	}
@@ -973,7 +970,6 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 	}
 	repo := makeConsolidateRepo(known)
 
-	// Return the pending review for the canonical, nil for retired (already dismissed).
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
 		if ulid == canonULID {
 			return canonReview, nil
@@ -981,18 +977,26 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 		return nil, nil
 	}
 
-	// Capture UpdateReviewQueueEntry call.
-	var updatedWarningsJSON []byte
-	var capturedClearDuplicateOf bool
-	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
-		if id != 42 {
-			t.Errorf("UpdateReviewQueueEntry called with unexpected id=%d, want 42", id)
+	var stripCalled bool
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
+		stripCalled = true
+		if reviewID != 42 {
+			t.Errorf("StripRetiredDupWarnings called with reviewID=%d, want 42", reviewID)
 		}
-		if params.Warnings != nil {
-			updatedWarningsJSON = *params.Warnings
+		if len(retireULIDs) != 1 || retireULIDs[0] != retiredULID {
+			t.Errorf("StripRetiredDupWarnings called with retireULIDs=%v, want [%s]", retireULIDs, retiredULID)
 		}
-		capturedClearDuplicateOf = params.ClearDuplicateOf
-		return &ReviewQueueEntry{ID: id}, nil
+		return false, nil
+	}
+
+	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
+		t.Errorf("MergeReview must NOT be called when non-dup warnings survive; called with id=%d", id)
+		return nil, nil
+	}
+
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, _ ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		t.Errorf("UpdateReviewQueueEntry must NOT be called — SQL handles stripping; called with id=%d", id)
+		return nil, nil
 	}
 
 	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
@@ -1008,42 +1012,10 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 		t.Fatal("expected non-nil result")
 	}
 
-	// UpdateReviewQueueEntry must have been called.
-	if updatedWarningsJSON == nil {
-		t.Fatal("expected UpdateReviewQueueEntry to be called with updated warnings, but it was not")
+	if !stripCalled {
+		t.Error("StripRetiredDupWarnings must have been called")
 	}
 
-	// ClearDuplicateOf must be true — DuplicateOfEventULID pointed to the retired event.
-	if !capturedClearDuplicateOf {
-		t.Error("expected ClearDuplicateOf=true when DuplicateOfEventULID points to a retired event")
-	}
-
-	// Remaining warnings must not include near_duplicate_of_new_event.
-	var remaining []ValidationWarning
-	if err := json.Unmarshal(updatedWarningsJSON, &remaining); err != nil {
-		t.Fatalf("updated warnings JSON is invalid: %v", err)
-	}
-	for _, w := range remaining {
-		if w.Code == "near_duplicate_of_new_event" {
-			t.Errorf("near_duplicate_of_new_event warning must be stripped but is still present: %+v", w)
-		}
-	}
-	// multi_session_likely must still be present.
-	found := false
-	for _, w := range remaining {
-		if w.Code == "multi_session_likely" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("multi_session_likely warning must survive stripping; remaining: %+v", remaining)
-	}
-	// The canonical's lifecycle must NOT have been changed — the entry stays pending
-	// because of the surviving multi_session_likely warning, but we do not alter the
-	// canonical's lifecycle state through the strip helper (that is the review queue
-	// entry's job, not ours).
-	// result.Event comes from the promote path — lifecycle starts as "published".
-	// It must remain "published" since the strip helper only touched the warnings.
 	if result.Event != nil && result.Event.LifecycleState == "pending_review" {
 		t.Error("canonical lifecycle must not be set to pending_review by the strip helper when non-dup warnings remain")
 	}
@@ -1051,15 +1023,14 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 
 // TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain verifies that
 // when the canonical has a pending review with ONLY a near_duplicate_of_new_event
-// warning, stripping leaves zero warnings → the entry should be dismissed and the
-// canonical restored to "published".
+// warning, the SQL strips it and returns warningsEmpty=true → the entry is dismissed
+// and the canonical restored to "published".
 func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *testing.T) {
 	ctx := context.Background()
 
 	retiredULID := consolidateRetireULID
 	canonULID := consolidateCanonULID
 
-	// Only a single near_duplicate_of_new_event warning — no match details (bare warning).
 	onlyDupWarning, _ := json.Marshal([]ValidationWarning{
 		{
 			Field:   "near_duplicate",
@@ -1089,14 +1060,16 @@ func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *test
 		return nil, nil
 	}
 
-	// Track MergeReview calls (used to dismiss the entry).
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
+		return true, nil
+	}
+
 	var mergeCallIDs []int
 	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
 		mergeCallIDs = append(mergeCallIDs, id)
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	// Track UpdateEvent calls.
 	var updatedLifecycleState string
 	repo.updateEventFunc = func(_ context.Context, _ string, params UpdateEventParams) (*Event, error) {
 		if params.LifecycleState != nil {
@@ -1118,7 +1091,6 @@ func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *test
 		t.Fatal("expected non-nil result")
 	}
 
-	// MergeReview must have been called with the canonical review entry ID.
 	dismissed := false
 	for _, id := range mergeCallIDs {
 		if id == 99 {
@@ -1129,12 +1101,10 @@ func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *test
 		t.Errorf("canonical review entry (id=99) must be dismissed via MergeReview; calls: %v", mergeCallIDs)
 	}
 
-	// Canonical must be restored to published.
 	if updatedLifecycleState != "published" {
 		t.Errorf("canonical lifecycle must be set to 'published' after full strip; got %q", updatedLifecycleState)
 	}
 
-	// The dismissed ID must appear in ReviewEntriesDismissed.
 	found := false
 	for _, id := range result.ReviewEntriesDismissed {
 		if id == 99 {
@@ -1161,18 +1131,17 @@ func TestConsolidate_StripRetiredDupWarnings_NoEntryNoop(t *testing.T) {
 	}
 	repo := makeConsolidateRepo(known)
 
-	// GetPendingReviewByEventUlid returns nil — canonical has no pending review.
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
 		return nil, nil
 	}
 
-	// Neither UpdateReviewQueueEntry nor MergeReview should be called.
-	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, _ ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
-		t.Errorf("UpdateReviewQueueEntry must not be called when canonical has no pending review; called with id=%d", id)
-		return nil, nil
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, _ int, _ []string) (bool, error) {
+		t.Errorf("StripRetiredDupWarnings must NOT be called when canonical has no pending review")
+		return false, nil
 	}
+
 	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
-		t.Errorf("MergeReview must not be called when canonical has no pending review; called with id=%d", id)
+		t.Errorf("MergeReview must NOT be called when canonical has no pending review; called with id=%d", id)
 		return nil, nil
 	}
 
@@ -1194,19 +1163,9 @@ func TestConsolidate_StripRetiredDupWarnings_NoEntryNoop(t *testing.T) {
 	}
 }
 
-// TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivestWhenDupOfRetired
-// is a regression test for a bug where the secondary DuplicateOfEventULID check on the
-// review queue entry incorrectly stripped cross_week_series_companion warnings even when
-// the companion_ulid was NOT the retired event. The scenario:
-//
-//   - Canonical has a pending review entry with TWO warnings:
-//     1. cross_week_series_companion → companion_ulid = Week1 (NOT retired)
-//     2. near_duplicate_of_new_event → no matches field (bare companion warning)
-//   - entry.duplicate_of_event_id → RetiredEvent
-//   - RetireSet = {RetiredEvent}
-//
-// Expected: near_duplicate_of_new_event is stripped; cross_week_series_companion
-// survives. The entry stays pending and is NOT dismissed.
+// TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOfRetired
+// verifies that cross_week_series_companion survives the SQL strip when its companion_ulid
+// is NOT retired, while near_duplicate_of_new_event IS stripped. The entry stays pending.
 func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOfRetired(t *testing.T) {
 	ctx := context.Background()
 
@@ -1220,7 +1179,7 @@ func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOf
 			Code:    "cross_week_series_companion",
 			Message: "part of a recurring series",
 			Details: map[string]any{
-				"companion_ulid": week1ULID, // NOT retired
+				"companion_ulid": week1ULID,
 				"companion_name": "Week 1 Morning Session",
 				"companion_date": "2026-03-31",
 				"venue_name":     "The Tranzac",
@@ -1230,16 +1189,14 @@ func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOf
 			Field:   "near_duplicate",
 			Code:    "near_duplicate_of_new_event",
 			Message: "may be near-duplicate of retired event",
-			// no "matches" field — bare companion warning
 		},
 	})
 
 	dupULID := retiredULID
 	canonReview := &ReviewQueueEntry{
-		ID:        99,
-		Status:    "pending",
-		EventULID: canonULID,
-		// duplicate_of_event_id points to the retired event.
+		ID:                   99,
+		Status:               "pending",
+		EventULID:            canonULID,
 		DuplicateOfEventULID: &dupULID,
 		Warnings:             initialWarnings,
 	}
@@ -1257,24 +1214,25 @@ func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOf
 		return nil, nil
 	}
 
-	// Capture the update call — must be called (strip the near_dup warning).
-	var updatedWarningsJSON []byte
-	var capturedClearDup bool
-	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
-		if id != 99 {
-			t.Errorf("UpdateReviewQueueEntry called with unexpected id=%d, want 99", id)
+	var stripCalled bool
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
+		stripCalled = true
+		if reviewID != 99 {
+			t.Errorf("StripRetiredDupWarnings called with reviewID=%d, want 99", reviewID)
 		}
-		if params.Warnings != nil {
-			updatedWarningsJSON = *params.Warnings
+		if len(retireULIDs) != 1 || retireULIDs[0] != retiredULID {
+			t.Errorf("StripRetiredDupWarnings called with retireULIDs=%v, want [%s]", retireULIDs, retiredULID)
 		}
-		capturedClearDup = params.ClearDuplicateOf
-		return &ReviewQueueEntry{ID: id}, nil
+		return false, nil
 	}
 
-	// MergeReview must NOT be called — the cross_week warning survives, so the entry
-	// is not fully dismissed.
 	repo.mergeReviewFunc = func(_ context.Context, id int, _ string, _ string) (*ReviewQueueEntry, error) {
-		t.Errorf("MergeReview must not be called: cross_week_series_companion warning should survive; id=%d", id)
+		t.Errorf("MergeReview must NOT be called: cross_week_series_companion warning should survive; id=%d", id)
+		return nil, nil
+	}
+
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, _ ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		t.Errorf("UpdateReviewQueueEntry must NOT be called — SQL handles stripping; called with id=%d", id)
 		return nil, nil
 	}
 
@@ -1291,32 +1249,8 @@ func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOf
 		t.Fatal("expected non-nil result")
 	}
 
-	// UpdateReviewQueueEntry must have been called (near_dup stripped, warnings updated).
-	if updatedWarningsJSON == nil {
-		t.Fatal("expected UpdateReviewQueueEntry to be called with updated warnings")
-	}
-
-	// ClearDuplicateOf must be true — duplicate_of_event_id pointed to the retired event.
-	if !capturedClearDup {
-		t.Error("expected ClearDuplicateOf=true when duplicate_of_event_id points to retired event")
-	}
-
-	// Remaining warnings must contain cross_week_series_companion.
-	var remaining []ValidationWarning
-	if err := json.Unmarshal(updatedWarningsJSON, &remaining); err != nil {
-		t.Fatalf("updated warnings JSON is invalid: %v", err)
-	}
-	foundCrossWeek := false
-	for _, w := range remaining {
-		if w.Code == "cross_week_series_companion" {
-			foundCrossWeek = true
-		}
-		if w.Code == "near_duplicate_of_new_event" {
-			t.Errorf("near_duplicate_of_new_event must be stripped but is still present: %+v", w)
-		}
-	}
-	if !foundCrossWeek {
-		t.Errorf("cross_week_series_companion must survive when its companion_ulid is not retired; remaining: %+v", remaining)
+	if !stripCalled {
+		t.Error("StripRetiredDupWarnings must have been called")
 	}
 }
 
@@ -1392,6 +1326,14 @@ func TestConsolidate_PostRetirementSeriesCheck_ReplacesStaleCanonicalCompanion(t
 		}
 		return nil, nil
 	}
+	var stripReviewID int
+	var stripRetireULIDs []string
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
+		stripReviewID = reviewID
+		stripRetireULIDs = retireULIDs
+		return false, nil
+	}
+
 	var updatedWarningsJSON []byte
 	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
 		if id == canonReview.ID && params.Warnings != nil {
@@ -1410,6 +1352,12 @@ func TestConsolidate_PostRetirementSeriesCheck_ReplacesStaleCanonicalCompanion(t
 	}
 	if !result.NeedsReview {
 		t.Fatal("expected NeedsReview=true after surviving week companion found")
+	}
+	if stripReviewID != canonReview.ID {
+		t.Errorf("StripRetiredDupWarnings called with reviewID=%d, want %d", stripReviewID, canonReview.ID)
+	}
+	if len(stripRetireULIDs) != 1 || stripRetireULIDs[0] != staleRetiredULID {
+		t.Errorf("StripRetiredDupWarnings called with retireULIDs=%v, want [%s]", stripRetireULIDs, staleRetiredULID)
 	}
 	var found bool
 	for _, w := range result.Warnings {
@@ -1514,6 +1462,14 @@ func TestConsolidate_PostRetirementSeriesCheck_UpsertsCompanionReview(t *testing
 			return nil, nil
 		}
 	}
+	var stripReviewID int
+	var stripRetireULIDs []string
+	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
+		stripReviewID = reviewID
+		stripRetireULIDs = retireULIDs
+		return false, nil
+	}
+
 	var companionUpdatedWarnings []byte
 	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
 		if id == week1Review.ID && params.Warnings != nil {
@@ -1533,6 +1489,8 @@ func TestConsolidate_PostRetirementSeriesCheck_UpsertsCompanionReview(t *testing
 	if !result.NeedsReview {
 		t.Fatal("expected week2 canonical to need review after finding week1 companion")
 	}
+	_ = stripReviewID
+	_ = stripRetireULIDs
 	if companionUpdatedWarnings == nil {
 		t.Fatal("expected week1 companion review entry to be refreshed")
 	}

@@ -1884,103 +1884,44 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 	replacementCompanion *CrossWeekCompanion,
 	dismissedIDs []int,
 ) (updatedDismissedIDs []int, err error) {
-	// Look up the canonical event's pending review entry.
 	entry, err := txRepo.GetPendingReviewByEventUlid(ctx, canonicalEvent.ULID)
 	if err != nil {
 		return dismissedIDs, fmt.Errorf("look up canonical pending review: %w", err)
 	}
 	if entry == nil {
-		// No pending review entry — nothing to strip.
 		return dismissedIDs, nil
 	}
 
-	// Build a fast-lookup set of retired ULIDs.
-	retireSet := make(map[string]struct{}, len(retireULIDs))
-	for _, u := range retireULIDs {
-		retireSet[u] = struct{}{}
-	}
-
-	// Parse the warnings JSON from the review entry.
-	var warnings []ValidationWarning
-	if len(entry.Warnings) > 0 {
-		if err := json.Unmarshal(entry.Warnings, &warnings); err != nil {
-			return dismissedIDs, fmt.Errorf("parse canonical review warnings for event %s: %w", canonicalEvent.ULID, ErrMalformedWarnings)
-		}
-	}
-
-	// Filter out dup warnings whose matches reference a retired ULID.
-	filtered := warnings[:0]
-	changed := false
-	for _, w := range warnings {
-		if w.Code != "near_duplicate_of_new_event" && w.Code != "potential_duplicate" && w.Code != "cross_week_series_companion" {
-			filtered = append(filtered, w)
-			continue
-		}
-
-		// Check if the warning references a retired ULID.
-		referencesRetired := false
-
-		if w.Code == "cross_week_series_companion" {
-			// cross_week_series_companion carries companion_ulid in Details.
-			if companionULID, ok := w.Details["companion_ulid"].(string); ok {
-				if _, retired := retireSet[companionULID]; retired {
-					referencesRetired = true
-				}
-			}
-		} else if details, ok := w.Details["matches"]; ok {
-			// Marshal + unmarshal to normalise type — Details is map[string]any
-			// so matches may be []any after JSON round-trip.
-			matchesRaw, _ := json.Marshal(details)
-			var matchList []map[string]any
-			if json.Unmarshal(matchesRaw, &matchList) == nil {
-				for _, m := range matchList {
-					if ulid, ok := m["ulid"].(string); ok {
-						if _, retired := retireSet[ulid]; retired {
-							referencesRetired = true
-							break
-						}
-					}
-				}
-			}
-			// If matchList is empty, the warning is a bare companion warning — strip it.
-			if len(matchList) == 0 {
-				referencesRetired = true
-			}
-		} else {
-			// No matches field: bare near_duplicate_of_new_event companion warning.
-			// Strip it — the companion relationship is gone after the retire.
-			referencesRetired = true
-		}
-
-		// Also check DuplicateOfEventULID on the entry itself — but only for
-		// near-dup/potential-dup warnings, not cross_week_series_companion, which
-		// has its own companion_ulid field and should only be stripped when that
-		// companion_ulid is retired (handled above).
-		if !referencesRetired && w.Code != "cross_week_series_companion" && entry.DuplicateOfEventULID != nil {
-			if _, retired := retireSet[*entry.DuplicateOfEventULID]; retired {
-				referencesRetired = true
-			}
-		}
-
-		if referencesRetired {
-			changed = true
-			// Do not append — this warning is stripped.
-		} else {
-			filtered = append(filtered, w)
-		}
-	}
-
-	if !changed {
-		// Nothing was stripped — leave the entry as-is.
-		return dismissedIDs, nil
+	warningsEmpty, err := txRepo.StripRetiredDupWarnings(ctx, entry.ID, retireULIDs)
+	if err != nil {
+		return dismissedIDs, fmt.Errorf("strip retired dup warnings for review %d: %w", entry.ID, err)
 	}
 
 	if replacementCompanion != nil {
-		filtered = replaceCrossWeekSeriesCompanionWarning(filtered, replacementCompanion)
+		updatedEntry, err := txRepo.GetPendingReviewByEventUlid(ctx, canonicalEvent.ULID)
+		if err != nil {
+			return dismissedIDs, fmt.Errorf("re-read canonical review entry after SQL strip: %w", err)
+		}
+		var remainingWarnings []ValidationWarning
+		if updatedEntry != nil && len(updatedEntry.Warnings) > 0 {
+			if err := json.Unmarshal(updatedEntry.Warnings, &remainingWarnings); err != nil {
+				return dismissedIDs, fmt.Errorf("parse updated warnings: %w", ErrMalformedWarnings)
+			}
+		}
+		filtered := replaceCrossWeekSeriesCompanionWarning(remainingWarnings, replacementCompanion)
+		updatedJSON, err := json.Marshal(filtered)
+		if err != nil {
+			return dismissedIDs, fmt.Errorf("marshal warnings after companion replacement: %w", err)
+		}
+		if _, err := txRepo.UpdateReviewQueueEntry(ctx, entry.ID, ReviewQueueUpdateParams{
+			Warnings: &updatedJSON,
+		}); err != nil {
+			return dismissedIDs, fmt.Errorf("update review entry %d with companion replacement: %w", entry.ID, err)
+		}
+		return dismissedIDs, nil
 	}
 
-	if len(filtered) == 0 {
-		// All warnings stripped — dismiss the entry and publish the canonical.
+	if warningsEmpty {
 		if _, dismissErr := txRepo.MergeReview(ctx, entry.ID, ReviewedBySystem, canonicalEvent.ULID); dismissErr != nil {
 			return dismissedIDs, fmt.Errorf("dismiss canonical review entry %d after stripping dup warnings: %w", entry.ID, dismissErr)
 		}
@@ -1996,24 +1937,6 @@ func (s *AdminService) consolidateStripRetiredDupWarnings(
 		return dismissedIDs, nil
 	}
 
-	// Warnings remain — update the entry with the pruned warnings list,
-	// and clear duplicate_of_event_id if it still points to a now-retired event.
-	updatedJSON, err := json.Marshal(filtered)
-	if err != nil {
-		return dismissedIDs, fmt.Errorf("marshal updated warnings for canonical review entry %d: %w", entry.ID, err)
-	}
-	clearDup := entry.DuplicateOfEventULID != nil
-	if clearDup {
-		if _, retired := retireSet[*entry.DuplicateOfEventULID]; !retired {
-			clearDup = false
-		}
-	}
-	if _, err := txRepo.UpdateReviewQueueEntry(ctx, entry.ID, ReviewQueueUpdateParams{
-		Warnings:         &updatedJSON,
-		ClearDuplicateOf: clearDup,
-	}); err != nil {
-		return dismissedIDs, fmt.Errorf("update canonical review entry %d with stripped warnings: %w", entry.ID, err)
-	}
 	return dismissedIDs, nil
 }
 

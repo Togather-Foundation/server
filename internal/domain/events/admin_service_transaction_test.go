@@ -169,6 +169,7 @@ type mockTransactionalRepo struct {
 	createReviewQueueEntryFunc                      func(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
 	updateReviewQueueEntryFunc                      func(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
 	dismissAllCompanionWarningsFunc                 func(ctx context.Context, reviewID int, eventULID string) (bool, error)
+	stripRetiredDupWarningsFunc                     func(ctx context.Context, reviewID int, retireULIDs []string) (bool, error)
 	findByDedupHashFunc                             func(ctx context.Context, dedupHash string) (*Event, error)
 	findNearDuplicatesFunc                          func(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
 	findSeriesCompanionFunc                         func(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
@@ -403,6 +404,12 @@ func (m *mockTransactionalRepo) DismissWarningMatchByReviewID(_ context.Context,
 func (m *mockTransactionalRepo) DismissAllCompanionWarnings(ctx context.Context, reviewID int, eventULID string) (bool, error) {
 	if m.dismissAllCompanionWarningsFunc != nil {
 		return m.dismissAllCompanionWarningsFunc(ctx, reviewID, eventULID)
+	}
+	return false, nil
+}
+func (m *mockTransactionalRepo) StripRetiredDupWarnings(ctx context.Context, reviewID int, retireULIDs []string) (bool, error) {
+	if m.stripRetiredDupWarningsFunc != nil {
+		return m.stripRetiredDupWarningsFunc(ctx, reviewID, retireULIDs)
 	}
 	return false, nil
 }

@@ -300,6 +300,15 @@ type Querier interface {
 	SoftDeleteEvent(ctx context.Context, arg SoftDeleteEventParams) error
 	SoftDeleteOrganization(ctx context.Context, arg SoftDeleteOrganizationParams) error
 	SoftDeletePlace(ctx context.Context, arg SoftDeletePlaceParams) error
+	// Atomically strips all duplicate warning entries referencing any of the given retire_ulids
+	// from a specific review row. Handles three warning types:
+	//   near_duplicate_of_new_event  — stripped when duplicate_of_event_id points to a retired event
+	//   potential_duplicate          — specific match entries filtered; warning nullified when matches empty
+	//   cross_week_series_companion  — stripped when details->>'companion_ulid' is in the retire set
+	// Also clears duplicate_of_event_id if it points to a retired event.
+	// Returns true (warnings_empty) when the resulting warnings array is empty after stripping.
+	// Note: companion replacement is handled in Go after SQL returns.
+	StripRetiredDupWarnings(ctx context.Context, arg StripRetiredDupWarningsParams) (bool, error)
 	// Marks a field provenance record as superseded by a new record
 	SupersedeFieldProvenance(ctx context.Context, arg SupersedeFieldProvenanceParams) error
 	// Remove an organization↔scraper source association.
