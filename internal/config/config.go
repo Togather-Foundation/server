@@ -117,10 +117,11 @@ type DatabaseConfig struct {
 }
 
 type AuthConfig struct {
-	JWTSecret string
-	JWTExpiry time.Duration
-	CSRFKey   string // 32-byte key for CSRF token encryption (required for admin HTML forms)
-	GitHub    GitHubOAuthConfig
+	JWTSecret              string
+	JWTExpiry              time.Duration
+	TokenExchangeJWTExpiry time.Duration
+	CSRFKey                string // 32-byte key for CSRF token encryption (required for admin HTML forms)
+	GitHub                 GitHubOAuthConfig
 }
 
 // GitHubOAuthConfig holds GitHub OAuth 2.0 configuration.
@@ -429,9 +430,10 @@ func Load() (Config, error) {
 			MaxIdle:        getEnvInt("DATABASE_MAX_IDLE_CONNECTIONS", 5),
 		},
 		Auth: AuthConfig{
-			JWTSecret: getEnv("JWT_SECRET", ""),
-			JWTExpiry: time.Duration(getEnvInt("JWT_EXPIRY_HOURS", 24)) * time.Hour,
-			CSRFKey:   getEnv("CSRF_KEY", ""),
+			JWTSecret:              getEnv("JWT_SECRET", ""),
+			JWTExpiry:              time.Duration(getEnvInt("JWT_EXPIRY_HOURS", 24)) * time.Hour,
+			TokenExchangeJWTExpiry: time.Duration(getEnvInt("AUTH_TOKEN_EXCHANGE_EXPIRY_MINUTES", 60)) * time.Minute,
+			CSRFKey:                getEnv("CSRF_KEY", ""),
 			GitHub: GitHubOAuthConfig{
 				ClientID:     getEnv("GITHUB_CLIENT_ID", ""),
 				ClientSecret: getEnv("GITHUB_CLIENT_SECRET", ""),

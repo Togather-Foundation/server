@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/spf13/cobra"
 )
 
@@ -573,7 +574,7 @@ func runSetup() error {
 		}
 
 		if createKey {
-			apiKey, err := createAPIKey(keyName, "agent", "")
+			apiKey, err := createAPIKey(keyName, "agent", "", pgtype.Timestamptz{})
 			if err != nil {
 				fmt.Printf("⚠️  Failed to create API key: %v\n", err)
 				fmt.Printf("You can create it later with: server api-key create %s\n", keyName)
