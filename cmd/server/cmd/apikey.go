@@ -11,14 +11,16 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 )
 
 var (
-	apiKeyRole     string
-	apiKeySourceID string
+	apiKeyRole          string
+	apiKeySourceID      string
+	apiKeyExpiresInDays int
 )
 
 // apiKeyCmd represents the api-key command group
@@ -66,7 +68,20 @@ Examples:
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		_, err := createAPIKey(name, apiKeyRole, apiKeySourceID)
+
+		if apiKeyRole == "admin" && apiKeyExpiresInDays <= 0 {
+			return fmt.Errorf("--expires-in-days is required when creating admin API keys")
+		}
+
+		var expiresAt pgtype.Timestamptz
+		if apiKeyExpiresInDays > 0 {
+			err := expiresAt.Scan(time.Now().AddDate(0, 0, apiKeyExpiresInDays))
+			if err != nil {
+				return fmt.Errorf("failed to set expiry: %w", err)
+			}
+		}
+
+		_, err := createAPIKey(name, apiKeyRole, apiKeySourceID, expiresAt)
 		return err
 	},
 }
@@ -119,9 +134,10 @@ func init() {
 	// Flags for create
 	apiKeyCreateCmd.Flags().StringVar(&apiKeyRole, "role", "agent", "role for the API key (agent or admin)")
 	apiKeyCreateCmd.Flags().StringVar(&apiKeySourceID, "source-id", "", "UUID of the source to associate with this key (optional)")
+	apiKeyCreateCmd.Flags().IntVar(&apiKeyExpiresInDays, "expires-in-days", 0, "number of days until the key expires (required for admin keys)")
 }
 
-func createAPIKey(name, role, sourceID string) (string, error) {
+func createAPIKey(name, role, sourceID string, expiresAt pgtype.Timestamptz) (string, error) {
 	// Load DATABASE_URL from environment or .env files
 	dbURL := getDatabaseURL()
 	if dbURL == "" {
@@ -154,15 +170,15 @@ func createAPIKey(name, role, sourceID string) (string, error) {
 			return "", fmt.Errorf("--source-id %q is not a valid UUID: %w", sourceID, err)
 		}
 		_, err = pool.Exec(ctx,
-			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, source_id, is_active)
-			 VALUES ($1, $2, $3, $4, $5, $6, true)`,
-			prefix, hash, auth.HashVersionBcrypt, name, role, sourceID,
+			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, source_id, is_active, expires_at)
+			 VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
+			prefix, hash, auth.HashVersionBcrypt, name, role, sourceID, expiresAt,
 		)
 	} else {
 		_, err = pool.Exec(ctx,
-			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, is_active)
-			 VALUES ($1, $2, $3, $4, $5, true)`,
-			prefix, hash, auth.HashVersionBcrypt, name, role,
+			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, is_active, expires_at)
+			 VALUES ($1, $2, $3, $4, $5, true, $6)`,
+			prefix, hash, auth.HashVersionBcrypt, name, role, expiresAt,
 		)
 	}
 	if err != nil {

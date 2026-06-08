@@ -49,6 +49,10 @@ var openapiConfigEntries = []struct {
 		envVar:     "DEDUP_NEAR_DUPLICATE_THRESHOLD",
 		wantSubstr: "DEDUP_NEAR_DUPLICATE_THRESHOLD",
 	},
+	{
+		envVar:     "AUTH_TOKEN_EXCHANGE_EXPIRY_MINUTES",
+		wantSubstr: "AUTH_TOKEN_EXCHANGE_EXPIRY_MINUTES",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

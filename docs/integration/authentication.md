@@ -34,6 +34,8 @@ The SEL API uses **two authentication methods** depending on your use case:
 | **API Keys** | Long-lived integrations (scrapers, batch jobs) | No expiration (rotatable) | Event scrapers, data feeds |
 | **JWT Tokens** | Interactive sessions (admin dashboard, admin API) | 24 hours (configurable) | Admin users |
 
+**For automated admin access**, use the [Token Exchange endpoint](#token-exchange-sts-pattern) to exchange an admin-role API key for a short-lived JWT.
+
 ### Public Access
 
 **No authentication required** for:
@@ -526,6 +528,48 @@ Authorization: Bearer <api_key>
 
 JWT (JSON Web Tokens) are used for **interactive sessions** like admin dashboards and web applications.
 
+### Token Exchange (STS Pattern)
+
+For automated admin access (AI agents, CI/CD pipelines, cron jobs), exchange an admin-role API key for a short-lived JWT:
+
+**Endpoint:** `POST /api/v1/auth/token`
+
+**Request:**
+```bash
+curl -X POST https://toronto.togather.foundation/api/v1/auth/token \
+     -H "Authorization: Bearer $ADMIN_API_KEY"
+```
+
+**Response:**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_at": "2026-06-08T22:00:00Z"
+}
+```
+
+**Bot flow:**
+```bash
+# 1. Set your admin API key (created once with: server api-key create my-agent --role admin --expires-in-days 30)
+ADMIN_API_KEY="01KTMK07RNET8F1VKXKJVT1V94secret"
+
+# 2. Exchange for a short-lived JWT
+TOKEN=$(curl -s -X POST -H "Authorization: Bearer $ADMIN_API_KEY" \
+  "$BASE_URL/api/v1/auth/token" | jq -r '.token')
+
+# 3. Use JWT for admin operations
+curl -H "Authorization: Bearer $TOKEN" \
+  "$BASE_URL/api/v1/admin/review-queue?status=pending"
+```
+
+**Security properties:**
+- Admin API keys **must** have an expiry (enforced at creation via `--expires-in-days`)
+- JWT lifetime: configurable via `AUTH_TOKEN_EXCHANGE_EXPIRY_MINUTES` (default 60 minutes) — shorter than admin login JWTs since agents can re-exchange freely
+- JWT subject = API key name (auditable to which key requested the token)
+- Rate limited to 5 attempts per 15-minute window per IP (login tier)
+- If an API key is revoked, all JWTs from it naturally expire within the configured window
+- Admin routes remain unchanged (pure JWT validation, no middleware changes)
+
 ### Obtaining a JWT
 
 **Login Endpoint**: `POST /api/v1/admin/login`
@@ -898,6 +942,7 @@ func main() {
 - Role doesn't have permission for endpoint
 - API key associated with wrong role
 - Token role claim doesn't match requirement
+- Non-admin API key used at `/api/v1/auth/token`
 
 ### Handling 401 Errors
 
@@ -1105,6 +1150,12 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 | Public | 60/min | Anonymous |
 | Agent | 300/min | Integrations |
 | Admin | Unlimited | Administration |
+
+### Token Exchange Reference
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/auth/token` | Exchange admin API key for short-lived JWT |
 
 ---
 

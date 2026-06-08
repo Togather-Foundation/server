@@ -156,6 +156,10 @@ func AgentKey(r *http.Request) *auth.APIKey {
 	return nil
 }
 
+func ContextWithAgentKey(ctx context.Context, key *auth.APIKey) context.Context {
+	return context.WithValue(ctx, agentKey, key)
+}
+
 // isDeveloperToken checks if a JWT token contains a "type": "developer" claim
 // without performing full validation. This is used to reject developer tokens
 // in admin-only contexts to prevent privilege escalation.

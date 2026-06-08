@@ -384,6 +384,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Admin handlers
 	jwtManager := auth.NewJWTManagerFromKey(adminJWTKey, cfg.Auth.JWTExpiry, "sel.events") // Use derived admin JWT key (srv-yuyg9)
+	tokenExchangeJWTManager := auth.NewJWTManagerFromKey(adminJWTKey, cfg.Auth.TokenExchangeJWTExpiry, "sel.events")
+	tokenHandler := handlers.NewTokenHandler(tokenExchangeJWTManager, cfg.Auth.TokenExchangeJWTExpiry, cfg.Environment)
 	adminAuthHandler := handlers.NewAdminAuthHandler(queries, jwtManager, auditLogger, cfg.Environment, adminTemplates, cfg.Auth.JWTExpiry)
 	adminHTMLHandler := handlers.NewAdminHTMLHandler(adminTemplates, cfg.Environment, slogLogger, cfg.Email.Enabled, cfg.DefaultTimezone, cfg.Server.AdminLocale)
 
@@ -588,6 +590,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	rateLimitLogin := middleware.WithRateLimitTierHandler(middleware.TierLogin)
 	mux.Handle("/api/v1/admin/login", rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(adminAuthHandler.Login))))
 	mux.Handle("/api/v1/admin/logout", http.HandlerFunc(adminAuthHandler.Logout))
+
+	// Token exchange endpoint - exchanges an admin API key for a short-lived JWT
+	tokenExchange := apiKeyAuth(rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(tokenHandler.Exchange))))
+	mux.Handle("POST /api/v1/auth/token", tokenExchange)
 
 	// Admin event management endpoints (requires JWT auth)
 	jwtAuth := middleware.JWTAuth(jwtManager, cfg.Environment)

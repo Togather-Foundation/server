@@ -141,6 +141,8 @@ servers:
 tags:
   - name: Admin
     description: Administrative operations (requires admin auth)
+  - name: Auth
+    description: Authentication and token management
   - name: Developer
     description: Developer self-service API key management
   - name: Events
@@ -1389,6 +1391,46 @@ paths:
                     format: date-time
         '401':
           $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/auth/token:
+    post:
+      operationId: exchangeApiKey
+      summary: Exchange admin API key for JWT token
+      description: >
+        Exchange an admin-role API key for a short-lived JWT token.
+        The JWT lifetime is configurable via AUTH_TOKEN_EXCHANGE_EXPIRY_MINUTES
+        (default 60). Rate limited to 5 attempts per 15-minute window per IP
+        (configurable via RATE_LIMIT_LOGIN, default 5).
+      tags: [Auth]
+      security:
+        - apiKey: []
+      responses:
+        '200':
+          description: Token exchange successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    description: Short-lived JWT token for admin API access
+                  expires_at:
+                    type: string
+                    format: date-time
+                    description: UTC timestamp when the token expires (RFC3339)
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          description: Too many requests (rate limit exceeded)
 
   /admin/developers/invite:
     post:
