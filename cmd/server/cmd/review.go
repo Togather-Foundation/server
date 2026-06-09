@@ -118,7 +118,128 @@ Examples:
   server review batch --name "Astro" --action approve --dry-run
   server review stats                      # aggregate queue statistics
   server review merge evt_001 evt_002      # merge evt_002 into evt_001
-  server review consolidate evt_001 evt_002 evt_003`,
+  server review consolidate evt_001 evt_002 evt_003
+
+═══ Common Agent Workflows ═══
+
+── Spotting patterns ──
+
+  # Group by event name to find duplicate/repeat scrapes
+  server review queue --group-by name
+
+  # Group by source to find bad scrape runs
+  server review queue --group-by source
+
+  # Full stats: warning breakdown, top name groups, age buckets
+  server review stats
+
+── Cleaning up bad scrape runs ──
+
+  # 1. Identify the bad source — look for many items from same source
+  server review queue --group-by source
+
+  # 2. Inspect one item from that source
+  server review check 301
+
+  # 3. Dry-run the batch rejection to preview
+  server review batch --source "meetup-scraper" --action reject --reason "bad scrape run" --dry-run
+
+  # 4. Execute (dry-run off, --action explicitly set)
+  server review batch --source "meetup-scraper" --action reject --reason "bad scrape run 2025-06-08"
+
+── Handling cross-week series companions (same event, different dates) ──
+
+  # 1. Group by name to find repeated event names
+  server review queue --group-by name
+
+  # 2. Inspect one companion to understand its data
+  server review check 41
+
+  # 3. Inspect the primary series event to see what it already has
+  server review check 40
+
+  # 4. Merge companion into primary, copying its occurrence (date) and any missing fields
+  server review merge <primary-ulid> <companion-ulid> \
+    --transfer-occurrences \
+    --name "Weekly Event Name" \
+    --description "Fixed up description"
+
+  # 5. Or batch-merge all companions into the primary series
+  server review batch --name "Comedy Bar: After Dark" \
+    --action merge-into-primary --primary-id <primary-ulid> --dry-run
+
+  #    (review the preview, then remove --dry-run to execute)
+
+── Approving good-but-flagged events ──
+
+  # If scraped events are correct but flagged (e.g. cross-week series,
+  # missing_description when the event legitimately has no description):
+
+  # 1. Inspect to confirm it looks good
+  server review check 42
+
+  # 2. Approve a single item
+  server review approve 42 --notes "Correct weekly event, minor description missing"
+
+  # 3. Or batch-approve all items matching a name
+  server review batch --name "Tranzac Open Stage" --action approve --dry-run
+
+── Fixing date corrections ──
+
+  # Event has reversed start/end dates — fix and publish in one step
+  server review fix 42 --start-date 2025-07-15T20:00:00Z --end-date 2025-07-15T22:00:00Z
+
+  # Batch-fix items with the same date correction (e.g. all shifted by one day)
+  server review batch --name "Weekly Workshop" --action fix \
+    --start-date 2025-07-15T09:00:00Z --dry-run
+
+── Cleaning up duplicates ──
+
+  # 1. Find repeated names
+  server review queue --group-by name
+
+  # 2. Consolidate multiple duplicates into one canonical
+  server review consolidate <canonical-ulid> <dup1> <dup2> <dup3>
+
+  # 3. With occurrences transfer and field patching
+  server review consolidate <canonical-ulid> <dup1> <dup2> \
+    --transfer-occurrences --description "Merged description"
+
+── Full pipeline: review a new scrape run ──
+
+  # 1. Get an overview
+  server review stats
+
+  # 2. Check for obvious junk (many from one source, many from one name)
+  server review queue --group-by source
+  server review queue --group-by name
+
+  # 3. For same-name groups that are legitimate weekly events:
+  #    find the primary ULID, merge companions
+  server review batch --name "Event Name" --action merge-into-primary \
+    --primary-id <primary-ulid> --dry-run
+  server review batch --name "Event Name" --action merge-into-primary \
+    --primary-id <primary-ulid>
+
+  # 4. For bad scrapes: reject the whole batch
+  server review batch --source "<bad-source>" --action reject \
+    --reason "bad scrape run" --dry-run
+  server review batch --source "<bad-source>" --action reject \
+    --reason "bad scrape run"
+
+  # 5. For everything else: approve single items or small batches
+  server review approve 42 --notes "looks good"
+  server review batch --name "Small Event Series" --action approve --dry-run
+  server review batch --name "Small Event Series" --action approve
+
+═══ Safety Notes ═══
+
+  • --dry-run is implied for batch when --action is not explicitly set.
+  • Batch chunks large sets automatically (REVIEW_BATCH_MAX_SIZE, default 100).
+  • Batch adds a configurable inter-request delay (REVIEW_BATCH_DELAY_MS, default 50ms).
+  • Batch stops immediately on 401/403 auth errors.
+  • merge and consolidate are atomic — all operations happen in one transaction.
+  • Use --json on any command for structured output.`,
 }
 
 func init() {
