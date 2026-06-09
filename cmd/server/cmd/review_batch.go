@@ -94,6 +94,11 @@ func runReviewBatch(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(matching) == 0 {
+		if reviewJSON {
+			enc := json.NewEncoder(out)
+			enc.SetIndent("", "  ")
+			return enc.Encode(matching)
+		}
 		_, _ = fmt.Fprintln(out, "No matching items found.")
 		if len(allItems) >= fetchLimit && fetchLimit > 0 {
 			_, _ = fmt.Fprintf(out, "(Fetched %d items — more may exist. Use --limit to fetch more.)\n", len(allItems))
