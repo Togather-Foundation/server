@@ -44,8 +44,9 @@ func TestConfig(dbURL string) config.Config {
 			MaxIdle:        2,
 		},
 		Auth: config.AuthConfig{
-			JWTSecret: "test-secret-32-bytes-minimum----",
-			JWTExpiry: time.Hour,
+			JWTSecret:              "test-secret-32-bytes-minimum----",
+			JWTExpiry:              time.Hour,
+			TokenExchangeJWTExpiry: 5 * time.Minute,
 		},
 		RateLimit: config.RateLimitConfig{
 			PublicPerMinute: 1000,
@@ -157,6 +158,28 @@ func InsertAPIKey(t *testing.T, pool *pgxpool.Pool, ctx context.Context, name st
 		prefix, hash, auth.HashVersionSHA256, name,
 	)
 	require.NoError(t, err, "failed to insert API key")
+
+	return key
+}
+
+// InsertAPIKeyWithRole inserts an API key with a specific role. Unlike InsertAPIKey
+// (which defaults to 'agent'), this allows creating admin keys for token exchange tests.
+// Uses crypto/rand + SHA-256 hashing (same as InsertAPIKey).
+func InsertAPIKeyWithRole(t *testing.T, pool *pgxpool.Pool, ctx context.Context, name, role string) string {
+	t.Helper()
+
+	rawBytes := make([]byte, 16)
+	_, err := rand.Read(rawBytes)
+	require.NoError(t, err, "failed to generate random key bytes")
+	key := hex.EncodeToString(rawBytes)
+	prefix := key[:8]
+	hash := auth.HashAPIKeySHA256(key)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role) VALUES ($1, $2, $3, $4, $5)`,
+		prefix, hash, auth.HashVersionSHA256, name, role,
+	)
+	require.NoError(t, err, "failed to insert API key with role")
 
 	return key
 }

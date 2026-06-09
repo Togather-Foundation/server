@@ -570,7 +570,47 @@ curl -H "Authorization: Bearer $TOKEN" \
 - If an API key is revoked, all JWTs from it naturally expire within the configured window
 - Admin routes remain unchanged (pure JWT validation, no middleware changes)
 
+**CLI wrapper:**
+
+```bash
+# Exchange admin API key for JWT (uses TOGATHER_ADMIN_API_KEY + TOGATHER_BASE_URL env vars)
+server token-exchange
+
+# Or specify explicitly
+server token-exchange --key "$ADMIN_API_KEY" --server "$BASE_URL"
+```
+
+**Zero-downtime key rotation:**
+
+The STS token exchange pattern enables key rotation without any service disruption:
+
+1. **Create a new admin API key** (e.g., 30-day expiry):
+   ```bash
+   server api-key create my-admin-v2 --role admin --expires-in-days 30
+   ```
+
+2. **Dual-key period** — both old and new keys work simultaneously via STS exchange:
+   ```bash
+   # Old key still works
+   TOKEN_OLD=$(echo "$OLD_KEY" | server token-exchange)
+   # New key also works
+   TOKEN_NEW=$(echo "$NEW_KEY" | server token-exchange)
+   ```
+
+3. **Switch all consumers** to the new API key — no JWT changes needed, consumers just re-exchange
+
+4. **Revoke the old key** once all consumers have migrated:
+   ```bash
+   server api-key revoke <old-key-id>
+   ```
+
+This is the recommended pattern over rotating `JWT_SECRET`, which would invalidate every token everywhere and require a restart.
+
 ### Obtaining a JWT
+
+**For automation (recommended):** Use the [Token Exchange (STS Pattern)](#token-exchange-sts-pattern) to exchange an admin API key for a JWT. This avoids exposing credentials in scripts and enables zero-downtime key rotation.
+
+**For interactive admin login:**
 
 **Login Endpoint**: `POST /api/v1/admin/login`
 

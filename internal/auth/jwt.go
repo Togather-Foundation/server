@@ -42,6 +42,11 @@ func NewJWTManagerFromKey(secretKey []byte, expiry time.Duration, issuer string)
 	}
 }
 
+// Expiry returns the configured JWT token expiry duration.
+func (m *JWTManager) Expiry() time.Duration {
+	return m.expiry
+}
+
 func (m *JWTManager) Generate(subject, role string) (string, error) {
 	if subject == "" || role == "" {
 		return "", ErrInvalidToken

@@ -64,15 +64,17 @@ After every successful `deploy.sh staging` run, credentials are automatically wr
 ```bash
 source .agent-keys/staging
 # Provides:
-#   TOGATHER_BASE_URL       - e.g. https://staging.toronto.togather.foundation
-#   TOGATHER_ADMIN_TOKEN    - 8h JWT for admin routes (/api/v1/admin/...)
-#   TOGATHER_AGENT_API_KEY  - DB-backed agent key for public/agent routes
+#   TOGATHER_BASE_URL            - e.g. https://staging.toronto.togather.foundation
+#   TOGATHER_ADMIN_API_KEY       - persistent admin API key (exchange for JWT via POST /api/v1/auth/token)
+#   TOGATHER_AGENT_API_KEY       - same as ADMIN_API_KEY (admin key serves agent routes too)
 
-# Admin API example
-curl -H "Authorization: Bearer $TOGATHER_ADMIN_TOKEN" \
+# Admin API example — exchange for JWT first
+ADMIN_JWT=$(curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
+  "$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token')
+curl -H "Authorization: Bearer $ADMIN_JWT" \
   "$TOGATHER_BASE_URL/api/v1/admin/scraper/diagnostics"
 
-# Agent API example
+# Agent API example — use admin key directly (no JWT needed)
 curl -H "Authorization: Bearer $TOGATHER_AGENT_API_KEY" \
   "$TOGATHER_BASE_URL/api/v1/events"
 ```
@@ -81,26 +83,37 @@ curl -H "Authorization: Bearer $TOGATHER_AGENT_API_KEY" \
 
 ```bash
 # Via script
-scripts/remote.sh staging admin-token --duration 8h
+scripts/remote.sh staging token-exchange
 scripts/remote.sh staging api-key create my-key --role admin
 scripts/remote.sh staging scrape failures
 scripts/remote.sh staging scrape sync
 
 # Via Makefile
-make remote-staging CMD="admin-token --duration 8h"
+make remote-staging CMD="token-exchange"
 make remote-staging CMD="api-key create my-agent --role admin"
 make remote-production CMD="events"
 ```
 
 `scripts/remote.sh` reads `SSH_HOST`/`SSH_USER` from `.deploy.conf.{env}`, auto-discovers the active container, and forwards the command via SSH + docker exec with full stdin/stdout passthrough.
 
-**Refreshing an expired admin token locally** (no deploy needed, just needs JWT_SECRET):
+**Getting an admin JWT** — exchange an admin API key via the STS endpoint:
 
 ```bash
-# From local .env
-server admin-token --duration 8h
+# 1. Source the persistent admin API key
+source .agent-keys/staging
 
-# From a specific secret
+# 2. Exchange for a short-lived JWT (via HTTPS, no SSH needed)
+curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
+  "$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token'
+
+# Or use the CLI wrapper
+server token-exchange
+```
+
+**Refreshing an admin token in emergencies** (when DB is down and API keys can't be validated):
+
+```bash
+# Requires JWT_SECRET (only works locally or via remote.sh)
 JWT_SECRET=<value> server admin-token --duration 8h
 ```
 

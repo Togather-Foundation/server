@@ -24,7 +24,6 @@ type AdminAuthHandler struct {
 	AuditLogger *audit.Logger
 	Env         string
 	Templates   *template.Template
-	JWTExpiry   time.Duration
 }
 
 // dummyPasswordHash is a pre-computed bcrypt hash used for constant-time comparison
@@ -32,14 +31,13 @@ type AdminAuthHandler struct {
 // This is the hash of an empty string with cost 12.
 var dummyPasswordHash = []byte("$2a$12$1234567890123456789012eO/6Tg9BK8qLz1v1J8o2zZqzZ8kBRuGW")
 
-func NewAdminAuthHandler(queries *postgres.Queries, jwtManager *auth.JWTManager, auditLogger *audit.Logger, env string, templates *template.Template, jwtExpiry time.Duration) *AdminAuthHandler {
+func NewAdminAuthHandler(queries *postgres.Queries, jwtManager *auth.JWTManager, auditLogger *audit.Logger, env string, templates *template.Template) *AdminAuthHandler {
 	return &AdminAuthHandler{
 		Queries:     queries,
 		JWTManager:  jwtManager,
 		AuditLogger: auditLogger,
 		Env:         env,
 		Templates:   templates,
-		JWTExpiry:   jwtExpiry,
 	}
 }
 
@@ -144,7 +142,7 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Calculate expiry time using config value
-	expiresAt := time.Now().Add(h.JWTExpiry)
+	expiresAt := time.Now().Add(h.JWTManager.Expiry())
 
 	// Set HttpOnly cookie for HTML UI
 	// In production, always set Secure flag (even behind reverse proxy)

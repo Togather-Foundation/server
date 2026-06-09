@@ -93,8 +93,8 @@ help:
 	@echo "  (Or use /release command in OpenCode for agent-assisted changelog generation)"
 	@echo ""
 	@echo "Remote Server Commands (run CLI commands on staging/production):"
-	@echo "  make remote-staging CMD=\"admin-token --duration 8h\""
-	@echo "  make remote-staging CMD=\"api-key create my-agent --role admin\""
+	@echo "  make remote-staging CMD=\"token-exchange\""              # Exchange admin API key for JWT
+	@echo "  make remote-staging CMD=\"api-key create my-agent --role admin\""   # Create admin API key
 	@echo "  make remote-staging CMD=\"scrape failures\""
 	@echo "  make remote-production CMD=\"events\""
 	@echo ""

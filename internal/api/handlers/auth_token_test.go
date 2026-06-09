@@ -10,6 +10,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/api/middleware"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestTokenExchange(t *testing.T) {
@@ -18,7 +19,7 @@ func TestTokenExchange(t *testing.T) {
 	env := "test"
 
 	jwtMgr := auth.NewJWTManager(jwtSecret, jwtExpiry, "sel.events")
-	handler := NewTokenHandler(jwtMgr, jwtExpiry, env)
+	handler := NewTokenHandler(jwtMgr, env)
 
 	adminKey := &auth.APIKey{
 		ID:   "key-admin-1",
@@ -61,7 +62,29 @@ func TestTokenExchange(t *testing.T) {
 				claims, err := jwtMgr.Validate(resp.Token)
 				assert.NoError(t, err)
 				assert.Equal(t, "admin", claims.Role)
-				assert.Equal(t, "admin-key", claims.Subject)
+				assert.Equal(t, "key-admin-1", claims.Subject)
+			},
+		},
+		{
+			name: "admin key with empty ID returns 500",
+			setupContext: func(r *http.Request) *http.Request {
+				emptyIDKey := &auth.APIKey{
+					ID:   "",
+					Name: "admin-key",
+					Role: string(auth.RoleAdmin),
+				}
+				return r.WithContext(middleware.ContextWithAgentKey(r.Context(), emptyIDKey))
+			},
+			expectedStatus: http.StatusInternalServerError,
+			checkResponse: func(t *testing.T, rec *httptest.ResponseRecorder) {
+				t.Helper()
+				assert.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
+				assert.Equal(t, http.StatusInternalServerError, rec.Code)
+				var prob map[string]any
+				require.NoError(t, json.NewDecoder(rec.Body).Decode(&prob))
+				assert.Equal(t, "https://sel.events/problems/server-error", prob["type"])
+				assert.Equal(t, float64(500), prob["status"])
+				assert.Equal(t, "Server error", prob["title"])
 			},
 		},
 		{
