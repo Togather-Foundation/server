@@ -2096,3 +2096,377 @@ func containsString(s, substr string) bool {
 			return false
 		}())
 }
+
+// ── consolidateUpdateThirdPartyCompanionWarnings edge-case tests ─────────────
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_EmptyRetireULIDs(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	findCalled := false
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		findCalled = true
+		return nil, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{})
+	if err != nil {
+		t.Fatalf("expected nil error for empty retireULIDs, got: %v", err)
+	}
+	if findCalled {
+		t.Error("FindCrossWeekCompanionTargets must not be called when retireULIDs is empty")
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_NoOccurrences(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	findCalled := false
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		findCalled = true
+		return nil, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	canonical.Occurrences = nil
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
+	if err != nil {
+		t.Fatalf("expected nil error for empty occurrences, got: %v", err)
+	}
+	if findCalled {
+		t.Error("FindCrossWeekCompanionTargets must not be called when canonical has no occurrences")
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_SelfReferenceGuard(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		return []CrossWeekCompanionTarget{
+			{ReviewID: 1, EventULID: consolidateCanonULID},
+			{ReviewID: 2, EventULID: consolidateThirdULID},
+		}, nil
+	}
+
+	getReviewCalledForSelf := false
+	reviewEntries := map[int]*ReviewQueueEntry{
+		1: {ID: 1, EventULID: consolidateCanonULID, Warnings: []byte(`[{"field":"name","code":"cross_week_series_companion","message":"test","details":{"companion_ulid":"` + consolidateRetireULID + `"}}]`)},
+		2: {ID: 2, EventULID: consolidateThirdULID, Warnings: []byte(`[{"field":"name","code":"cross_week_series_companion","message":"test","details":{"companion_ulid":"` + consolidateRetireULID + `"}}]`)},
+	}
+	repo.getReviewQueueEntryFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		if id == 1 {
+			getReviewCalledForSelf = true
+		}
+		entry, ok := reviewEntries[id]
+		if !ok {
+			return nil, ErrNotFound
+		}
+		return entry, nil
+	}
+
+	updatedIDs := make(map[int]bool)
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		updatedIDs[id] = true
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+	if getReviewCalledForSelf {
+		t.Error("GetReviewQueueEntry must not be called for self-referencing target (EventULID matches canonical)")
+	}
+	if !updatedIDs[2] {
+		t.Error("UpdateReviewQueueEntry must be called for the non-self target (reviewID=2)")
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_NoTargetsFound(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		return nil, nil
+	}
+
+	getCalled := false
+	repo.getReviewQueueEntryFunc = func(_ context.Context, _ int) (*ReviewQueueEntry, error) {
+		getCalled = true
+		return nil, ErrNotFound
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
+	if err != nil {
+		t.Fatalf("expected nil error when no targets found, got: %v", err)
+	}
+	if getCalled {
+		t.Error("GetReviewQueueEntry must not be called when FindCrossWeekCompanionTargets returns empty")
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_MultipleRetiringEvents(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	thirdULID := consolidateThirdULID
+	retire1 := consolidateRetireULID
+	retire2 := consolidateRetire2
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		return []CrossWeekCompanionTarget{
+			{ReviewID: 1, EventULID: thirdULID},
+		}, nil
+	}
+
+	warningsJSON := []byte(`[{"field":"name","code":"cross_week_series_companion","message":"companion 1","details":{"companion_ulid":"` + retire1 + `","companion_name":"R1","companion_date":"2026-03-24","companion_time":"10:30:00","venue_name":"V"}},{"field":"name","code":"cross_week_series_companion","message":"companion 2","details":{"companion_ulid":"` + retire2 + `","companion_name":"R2","companion_date":"2026-03-25","companion_time":"11:00:00","venue_name":"W"}}]`)
+
+	repo.getReviewQueueEntryFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, EventULID: thirdULID, Warnings: warningsJSON}, nil
+	}
+
+	var updatedWarnings []byte
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if params.Warnings != nil {
+			updatedWarnings = *params.Warnings
+		}
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{retire1, retire2})
+	if err != nil {
+		t.Fatalf("expected nil error for multiple retiring events, got: %v", err)
+	}
+
+	var warnings []ValidationWarning
+	if err := json.Unmarshal(updatedWarnings, &warnings); err != nil {
+		t.Fatalf("failed to unmarshal updated warnings: %v", err)
+	}
+
+	updatedULIDs := make(map[string]string)
+	for _, w := range warnings {
+		if w.Code == "cross_week_series_companion" {
+			ulid, _ := w.Details["companion_ulid"].(string)
+			updatedULIDs[w.Message] = ulid
+		}
+	}
+
+	if updatedULIDs["companion 1"] != consolidateCanonULID {
+		t.Errorf("companion 1 companion_ulid = %q, want %q", updatedULIDs["companion 1"], consolidateCanonULID)
+	}
+	if updatedULIDs["companion 2"] != consolidateCanonULID {
+		t.Errorf("companion 2 companion_ulid = %q, want %q", updatedULIDs["companion 2"], consolidateCanonULID)
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_NoWarnings(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		return []CrossWeekCompanionTarget{
+			{ReviewID: 1, EventULID: consolidateThirdULID},
+		}, nil
+	}
+
+	repo.getReviewQueueEntryFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, EventULID: consolidateThirdULID, Warnings: []byte(`[]`)}, nil
+	}
+
+	updateCalled := false
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, _ int, _ ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		updateCalled = true
+		return nil, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
+	if err != nil {
+		t.Fatalf("expected nil error for entry with no warnings, got: %v", err)
+	}
+	if updateCalled {
+		t.Error("UpdateReviewQueueEntry must not be called when entry has no warnings to update")
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_MultipleCompanionWarnings(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	retiredULID := consolidateRetireULID
+	thirdULID := consolidateThirdULID
+
+	warningsJSON := []byte(`[{"field":"name","code":"cross_week_series_companion","message":"first companion","details":{"companion_ulid":"` + retiredULID + `","companion_name":"Old Retired","companion_date":"2026-03-24","companion_time":"10:30:00","venue_name":"Venue A"}},{"field":"name","code":"cross_week_series_companion","message":"second companion","details":{"companion_ulid":"` + retiredULID + `","companion_name":"Old Retired 2","companion_date":"2026-03-25","companion_time":"11:00:00","venue_name":"Venue B"}},{"field":"other","code":"suspicious_duration","message":"keep me"}]`)
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		return []CrossWeekCompanionTarget{
+			{ReviewID: 1, EventULID: thirdULID},
+		}, nil
+	}
+
+	repo.getReviewQueueEntryFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, EventULID: thirdULID, Warnings: warningsJSON}, nil
+	}
+
+	var updatedWarnings []byte
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if params.Warnings != nil {
+			updatedWarnings = *params.Warnings
+		}
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
+	if err != nil {
+		t.Fatalf("expected nil error, got: %v", err)
+	}
+
+	var warnings []ValidationWarning
+	if err := json.Unmarshal(updatedWarnings, &warnings); err != nil {
+		t.Fatalf("failed to unmarshal updated warnings: %v", err)
+	}
+
+	companionCount := 0
+	suspiciousFound := false
+	for _, w := range warnings {
+		switch w.Code {
+		case "cross_week_series_companion":
+			companionCount++
+			ulid, _ := w.Details["companion_ulid"].(string)
+			if ulid != consolidateCanonULID {
+				t.Errorf("cross_week_series_companion companion_ulid = %q, want %q", ulid, consolidateCanonULID)
+			}
+		case "suspicious_duration":
+			suspiciousFound = true
+		}
+	}
+	if companionCount != 2 {
+		t.Errorf("expected 2 cross_week_series_companion warnings, got %d", companionCount)
+	}
+	if !suspiciousFound {
+		t.Error("non-companion warning (suspicious_duration) must survive the update")
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_MalformedWarningsJSON(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		return []CrossWeekCompanionTarget{
+			{ReviewID: 1, EventULID: consolidateThirdULID},
+		}, nil
+	}
+
+	repo.getReviewQueueEntryFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, EventULID: consolidateThirdULID, Warnings: []byte(`not-valid-json`)}, nil
+	}
+
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, _ int, _ ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		return nil, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
+	if err == nil {
+		t.Fatal("expected error for malformed warnings JSON, got nil")
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_GetReviewQueueEntry_ErrNotFound(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		return []CrossWeekCompanionTarget{
+			{ReviewID: 1, EventULID: consolidateThirdULID},
+			{ReviewID: 2, EventULID: consolidateRetireULID},
+		}, nil
+	}
+
+	getCalls := make(map[int]bool)
+	repo.getReviewQueueEntryFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		getCalls[id] = true
+		if id == 1 {
+			return nil, ErrNotFound
+		}
+		return &ReviewQueueEntry{
+			ID:        id,
+			EventULID: consolidateRetireULID,
+			Warnings:  []byte(`[{"field":"name","code":"cross_week_series_companion","message":"test","details":{"companion_ulid":"` + consolidateRetireULID + `"}}]`),
+		}, nil
+	}
+
+	updatedID := 0
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		updatedID = id
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
+	if err != nil {
+		t.Fatalf("expected nil error (ErrNotFound should be skipped), got: %v", err)
+	}
+	if !getCalls[1] {
+		t.Error("GetReviewQueueEntry should be called for the not-found target (reviewID=1)")
+	}
+	if !getCalls[2] {
+		t.Error("GetReviewQueueEntry should be called for the second target (reviewID=2) after skipping not-found")
+	}
+	if updatedID != 2 {
+		t.Errorf("UpdateReviewQueueEntry should be called for the surviving target (reviewID=2), got %d", updatedID)
+	}
+}
+
+func TestConsolidate_UpdateThirdPartyCompanionWarnings_ZeroStartTime(t *testing.T) {
+	ctx := context.Background()
+	repo := makeConsolidateRepo(nil)
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+		return []CrossWeekCompanionTarget{
+			{ReviewID: 1, EventULID: consolidateThirdULID},
+		}, nil
+	}
+
+	repo.getReviewQueueEntryFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		return &ReviewQueueEntry{ID: id, EventULID: consolidateThirdULID, Warnings: []byte(`[]`)}, nil
+	}
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
+	canonical.Occurrences = []Occurrence{
+		{StartTime: time.Time{}},
+		{StartTime: time.Time{}},
+	}
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
+	if err == nil {
+		t.Fatal("expected error for zero-value StartTime occurrences, got nil")
+	}
+}
