@@ -1,0 +1,20 @@
+name: luma-toronto
+# Lu.ma city-level discover ICS feed — aggregates all Toronto events
+# Discover place ID obtained via browser UI: click RSS/feed button → Copy URL
+# ~40 upcoming events across all Toronto Lu.ma calendars
+# Note: ~9 of 40 events have URL-only LOCATION (no physical address)
+# Those lack virtual signals in DESCRIPTION, so they get the URL as venue name
+# Platform: Lu.ma (Next.js, Vercel-hosted)
+url: https://api.luma.com/ics/get?entity=discover&id=discplace-Cx3JMS6vXKAbhV5
+extraction_method: ics
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: community
+timezone: "America/Toronto"
+default_location:
+  name: "Toronto"
+  address_locality: "Toronto"
+  address_region: "ON"
+  address_country: "CA"
+enabled: true
