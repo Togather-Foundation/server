@@ -56,7 +56,7 @@ func runReviewApprove(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid review ID: %w", err)
 	}
-	return reviewAction(id, "approve", map[string]any{
+	return reviewAction(cmd, id, "approve", map[string]any{
 		"notes":                 approveNotes,
 		"record_not_duplicates": approveRecordNotDup,
 	})
@@ -70,7 +70,7 @@ func runReviewReject(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("invalid review ID: %w", err)
 	}
-	return reviewAction(id, "reject", map[string]any{
+	return reviewAction(cmd, id, "reject", map[string]any{
 		"reason": rejectReason,
 		"notes":  rejectNotes,
 	})
@@ -104,10 +104,10 @@ func runReviewFix(cmd *cobra.Command, args []string) error {
 		body["corrections"] = corrections
 	}
 
-	return reviewAction(id, "fix", body)
+	return reviewAction(cmd, id, "fix", body)
 }
 
-func reviewAction(id int, action string, bodyMap map[string]any) error {
+func reviewAction(cmd *cobra.Command, id int, action string, bodyMap map[string]any) error {
 	jwt, err := getReviewJWT()
 	if err != nil {
 		return err
@@ -125,9 +125,21 @@ func reviewAction(id int, action string, bodyMap map[string]any) error {
 
 	client := &http.Client{Timeout: 30 * time.Second}
 	u := fmt.Sprintf("%s/api/v1/admin/review-queue/%d/%s", serverURL, id, action)
-	_, err = doPOST(client, u, bytes.NewReader(bodyBytes), jwt)
+	respBody, err := doPOST(client, u, bytes.NewReader(bodyBytes), jwt)
 	if err != nil {
 		return err
+	}
+
+	if reviewJSON {
+		out := cmd.OutOrStdout()
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			_, _ = fmt.Fprintln(out, string(respBody))
+			return nil
+		}
+		return enc.Encode(result)
 	}
 
 	actionLabel := action
@@ -139,7 +151,7 @@ func reviewAction(id int, action string, bodyMap map[string]any) error {
 	case "fix":
 		actionLabel = "Fixed"
 	}
-	fmt.Printf("✓ %s review #%d\n", actionLabel, id)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "✓ %s review #%d\n", actionLabel, id)
 	return nil
 }
 

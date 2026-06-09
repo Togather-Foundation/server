@@ -67,6 +67,7 @@ func runReviewConsolidate(cmd *cobra.Command, args []string) error {
 }
 
 func consolidateEvents(client *http.Client, serverURL, jwt, canonicalID string, retireIDs []string, cmd *cobra.Command) error {
+	out := cmd.OutOrStdout()
 	body, err := json.Marshal(map[string]any{
 		"event_ulid": canonicalID,
 		"retire":     retireIDs,
@@ -82,17 +83,16 @@ func consolidateEvents(client *http.Client, serverURL, jwt, canonicalID string, 
 	}
 
 	if reviewJSON {
-		out := cmd.OutOrStdout()
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
 		var result map[string]any
 		if err := json.Unmarshal(respBody, &result); err != nil {
 			_, _ = fmt.Fprintln(out, string(respBody))
 			return nil
 		}
-		enc := json.NewEncoder(out)
-		enc.SetIndent("", "  ")
 		return enc.Encode(result)
 	}
 
-	fmt.Printf("✓ Consolidated %d event(s) into %s\n", len(retireIDs), canonicalID)
+	_, _ = fmt.Fprintf(out, "✓ Consolidated %d event(s) into %s\n", len(retireIDs), canonicalID)
 	return nil
 }

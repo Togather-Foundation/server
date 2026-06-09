@@ -154,14 +154,20 @@ func chunkItems(items []ReviewQueueItem, size int) [][]ReviewQueueItem {
 func processBatchItem(client *http.Client, serverURL, jwt string, item ReviewQueueItem, action, reason, primaryID, notes, startDate, endDate string) error {
 	switch action {
 	case "approve":
-		body, _ := json.Marshal(map[string]any{"notes": notes})
+		body, err := json.Marshal(map[string]any{"notes": notes})
+		if err != nil {
+			return fmt.Errorf("marshal approve body: %w", err)
+		}
 		u := fmt.Sprintf("%s/api/v1/admin/review-queue/%d/approve", serverURL, item.ID)
-		_, err := doPOST(client, u, bytes.NewReader(body), jwt)
+		_, err = doPOST(client, u, bytes.NewReader(body), jwt)
 		return err
 	case "reject":
-		body, _ := json.Marshal(map[string]any{"reason": reason, "notes": notes})
+		body, err := json.Marshal(map[string]any{"reason": reason, "notes": notes})
+		if err != nil {
+			return fmt.Errorf("marshal reject body: %w", err)
+		}
 		u := fmt.Sprintf("%s/api/v1/admin/review-queue/%d/reject", serverURL, item.ID)
-		_, err := doPOST(client, u, bytes.NewReader(body), jwt)
+		_, err = doPOST(client, u, bytes.NewReader(body), jwt)
 		return err
 	case "fix":
 		fixBody := map[string]any{"notes": notes}
@@ -183,17 +189,23 @@ func processBatchItem(client *http.Client, serverURL, jwt string, item ReviewQue
 		if len(corrections) > 0 {
 			fixBody["corrections"] = corrections
 		}
-		body, _ := json.Marshal(fixBody)
+		body, err := json.Marshal(fixBody)
+		if err != nil {
+			return fmt.Errorf("marshal fix body: %w", err)
+		}
 		u := fmt.Sprintf("%s/api/v1/admin/review-queue/%d/fix", serverURL, item.ID)
-		_, err := doPOST(client, u, bytes.NewReader(body), jwt)
+		_, err = doPOST(client, u, bytes.NewReader(body), jwt)
 		return err
 	case "merge-into-primary":
-		consolidateBody, _ := json.Marshal(map[string]any{
+		consolidateBody, err := json.Marshal(map[string]any{
 			"event_ulid": primaryID,
 			"retire":     []string{item.EventID},
 		})
+		if err != nil {
+			return fmt.Errorf("marshal consolidate body: %w", err)
+		}
 		u := fmt.Sprintf("%s/api/v1/admin/events/consolidate", serverURL)
-		_, err := doPOST(client, u, bytes.NewReader(consolidateBody), jwt)
+		_, err = doPOST(client, u, bytes.NewReader(consolidateBody), jwt)
 		return err
 	default:
 		return fmt.Errorf("unknown action: %s", action)
