@@ -540,7 +540,7 @@ func parseErrorDetail(err error) string {
 		return ""
 	}
 	msg := err.Error()
-	idx := strings.Index(msg, "{")
+	idx := strings.LastIndex(msg, "{")
 	if idx == -1 {
 		return msg
 	}
