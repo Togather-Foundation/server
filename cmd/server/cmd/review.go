@@ -131,6 +131,13 @@ Examples:
   # Group by source to find bad scrape runs
   server review queue --group-by source
 
+  # Filter by warning type to find enrichment candidates
+  server review queue --warning missing_description
+  server review queue --warning cross_week_series_companion
+
+  # Combine: all near-duplicates across sources
+  server review queue --warning near_duplicate_of_new_event --group-by name
+
   # Full stats: warning breakdown, top name groups, age buckets
   server review stats
 
