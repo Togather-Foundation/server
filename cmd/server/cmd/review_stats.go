@@ -3,8 +3,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -12,10 +14,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var reviewStatsCmd = &cobra.Command{
-	Use:   "stats",
-	Short: "Show aggregate review queue statistics",
-	RunE:  runReviewStats,
+var (
+	reviewStatsCmd = &cobra.Command{
+		Use:   "stats",
+		Short: "Show aggregate review queue statistics",
+		RunE:  runReviewStats,
+	}
+
+	statsOutput string
+)
+
+func init() {
+	reviewStatsCmd.Flags().StringVar(&statsOutput, "output", "", "Write output to file instead of stdout")
 }
 
 func runReviewStats(cmd *cobra.Command, args []string) error {
@@ -26,7 +36,12 @@ func runReviewStats(cmd *cobra.Command, args []string) error {
 
 	serverURL := resolveReviewServerURL()
 	client := &http.Client{Timeout: 30 * time.Second}
-	out := cmd.OutOrStdout()
+
+	var buf strings.Builder
+	out := io.Writer(&buf)
+	if statsOutput == "" {
+		out = cmd.OutOrStdout()
+	}
 
 	allItems, err := fetchAllReviewQueue(client, serverURL, jwt, "pending", 0)
 	if err != nil {
@@ -36,15 +51,19 @@ func runReviewStats(cmd *cobra.Command, args []string) error {
 	if reviewJSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
-		return enc.Encode(allItems)
-	}
-
-	if len(allItems) == 0 {
+		if err := enc.Encode(allItems); err != nil {
+			return err
+		}
+	} else if len(allItems) == 0 {
 		_, _ = fmt.Fprintln(out, "Queue: 0 pending")
-		return nil
+	} else {
+		printStats(out, allItems)
 	}
 
-	printStats(out, allItems)
+	if statsOutput != "" {
+		return os.WriteFile(statsOutput, []byte(buf.String()), 0644)
+	}
+	_, _ = fmt.Fprint(cmd.OutOrStdout(), buf.String())
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -26,6 +27,8 @@ var (
 	queueName    string
 	queueSource  string
 	queueGroupBy string
+	queueOffset  int
+	queueOutput  string
 )
 
 func init() {
@@ -35,6 +38,8 @@ func init() {
 	reviewQueueCmd.Flags().StringVar(&queueName, "name", "", "Filter by event name substring (client-side)")
 	reviewQueueCmd.Flags().StringVar(&queueSource, "source", "", "Filter by source_id (client-side)")
 	reviewQueueCmd.Flags().StringVar(&queueGroupBy, "group-by", "", "Group results by: name, source, warning")
+	reviewQueueCmd.Flags().IntVar(&queueOffset, "offset", 0, "Skip first N items (client-side)")
+	reviewQueueCmd.Flags().StringVar(&queueOutput, "output", "", "Write output to file instead of stdout")
 }
 
 func runReviewQueue(cmd *cobra.Command, args []string) error {
@@ -45,7 +50,6 @@ func runReviewQueue(cmd *cobra.Command, args []string) error {
 
 	serverURL := resolveReviewServerURL()
 	client := &http.Client{Timeout: 30 * time.Second}
-	out := cmd.OutOrStdout()
 
 	fetchLimit := queueLimit
 	if queueName != "" || queueSource != "" || queueWarning != "" {
@@ -61,23 +65,44 @@ func runReviewQueue(cmd *cobra.Command, args []string) error {
 
 	filtered := filterItemsClientSide(allItems)
 
+	if queueOffset > 0 {
+		if queueOffset >= len(filtered) {
+			filtered = nil
+		} else {
+			filtered = filtered[queueOffset:]
+		}
+	}
+
+	var buf strings.Builder
+	out := io.Writer(&buf)
+	if queueOutput == "" {
+		out = cmd.OutOrStdout()
+	}
+
 	if reviewJSON {
 		enc := json.NewEncoder(out)
 		enc.SetIndent("", "  ")
-		return enc.Encode(filtered)
+		if err := enc.Encode(filtered); err != nil {
+			return err
+		}
+	} else if queueGroupBy != "" {
+		if err := printGrouped(out, filtered, queueGroupBy); err != nil {
+			return err
+		}
+	} else {
+		if err := printFlatTable(out, filtered); err != nil {
+			return err
+		}
 	}
 
-	if queueGroupBy != "" {
-		err = printGrouped(out, filtered, queueGroupBy)
-	} else {
-		err = printFlatTable(out, filtered)
-	}
-	if err != nil {
-		return err
-	}
 	if len(allItems) >= fetchLimit && fetchLimit > 0 {
 		_, _ = fmt.Fprintf(out, "\n(Showing first %d of %d+ items — use --limit to see more)\n", fetchLimit, len(allItems))
 	}
+
+	if queueOutput != "" {
+		return os.WriteFile(queueOutput, []byte(buf.String()), 0644)
+	}
+	_, _ = fmt.Fprint(cmd.OutOrStdout(), buf.String())
 	return nil
 }
 

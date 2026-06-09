@@ -137,16 +137,21 @@ server review queue --group-by name
 server review queue --group-by warning
 server review queue --group-by source
 server review queue --json
+server review queue --offset 200
+server review queue --output /tmp/queue.json --json
 ```
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `--status` | string | `pending` | Filter by status: `pending`, `approved`, `rejected`, `merged` |
 | `--limit` | int | `50` | Maximum items to return (1–200) |
+| `--offset` | int | `0` | Skip first N items (client-side, after filtering) |
 | `--warning` | string | `""` | Filter by warning code (client-side substring match) |
 | `--name` | string | `""` | Filter by event name substring (client-side, case-insensitive) |
 | `--source` | string | `""` | Filter by source_id (client-side exact match) |
 | `--group-by` | string | `""` | Group results by: `name`, `source`, `warning` |
+| `--output` | string | `""` | Write output to file instead of stdout |
+| `--json` | bool | `false` | JSON output for programmatic consumption |
 
 **Plain table output (default):**
 ```
@@ -251,19 +256,21 @@ Dates must be valid RFC 3339 timestamps (e.g. `2026-03-15T19:00:00Z` or
 
 ### `server review batch`
 
-Batch approve, reject, fix, or merge multiple review items matching a name
-pattern. Always run with `--dry-run` first to preview the affected items.
+Batch approve, reject, fix, or merge multiple review items matching filter
+criteria. At least one of `--name`, `--source`, or `--warning` is required.
+Always run with `--dry-run` first to preview the affected items.
 
 ```bash
 # Dry-run to preview
 server review batch --name "Astro Coffee" --action approve --dry-run
-server review batch --name "Comedy" --source "comedy-bar" --dry-run
+server review batch --source "comedy-bar" --dry-run
+server review batch --warning missing_description --action approve --dry-run
 
 # Execute after preview
 server review batch --name "Astro Coffee" --action approve
 
-# Batch reject
-server review batch --name "spam-event" --action reject --reason "spam"
+# Batch reject by source only (no --name needed)
+server review batch --source "bad-scraper" --action reject --reason "bad scrape run"
 
 # Batch fix with date correction
 server review batch --name "Tranzac Open Stage" --action fix --start-date "2026-01-07T13:30:00Z"
@@ -274,7 +281,7 @@ server review batch --name "Astro Coffee" --action merge-into-primary --primary-
 
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
-| `--name` | string | **required** | Filter by event name substring (case-insensitive) |
+| `--name` | string | `""` | Filter by event name substring (case-insensitive) |
 | `--source` | string | `""` | Filter by source_id |
 | `--warning` | string | `""` | Filter by warning code |
 | `--action` | string | `""` | Action: `approve`, `reject`, `fix`, `merge-into-primary` |
@@ -285,6 +292,10 @@ server review batch --name "Astro Coffee" --action merge-into-primary --primary-
 | `--notes` | string | `""` | Optional review notes for approve/fix actions |
 | `--start-date` | string (RFC3339) | `""` | Corrected start date (required for `--action fix`) |
 | `--end-date` | string (RFC3339) | `""` | Corrected end date (optional for `--action fix`) |
+
+**Filters:** At least one of `--name`, `--source`, or `--warning` is required. They
+can be combined (e.g., `--source "X" --warning missing_description`). If none are set,
+the command exits with an error.
 
 **Batch execution details:**
 - Items are processed in chunks of `REVIEW_BATCH_MAX_SIZE` (default 100)
@@ -302,6 +313,7 @@ total items.
 ```bash
 server review stats
 server review stats --json
+server review stats --output /tmp/stats.txt
 ```
 
 **Output**

@@ -15,7 +15,15 @@ var (
 	reviewBatchCmd = &cobra.Command{
 		Use:   "batch",
 		Short: "Batch approve, reject, fix, or merge multiple review items",
-		RunE:  runReviewBatch,
+		Long: `Batch-process review queue items that match filter criteria.
+At least one of --name, --source, or --warning is required as a safety guard.
+
+Examples:
+  server review batch --name "Astro" --action approve --dry-run
+  server review batch --source "14a37f6d" --action reject --reason "bad scrape" --dry-run
+  server review batch --warning missing_description --action approve
+  server review batch --name "Weekly" --source "src" --action fix --start-date ...`,
+		RunE: runReviewBatch,
 	}
 
 	batchName      string
@@ -32,7 +40,7 @@ var (
 )
 
 func init() {
-	reviewBatchCmd.Flags().StringVar(&batchName, "name", "", "Filter by event name substring (required)")
+	reviewBatchCmd.Flags().StringVar(&batchName, "name", "", "Filter by event name substring")
 	reviewBatchCmd.Flags().StringVar(&batchSource, "source", "", "Filter by source_id")
 	reviewBatchCmd.Flags().StringVar(&batchWarning, "warning", "", "Filter by warning code")
 	reviewBatchCmd.Flags().StringVar(&batchAction, "action", "", "Action: approve, reject, fix, merge-into-primary")
@@ -46,8 +54,8 @@ func init() {
 }
 
 func runReviewBatch(cmd *cobra.Command, args []string) error {
-	if batchName == "" {
-		return fmt.Errorf("--name is required (filter by event name substring)")
+	if batchName == "" && batchSource == "" && batchWarning == "" {
+		return fmt.Errorf("at least one filter is required: --name, --source, or --warning")
 	}
 
 	jwt, err := getReviewJWT()
@@ -140,7 +148,7 @@ func runReviewBatch(cmd *cobra.Command, args []string) error {
 			if err != nil {
 				failed++
 				errStr := err.Error()
-				errors = append(errors, fmt.Sprintf("  #%d %s: %s", item.ID, item.EventName, errStr))
+				errors = append(errors, fmt.Sprintf("  %s", errStr))
 				if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") {
 					_, _ = fmt.Fprintf(out, "✓ %d %s, ✗ %d failed (stopped: auth error)\n", succeeded, actionLabel(batchAction), failed)
 					for _, e := range errors {
@@ -181,37 +189,43 @@ func chunkItems(items []ReviewQueueItem, size int) [][]ReviewQueueItem {
 }
 
 func processBatchItem(client *http.Client, serverURL, jwt string, item ReviewQueueItem, action, reason, primaryID, notes, startDate, endDate string) error {
+	wrapErr := func(err error) error {
+		if err == nil {
+			return nil
+		}
+		return fmt.Errorf("#%d %s [%s]: %s", item.ID, item.EventName, item.EventID, parseErrorDetail(err))
+	}
 	switch action {
 	case "approve":
 		body, err := json.Marshal(map[string]any{"notes": notes})
 		if err != nil {
-			return fmt.Errorf("marshal approve body: %w", err)
+			return wrapErr(fmt.Errorf("marshal approve body: %w", err))
 		}
 		u := fmt.Sprintf("%s/api/v1/admin/review-queue/%d/approve", serverURL, item.ID)
 		_, err = doPOST(client, u, bytes.NewReader(body), jwt)
-		return err
+		return wrapErr(err)
 	case "reject":
 		body, err := json.Marshal(map[string]any{"reason": reason, "notes": notes})
 		if err != nil {
-			return fmt.Errorf("marshal reject body: %w", err)
+			return wrapErr(fmt.Errorf("marshal reject body: %w", err))
 		}
 		u := fmt.Sprintf("%s/api/v1/admin/review-queue/%d/reject", serverURL, item.ID)
 		_, err = doPOST(client, u, bytes.NewReader(body), jwt)
-		return err
+		return wrapErr(err)
 	case "fix":
 		fixBody := map[string]any{"notes": notes}
 		corrections := map[string]any{}
 		if startDate != "" {
 			t, err := time.Parse(time.RFC3339, startDate)
 			if err != nil {
-				return fmt.Errorf("invalid start-date: %w", err)
+				return wrapErr(fmt.Errorf("invalid start-date: %w", err))
 			}
 			corrections["startDate"] = t
 		}
 		if endDate != "" {
 			t, err := time.Parse(time.RFC3339, endDate)
 			if err != nil {
-				return fmt.Errorf("invalid end-date: %w", err)
+				return wrapErr(fmt.Errorf("invalid end-date: %w", err))
 			}
 			corrections["endDate"] = t
 		}
@@ -220,24 +234,24 @@ func processBatchItem(client *http.Client, serverURL, jwt string, item ReviewQue
 		}
 		body, err := json.Marshal(fixBody)
 		if err != nil {
-			return fmt.Errorf("marshal fix body: %w", err)
+			return wrapErr(fmt.Errorf("marshal fix body: %w", err))
 		}
 		u := fmt.Sprintf("%s/api/v1/admin/review-queue/%d/fix", serverURL, item.ID)
 		_, err = doPOST(client, u, bytes.NewReader(body), jwt)
-		return err
+		return wrapErr(err)
 	case "merge-into-primary":
 		consolidateBody, err := json.Marshal(map[string]any{
 			"event_ulid": primaryID,
 			"retire":     []string{item.EventID},
 		})
 		if err != nil {
-			return fmt.Errorf("marshal consolidate body: %w", err)
+			return wrapErr(fmt.Errorf("marshal consolidate body: %w", err))
 		}
 		u := fmt.Sprintf("%s/api/v1/admin/events/consolidate", serverURL)
 		_, err = doPOST(client, u, bytes.NewReader(consolidateBody), jwt)
-		return err
+		return wrapErr(err)
 	default:
-		return fmt.Errorf("unknown action: %s", action)
+		return wrapErr(fmt.Errorf("unknown action: %s", action))
 	}
 }
 

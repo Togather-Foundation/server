@@ -155,6 +155,11 @@ Examples:
   # 4. Execute (dry-run off, --action explicitly set)
   server review batch --source "meetup-scraper" --action reject --reason "bad scrape run 2025-06-08"
 
+  # 5. Or combine filters: specific source + warning type
+  server review batch --source "meetup-scraper" --warning missing_description --action approve --dry-run
+
+  NOTE: At least one of --name, --source, or --warning is required. They can be combined.
+
 ── Handling cross-week series companions (same event, different dates) ──
 
   # 1. Group by name to find repeated event names
@@ -181,6 +186,10 @@ Examples:
     --action merge-into-primary --primary-id <primary-ulid> --dry-run
 
   #    (review the preview, then remove --dry-run to execute)
+
+  # 6. Or batch-merge all companions from a source into the primary
+  server review batch --source "14a37f6d" --action merge-into-primary \
+    --primary-id <primary-ulid> --dry-run
 
   NOTE: When using --name/--source/--warning filters, the queue command
   automatically fetches all items (up to 1000) to ensure client-side
@@ -251,9 +260,14 @@ Examples:
   server review approve 42 --notes "looks good"
   server review batch --name "Small Event Series" --action approve --dry-run
   server review batch --name "Small Event Series" --action approve
+  server review batch --source "14a37f6d" --action approve
+
+  # 6. Filter by warning type for targeted cleanup
+  server review batch --warning missing_description --action approve
 
 ═══ Safety Notes ═══
 
+  • At least one of --name, --source, or --warning is required for batch.
   • --dry-run is implied for batch when --action is not explicitly set.
   • Batch chunks large sets automatically (REVIEW_BATCH_MAX_SIZE, default 100).
   • Batch adds a configurable inter-request delay (REVIEW_BATCH_DELAY_MS, default 50ms).
@@ -513,4 +527,26 @@ func containsWarning(warnings []Warning, code string) bool {
 		}
 	}
 	return false
+}
+
+type problemDetail struct {
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+	Status int    `json:"status"`
+}
+
+func parseErrorDetail(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	idx := strings.Index(msg, "{")
+	if idx == -1 {
+		return msg
+	}
+	var pd problemDetail
+	if jsonErr := json.Unmarshal([]byte(msg[idx:]), &pd); jsonErr == nil && pd.Detail != "" {
+		return fmt.Sprintf("%s (%d)", pd.Detail, pd.Status)
+	}
+	return msg
 }
