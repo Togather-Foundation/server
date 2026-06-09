@@ -236,6 +236,9 @@ func resolveReviewServerURL() string {
 	if u == "" {
 		u = "http://localhost:8080"
 	}
+	if !strings.Contains(u, "://") && !strings.HasPrefix(u, "localhost") {
+		u = "https://" + u
+	}
 	return u
 }
 
