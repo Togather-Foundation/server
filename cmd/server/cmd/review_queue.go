@@ -85,6 +85,10 @@ func runReviewQueue(cmd *cobra.Command, args []string) error {
 		if err := enc.Encode(filtered); err != nil {
 			return err
 		}
+		if queueOutput != "" {
+			return os.WriteFile(queueOutput, []byte(buf.String()), 0644)
+		}
+		return nil
 	} else if queueGroupBy != "" {
 		if err := printGrouped(out, filtered, queueGroupBy); err != nil {
 			return err

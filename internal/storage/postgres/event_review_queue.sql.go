@@ -337,7 +337,7 @@ func (q *Queries) DismissWarningMatchByReviewID(ctx context.Context, arg Dismiss
 }
 
 const findCrossWeekCompanionTargets = `-- name: FindCrossWeekCompanionTargets :many
-SELECT rq.id AS review_id, e.ulid AS event_ulid
+SELECT DISTINCT rq.id AS review_id, e.ulid AS event_ulid
 FROM event_review_queue rq
 JOIN events e ON e.id = rq.event_id
 CROSS JOIN jsonb_array_elements(rq.warnings) w

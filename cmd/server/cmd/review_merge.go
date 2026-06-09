@@ -110,37 +110,32 @@ func consolidateEvents(client *http.Client, serverURL, jwt, canonicalID string, 
 		body["transfer_occurrences"] = true
 	}
 
+	ensureEvent := func() map[string]any {
+		if body["event"] == nil {
+			body["event"] = map[string]any{}
+		}
+		return body["event"].(map[string]any)
+	}
+
 	var patches []string
 	if mergeName != "" {
-		body["event"] = map[string]any{"name": mergeName}
+		ensureEvent()["name"] = mergeName
 		patches = append(patches, "name")
 	}
 	if mergeDescription != "" {
-		if body["event"] == nil {
-			body["event"] = map[string]any{}
-		}
-		body["event"].(map[string]any)["description"] = mergeDescription
+		ensureEvent()["description"] = mergeDescription
 		patches = append(patches, "description")
 	}
 	if mergeImage != "" {
-		if body["event"] == nil {
-			body["event"] = map[string]any{}
-		}
-		body["event"].(map[string]any)["image"] = mergeImage
+		ensureEvent()["image"] = mergeImage
 		patches = append(patches, "image")
 	}
 	if mergeURL != "" {
-		if body["event"] == nil {
-			body["event"] = map[string]any{}
-		}
-		body["event"].(map[string]any)["url"] = mergeURL
+		ensureEvent()["url"] = mergeURL
 		patches = append(patches, "url")
 	}
 	if mergeDomain != "" {
-		if body["event"] == nil {
-			body["event"] = map[string]any{}
-		}
-		body["event"].(map[string]any)["eventDomain"] = mergeDomain
+		ensureEvent()["eventDomain"] = mergeDomain
 		patches = append(patches, "domain")
 	}
 
