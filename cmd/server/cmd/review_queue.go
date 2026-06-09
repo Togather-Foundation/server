@@ -47,7 +47,14 @@ func runReviewQueue(cmd *cobra.Command, args []string) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	out := cmd.OutOrStdout()
 
-	allItems, err := fetchAllReviewQueue(client, serverURL, jwt, queueStatus, queueLimit)
+	fetchLimit := queueLimit
+	if queueName != "" || queueSource != "" || queueWarning != "" {
+		if !cmd.Flags().Changed("limit") {
+			fetchLimit = getEnvInt("REVIEW_QUEUE_MAX_ITEMS", 1000)
+		}
+	}
+
+	allItems, err := fetchAllReviewQueue(client, serverURL, jwt, queueStatus, fetchLimit)
 	if err != nil {
 		return err
 	}
@@ -61,10 +68,17 @@ func runReviewQueue(cmd *cobra.Command, args []string) error {
 	}
 
 	if queueGroupBy != "" {
-		return printGrouped(out, filtered, queueGroupBy)
+		err = printGrouped(out, filtered, queueGroupBy)
+	} else {
+		err = printFlatTable(out, filtered)
 	}
-
-	return printFlatTable(out, filtered)
+	if err != nil {
+		return err
+	}
+	if len(allItems) >= fetchLimit && fetchLimit > 0 {
+		_, _ = fmt.Fprintf(out, "\n(Showing first %d of %d+ items — use --limit to see more)\n", fetchLimit, len(allItems))
+	}
+	return nil
 }
 
 func filterItemsClientSide(items []ReviewQueueItem) []ReviewQueueItem {

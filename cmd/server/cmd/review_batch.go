@@ -59,7 +59,12 @@ func runReviewBatch(cmd *cobra.Command, args []string) error {
 	client := &http.Client{Timeout: 30 * time.Second}
 	out := cmd.OutOrStdout()
 
-	allItems, err := fetchAllReviewQueue(client, serverURL, jwt, "pending", batchLimit)
+	fetchLimit := batchLimit
+	if !cmd.Flags().Changed("limit") {
+		fetchLimit = getEnvInt("REVIEW_BATCH_MAX_FETCH", 1000)
+	}
+
+	allItems, err := fetchAllReviewQueue(client, serverURL, jwt, "pending", fetchLimit)
 	if err != nil {
 		return err
 	}
@@ -82,7 +87,19 @@ func runReviewBatch(cmd *cobra.Command, args []string) error {
 
 	if len(matching) == 0 {
 		_, _ = fmt.Fprintln(out, "No matching items found.")
+		if len(allItems) >= fetchLimit && fetchLimit > 0 {
+			_, _ = fmt.Fprintf(out, "(Fetched %d items — more may exist. Use --limit to fetch more.)\n", len(allItems))
+		}
 		return nil
+	}
+
+	if len(allItems) >= fetchLimit && fetchLimit > 0 {
+		_, _ = fmt.Fprintf(out, "Fetched %d of %d+ pending items. ", len(allItems), fetchLimit)
+		if len(matching) < len(allItems) {
+			_, _ = fmt.Fprintln(out, "More matching items may exist beyond the fetch limit.")
+		} else {
+			_, _ = fmt.Fprintln(out)
+		}
 	}
 
 	if reviewJSON {

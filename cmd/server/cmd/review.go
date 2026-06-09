@@ -152,11 +152,15 @@ Examples:
   # 1. Group by name to find repeated event names
   server review queue --group-by name
 
-  # 2. Inspect one companion to understand its data
+  # 2. Inspect one companion to understand its data and find the primary
   server review check 41
+  #
+  #   Look at the "Related Events" section — the primary series event
+  #   is listed there. The companion's warnings may also reference the
+  #   primary by ULID (e.g. "companion to primary series 01ABC...").
 
   # 3. Inspect the primary series event to see what it already has
-  server review check 40
+  server review check <primary-id>
 
   # 4. Merge companion into primary, copying its occurrence (date) and any missing fields
   server review merge <primary-ulid> <companion-ulid> \
@@ -169,6 +173,10 @@ Examples:
     --action merge-into-primary --primary-id <primary-ulid> --dry-run
 
   #    (review the preview, then remove --dry-run to execute)
+
+  NOTE: When using --name/--source/--warning filters, the queue command
+  automatically fetches all items (up to 1000) to ensure client-side
+  filters see the complete dataset. Use --limit to override.
 
 ── Approving good-but-flagged events ──
 
