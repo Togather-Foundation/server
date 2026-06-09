@@ -336,6 +336,44 @@ func (q *Queries) DismissWarningMatchByReviewID(ctx context.Context, arg Dismiss
 	return err
 }
 
+const findCrossWeekCompanionTargets = `-- name: FindCrossWeekCompanionTargets :many
+SELECT rq.id AS review_id, e.ulid AS event_ulid
+FROM event_review_queue rq
+JOIN events e ON e.id = rq.event_id
+CROSS JOIN jsonb_array_elements(rq.warnings) w
+WHERE rq.status = 'pending'
+  AND w->>'code' = 'cross_week_series_companion'
+  AND w->'details'->>'companion_ulid' = ANY($1::text[])
+`
+
+type FindCrossWeekCompanionTargetsRow struct {
+	ReviewID  int32  `json:"review_id"`
+	EventUlid string `json:"event_ulid"`
+}
+
+// Find all pending review entries whose cross_week_series_companion warnings
+// reference any of the given retire ULIDs. Returns the review ID and event ULID
+// so callers can update the warning details to point to a surviving canonical.
+func (q *Queries) FindCrossWeekCompanionTargets(ctx context.Context, retireUlids []string) ([]FindCrossWeekCompanionTargetsRow, error) {
+	rows, err := q.db.Query(ctx, findCrossWeekCompanionTargets, retireUlids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []FindCrossWeekCompanionTargetsRow{}
+	for rows.Next() {
+		var i FindCrossWeekCompanionTargetsRow
+		if err := rows.Scan(&i.ReviewID, &i.EventUlid); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const findReviewByDedup = `-- name: FindReviewByDedup :one
 
 SELECT r.id,
@@ -886,16 +924,16 @@ WITH stripped AS (
 UPDATE event_review_queue
    SET warnings = stripped.warnings,
        duplicate_of_event_id = CASE
-         WHEN EXISTS (
-           SELECT 1 FROM events WHERE id = event_review_queue.duplicate_of_event_id
-           AND ulid = ANY($1::text[])
-         ) THEN NULL
-         ELSE duplicate_of_event_id
-       END,
-       updated_at = NOW()
-  FROM stripped
- WHERE id = $2::int
-   AND status = 'pending'
+       WHEN EXISTS (
+            SELECT 1 FROM events WHERE id = event_review_queue.duplicate_of_event_id
+            AND ulid = ANY($1::text[])
+          ) THEN NULL
+          ELSE duplicate_of_event_id
+        END,
+        updated_at = NOW()
+   FROM stripped
+  WHERE id = $2::int
+    AND status = 'pending'
 RETURNING (stripped.warnings = '[]'::jsonb) AS warnings_empty
 `
 

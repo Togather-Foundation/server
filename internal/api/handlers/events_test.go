@@ -228,6 +228,10 @@ func (s stubEventsRepo) StripRetiredDupWarnings(_ context.Context, _ int, _ []st
 	return false, nil
 }
 
+func (s stubEventsRepo) FindCrossWeekCompanionTargets(_ context.Context, _ []string) ([]events.CrossWeekCompanionTarget, error) {
+	return nil, nil
+}
+
 func (s stubEventsRepo) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
 	return false, nil
 }

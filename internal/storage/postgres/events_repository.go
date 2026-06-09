@@ -2815,6 +2815,24 @@ func (r *EventRepository) StripRetiredDupWarnings(ctx context.Context, reviewID 
 	return warningsEmpty, nil
 }
 
+// FindCrossWeekCompanionTargets finds all pending review entries whose
+// cross_week_series_companion warnings reference any of the given retire ULIDs.
+func (r *EventRepository) FindCrossWeekCompanionTargets(ctx context.Context, retireULIDs []string) ([]events.CrossWeekCompanionTarget, error) {
+	queries := Queries{db: r.queryer()}
+	rows, err := queries.FindCrossWeekCompanionTargets(ctx, retireULIDs)
+	if err != nil {
+		return nil, fmt.Errorf("find cross-week companion targets: %w", err)
+	}
+	result := make([]events.CrossWeekCompanionTarget, len(rows))
+	for i, row := range rows {
+		result[i] = events.CrossWeekCompanionTarget{
+			ReviewID:  int(row.ReviewID),
+			EventULID: row.EventUlid,
+		}
+	}
+	return result, nil
+}
+
 // ListReviewQueue lists review queue entries with filters and pagination
 func (r *EventRepository) ListReviewQueue(ctx context.Context, filters events.ReviewQueueFilters) (*events.ReviewQueueListResult, error) {
 	queries := Queries{db: r.queryer()}

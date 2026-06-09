@@ -422,6 +422,10 @@ func (m *IngestMockRepository) DismissPendingReviewsByEventULIDs(_ context.Conte
 	return nil, nil
 }
 
+func (m *IngestMockRepository) FindCrossWeekCompanionTargets(_ context.Context, _ []string) ([]events.CrossWeekCompanionTarget, error) {
+	return nil, nil
+}
+
 type noOpTxCommitter struct{}
 
 func (n *noOpTxCommitter) Commit(ctx context.Context) error   { return nil }

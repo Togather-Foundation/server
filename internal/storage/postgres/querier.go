@@ -115,6 +115,10 @@ type Querier interface {
 	// invitation to be created. These rows are distinguishable from genuinely
 	// accepted invitations because they will not have a corresponding password set.
 	ExpirePendingInvitationsForUser(ctx context.Context, userID pgtype.UUID) error
+	// Find all pending review entries whose cross_week_series_companion warnings
+	// reference any of the given retire ULIDs. Returns the review ID and event ULID
+	// so callers can update the warning details to point to a surviving canonical.
+	FindCrossWeekCompanionTargets(ctx context.Context, retireUlids []string) ([]FindCrossWeekCompanionTargetsRow, error)
 	// SQLc queries for event_review_queue domain.
 	// See docs/architecture/event-review-workflow.md for complete design.
 	// Find existing review by deduplication keys (checks source_external_id or dedup_hash)

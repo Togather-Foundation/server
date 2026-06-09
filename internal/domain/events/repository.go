@@ -393,6 +393,10 @@ type Repository interface {
 	// duplicate_of_event_id if it points to a retired event. Returns true when the
 	// resulting warnings array is empty (all warnings stripped).
 	StripRetiredDupWarnings(ctx context.Context, reviewID int, retireULIDs []string) (bool, error)
+
+	// FindCrossWeekCompanionTargets finds all pending review entries whose
+	// cross_week_series_companion warnings reference any of the given retire ULIDs.
+	FindCrossWeekCompanionTargets(ctx context.Context, retireULIDs []string) ([]CrossWeekCompanionTarget, error)
 	ListReviewQueue(ctx context.Context, filters ReviewQueueFilters) (*ReviewQueueListResult, error)
 	ApproveReview(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	RejectReview(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
@@ -563,4 +567,11 @@ type SimilarOrgCandidate struct {
 	URL             *string // url (may be nil)
 	Telephone       *string // telephone (may be nil)
 	Email           *string // email (may be nil)
+}
+
+// CrossWeekCompanionTarget identifies a review queue entry whose
+// cross_week_series_companion warning references a now-retired event.
+type CrossWeekCompanionTarget struct {
+	ReviewID  int
+	EventULID string
 }

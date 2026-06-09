@@ -1713,6 +1713,12 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 		return nil, err
 	}
 
+	// Step 6c.5: Update third-party review entries whose cross_week_series_companion
+	// warnings reference now-retired events, pointing them to the surviving canonical.
+	if err := s.consolidateUpdateThirdPartyCompanionWarnings(ctx, txRepo, canonicalEvent, params.Retire); err != nil {
+		return nil, err
+	}
+
 	// Step 6b: Strip stale dup warnings from the canonical's existing review entry,
 	// then replace any stale cross-week warning with the surviving companion found
 	// above.
@@ -1866,6 +1872,95 @@ func (s *AdminService) consolidateRetireEvents(
 	}
 
 	return retiredULIDs, dismissedIDs, nil
+}
+
+// consolidateUpdateThirdPartyCompanionWarnings is Step 6c.5 of the Consolidate
+// algorithm. It finds all review entries (other than the canonical's own) whose
+// cross_week_series_companion warnings reference now-retired events and updates
+// them to point to the surviving canonical's details instead.
+func (s *AdminService) consolidateUpdateThirdPartyCompanionWarnings(
+	ctx context.Context,
+	txRepo Repository,
+	canonicalEvent *Event,
+	retireULIDs []string,
+) error {
+	if len(retireULIDs) == 0 || len(canonicalEvent.Occurrences) == 0 {
+		return nil
+	}
+
+	targets, err := txRepo.FindCrossWeekCompanionTargets(ctx, retireULIDs)
+	if err != nil {
+		return fmt.Errorf("find cross-week companion targets: %w", err)
+	}
+
+	if len(targets) == 0 {
+		return nil
+	}
+
+	startTime := canonicalEvent.Occurrences[0].StartTime
+	canonicalDate := startTime.UTC().Format("2006-01-02")
+	canonicalTime := startTime.UTC().Format("15:04:05")
+	canonicalVenueName := ""
+	if canonicalEvent.PrimaryVenueName != nil {
+		canonicalVenueName = *canonicalEvent.PrimaryVenueName
+	}
+
+	for _, target := range targets {
+		if target.EventULID == canonicalEvent.ULID {
+			continue
+		}
+
+		entry, err := txRepo.GetReviewQueueEntry(ctx, target.ReviewID)
+		if err != nil {
+			return fmt.Errorf("get review entry %d: %w", target.ReviewID, err)
+		}
+
+		var warnings []ValidationWarning
+		if len(entry.Warnings) > 0 {
+			if err := json.Unmarshal(entry.Warnings, &warnings); err != nil {
+				return fmt.Errorf("parse warnings for review %d: %w", target.ReviewID, err)
+			}
+		}
+
+		updated := false
+		for i, w := range warnings {
+			if w.Code != "cross_week_series_companion" {
+				continue
+			}
+			companionULID, _ := w.Details["companion_ulid"].(string)
+			if companionULID == "" {
+				continue
+			}
+			for _, retired := range retireULIDs {
+				if companionULID == retired {
+					w.Details["companion_ulid"] = canonicalEvent.ULID
+					w.Details["companion_name"] = canonicalEvent.Name
+					w.Details["companion_date"] = canonicalDate
+					w.Details["companion_time"] = canonicalTime
+					w.Details["venue_name"] = canonicalVenueName
+					warnings[i] = w
+					updated = true
+					break
+				}
+			}
+		}
+
+		if !updated {
+			continue
+		}
+
+		updatedJSON, err := json.Marshal(warnings)
+		if err != nil {
+			return fmt.Errorf("marshal updated warnings for review %d: %w", target.ReviewID, err)
+		}
+		if _, err := txRepo.UpdateReviewQueueEntry(ctx, target.ReviewID, ReviewQueueUpdateParams{
+			Warnings: &updatedJSON,
+		}); err != nil {
+			return fmt.Errorf("update review queue entry %d: %w", target.ReviewID, err)
+		}
+	}
+
+	return nil
 }
 
 // consolidateStripRetiredDupWarnings is Step 6b of the Consolidate algorithm.

@@ -16,6 +16,7 @@ const (
 	consolidateCanonULID  = "01KM1B4HXHZ7G8RZW4WDYCXRW9"
 	consolidateRetireULID = "01KM1B4HXHKDJMETBS0D5C9HK2"
 	consolidateRetire2    = "01KM1B4HXHMYFBVJ2X94RSA8RV"
+	consolidateThirdULID  = "01KM1B4HXHPYAFEGKW7K3BJNTQ"
 )
 
 const consolidateBaseURL = "https://toronto.togather.foundation"
@@ -1901,6 +1902,185 @@ func TestConsolidate_PromotePath_WithEventPatch_RefreshesReviewPayload(t *testin
 	}
 	if !repo.commitCalled {
 		t.Error("Commit must be called on success")
+	}
+}
+
+// ── Step 6c.5: consolidateUpdateThirdPartyCompanionWarnings ────────────────────
+
+// TestConsolidate_UpdateThirdPartyCompanionWarnings verifies that when a
+// third-party review entry has a cross_week_series_companion warning whose
+// companion_ulid references a now-retired event, the warning is updated to
+// point to the surviving canonical instead.
+func TestConsolidate_UpdateThirdPartyCompanionWarnings(t *testing.T) {
+	ctx := context.Background()
+
+	canonULID := consolidateCanonULID
+	retiredULID := consolidateRetireULID
+	thirdULID := consolidateThirdULID
+
+	startTime := time.Date(2026, 3, 31, 10, 30, 0, 0, time.UTC)
+
+	// Week3 (third-party) has a cross_week_series_companion warning pointing to week2 (retired).
+	thirdWarnings := []ValidationWarning{
+		{
+			Field:   "name",
+			Code:    "cross_week_series_companion",
+			Message: "third-party companion warning",
+			Details: map[string]any{
+				"companion_ulid": retiredULID,
+				"companion_name": "Old Retired Event",
+				"companion_date": "2026-03-24",
+				"companion_time": "10:30:00",
+				"venue_name":     "Test Venue",
+			},
+		},
+		{
+			Field:   "other",
+			Code:    "suspicious_duration",
+			Message: "keeps this warning",
+		},
+	}
+	thirdWarningsJSON, _ := json.Marshal(thirdWarnings)
+
+	// Week2 (retired) has a cross_week_series_companion warning pointing to week3.
+	retiredWarnings := []ValidationWarning{
+		{
+			Field:   "name",
+			Code:    "cross_week_series_companion",
+			Message: "retired companion warning",
+			Details: map[string]any{
+				"companion_ulid": thirdULID,
+				"companion_name": "Third Party Event",
+				"companion_date": "2026-03-31",
+				"companion_time": "10:30:00",
+				"venue_name":     "Test Venue",
+			},
+		},
+	}
+	retiredWarningsJSON, _ := json.Marshal(retiredWarnings)
+
+	// In-memory review storage for test assertions.
+	reviewEntries := map[int]*ReviewQueueEntry{
+		1: {
+			ID:        1,
+			EventID:   "uuid-retired",
+			EventULID: retiredULID,
+			Status:    "pending",
+			Warnings:  retiredWarningsJSON,
+		},
+		2: {
+			ID:        2,
+			EventID:   "uuid-third",
+			EventULID: thirdULID,
+			Status:    "pending",
+			Warnings:  thirdWarningsJSON,
+		},
+	}
+
+	known := map[string]*Event{
+		canonULID:   makePublishedEvent("uuid-canon", canonULID, "Canonical Event"),
+		retiredULID: makePublishedEvent("uuid-retire", retiredULID, "Retired Event"),
+		thirdULID:   makePublishedEvent("uuid-third", thirdULID, "Third Party Event"),
+	}
+	repo := makeConsolidateRepo(known)
+
+	// Canonical has no pending review (it's published).
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		return nil, nil
+	}
+	repo.getReviewQueueEntryFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+		entry, ok := reviewEntries[id]
+		if !ok {
+			return nil, ErrNotFound
+		}
+		return entry, nil
+	}
+
+	var updatedReviewID int
+	var updatedWarnings []byte
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if params.Warnings == nil {
+			return nil, nil
+		}
+		updatedReviewID = id
+		updatedWarnings = *params.Warnings
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	repo.findCrossWeekCompanionTargetsFunc = func(_ context.Context, retireULIDs []string) ([]CrossWeekCompanionTarget, error) {
+		if len(retireULIDs) != 1 || retireULIDs[0] != retiredULID {
+			t.Errorf("FindCrossWeekCompanionTargets called with retireULIDs=%v, want [%s]", retireULIDs, retiredULID)
+		}
+		return []CrossWeekCompanionTarget{
+			{ReviewID: 2, EventULID: thirdULID},
+		}, nil
+	}
+
+	// The canonical has occurrences so the third-party update can compute dates.
+	canonEvent := known[canonULID]
+	canonEvent.Occurrences = []Occurrence{{StartTime: startTime}}
+
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: canonULID,
+		Retire:    []string{retiredULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+
+	if updatedReviewID != 2 {
+		t.Errorf("expected UpdateReviewQueueEntry to be called with reviewID=2 (third-party), got %d", updatedReviewID)
+	}
+
+	if len(updatedWarnings) == 0 {
+		t.Fatal("expected updated warnings to be non-empty")
+	}
+
+	var finalWarnings []ValidationWarning
+	if err := json.Unmarshal(updatedWarnings, &finalWarnings); err != nil {
+		t.Fatalf("failed to unmarshal updated warnings: %v", err)
+	}
+
+	foundCompanion := false
+	foundSuspicious := false
+	for _, w := range finalWarnings {
+		switch w.Code {
+		case "cross_week_series_companion":
+			foundCompanion = true
+			companionULID, _ := w.Details["companion_ulid"].(string)
+			if companionULID != canonULID {
+				t.Errorf("cross_week_series_companion companion_ulid = %q, want %q (canonical)", companionULID, canonULID)
+			}
+			companionName, _ := w.Details["companion_name"].(string)
+			if companionName != "Canonical Event" {
+				t.Errorf("cross_week_series_companion companion_name = %q, want %q", companionName, "Canonical Event")
+			}
+			companionDate, _ := w.Details["companion_date"].(string)
+			if companionDate != "2026-03-31" {
+				t.Errorf("cross_week_series_companion companion_date = %q, want %q", companionDate, "2026-03-31")
+			}
+			companionTime, _ := w.Details["companion_time"].(string)
+			if companionTime != "10:30:00" {
+				t.Errorf("cross_week_series_companion companion_time = %q, want %q", companionTime, "10:30:00")
+			}
+			venueName, _ := w.Details["venue_name"].(string)
+			if venueName != "The Tranzac" {
+				t.Errorf("cross_week_series_companion venue_name = %q, want %q", venueName, "The Tranzac")
+			}
+		case "suspicious_duration":
+			foundSuspicious = true
+		}
+	}
+	if !foundCompanion {
+		t.Error("updated warnings must contain cross_week_series_companion")
+	}
+	if !foundSuspicious {
+		t.Error("non-companion warning (suspicious_duration) must survive the update")
 	}
 }
 

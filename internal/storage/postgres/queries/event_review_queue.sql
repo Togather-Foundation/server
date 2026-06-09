@@ -428,15 +428,28 @@ WITH stripped AS (
 UPDATE event_review_queue
    SET warnings = stripped.warnings,
        duplicate_of_event_id = CASE
-         WHEN EXISTS (
-           SELECT 1 FROM events WHERE id = event_review_queue.duplicate_of_event_id
-           AND ulid = ANY(sqlc.arg('retire_ulids')::text[])
-         ) THEN NULL
-         ELSE duplicate_of_event_id
-       END,
-       updated_at = NOW()
-  FROM stripped
- WHERE id = sqlc.arg('review_id')::int
-   AND status = 'pending'
+       WHEN EXISTS (
+            SELECT 1 FROM events WHERE id = event_review_queue.duplicate_of_event_id
+            AND ulid = ANY(sqlc.arg('retire_ulids')::text[])
+          ) THEN NULL
+          ELSE duplicate_of_event_id
+        END,
+        updated_at = NOW()
+   FROM stripped
+  WHERE id = sqlc.arg('review_id')::int
+    AND status = 'pending'
 RETURNING (stripped.warnings = '[]'::jsonb) AS warnings_empty;
+
+-- name: FindCrossWeekCompanionTargets :many
+-- Find all pending review entries whose cross_week_series_companion warnings
+-- reference any of the given retire ULIDs. Returns the review ID and event ULID
+-- so callers can update the warning details to point to a surviving canonical.
+SELECT rq.id AS review_id, e.ulid AS event_ulid
+FROM event_review_queue rq
+JOIN events e ON e.id = rq.event_id
+CROSS JOIN jsonb_array_elements(rq.warnings) w
+WHERE rq.status = 'pending'
+  AND w->>'code' = 'cross_week_series_companion'
+  AND w->'details'->>'companion_ulid' = ANY(sqlc.arg('retire_ulids')::text[]);
+
 

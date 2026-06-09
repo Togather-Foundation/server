@@ -170,6 +170,7 @@ type mockTransactionalRepo struct {
 	updateReviewQueueEntryFunc                      func(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
 	dismissAllCompanionWarningsFunc                 func(ctx context.Context, reviewID int, eventULID string) (bool, error)
 	stripRetiredDupWarningsFunc                     func(ctx context.Context, reviewID int, retireULIDs []string) (bool, error)
+	findCrossWeekCompanionTargetsFunc               func(ctx context.Context, retireULIDs []string) ([]CrossWeekCompanionTarget, error)
 	findByDedupHashFunc                             func(ctx context.Context, dedupHash string) (*Event, error)
 	findNearDuplicatesFunc                          func(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
 	findSeriesCompanionFunc                         func(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
@@ -412,6 +413,12 @@ func (m *mockTransactionalRepo) StripRetiredDupWarnings(ctx context.Context, rev
 		return m.stripRetiredDupWarningsFunc(ctx, reviewID, retireULIDs)
 	}
 	return false, nil
+}
+func (m *mockTransactionalRepo) FindCrossWeekCompanionTargets(ctx context.Context, retireULIDs []string) ([]CrossWeekCompanionTarget, error) {
+	if m.findCrossWeekCompanionTargetsFunc != nil {
+		return m.findCrossWeekCompanionTargetsFunc(ctx, retireULIDs)
+	}
+	return nil, nil
 }
 func (m *mockTransactionalRepo) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
 	if m.checkOccurrenceOverlapFunc != nil {

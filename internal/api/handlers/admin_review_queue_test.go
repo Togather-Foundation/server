@@ -360,6 +360,14 @@ func (m *MockRepository) StripRetiredDupWarnings(ctx context.Context, reviewID i
 	return args.Bool(0), args.Error(1)
 }
 
+func (m *MockRepository) FindCrossWeekCompanionTargets(ctx context.Context, retireULIDs []string) ([]events.CrossWeekCompanionTarget, error) {
+	args := m.Called(ctx, retireULIDs)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]events.CrossWeekCompanionTarget), args.Error(1)
+}
+
 func (m *MockRepository) CheckOccurrenceOverlap(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error) {
 	args := m.Called(ctx, eventID, startTime, endTime)
 	return args.Bool(0), args.Error(1)

@@ -834,6 +834,10 @@ func (m *MockRepository) StripRetiredDupWarnings(_ context.Context, _ int, _ []s
 	return false, nil
 }
 
+func (m *MockRepository) FindCrossWeekCompanionTargets(_ context.Context, _ []string) ([]CrossWeekCompanionTarget, error) {
+	return nil, nil
+}
+
 func (m *MockRepository) CheckOccurrenceOverlap(_ context.Context, _ string, _ time.Time, _ *time.Time) (bool, error) {
 	return false, nil
 }
