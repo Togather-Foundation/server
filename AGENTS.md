@@ -87,6 +87,8 @@ scripts/remote.sh staging token-exchange
 scripts/remote.sh staging api-key create my-key --role admin
 scripts/remote.sh staging scrape failures
 scripts/remote.sh staging scrape sync
+scripts/remote.sh staging review queue
+scripts/remote.sh staging review stats
 
 # Via Makefile
 make remote-staging CMD="token-exchange"

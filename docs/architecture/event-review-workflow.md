@@ -561,6 +561,8 @@ When Layer 2 (pg_trgm) near-duplicate detection matches a new event against one 
 
 ## Admin Review API
 
+The `server review` CLI wraps these endpoints for efficient automated review (see `docs/integration/tg-review.md`).
+
 ### GET /api/v1/admin/review-queue
 List events pending review. Query params: `status` (default: pending), `limit` (1-100), `cursor`.
 
@@ -615,6 +617,8 @@ See related beads for implementation details.
 - `internal/storage/postgres/queries/event_review_queue.sql` - SQLc queries for review queue
 - `internal/api/handlers/admin_review_queue.go` - Admin review queue HTTP handlers
 - `internal/jobs/cleanup_review_queue.go` - Periodic cleanup River job
+- `cmd/server/cmd/review.go` - tg-review CLI entrypoint
+- `docs/integration/tg-review.md` - tg-review CLI reference
 
 ---
 
