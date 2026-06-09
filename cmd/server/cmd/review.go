@@ -545,8 +545,13 @@ func parseErrorDetail(err error) string {
 		return msg
 	}
 	var pd problemDetail
-	if jsonErr := json.Unmarshal([]byte(msg[idx:]), &pd); jsonErr == nil && pd.Detail != "" {
-		return fmt.Sprintf("%s (%d)", pd.Detail, pd.Status)
+	if jsonErr := json.Unmarshal([]byte(msg[idx:]), &pd); jsonErr == nil {
+		if pd.Detail != "" {
+			return fmt.Sprintf("%s (%d)", pd.Detail, pd.Status)
+		}
+		if pd.Title != "" {
+			return fmt.Sprintf("%s (%d)", pd.Title, pd.Status)
+		}
 	}
 	return msg
 }

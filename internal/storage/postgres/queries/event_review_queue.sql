@@ -444,7 +444,7 @@ RETURNING (stripped.warnings = '[]'::jsonb) AS warnings_empty;
 -- Find all pending review entries whose cross_week_series_companion warnings
 -- reference any of the given retire ULIDs. Returns the review ID and event ULID
 -- so callers can update the warning details to point to a surviving canonical.
-SELECT rq.id AS review_id, e.ulid AS event_ulid
+SELECT DISTINCT rq.id AS review_id, e.ulid AS event_ulid
 FROM event_review_queue rq
 JOIN events e ON e.id = rq.event_id
 CROSS JOIN jsonb_array_elements(rq.warnings) w

@@ -4,31 +4,31 @@
 CREATE TABLE event_review_queue (
   id SERIAL PRIMARY KEY,
   event_id UUID UNIQUE NOT NULL,
-  
+
   -- Original submission for admin comparison
   original_payload JSONB NOT NULL,
   normalized_payload JSONB NOT NULL,
   warnings JSONB NOT NULL,
-  
+
   -- Deduplication keys (match events table)
   source_id TEXT,
   source_external_id TEXT,
   dedup_hash TEXT,
-  
+
   -- Event timing (for expiry logic)
   event_start_time TIMESTAMPTZ NOT NULL,
   event_end_time TIMESTAMPTZ,
-  
+
   -- Review workflow
   status TEXT NOT NULL DEFAULT 'pending',  -- pending, approved, rejected, superseded
   reviewed_by TEXT,
   reviewed_at TIMESTAMPTZ,
   review_notes TEXT,
   rejection_reason TEXT,
-  
+
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  
+
   -- Foreign key to events table
   CONSTRAINT fk_event FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
 );

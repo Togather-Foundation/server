@@ -1897,7 +1897,15 @@ func (s *AdminService) consolidateUpdateThirdPartyCompanionWarnings(
 		return nil
 	}
 
-	startTime := canonicalEvent.Occurrences[0].StartTime
+	var startTime time.Time
+	for _, occ := range canonicalEvent.Occurrences {
+		if !occ.StartTime.IsZero() && (startTime.IsZero() || occ.StartTime.Before(startTime)) {
+			startTime = occ.StartTime
+		}
+	}
+	if startTime.IsZero() {
+		return fmt.Errorf("canonical event %s has no valid start times in occurrences", canonicalEvent.ULID)
+	}
 	canonicalDate := startTime.UTC().Format("2006-01-02")
 	canonicalTime := startTime.UTC().Format("15:04:05")
 	canonicalVenueName := ""
@@ -1912,6 +1920,13 @@ func (s *AdminService) consolidateUpdateThirdPartyCompanionWarnings(
 
 		entry, err := txRepo.GetReviewQueueEntry(ctx, target.ReviewID)
 		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				log.Warn().
+					Int("review_id", target.ReviewID).
+					Str("event_ulid", target.EventULID).
+					Msg("cross-week companion target review entry not found (concurrently dismissed?), skipping")
+				continue
+			}
 			return fmt.Errorf("get review entry %d: %w", target.ReviewID, err)
 		}
 
