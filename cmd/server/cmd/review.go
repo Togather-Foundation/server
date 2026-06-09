@@ -112,6 +112,7 @@ Examples:
   server review queue                      # list pending items
   server review queue --status approved    # list approved items
   server review check 42                   # deep inspect review entry 42
+  server review edit 42 --description "..." # edit event fields before approving
   server review approve 42                 # approve review entry 42
   server review reject 42 --reason "spam"  # reject review entry 42
   server review fix 42 --notes "corrected" # fix and approve review entry 42
@@ -186,10 +187,14 @@ Examples:
   # 1. Inspect to confirm it looks good
   server review check 42
 
-  # 2. Approve a single item
+  # 2. Optionally edit fields before approving (description, name, image, URL, domain)
+  server review edit 42 --description "Fixed up description" --name "Better Event Name"
+  server review edit 42 --description "..." --dry-run    # preview first
+
+  # 3. Approve a single item
   server review approve 42 --notes "Correct weekly event, minor description missing"
 
-  # 3. Or batch-approve all items matching a name
+  # 4. Or batch-approve all items matching a name
   server review batch --name "Tranzac Open Stage" --action approve --dry-run
 
 ── Fixing date corrections ──
@@ -260,6 +265,7 @@ func init() {
 
 	reviewCmd.AddCommand(reviewQueueCmd)
 	reviewCmd.AddCommand(reviewCheckCmd)
+	reviewCmd.AddCommand(reviewEditCmd)
 	reviewCmd.AddCommand(reviewApproveCmd)
 	reviewCmd.AddCommand(reviewRejectCmd)
 	reviewCmd.AddCommand(reviewFixCmd)
