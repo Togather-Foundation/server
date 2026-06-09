@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape remote-staging remote-production
+.PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles webfiles-bootstrap release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape remote-staging remote-production
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -133,8 +133,20 @@ LDFLAGS := -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=$(VE
 build:
 	@echo "Building server..."
 	@mkdir -p bin
+	@$(MAKE) webfiles-bootstrap
 	@$(RUN) go build -ldflags "$(LDFLAGS)" -o bin/togather-server ./cmd/server
 	@ln -sf bin/togather-server server
+
+# Bootstrap web files from templates for fresh clones (no server required)
+webfiles-bootstrap:
+	@if [ ! -f web/robots.txt ]; then \
+		echo "Bootstrapping web/robots.txt from template..."; \
+		sed 's|https://togather\.foundation|https://localhost:8080|g' web/robots.txt.template > web/robots.txt; \
+	fi
+	@if [ ! -f web/sitemap.xml ]; then \
+		echo "Bootstrapping web/sitemap.xml from template..."; \
+		sed 's|https://togather\.foundation|https://localhost:8080|g' web/sitemap.xml.template > web/sitemap.xml; \
+	fi
 
 # Generate web files for embedding (robots.txt, sitemap.xml)
 webfiles:
