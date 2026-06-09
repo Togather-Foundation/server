@@ -473,6 +473,7 @@ func testReviewQueueEntry(id int, eventULID string) *events.ReviewQueueEntry {
 	originalPayload := []byte(`{"name":"Test Event","startDate":"2024-01-01T10:00:00Z"}`)
 	normalizedPayload := []byte(`{"name":"Test Event","startDate":"2024-01-01T10:00:00Z"}`)
 	warnings := []byte(`[]`)
+	sourceID := "test-source-id"
 
 	return &events.ReviewQueueEntry{
 		ID:                id,
@@ -481,6 +482,7 @@ func testReviewQueueEntry(id int, eventULID string) *events.ReviewQueueEntry {
 		OriginalPayload:   originalPayload,
 		NormalizedPayload: normalizedPayload,
 		Warnings:          warnings,
+		SourceID:          &sourceID,
 		Status:            "pending",
 		EventStartTime:    now,
 		CreatedAt:         now,

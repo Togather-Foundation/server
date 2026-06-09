@@ -49,6 +49,7 @@ func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.Adm
 type reviewQueueBase struct {
 	ID                 int                        `json:"id"`
 	EventID            string                     `json:"eventId"`
+	SourceID           *string                    `json:"sourceId,omitempty"`
 	Status             string                     `json:"status"`
 	Warnings           []events.ValidationWarning `json:"warnings"`
 	CreatedAt          time.Time                  `json:"createdAt"`
@@ -623,6 +624,9 @@ func populateReviewQueueBase(review events.ReviewQueueEntry, warnings []events.V
 	}
 	if review.DuplicateOfEventULID != nil {
 		base.DuplicateOfEventID = review.DuplicateOfEventULID
+	}
+	if review.SourceID != nil {
+		base.SourceID = review.SourceID
 	}
 	return base
 }
