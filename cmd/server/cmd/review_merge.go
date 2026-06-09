@@ -119,7 +119,7 @@ func consolidateEvents(client *http.Client, serverURL, jwt, canonicalID string, 
 
 	var patches []string
 	if mergeName != "" {
-		body["event"] = map[string]any{"name": mergeName}
+		ensureEvent()["name"] = mergeName
 		patches = append(patches, "name")
 	}
 	if mergeDescription != "" {
