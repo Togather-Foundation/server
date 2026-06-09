@@ -110,6 +110,7 @@ func runReviewBatch(cmd *cobra.Command, args []string) error {
 	}
 
 	batchMaxSize := getEnvInt("REVIEW_BATCH_MAX_SIZE", 100)
+	batchDelayMs := getEnvInt("REVIEW_BATCH_DELAY_MS", 50)
 
 	var succeeded, failed int
 	var errors []string
@@ -121,9 +122,20 @@ func runReviewBatch(cmd *cobra.Command, args []string) error {
 			err := processBatchItem(client, serverURL, jwt, item, batchAction, batchReason, batchPrimaryID, batchNotes, batchStartDate, batchEndDate)
 			if err != nil {
 				failed++
-				errors = append(errors, fmt.Sprintf("  #%d %s: %s", item.ID, item.EventName, err.Error()))
-			} else {
-				succeeded++
+				errStr := err.Error()
+				errors = append(errors, fmt.Sprintf("  #%d %s: %s", item.ID, item.EventName, errStr))
+				if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") {
+					_, _ = fmt.Fprintf(out, "✓ %d %s, ✗ %d failed (stopped: auth error)\n", succeeded, actionLabel(batchAction), failed)
+					for _, e := range errors {
+						_, _ = fmt.Fprintln(out, e)
+					}
+					return fmt.Errorf("authentication error: %s", errStr)
+				}
+				continue
+			}
+			succeeded++
+			if batchDelayMs > 0 {
+				time.Sleep(time.Duration(batchDelayMs) * time.Millisecond)
 			}
 		}
 	}

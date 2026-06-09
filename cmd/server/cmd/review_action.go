@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -156,8 +157,7 @@ func reviewAction(cmd *cobra.Command, id int, action string, bodyMap map[string]
 }
 
 func parseIntArg(s string) (int, error) {
-	var n int
-	_, err := fmt.Sscanf(s, "%d", &n)
+	n, err := strconv.Atoi(s)
 	if err != nil || n <= 0 {
 		return 0, fmt.Errorf("invalid integer: %s", s)
 	}

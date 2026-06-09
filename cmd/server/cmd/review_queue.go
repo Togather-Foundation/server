@@ -137,21 +137,21 @@ func printGrouped(out io.Writer, items []ReviewQueueItem, groupBy string) error 
 		for _, g := range groups {
 			oldest, newest := findAgeRange(g.Items)
 			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n",
-				g.Name, len(g.Items), strings.Join(g.Warnings, ", "), formatTimeRange(oldest, newest))
+				g.Name, len(g.Items), strings.Join(g.Warnings, ", "), formatTimeRange(newest, oldest))
 		}
 	case "source":
 		_, _ = fmt.Fprintln(w, "SOURCE\tCOUNT\tWARNINGS\tAGE RANGE")
 		for _, g := range groups {
 			oldest, newest := findAgeRange(g.Items)
 			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n",
-				g.Name, len(g.Items), strings.Join(g.Warnings, ", "), formatTimeRange(oldest, newest))
+				g.Name, len(g.Items), strings.Join(g.Warnings, ", "), formatTimeRange(newest, oldest))
 		}
 	case "warning":
 		_, _ = fmt.Fprintln(w, "WARNING\tCOUNT\tAGE RANGE")
 		for _, g := range groups {
 			oldest, newest := findAgeRange(g.Items)
 			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\n",
-				g.Name, len(g.Items), formatTimeRange(oldest, newest))
+				g.Name, len(g.Items), formatTimeRange(newest, oldest))
 		}
 	}
 

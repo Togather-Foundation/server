@@ -149,6 +149,7 @@ func doPOST(client *http.Client, url string, body io.Reader, authKey string) ([]
 		req.Header.Set("Authorization", "Bearer "+authKey)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -252,14 +253,15 @@ func formatAge(t time.Time) string {
 	if d.Minutes() >= 1 {
 		return fmt.Sprintf("%dm", int(d.Minutes()))
 	}
-	return "0m"
+	return "<1m"
 }
 
-func formatTimeRange(oldest, newest *time.Time) string {
+func formatTimeRange(newest, oldest *time.Time) string {
 	if oldest == nil || newest == nil {
 		return "-"
 	}
-	return fmt.Sprintf("%s-%s", formatAge(*oldest), formatAge(*newest))
+	// newest-age–oldest-age (shorter age = more recent)
+	return fmt.Sprintf("%s-%s", formatAge(*newest), formatAge(*oldest))
 }
 
 func fetchReviewQueue(client *http.Client, serverURL, jwt string, status string, limit int, cursor string) (*ReviewQueueListResponse, error) {

@@ -142,6 +142,7 @@ func doGET(client *http.Client, url, authKey string) ([]byte, error) {
 	if authKey != "" {
 		req.Header.Set("Authorization", "Bearer "+authKey)
 	}
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {

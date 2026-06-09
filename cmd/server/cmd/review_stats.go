@@ -146,7 +146,7 @@ func printNameGroups(out interface{ Write([]byte) (int, error) }, items []Review
 	_, _ = fmt.Fprintf(out, "NAME GROUPS (≥2 instances)   %d groups / %d items\n", len(groups), totalGrouped)
 	for _, g := range groups {
 		oldest, newest := findAgeRange(g.items)
-		ageRange := formatTimeRange(oldest, newest)
+		ageRange := formatTimeRange(newest, oldest)
 		_, _ = fmt.Fprintf(out, "  %-40s %d  (%s)\n", truncate(g.name, 40), len(g.items), ageRange)
 	}
 }
