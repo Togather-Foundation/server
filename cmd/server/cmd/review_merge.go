@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -51,6 +52,7 @@ Examples:
 	mergeImage               string
 	mergeURL                 string
 	mergeDomain              string
+	mergeDryRun              bool
 )
 
 func init() {
@@ -62,6 +64,7 @@ func init() {
 		cmd.Flags().StringVar(&mergeImage, "image", "", "Patch canonical event image URL")
 		cmd.Flags().StringVar(&mergeURL, "url", "", "Patch canonical event public URL")
 		cmd.Flags().StringVar(&mergeDomain, "domain", "", "Patch canonical event domain (arts, music, culture, sports, community, education, general)")
+		cmd.Flags().BoolVar(&mergeDryRun, "dry-run", false, "Preview the merge without executing")
 	}
 }
 
@@ -107,24 +110,54 @@ func consolidateEvents(client *http.Client, serverURL, jwt, canonicalID string, 
 		body["transfer_occurrences"] = true
 	}
 
-	if mergeName != "" || mergeDescription != "" || mergeImage != "" || mergeURL != "" || mergeDomain != "" {
-		eventPatch := map[string]any{}
-		if mergeName != "" {
-			eventPatch["name"] = mergeName
+	var patches []string
+	if mergeName != "" {
+		body["event"] = map[string]any{"name": mergeName}
+		patches = append(patches, "name")
+	}
+	if mergeDescription != "" {
+		if body["event"] == nil {
+			body["event"] = map[string]any{}
 		}
-		if mergeDescription != "" {
-			eventPatch["description"] = mergeDescription
+		body["event"].(map[string]any)["description"] = mergeDescription
+		patches = append(patches, "description")
+	}
+	if mergeImage != "" {
+		if body["event"] == nil {
+			body["event"] = map[string]any{}
 		}
-		if mergeImage != "" {
-			eventPatch["image"] = mergeImage
+		body["event"].(map[string]any)["image"] = mergeImage
+		patches = append(patches, "image")
+	}
+	if mergeURL != "" {
+		if body["event"] == nil {
+			body["event"] = map[string]any{}
 		}
-		if mergeURL != "" {
-			eventPatch["url"] = mergeURL
+		body["event"].(map[string]any)["url"] = mergeURL
+		patches = append(patches, "url")
+	}
+	if mergeDomain != "" {
+		if body["event"] == nil {
+			body["event"] = map[string]any{}
 		}
-		if mergeDomain != "" {
-			eventPatch["eventDomain"] = mergeDomain
+		body["event"].(map[string]any)["eventDomain"] = mergeDomain
+		patches = append(patches, "domain")
+	}
+
+	if mergeDryRun {
+		_, _ = fmt.Fprintf(out, "Would consolidate %d event(s) into %s\n", len(retireIDs), canonicalID)
+		if mergeTransferOccurrences {
+			_, _ = fmt.Fprintln(out, "  + transfer occurrences from retired events")
 		}
-		body["event"] = eventPatch
+		if len(patches) > 0 {
+			_, _ = fmt.Fprintf(out, "  + patch fields: %s\n", strings.Join(patches, ", "))
+		}
+		for _, r := range retireIDs {
+			_, _ = fmt.Fprintf(out, "  retire %s\n", r)
+		}
+		_, _ = fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out, "Run again without --dry-run to execute.")
+		return nil
 	}
 
 	bodyBytes, err := json.Marshal(body)
