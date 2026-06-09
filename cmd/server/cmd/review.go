@@ -208,13 +208,7 @@ func getReviewJWT() (string, error) {
 		return reviewTokenFlag, nil
 	}
 
-	serverURL := reviewServerURL
-	if serverURL == "" {
-		serverURL = os.Getenv("TOGATHER_BASE_URL")
-	}
-	if serverURL == "" {
-		serverURL = "http://localhost:8080"
-	}
+	serverURL := resolveReviewServerURL()
 
 	key := reviewAPIKey
 	if key == "" {
