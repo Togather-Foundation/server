@@ -902,7 +902,7 @@ at debug level and the URL is left empty.
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
 | `domain` | `""` | Default `event_domain` for events from this source. Valid values: `arts`, `music`, `culture`, `sports`, `community`, `education`, `general`. When empty, falls back to schema.org `@type`-to-domain mapping (defaulting to `arts`). |
 | `timezone` | `""` | IANA timezone for date parsing (e.g. `"America/Toronto"`). Overrides `DEFAULT_TIMEZONE` env var. Falls back to `America/Toronto` if neither is set. |
-| `tls_fingerprint` | `""` | TLS fingerprint spoofing mode. `"chrome_auto"` mimics Chrome's TLS handshake using uTLS to bypass WAF detection (Akamai, Cloudflare). When set, browser-mimicking headers (User-Agent, Accept, Sec-Fetch-*, Cache-Control) are automatically applied. Not used by Tier 2 (headless browser). |
+| `tls_fingerprint` | `""` | TLS fingerprint spoofing mode. `"chrome_auto"` mimics Chrome's TLS handshake using uTLS to bypass WAF detection (Akamai, Cloudflare). ALPN is restricted to `http/1.1` only — h2 is intentionally stripped to avoid HTTP/2 protocol mismatches on Cloudflare-protected sites. When set, browser-mimicking headers (User-Agent, Accept, Sec-Fetch-*, Cache-Control) are automatically applied. Not used by Tier 2 (headless browser). |
 | `selectors` | — | Required when `tier: 1` or `tier: 2` |
 | `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
 | `graphql` | — | Required for `tier: 3` GraphQL variant (mutually exclusive with `rest`) |
