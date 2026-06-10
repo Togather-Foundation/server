@@ -67,7 +67,13 @@ func (e *GraphQLExtractor) Extract(
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", ScraperUserAgent)
+	if source.TLSFingerprint != "" {
+		for k, v := range ChromeHeaders() {
+			req.Header.Set(k, v)
+		}
+	} else {
+		req.Header.Set("User-Agent", ScraperUserAgent)
+	}
 	if cfg.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.Token)
 	}

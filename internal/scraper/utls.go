@@ -10,10 +10,9 @@ import (
 
 type chromeFingerprintTransport struct {
 	*http.Transport
-	cookieJar http.CookieJar
 }
 
-func NewChromeFingerprintTransport(cookieJar http.CookieJar) http.RoundTripper {
+func NewChromeFingerprintTransport() http.RoundTripper {
 	return &chromeFingerprintTransport{
 		Transport: &http.Transport{
 			DialTLS: func(network, addr string) (net.Conn, error) {
@@ -39,19 +38,15 @@ func NewChromeFingerprintTransport(cookieJar http.CookieJar) http.RoundTripper {
 			MaxIdleConns:      10,
 			IdleConnTimeout:   90 * time.Second,
 		},
-		cookieJar: cookieJar,
 	}
 }
 
-func maybeSetUTLSTransport(source SourceConfig, opts *ScrapeOptions) {
-	if source.TLSFingerprint != "" && opts.Transport == nil {
-		opts.Transport = NewChromeFingerprintTransport(opts.CookieJar)
-	}
-}
-
+// ChromeHeaders returns a set of HTTP headers that mimic a modern Chrome
+// browser. The User-Agent version is intentionally generic (999) — the actual
+// browser version is tracked by the TLS fingerprint (HelloChrome_Auto).
 func ChromeHeaders() map[string]string {
 	return map[string]string{
-		"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+		"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/999.0.0.0 Safari/537.36",
 		"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
 		"Accept-Language": "en-US,en;q=0.9",
 		"Sec-Fetch-Dest":  "document",

@@ -52,10 +52,10 @@ type SourceConfig struct {
 	// Domain is the default event_domain for events scraped from this source. Valid values: arts, music, culture, sports, community, education, general. Empty means no override; events fall back to schema.org @type-to-domain mapping (defaulting to 'arts').
 	Domain string `yaml:"domain,omitempty"   json:"domain,omitempty"`
 	// TLSFingerprint enables TLS fingerprint spoofing for this source.
-	// Valid values: "chrome_auto" (default uTLS Chrome fingerprint, tracked automatically),
-	// "firefox_auto" (Firefox), or "" (disabled, default). When set, all HTTP requests
-	// for this source will mimic the specified browser's TLS handshake to bypass
-	// WAF detection (e.g. Akamai, Cloudflare). Not used by Tier 2 (Rod headless browser).
+	// Valid values: "" (disabled, default), "chrome_auto" (uTLS Chrome fingerprint, tracked automatically).
+	// When set, all HTTP requests for this source will mimic the specified browser's
+	// TLS handshake to bypass WAF detection (e.g. Akamai, Cloudflare).
+	// Not used by Tier 2 (Rod headless browser).
 	TLSFingerprint  string         `yaml:"tls_fingerprint,omitempty" json:"tls_fingerprint,omitempty"`
 	Enabled         bool           `yaml:"enabled"           json:"enabled"`
 	EventURLPattern string         `yaml:"event_url_pattern" json:"event_url_pattern"`
@@ -704,6 +704,10 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		default:
 			errs = append(errs, fmt.Sprintf("domain: invalid event_domain %q (valid: arts, music, culture, sports, community, education, general)", cfg.Domain))
 		}
+	}
+
+	if cfg.TLSFingerprint != "" && cfg.TLSFingerprint != "chrome_auto" {
+		errs = append(errs, fmt.Sprintf("tls_fingerprint: invalid value %q (valid: \"\" (disabled), \"chrome_auto\")", cfg.TLSFingerprint))
 	}
 
 	if cfg.MaxPages < 0 {

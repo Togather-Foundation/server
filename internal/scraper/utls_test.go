@@ -5,7 +5,7 @@ import "testing"
 func TestNewChromeFingerprintTransport(t *testing.T) {
 	t.Parallel()
 
-	tr := NewChromeFingerprintTransport(nil)
+	tr := NewChromeFingerprintTransport()
 
 	if tr == nil {
 		t.Fatal("NewChromeFingerprintTransport returned nil")
@@ -30,41 +30,6 @@ func TestNewChromeFingerprintTransport(t *testing.T) {
 
 	if ct.IdleConnTimeout == 0 {
 		t.Error("IdleConnTimeout should be non-zero")
-	}
-}
-
-func TestNewChromeFingerprintTransport_WithCookieJar(t *testing.T) {
-	t.Parallel()
-
-	jar := &fakeJar{}
-	tr := NewChromeFingerprintTransport(jar)
-
-	if tr == nil {
-		t.Fatal("NewChromeFingerprintTransport returned nil")
-	}
-
-	ct, ok := tr.(*chromeFingerprintTransport)
-	if !ok {
-		t.Fatalf("expected *chromeFingerprintTransport, got %T", tr)
-	}
-
-	if ct.cookieJar != jar {
-		t.Error("cookie jar not wired through")
-	}
-}
-
-func TestNewChromeFingerprintTransport_NilJarAllowed(t *testing.T) {
-	t.Parallel()
-
-	tr := NewChromeFingerprintTransport(nil)
-
-	if tr == nil {
-		t.Fatal("NewChromeFingerprintTransport returned nil for nil jar")
-	}
-
-	ct := tr.(*chromeFingerprintTransport)
-	if ct.cookieJar != nil {
-		t.Error("expected nil cookie jar")
 	}
 }
 

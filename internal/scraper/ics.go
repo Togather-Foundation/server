@@ -188,7 +188,7 @@ func (s *Scraper) scrapeICS(ctx context.Context, source SourceConfig, opts Scrap
 		if source.RequestTimeoutSeconds > 0 {
 			timeout = time.Duration(source.RequestTimeoutSeconds) * time.Second
 		}
-		maybeSetUTLSTransport(source, &opts)
+		opts.TLSFingerprint = source.TLSFingerprint
 		httpClient := opts.HTTPClient(timeout)
 		maxBody := s.icsConfig.MaxBodyBytes
 		if maxBody <= 0 {
