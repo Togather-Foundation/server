@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Scraper uTLS HTTP/2 fix:** Cloudflare-protected sites (like AGO) no longer fail with "malformed HTTP response" errors when TLS fingerprint stealth mode is enabled. The fix strips HTTP/2 from uTLS ALPN negotiation while preserving the Chrome TLS fingerprint for WAF bypass.
+
 ### Changed
 
 #### Email Service API - Context Parameter Addition (Breaking Change)

@@ -42,8 +42,7 @@ func TestNewChromeFingerprintTransport(t *testing.T) {
 func TestChromeFingerprintNoHTTP2ALPN(t *testing.T) {
 	t.Parallel()
 
-	serverConn, clientConn := net.Pipe()
-	defer func() { _ = serverConn.Close() }()
+	_, clientConn := net.Pipe()
 	defer func() { _ = clientConn.Close() }()
 
 	uconn, err := setupChromeUConn(clientConn, "example.com")
