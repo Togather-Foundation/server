@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -130,20 +131,25 @@ func TestAdminHTMLRoutesRequireCookie(t *testing.T) {
 		})
 
 		t.Run(path+" without cookie", func(t *testing.T) {
+			client := &http.Client{
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+			}
 			req, err := http.NewRequest(http.MethodGet, env.Server.URL+path, nil)
 			require.NoError(t, err)
 			req.Header.Set("Accept", "text/html")
 
-			resp, err := env.Server.Client().Do(req)
+			resp, err := client.Do(req)
 			require.NoError(t, err)
 			defer func() { _ = resp.Body.Close() }()
 
-			// Should redirect to login or return unauthorized
-			assert.True(t,
-				resp.StatusCode == http.StatusUnauthorized ||
-					resp.StatusCode == http.StatusFound ||
-					resp.StatusCode == http.StatusSeeOther,
-				"should be unauthorized or redirect without cookie, got %d", resp.StatusCode)
+			// Should redirect to login
+			assert.Equal(t, http.StatusFound, resp.StatusCode,
+				"should redirect without cookie, got %d", resp.StatusCode)
+			loc := resp.Header.Get("Location")
+			assert.True(t, strings.HasPrefix(loc, "/admin/login"),
+				"should redirect to /admin/login, got %s", loc)
 		})
 	}
 }
@@ -168,22 +174,27 @@ func TestAdminHTMLRoutesRejectBearerToken(t *testing.T) {
 
 	for _, path := range htmlRoutes {
 		t.Run(path+" with Bearer token (should reject)", func(t *testing.T) {
+			client := &http.Client{
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+			}
 			req, err := http.NewRequest(http.MethodGet, env.Server.URL+path, nil)
 			require.NoError(t, err)
 			req.Header.Set("Authorization", "Bearer "+token)
 			req.Header.Set("Accept", "text/html")
 
-			resp, err := env.Server.Client().Do(req)
+			resp, err := client.Do(req)
 			require.NoError(t, err)
 			defer func() { _ = resp.Body.Close() }()
 
 			// HTML routes should NOT accept Bearer tokens (require cookies instead)
-			// Should be unauthorized or redirect to login
-			assert.True(t,
-				resp.StatusCode == http.StatusUnauthorized ||
-					resp.StatusCode == http.StatusFound ||
-					resp.StatusCode == http.StatusSeeOther,
-				"HTML routes should not accept Bearer token, got %d", resp.StatusCode)
+			// Should redirect to login
+			assert.Equal(t, http.StatusFound, resp.StatusCode,
+				"HTML routes should redirect Bearer token, got %d", resp.StatusCode)
+			loc := resp.Header.Get("Location")
+			assert.True(t, strings.HasPrefix(loc, "/admin/login"),
+				"should redirect to /admin/login, got %s", loc)
 		})
 	}
 }

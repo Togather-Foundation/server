@@ -831,7 +831,8 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Admin HTML pages (T080) - placeholder routes for future implementation
 	// Apply CSRF protection to cookie-based admin routes to prevent cross-site request forgery
-	adminCookieAuth := middleware.AdminAuthCookie(jwtManager)
+	adminCookieAuth := middleware.AdminAuthCookie(jwtManager, "/admin/login")
+	adminCookieAuthNoRedirect := middleware.AdminAuthCookie(jwtManager, "")
 
 	// CSRF middleware - only initialize if CSRF key is configured
 	var csrfMiddleware func(http.Handler) http.Handler
@@ -866,7 +867,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// SSE stream of River job events for the scraper admin page (srv-lahwo).
 	// Uses cookie auth (no CSRF needed — GET, no state mutation, same-origin EventSource).
 	adminEventsSSEHandler := handlers.NewAdminEventsSSEHandler(broker, cfg.Environment, logger.With().Str("component", "sse").Logger())
-	adminScraperEvents := adminCookieAuth(http.HandlerFunc(adminEventsSSEHandler.ServeHTTP))
+	adminScraperEvents := adminCookieAuthNoRedirect(http.HandlerFunc(adminEventsSSEHandler.ServeHTTP))
 	mux.Handle("GET /api/v1/admin/scraper/events", adminScraperEvents)
 
 	// Redirect /admin and /admin/ to dashboard

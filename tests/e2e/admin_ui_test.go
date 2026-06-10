@@ -54,21 +54,23 @@ func TestAdminDashboardRedirectsWhenUnauthenticated(t *testing.T) {
 	server := setupTestServer(t)
 	defer server.Close()
 
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/admin/dashboard", nil)
 	require.NoError(t, err)
 	req.Header.Set("Accept", "text/html")
 
-	resp, err := server.Client().Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
-	// Should redirect to login or return 401
-	assert.True(t,
-		resp.StatusCode == http.StatusUnauthorized ||
-			resp.StatusCode == http.StatusFound ||
-			resp.StatusCode == http.StatusSeeOther ||
-			resp.StatusCode == http.StatusTemporaryRedirect,
-		"unauthenticated request should redirect or return 401, got %d", resp.StatusCode)
+	assert.Equal(t, http.StatusFound, resp.StatusCode,
+		"unauthenticated request should redirect, got %d", resp.StatusCode)
+	assert.True(t, strings.HasPrefix(resp.Header.Get("Location"), "/admin/login"),
+		"should redirect to /admin/login, got %s", resp.Header.Get("Location"))
 }
 
 // TestAdminEventsPageAccessible tests that /admin/events is accessible with auth
@@ -76,22 +78,23 @@ func TestAdminEventsPageAccessible(t *testing.T) {
 	server := setupTestServer(t)
 	defer server.Close()
 
-	// This test requires admin authentication
-	// For now, just verify the route exists and requires auth
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/admin/events", nil)
 	require.NoError(t, err)
 	req.Header.Set("Accept", "text/html")
 
-	resp, err := server.Client().Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
-	// Should require authentication (401 or redirect)
-	assert.True(t,
-		resp.StatusCode == http.StatusUnauthorized ||
-			resp.StatusCode == http.StatusFound ||
-			resp.StatusCode == http.StatusSeeOther,
-		"should require authentication")
+	assert.Equal(t, http.StatusFound, resp.StatusCode,
+		"should require authentication, got %d", resp.StatusCode)
+	assert.True(t, strings.HasPrefix(resp.Header.Get("Location"), "/admin/login"),
+		"should redirect to /admin/login")
 }
 
 // TestAdminAPIKeysPageAccessible tests that /admin/api-keys is accessible with auth
@@ -99,20 +102,23 @@ func TestAdminAPIKeysPageAccessible(t *testing.T) {
 	server := setupTestServer(t)
 	defer server.Close()
 
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	req, err := http.NewRequest(http.MethodGet, server.URL+"/admin/api-keys", nil)
 	require.NoError(t, err)
 	req.Header.Set("Accept", "text/html")
 
-	resp, err := server.Client().Do(req)
+	resp, err := client.Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
-	// Should require authentication
-	assert.True(t,
-		resp.StatusCode == http.StatusUnauthorized ||
-			resp.StatusCode == http.StatusFound ||
-			resp.StatusCode == http.StatusSeeOther,
-		"should require authentication")
+	assert.Equal(t, http.StatusFound, resp.StatusCode,
+		"should require authentication, got %d", resp.StatusCode)
+	assert.True(t, strings.HasPrefix(resp.Header.Get("Location"), "/admin/login"),
+		"should redirect to /admin/login")
 }
 
 // TestAdminStaticAssetsAccessible tests that admin static assets are served
@@ -182,16 +188,23 @@ func TestAdminRoutesRejectPublicAccess(t *testing.T) {
 
 	for _, route := range adminRoutes {
 		t.Run(route.method+" "+route.path, func(t *testing.T) {
+			// Use a client that does NOT follow redirects so we can detect the 302
+			client := &http.Client{
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					return http.ErrUseLastResponse
+				},
+			}
 			req, err := http.NewRequest(route.method, server.URL+route.path, nil)
 			require.NoError(t, err)
 			req.Header.Set("Accept", "text/html")
 
-			resp, err := server.Client().Do(req)
+			resp, err := client.Do(req)
 			require.NoError(t, err)
 			defer func() { _ = resp.Body.Close() }()
 
-			// Should require authentication (not 200)
-			assert.NotEqual(t, http.StatusOK, resp.StatusCode, "admin route should require authentication")
+			// Unauthenticated admin routes should redirect to login page
+			assert.Equal(t, http.StatusFound, resp.StatusCode, "admin route should redirect unauthenticated users")
+			assert.True(t, strings.HasPrefix(resp.Header.Get("Location"), "/admin/login"), "should redirect to login page")
 		})
 	}
 }

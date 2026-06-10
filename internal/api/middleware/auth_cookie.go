@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
@@ -16,21 +17,34 @@ type contextKeyAuth string
 
 const adminClaimsKey contextKeyAuth = "adminClaims"
 
-func AdminAuthCookie(manager *auth.JWTManager) func(http.Handler) http.Handler {
+func AdminAuthCookie(manager *auth.JWTManager, redirectURL string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if manager == nil {
+				if redirectURL != "" {
+					http.Redirect(w, r, redirectURL, http.StatusFound)
+					return
+				}
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
 			if strings.HasPrefix(strings.TrimSpace(r.Header.Get("Authorization")), "Bearer ") {
+				if redirectURL != "" {
+					http.Redirect(w, r, redirectURL, http.StatusFound)
+					return
+				}
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
 			cookie, err := r.Cookie(AdminAuthCookieName)
 			if err != nil || strings.TrimSpace(cookie.Value) == "" {
+				if redirectURL != "" {
+					rd := redirectURL + "?redirect=" + url.QueryEscape(r.URL.RequestURI())
+					http.Redirect(w, r, rd, http.StatusFound)
+					return
+				}
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
@@ -45,6 +59,10 @@ func AdminAuthCookie(manager *auth.JWTManager) func(http.Handler) http.Handler {
 			// Validate admin token
 			claims, err := manager.Validate(cookie.Value)
 			if err != nil {
+				if redirectURL != "" {
+					http.Redirect(w, r, redirectURL, http.StatusFound)
+					return
+				}
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}

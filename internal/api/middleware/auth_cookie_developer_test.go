@@ -28,7 +28,7 @@ func TestAdminAuthCookie_RejectsDeveloperToken(t *testing.T) {
 		t.Fatalf("Failed to derive admin key: %v", err)
 	}
 	manager := auth.NewJWTManagerFromKey(adminKey, 24, issuer)
-	middleware := AdminAuthCookie(manager)
+	middleware := AdminAuthCookie(manager, "")
 
 	handler := middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("Handler should not be called for developer token")

@@ -34,9 +34,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (data.token) {
                     localStorage.setItem('admin_token', data.token);
                 }
-                
-                // Login successful - redirect to dashboard
-                window.location.href = '/admin/dashboard';
+
+                // Login successful - redirect to original page or dashboard
+                var params = new URLSearchParams(window.location.search);
+                var redirect = params.get('redirect');
+                if (redirect && redirect.startsWith('/')) {
+                    window.location.href = redirect;
+                } else {
+                    window.location.href = '/admin/dashboard';
+                }
             } else {
                 // Show error message
                 if (errorDiv) {

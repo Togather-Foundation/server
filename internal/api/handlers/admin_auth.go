@@ -184,10 +184,15 @@ func (h *AdminAuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If already authenticated, redirect to dashboard
+	// If already authenticated, redirect to dashboard (or original target)
 	if cookie, err := r.Cookie("auth_token"); err == nil && cookie.Value != "" {
 		if _, err := h.JWTManager.Validate(cookie.Value); err == nil {
-			http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
+			redirect := r.URL.Query().Get("redirect")
+			if redirect != "" && strings.HasPrefix(redirect, "/") {
+				http.Redirect(w, r, redirect, http.StatusFound)
+			} else {
+				http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
+			}
 			return
 		}
 	}
