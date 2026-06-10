@@ -3002,6 +3002,10 @@ components:
           type: string
           enum: [available, sold_out, limited]
           description: Ticket availability status
+        yearWasInferred:
+          type: boolean
+          description: |
+            True when the occurrence date lacked an explicit year and the parser inferred it.
 
     OccurrenceResponse:
       type: object
@@ -3466,6 +3470,12 @@ components:
           $ref: '#/components/schemas/OfferInput'
         source:
           $ref: '#/components/schemas/SourceInput'
+        yearWasInferred:
+          type: boolean
+          description: |
+            True when the source date lacked an explicit year and the parser inferred it.
+            When true, events beyond VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS (default 60)
+            are sent to the review queue with an ambiguous_year_far_future warning.
         recurrence:
           $ref: '#/components/schemas/RecurrenceInput'
           description: |
