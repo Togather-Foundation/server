@@ -104,4 +104,4 @@ fi
 
 SERVER_ARGS="$*"
 
-exec ssh -t "$REMOTE" "docker exec -it '$CONTAINER' /app/server $SERVER_ARGS"
+exec ssh "$REMOTE" "docker exec '$CONTAINER' /app/server $SERVER_ARGS"

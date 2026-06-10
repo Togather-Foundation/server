@@ -96,7 +96,7 @@ make remote-staging CMD="api-key create my-agent --role admin"
 make remote-production CMD="events"
 ```
 
-`scripts/remote.sh` reads `SSH_HOST`/`SSH_USER` from `.deploy.conf.{env}`, auto-discovers the active container, and forwards the command via SSH + docker exec with full stdin/stdout passthrough.
+`scripts/remote.sh` reads `SSH_HOST`/`SSH_USER` from `.deploy.conf.{env}`, auto-discovers the active container, and forwards the command via SSH + docker exec.
 
 **Getting an admin JWT** — exchange an admin API key via the STS endpoint:
 
