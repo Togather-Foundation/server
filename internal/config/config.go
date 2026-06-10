@@ -400,6 +400,20 @@ type GeographicBoundaryConfig struct {
 	Regions []string `yaml:"regions"`
 	// Localities is the set of acceptable city/neighbourhood/borough names.
 	Localities []string `yaml:"localities"`
+	// Mode controls how out-of-boundary events are handled.
+	// "reject" (default): hard-reject with 400 error.
+	// "review": add an outside_geo_boundary warning and route to review queue.
+	// Environment variable: GEOGRAPHIC_BOUNDARY_MODE (default: "reject")
+	Mode string `yaml:"mode"`
+}
+
+// WithDefaults returns a copy of GeographicBoundaryConfig with zero-values replaced
+// by their production defaults.
+func (g GeographicBoundaryConfig) WithDefaults() GeographicBoundaryConfig {
+	if g.Mode == "" {
+		g.Mode = "reject"
+	}
+	return g
 }
 
 // ArtsdataConfig holds configuration for Artsdata knowledge graph reconciliation.
@@ -570,6 +584,8 @@ func Load() (Config, error) {
 	if boundary, err := loadGeographicBoundaryFile(getEnv("GEOGRAPHIC_BOUNDARY_CONFIG_FILE", "configs/boundary.yaml")); err == nil {
 		cfg.GeographicBoundary = boundary
 	}
+	cfg.GeographicBoundary.Mode = getEnv("GEOGRAPHIC_BOUNDARY_MODE", cfg.GeographicBoundary.Mode)
+	cfg.GeographicBoundary = cfg.GeographicBoundary.WithDefaults()
 
 	// Validate scraper polling configuration
 	if err := validateScraperPollingConfig(cfg.Scraper); err != nil {

@@ -58,6 +58,10 @@ var openapiConfigEntries = []struct {
 		wantSubstr: "GEOGRAPHIC_BOUNDARY_CONFIG_FILE",
 	},
 	{
+		envVar:     "GEOGRAPHIC_BOUNDARY_MODE",
+		wantSubstr: "GEOGRAPHIC_BOUNDARY_MODE",
+	},
+	{
 		envVar:     "VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS",
 		wantSubstr: "VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS",
 	},

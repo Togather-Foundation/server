@@ -290,17 +290,22 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 	var occurrences []events.OccurrenceInput
 	tz := source.GetTimezone()
 
+	var anyYearInferred bool
 	for _, raw := range raws {
 		// Normalize the date parts for this row.
-		startDate, endDate, _ := normalizeStartDate(raw, tz, now)
+		startDate, endDate, yearInferred := normalizeStartDate(raw, tz, now)
+		if yearInferred {
+			anyYearInferred = true
+		}
 		if startDate == "" {
 			// Skip rows that don't have a valid start date.
 			continue
 		}
 
 		occ := events.OccurrenceInput{
-			StartDate: startDate,
-			EndDate:   endDate,
+			StartDate:       startDate,
+			EndDate:         endDate,
+			YearWasInferred: yearInferred,
 		}
 		occurrences = append(occurrences, occ)
 	}
@@ -361,7 +366,8 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 			Name:    source.Name,
 			License: source.License,
 		},
-		EventDomain: source.Domain,
+		EventDomain:     source.Domain,
+		YearWasInferred: anyYearInferred,
 	}
 
 	return input, nil

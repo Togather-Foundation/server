@@ -99,7 +99,8 @@ info:
     ## Geographic Boundaries
     Events outside the configured geographic scope may be filtered or flagged for review.
     Boundaries are loaded from a YAML file configurable via `GEOGRAPHIC_BOUNDARY_CONFIG_FILE`
-    (default `configs/boundary.yaml`).
+    (default `configs/boundary.yaml`). The behaviour on out-of-boundary events is controlled
+    by `GEOGRAPHIC_BOUNDARY_MODE` (default `reject`; set to `review` to route to review queue).
 
     ## Content Negotiation
     API endpoints return JSON/JSON-LD via `Accept` header:

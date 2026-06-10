@@ -101,7 +101,18 @@ func (s *IngestService) createEventCore(
 
 	// ── 1.5. Geographic boundary check ──────────────────────────────────────
 	if err := CheckGeographicBoundary(validated, s.geoBoundaryConfig); err != nil {
-		return nil, err
+		if s.geoBoundaryConfig.Mode == "review" {
+			warnings = append(warnings, ValidationWarning{
+				Field:   "location",
+				Message: err.Error(),
+				Code:    "outside_geo_boundary",
+				Details: map[string]any{
+					"mode": s.geoBoundaryConfig.Mode,
+				},
+			})
+		} else {
+			return nil, err
+		}
 	}
 
 	// ── 2. Quality warnings ──────────────────────────────────────────────────
