@@ -80,6 +80,21 @@ func TestChromeFingerprintNoHTTP2ALPN(t *testing.T) {
 	}
 }
 
+func TestSetupChromeUConn_BuildHandshakeStateError(t *testing.T) {
+	t.Parallel()
+
+	_, clientConn := net.Pipe()
+
+	uconn, err := setupChromeUConn(clientConn, "")
+	if uconn != nil {
+		_ = uconn.Close()
+		t.Error("expected nil uconn when BuildHandshakeState fails")
+	}
+	if err == nil {
+		t.Error("expected non-nil error from BuildHandshakeState")
+	}
+}
+
 func TestChromeHeaders(t *testing.T) {
 	t.Parallel()
 
