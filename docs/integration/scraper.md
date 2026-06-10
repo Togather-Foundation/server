@@ -902,6 +902,7 @@ at debug level and the URL is left empty.
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
 | `domain` | `""` | Default `event_domain` for events from this source. Valid values: `arts`, `music`, `culture`, `sports`, `community`, `education`, `general`. When empty, falls back to schema.org `@type`-to-domain mapping (defaulting to `arts`). |
 | `timezone` | `""` | IANA timezone for date parsing (e.g. `"America/Toronto"`). Overrides `DEFAULT_TIMEZONE` env var. Falls back to `America/Toronto` if neither is set. |
+| `tls_fingerprint` | `""` | TLS fingerprint spoofing mode. `"chrome_auto"` mimics Chrome's TLS handshake using uTLS to bypass WAF detection (Akamai, Cloudflare). When set, browser-mimicking headers (User-Agent, Accept, Sec-Fetch-*, Cache-Control) are automatically applied. Not used by Tier 2 (headless browser). |
 | `selectors` | — | Required when `tier: 1` or `tier: 2` |
 | `headless` | — | Required fields for `tier: 2` (`wait_selector` or `selectors.event_list`) |
 | `graphql` | — | Required for `tier: 3` GraphQL variant (mutually exclusive with `rest`) |
@@ -966,7 +967,7 @@ Values are source JSON keys from the GraphQL response record; use dot-separated 
 | `next_field` | no | `"next"` | JSON key containing the next-page URL (string or null) |
 | `url_template` | no | — | Go `text/template` string to construct each event's URL |
 | `timeout_ms` | no | — | Request timeout; the larger of this and the global timeout applies |
-| `headers` | no | — | Extra HTTP headers to inject (map[string]string) |
+| `headers` | no | — | Extra HTTP headers to inject (map[string]string). When `tls_fingerprint` is set, Chrome-mimicking headers are auto-merged; source headers take precedence. |
 | `field_map` | no | — | Map from RawEvent field names to source JSON keys; values support dot-notation for nested fields (see below) |
 
 **`field_map` keys** (all optional; omit for identity mapping):

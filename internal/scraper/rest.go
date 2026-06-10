@@ -143,15 +143,15 @@ func (e *RestExtractor) fetchPage(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("rest: unexpected status %d from %s", resp.StatusCode, pageURL)
-	}
-
 	// Read body with 10 MiB limit to prevent memory exhaustion
 	// (consistent with graphql.go and jsonld.go).
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if err != nil {
 		return nil, "", fmt.Errorf("rest: reading response from %s: %w", pageURL, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("rest: unexpected status %d from %s", resp.StatusCode, pageURL)
 	}
 
 	var items []map[string]any

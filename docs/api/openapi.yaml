@@ -3125,6 +3125,12 @@ components:
             Extraction pipeline for this source. Empty or "scraper" for
             default tier-based dispatch, "ics" for ICS feed extraction.
           enum: ["", "scraper", "ics"]
+        tls_fingerprint:
+          type: string
+          description: >-
+            TLS fingerprint spoofing mode. "chrome_auto" mimics Chrome's TLS handshake
+            to bypass WAF detection (Akamai, Cloudflare). Empty means disabled (default).
+            Not used by Tier 2 (headless browser already uses real Chrome).
         last_run_status:
           type: string
         last_run_started_at:
