@@ -24,6 +24,7 @@ type Source struct {
 	License    string
 	// Domain is the default event_domain for events scraped from this source. Valid values: arts, music, culture, sports, community, education, general. Empty means no override; events fall back to schema.org @type-to-domain mapping (defaulting to 'arts').
 	Domain                        string
+	TLSFingerprint                string
 	Enabled                       bool
 	MaxPages                      int
 	Selectors                     []byte // JSONB: encoded SelectorConfig; nil for Tier 0
@@ -72,6 +73,7 @@ type UpsertParams struct {
 	TrustLevel                    int
 	License                       string
 	Domain                        string
+	TLSFingerprint                string
 	Enabled                       bool
 	MaxPages                      int
 	Selectors                     []byte

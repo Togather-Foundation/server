@@ -22,7 +22,7 @@ func (q *Queries) DeleteScraperSource(ctx context.Context, name string) error {
 }
 
 const getScraperSourceByID = `-- name: GetScraperSourceByID :one
-SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain FROM scraper_sources
+SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain, scraper_sources.tls_fingerprint FROM scraper_sources
  WHERE id = $1
 `
 
@@ -73,12 +73,13 @@ func (q *Queries) GetScraperSourceByID(ctx context.Context, id int64) (GetScrape
 		&i.ScraperSource.RequestTimeoutSeconds,
 		&i.ScraperSource.MaxBodyBytes,
 		&i.ScraperSource.EventDomain,
+		&i.ScraperSource.TlsFingerprint,
 	)
 	return i, err
 }
 
 const getScraperSourceByName = `-- name: GetScraperSourceByName :one
-SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain FROM scraper_sources
+SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain, scraper_sources.tls_fingerprint FROM scraper_sources
  WHERE name = $1
 `
 
@@ -129,6 +130,7 @@ func (q *Queries) GetScraperSourceByName(ctx context.Context, name string) (GetS
 		&i.ScraperSource.RequestTimeoutSeconds,
 		&i.ScraperSource.MaxBodyBytes,
 		&i.ScraperSource.EventDomain,
+		&i.ScraperSource.TlsFingerprint,
 	)
 	return i, err
 }
@@ -168,7 +170,7 @@ func (q *Queries) LinkPlaceScraperSource(ctx context.Context, arg LinkPlaceScrap
 }
 
 const listScraperSources = `-- name: ListScraperSources :many
-SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain FROM scraper_sources
+SELECT scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain, scraper_sources.tls_fingerprint FROM scraper_sources
  WHERE ($1::boolean IS NULL OR enabled = $1)
  ORDER BY name ASC
 `
@@ -226,6 +228,7 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 			&i.ScraperSource.RequestTimeoutSeconds,
 			&i.ScraperSource.MaxBodyBytes,
 			&i.ScraperSource.EventDomain,
+			&i.ScraperSource.TlsFingerprint,
 		); err != nil {
 			return nil, err
 		}
@@ -238,7 +241,7 @@ func (q *Queries) ListScraperSources(ctx context.Context, enabled pgtype.Bool) (
 }
 
 const listScraperSourcesByOrg = `-- name: ListScraperSourcesByOrg :many
-SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain FROM scraper_sources s
+SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain, s.tls_fingerprint FROM scraper_sources s
   JOIN org_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.organization_id = $1
  ORDER BY s.name ASC
@@ -297,6 +300,7 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 			&i.ScraperSource.RequestTimeoutSeconds,
 			&i.ScraperSource.MaxBodyBytes,
 			&i.ScraperSource.EventDomain,
+			&i.ScraperSource.TlsFingerprint,
 		); err != nil {
 			return nil, err
 		}
@@ -309,7 +313,7 @@ func (q *Queries) ListScraperSourcesByOrg(ctx context.Context, organizationID pg
 }
 
 const listScraperSourcesByPlace = `-- name: ListScraperSourcesByPlace :many
-SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain FROM scraper_sources s
+SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain, s.tls_fingerprint FROM scraper_sources s
   JOIN place_scraper_sources l ON l.scraper_source_id = s.id
  WHERE l.place_id = $1
  ORDER BY s.name ASC
@@ -368,6 +372,7 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 			&i.ScraperSource.RequestTimeoutSeconds,
 			&i.ScraperSource.MaxBodyBytes,
 			&i.ScraperSource.EventDomain,
+			&i.ScraperSource.TlsFingerprint,
 		); err != nil {
 			return nil, err
 		}
@@ -380,7 +385,7 @@ func (q *Queries) ListScraperSourcesByPlace(ctx context.Context, placeID pgtype.
 }
 
 const listScraperSourcesWithLatestRun = `-- name: ListScraperSourcesWithLatestRun :many
-SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain,
+SELECT s.id, s.name, s.url, s.tier, s.schedule, s.trust_level, s.license, s.enabled, s.max_pages, s.selectors, s.notes, s.last_scraped_at, s.created_at, s.updated_at, s.headless_wait_selector, s.headless_wait_timeout_ms, s.headless_pagination_btn, s.headless_headers, s.headless_rate_limit_ms, s.graphql_config, s.rest_config, s.sitemap_config, s.urls, s.event_url_pattern, s.skip_multi_session_check, s.multi_session_duration_threshold, s.follow_event_urls, s.timezone, s.headless_wait_network_idle, s.headless_undetected, s.headless_iframe, s.headless_intercept, s.default_location, s.extraction_method, s.insecure_skip_verify, s.request_timeout_seconds, s.max_body_bytes, s.event_domain, s.tls_fingerprint,
   r.started_at                        AS last_run_started_at,
   r.completed_at                      AS last_run_completed_at,
   COALESCE(r.status, '')              AS last_run_status,
@@ -466,6 +471,7 @@ func (q *Queries) ListScraperSourcesWithLatestRun(ctx context.Context, enabled p
 			&i.ScraperSource.RequestTimeoutSeconds,
 			&i.ScraperSource.MaxBodyBytes,
 			&i.ScraperSource.EventDomain,
+			&i.ScraperSource.TlsFingerprint,
 			&i.LastRunStartedAt,
 			&i.LastRunCompletedAt,
 			&i.LastRunStatus,
@@ -490,7 +496,7 @@ UPDATE scraper_sources
    SET enabled    = $1,
        updated_at = NOW()
  WHERE name = $2
-RETURNING scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain
+RETURNING scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain, scraper_sources.tls_fingerprint
 `
 
 type SetScraperSourceEnabledParams struct {
@@ -545,6 +551,7 @@ func (q *Queries) SetScraperSourceEnabled(ctx context.Context, arg SetScraperSou
 		&i.ScraperSource.RequestTimeoutSeconds,
 		&i.ScraperSource.MaxBodyBytes,
 		&i.ScraperSource.EventDomain,
+		&i.ScraperSource.TlsFingerprint,
 	)
 	return i, err
 }
@@ -599,7 +606,7 @@ func (q *Queries) UpdateScraperSourceLastScraped(ctx context.Context, name strin
 const upsertScraperSource = `-- name: UpsertScraperSource :one
 
 INSERT INTO scraper_sources (
-  name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
+  name, url, urls, tier, schedule, trust_level, license, event_domain, tls_fingerprint, enabled,
   max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
   multi_session_duration_threshold, follow_event_urls, timezone,
   last_scraped_at,
@@ -651,6 +658,7 @@ INSERT INTO scraper_sources (
   $33,
   $34,
   $35,
+  $36,
   NOW()
 )
 ON CONFLICT (name) DO UPDATE SET
@@ -661,6 +669,7 @@ ON CONFLICT (name) DO UPDATE SET
   trust_level              = EXCLUDED.trust_level,
   license                  = EXCLUDED.license,
   event_domain             = EXCLUDED.event_domain,
+  tls_fingerprint          = EXCLUDED.tls_fingerprint,
   max_pages                = EXCLUDED.max_pages,
   selectors                = EXCLUDED.selectors,
   notes                    = EXCLUDED.notes,
@@ -688,7 +697,7 @@ ON CONFLICT (name) DO UPDATE SET
   request_timeout_seconds          = EXCLUDED.request_timeout_seconds,
   max_body_bytes           = EXCLUDED.max_body_bytes,
   updated_at               = NOW()
-RETURNING scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain
+RETURNING scraper_sources.id, scraper_sources.name, scraper_sources.url, scraper_sources.tier, scraper_sources.schedule, scraper_sources.trust_level, scraper_sources.license, scraper_sources.enabled, scraper_sources.max_pages, scraper_sources.selectors, scraper_sources.notes, scraper_sources.last_scraped_at, scraper_sources.created_at, scraper_sources.updated_at, scraper_sources.headless_wait_selector, scraper_sources.headless_wait_timeout_ms, scraper_sources.headless_pagination_btn, scraper_sources.headless_headers, scraper_sources.headless_rate_limit_ms, scraper_sources.graphql_config, scraper_sources.rest_config, scraper_sources.sitemap_config, scraper_sources.urls, scraper_sources.event_url_pattern, scraper_sources.skip_multi_session_check, scraper_sources.multi_session_duration_threshold, scraper_sources.follow_event_urls, scraper_sources.timezone, scraper_sources.headless_wait_network_idle, scraper_sources.headless_undetected, scraper_sources.headless_iframe, scraper_sources.headless_intercept, scraper_sources.default_location, scraper_sources.extraction_method, scraper_sources.insecure_skip_verify, scraper_sources.request_timeout_seconds, scraper_sources.max_body_bytes, scraper_sources.event_domain, scraper_sources.tls_fingerprint
 `
 
 type UpsertScraperSourceParams struct {
@@ -700,6 +709,7 @@ type UpsertScraperSourceParams struct {
 	TrustLevel                    int32              `json:"trust_level"`
 	License                       string             `json:"license"`
 	EventDomain                   pgtype.Text        `json:"event_domain"`
+	TlsFingerprint                string             `json:"tls_fingerprint"`
 	Enabled                       bool               `json:"enabled"`
 	MaxPages                      int32              `json:"max_pages"`
 	Selectors                     []byte             `json:"selectors"`
@@ -745,6 +755,7 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		arg.TrustLevel,
 		arg.License,
 		arg.EventDomain,
+		arg.TlsFingerprint,
 		arg.Enabled,
 		arg.MaxPages,
 		arg.Selectors,
@@ -813,6 +824,7 @@ func (q *Queries) UpsertScraperSource(ctx context.Context, arg UpsertScraperSour
 		&i.ScraperSource.RequestTimeoutSeconds,
 		&i.ScraperSource.MaxBodyBytes,
 		&i.ScraperSource.EventDomain,
+		&i.ScraperSource.TlsFingerprint,
 	)
 	return i, err
 }

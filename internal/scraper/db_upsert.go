@@ -96,6 +96,7 @@ func SourceConfigToUpsertParams(cfg SourceConfig) (domainScraper.UpsertParams, e
 		TrustLevel:                    cfg.TrustLevel,
 		License:                       cfg.License,
 		Domain:                        cfg.Domain,
+		TLSFingerprint:                cfg.TLSFingerprint,
 		Enabled:                       cfg.Enabled,
 		MaxPages:                      cfg.MaxPages,
 		Selectors:                     selectorsJSON,

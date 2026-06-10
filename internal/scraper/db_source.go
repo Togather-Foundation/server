@@ -38,6 +38,7 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 		TrustLevel: src.TrustLevel,
 		License:    src.License,
 		Domain:     src.Domain,
+		TLSFingerprint: src.TLSFingerprint,
 		Enabled:    src.Enabled,
 		MaxPages:   src.MaxPages,
 		Notes:      src.Notes,

@@ -533,6 +533,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
+		maybeSetUTLSTransport(source, &opts)
 		extractor := NewCollyExtractor(s.logger)
 		extractor.SetTransport(opts.Transport)
 		if opts.RateLimitMs > 0 {
@@ -650,6 +651,7 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
+		maybeSetUTLSTransport(source, &opts)
 		var allRawEvents []json.RawMessage
 		urlList := source.GetURLs()
 		failCount := 0
@@ -728,6 +730,7 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 		var rawEvents []RawEvent
 		var err error
 
+		maybeSetUTLSTransport(source, &opts)
 		extractor, extErr := NewExtractor(source, s.logger)
 		if extErr != nil {
 			return 0, nil, nil, extErr

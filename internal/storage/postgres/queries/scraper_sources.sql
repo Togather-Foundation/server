@@ -3,7 +3,7 @@
 -- name: UpsertScraperSource :one
 -- Insert or update a scraper source by name (used by 'server scrape sync').
 INSERT INTO scraper_sources (
-  name, url, urls, tier, schedule, trust_level, license, event_domain, enabled,
+  name, url, urls, tier, schedule, trust_level, license, event_domain, tls_fingerprint, enabled,
   max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
   multi_session_duration_threshold, follow_event_urls, timezone,
   last_scraped_at,
@@ -28,6 +28,7 @@ INSERT INTO scraper_sources (
   sqlc.arg('trust_level'),
   sqlc.arg('license'),
   sqlc.arg('event_domain'),
+  sqlc.arg('tls_fingerprint'),
   sqlc.arg('enabled'),
   sqlc.arg('max_pages'),
   sqlc.arg('selectors'),
@@ -65,6 +66,7 @@ ON CONFLICT (name) DO UPDATE SET
   trust_level              = EXCLUDED.trust_level,
   license                  = EXCLUDED.license,
   event_domain             = EXCLUDED.event_domain,
+  tls_fingerprint          = EXCLUDED.tls_fingerprint,
   max_pages                = EXCLUDED.max_pages,
   selectors                = EXCLUDED.selectors,
   notes                    = EXCLUDED.notes,

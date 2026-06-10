@@ -43,6 +43,12 @@ func NewChromeFingerprintTransport(cookieJar http.CookieJar) http.RoundTripper {
 	}
 }
 
+func maybeSetUTLSTransport(source SourceConfig, opts *ScrapeOptions) {
+	if source.TLSFingerprint != "" && opts.Transport == nil {
+		opts.Transport = NewChromeFingerprintTransport(opts.CookieJar)
+	}
+}
+
 func ChromeHeaders() map[string]string {
 	return map[string]string{
 		"User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",

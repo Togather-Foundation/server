@@ -1,0 +1,27 @@
+name: city-of-toronto-events
+# City of Toronto Festivals & Events — direct C3 OData API via uTLS Chrome fingerprint
+# The secure.toronto.ca C3 API is Akamai WAF-protected and detects Go's vanilla
+# TLS fingerprint, returning 403. uTLS Chrome fingerprint transport bypasses this
+# by mimicking Chrome's TLS handshake and browser headers.
+#
+# CKAN metadata (active, refreshed daily): open.toronto.ca/dataset/festivals-events
+# Data license: Open Government Licence – Toronto
+# Organization match: none found in database
+url: "https://www.toronto.ca/explore-enjoy/festivals-events/festivals-events-calendar/"
+tier: 3
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+domain: culture
+timezone: "America/Toronto"
+enabled: true
+tls_fingerprint: "chrome_auto"
+rest:
+  endpoint: "https://secure.toronto.ca/c3api_data/v2/DataAccess.svc/festivals_events/events?$format=json&$top=5000&$filter=calendar_date%20ge%202026-01-01T00:00:00-04:00&$orderby=calendar_date&$select=id,submission_id,event_name,event_description,event_startdate,event_enddate,calendar_date,calendar_date_group,event_locations,event_category,event_theme,event_image,event_website,facebook_url,instagram_url,twitter_url,free_event,featured_event,accessible_event,event_status,event_price_low,event_price_high,event_features"
+  results_field: "value"
+  field_map:
+    name: "event_name"
+    start_date: "calendar_date"
+    end_date: "calendar_date"
+    description: "event_description"
+    url: "event_website"
