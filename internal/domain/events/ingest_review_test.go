@@ -226,6 +226,207 @@ func TestReviewConfidence(t *testing.T) {
 	}
 }
 
+func TestNeedsReview_AmbiguousYear(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    EventInput
+		expected bool
+	}{
+		{
+			name: "YearWasInferred=true + date within AmbiguousDateMaxFutureDays (30d out, threshold 60) - NOT flagged",
+			input: EventInput{
+				Name:            "Future event within threshold",
+				Description:     "Description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: true,
+			},
+			expected: false,
+		},
+		{
+			name: "YearWasInferred=true + date beyond AmbiguousDateMaxFutureDays (90d out, threshold 60) - FLAGGED",
+			input: EventInput{
+				Name:            "Far future ambiguous year event",
+				Description:     "Description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(90 * 24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: true,
+			},
+			expected: true,
+		},
+		{
+			name: "YearWasInferred=false + date beyond MaxFutureDays (800d) - flagged for regular too_far_future",
+			input: EventInput{
+				Name:            "Far future explicit year event",
+				Description:     "Description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(800 * 24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: false,
+			},
+			expected: true,
+		},
+		{
+			name: "YearWasInferred=false + date beyond AmbiguousDateMaxFutureDays but within MaxFutureDays (90d) - NOT flagged",
+			input: EventInput{
+				Name:            "Explicit year 90d future",
+				Description:     "Description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(90 * 24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: false,
+			},
+			expected: false,
+		},
+		{
+			name: "YearWasInferred=true + empty date - NOT flagged",
+			input: EventInput{
+				Name:            "No date event",
+				Description:     "Description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       "",
+				YearWasInferred: true,
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.ValidationConfig{RequireImage: true}.WithDefaults()
+			result := eventNeedsReview(tt.input, nil, cfg)
+			if result != tt.expected {
+				t.Errorf("eventNeedsReview() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestReviewConfidence_AmbiguousYear(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    EventInput
+		flagged  bool
+		expected float64
+	}{
+		{
+			name: "YearWasInferred=true - confidence reduced by 0.15",
+			input: EventInput{
+				Name:            "Complete Event with inferred year",
+				Description:     "Full description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: true,
+			},
+			flagged:  false,
+			expected: 0.75, // 0.9 - 0.15
+		},
+		{
+			name: "YearWasInferred=true + flagged - confidence reduced by 0.25 total",
+			input: EventInput{
+				Name:            "Complete Event with inferred year, flagged",
+				Description:     "Full description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: true,
+			},
+			flagged:  true,
+			expected: 0.65, // 0.9 - 0.15 - 0.1
+		},
+		{
+			name: "YearWasInferred=false - no reduction",
+			input: EventInput{
+				Name:            "Complete Event with explicit year",
+				Description:     "Full description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: false,
+			},
+			flagged:  false,
+			expected: 0.9,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.ValidationConfig{RequireImage: true}.WithDefaults()
+			result := reviewConfidence(tt.input, tt.flagged, cfg)
+			epsilon := 0.0001
+			if result < tt.expected-epsilon || result > tt.expected+epsilon {
+				t.Errorf("reviewConfidence() = %v, want %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestAppendQualityWarnings_AmbiguousYear(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       EventInput
+		wantWarning bool
+		wantCode    string
+	}{
+		{
+			name: "YearWasInferred=true + date beyond threshold - warning generated",
+			input: EventInput{
+				Name:            "Far future ambiguous",
+				Description:     "Description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(90 * 24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: true,
+			},
+			wantWarning: true,
+			wantCode:    "ambiguous_year_far_future",
+		},
+		{
+			name: "YearWasInferred=true + date within threshold - no ambiguous warning",
+			input: EventInput{
+				Name:            "Near future ambiguous",
+				Description:     "Description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(30 * 24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: true,
+			},
+			wantWarning: false,
+		},
+		{
+			name: "YearWasInferred=false + date beyond threshold - no ambiguous warning",
+			input: EventInput{
+				Name:            "Far future explicit",
+				Description:     "Description",
+				Image:           "https://example.com/image.jpg",
+				StartDate:       time.Now().Add(90 * 24 * time.Hour).Format(time.RFC3339),
+				YearWasInferred: false,
+			},
+			wantWarning: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.ValidationConfig{RequireImage: true}.WithDefaults()
+			warnings := appendQualityWarnings([]ValidationWarning{}, tt.input, nil, cfg)
+
+			found := false
+			for _, w := range warnings {
+				if w.Code == tt.wantCode {
+					found = true
+					// Verify details are populated
+					if w.Details == nil {
+						t.Error("warning Details should not be nil")
+					}
+					break
+				}
+			}
+
+			if tt.wantWarning && !found {
+				t.Errorf("expected warning code %q, got %v", tt.wantCode, warnings)
+			}
+			if !tt.wantWarning && found {
+				t.Errorf("unexpected warning code %q found: %v", tt.wantCode, warnings)
+			}
+		})
+	}
+}
+
 func TestIsTooFarFuture(t *testing.T) {
 	now := time.Now()
 

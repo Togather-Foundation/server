@@ -68,6 +68,7 @@ type EventInput struct {
 	LifecycleState                string                `json:"lifecycle_state,omitempty"`                  // Scraper hint: "review" forces pending_review
 	SkipMultiSessionCheck         bool                  `json:"skip_multi_session_check,omitempty"`         // Disables multi-session heuristic for this event
 	MultiSessionDurationThreshold time.Duration         `json:"multi_session_duration_threshold,omitempty"` // Custom duration threshold for multi-session detection; 0 means use default (168h)
+	YearWasInferred               bool                  `json:"yearWasInferred,omitempty"`                  // True when the source date lacked an explicit year and the parser inferred it
 }
 
 // RecurrenceInput carries series-level recurrence metadata populated by the ICS mapper.
@@ -136,12 +137,13 @@ type SourceInput struct {
 }
 
 type OccurrenceInput struct {
-	StartDate  string `json:"startDate,omitempty"`
-	EndDate    string `json:"endDate,omitempty"`
-	Timezone   string `json:"timezone,omitempty"`
-	DoorTime   string `json:"doorTime,omitempty"`
-	VenueID    string `json:"venueId,omitempty"`
-	VirtualURL string `json:"virtualUrl,omitempty"`
+	StartDate       string `json:"startDate,omitempty"`
+	EndDate         string `json:"endDate,omitempty"`
+	Timezone        string `json:"timezone,omitempty"`
+	DoorTime        string `json:"doorTime,omitempty"`
+	VenueID         string `json:"venueId,omitempty"`
+	VirtualURL      string `json:"virtualUrl,omitempty"`
+	YearWasInferred bool   `json:"yearWasInferred,omitempty"` // True when the occurrence date lacked an explicit year
 }
 
 // ValidateEventInput validates event input using production defaults (blocklist active).

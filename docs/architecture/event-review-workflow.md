@@ -522,6 +522,8 @@ ALTER TABLE events ADD CONSTRAINT events_lifecycle_state_check
 | `near_duplicate_of_new_event` | — | Companion warning on the *existing* event during near-dup cross-linking. References the newly ingested event. |
 | `cross_week_series_companion` | — | Same venue, same name, 7-21 days apart, same time-of-day (±30 min). |
 | `exact_duplicate` | — | Layer 1 dedup hash match (generated during consolidate create path only). |
+| `outside_geo_boundary` | — | Event location (region or locality) is outside the configured geographic boundary. In `reject` mode this is a hard error (400); in `review` mode it is a warning that routes the event to the review queue. |
+| `ambiguous_year_far_future` | — | Event date has an inferred year (no explicit year in source) and falls beyond `VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS` (default 60). Routes the event to review to confirm the correct year. |
 
 ---
 
@@ -544,15 +546,18 @@ When Layer 2 (pg_trgm) near-duplicate detection matches a new event against one 
 1. Decode JSON payload
 2. Normalize (fix reversed dates)
 3. Validate with warnings (compare original vs normalized)
-4. Check for existing reviews (deduplication)
+4. Geographic boundary check (after validation, before dedup)
+   a. Reject (400) when GEOGRAPHIC_BOUNDARY_MODE=reject and location is out-of-bound
+   b. Add outside_geo_boundary warning when mode=review
+5. Check for existing reviews (deduplication)
    a. If rejected previously + same issues → Reject (400)
    b. If pending + now fixed → Approve and publish
    c. If pending + still broken → Update queue entry
-5. If needs review:
+6. If needs review:
    a. Insert into events table (lifecycle_state='pending_review')
    b. Insert into event_review_queue
    c. Return 202 Accepted with warnings
-6. If no issues:
+7. If no issues:
    a. Insert into events table (lifecycle_state='published')
    b. Return 201 Created
 ```

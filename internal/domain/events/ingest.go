@@ -49,11 +49,12 @@ func WithSourceID(id string) IngestOption {
 }
 
 type IngestService struct {
-	repo             Repository
-	nodeDomain       string
-	defaultTZ        string
-	validationConfig config.ValidationConfig
-	dedupConfig      config.DedupConfig
+	repo              Repository
+	nodeDomain        string
+	defaultTZ         string
+	validationConfig  config.ValidationConfig
+	dedupConfig       config.DedupConfig
+	geoBoundaryConfig config.GeographicBoundaryConfig
 }
 
 func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string, validationConfig config.ValidationConfig) *IngestService {
@@ -68,6 +69,12 @@ func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string
 // WithDedupConfig sets the deduplication configuration and returns the service for chaining.
 func (s *IngestService) WithDedupConfig(cfg config.DedupConfig) *IngestService {
 	s.dedupConfig = cfg
+	return s
+}
+
+// WithGeographicBoundaryConfig sets the geographic boundary configuration and returns the service for chaining.
+func (s *IngestService) WithGeographicBoundaryConfig(cfg config.GeographicBoundaryConfig) *IngestService {
+	s.geoBoundaryConfig = cfg
 	return s
 }
 
@@ -481,6 +488,9 @@ func eventNeedsReview(input EventInput, linkStatuses map[string]int, validationC
 	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		return true
 	}
+	if input.YearWasInferred && isTooFarFuture(input.StartDate, validationConfig.AmbiguousDateMaxFutureDays) {
+		return true
+	}
 	if isTooFarFuture(input.StartDate, validationConfig.MaxFutureDays) {
 		return true
 	}
@@ -507,6 +517,9 @@ func reviewConfidence(input EventInput, flagged bool, validationConfig config.Va
 	}
 	if isTooFarFuture(input.StartDate, validationConfig.MaxFutureDays) {
 		confidence -= 0.2
+	}
+	if input.YearWasInferred {
+		confidence -= 0.15
 	}
 	if flagged {
 		confidence -= 0.1
@@ -587,6 +600,22 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 			Field:   "startDate",
 			Message: "Event is scheduled more than 2 years in the future. This may indicate a data quality issue.",
 			Code:    "too_far_future",
+		})
+	}
+
+	// Check for ambiguous-year dates that fall too far in the future
+	if input.YearWasInferred && isTooFarFuture(input.StartDate, validationConfig.AmbiguousDateMaxFutureDays) {
+		parsed, _ := time.Parse(time.RFC3339, strings.TrimSpace(input.StartDate))
+		daysAhead := int(time.Until(parsed).Hours() / 24)
+		result = append(result, ValidationWarning{
+			Field:   "startDate",
+			Message: fmt.Sprintf("Event date has an inferred year (no explicit year in source) and falls %d days in the future (threshold: %d days). Review needed to confirm correct year.", daysAhead, validationConfig.AmbiguousDateMaxFutureDays),
+			Code:    "ambiguous_year_far_future",
+			Details: map[string]any{
+				"days_ahead":    daysAhead,
+				"threshold":     validationConfig.AmbiguousDateMaxFutureDays,
+				"inferred_date": input.StartDate,
+			},
 		})
 	}
 

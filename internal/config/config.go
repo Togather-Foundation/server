@@ -3,32 +3,36 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	Server          ServerConfig
-	Database        DatabaseConfig
-	Auth            AuthConfig
-	RateLimit       RateLimitConfig
-	CORS            CORSConfig
-	AdminBootstrap  AdminBootstrapConfig
-	Jobs            JobsConfig
-	Logging         LoggingConfig
-	Email           EmailConfig
-	Validation      ValidationConfig
-	Tracing         TracingConfig
-	Dedup           DedupConfig
-	Geocoding       GeocodingConfig
-	Artsdata        ArtsdataConfig
-	Scraper         ScraperConfig
-	Developer       DeveloperConfig
-	Users           UsersConfig
-	DefaultTimezone string
-	Environment     string
+	Server             ServerConfig
+	Database           DatabaseConfig
+	Auth               AuthConfig
+	RateLimit          RateLimitConfig
+	CORS               CORSConfig
+	AdminBootstrap     AdminBootstrapConfig
+	Jobs               JobsConfig
+	Logging            LoggingConfig
+	Email              EmailConfig
+	Validation         ValidationConfig
+	Tracing            TracingConfig
+	Dedup              DedupConfig
+	Geocoding          GeocodingConfig
+	Artsdata           ArtsdataConfig
+	Scraper            ScraperConfig
+	Developer          DeveloperConfig
+	Users              UsersConfig
+	GeographicBoundary GeographicBoundaryConfig
+	DefaultTimezone    string
+	Environment        string
 }
 
 // ScraperConfig holds configuration for the event scraper, including optional
@@ -276,6 +280,11 @@ type ValidationConfig struct {
 	// Environment variable: VALIDATION_MAX_EVENT_NAME_LENGTH (default: 500)
 	MaxEventNameLength int
 
+	// AmbiguousDateMaxFutureDays is the maximum number of days in the future an event
+	// with an inferred (not explicit) year may be before it is sent to the review queue.
+	// Environment variable: VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS (default: 60)
+	AmbiguousDateMaxFutureDays int
+
 	// AllowTestDomains disables the example.com / images.example.com blocklist check.
 	// Set to true only in test code. Never set via environment variable.
 	// Zero value (false) activates the blocklist in production.
@@ -295,6 +304,9 @@ func (v ValidationConfig) WithDefaults() ValidationConfig {
 	}
 	if v.MaxEventNameLength == 0 {
 		v.MaxEventNameLength = 500
+	}
+	if v.AmbiguousDateMaxFutureDays == 0 {
+		v.AmbiguousDateMaxFutureDays = 60
 	}
 	return v
 }
@@ -379,6 +391,30 @@ type GeocodingConfig struct {
 	PopularPreserveCount int
 	// DefaultCountry is the default country code for geocoding queries (default: "ca")
 	DefaultCountry string
+}
+
+// GeographicBoundaryConfig defines the geographic scope for this SEL node.
+// Events outside these regions/localities may be filtered or flagged for review.
+// Config file: configs/boundary.yaml (override via GEOGRAPHIC_BOUNDARY_CONFIG_FILE)
+type GeographicBoundaryConfig struct {
+	// Regions is the set of acceptable regions/states for this SEL node.
+	Regions []string `yaml:"regions"`
+	// Localities is the set of acceptable city/neighbourhood/borough names.
+	Localities []string `yaml:"localities"`
+	// Mode controls how out-of-boundary events are handled.
+	// "reject" (default): hard-reject with 400 error.
+	// "review": add an outside_geo_boundary warning and route to review queue.
+	// Environment variable: GEOGRAPHIC_BOUNDARY_MODE (default: "reject")
+	Mode string `yaml:"mode"`
+}
+
+// WithDefaults returns a copy of GeographicBoundaryConfig with zero-values replaced
+// by their production defaults.
+func (g GeographicBoundaryConfig) WithDefaults() GeographicBoundaryConfig {
+	if g.Mode == "" {
+		g.Mode = "reject"
+	}
+	return g
 }
 
 // ArtsdataConfig holds configuration for Artsdata knowledge graph reconciliation.
@@ -476,10 +512,11 @@ func Load() (Config, error) {
 			TemplatesDir: getEnv("EMAIL_TEMPLATES_DIR", "web/email/templates"),
 		},
 		Validation: ValidationConfig{
-			RequireImage:              getEnvBool("VALIDATION_REQUIRE_IMAGE", false),
-			ReviewConfidenceThreshold: getEnvFloat("VALIDATION_REVIEW_CONFIDENCE_THRESHOLD", 0.6),
-			MaxFutureDays:             getEnvInt("VALIDATION_MAX_FUTURE_DAYS", 730),
-			MaxEventNameLength:        getEnvInt("VALIDATION_MAX_EVENT_NAME_LENGTH", 500),
+			RequireImage:               getEnvBool("VALIDATION_REQUIRE_IMAGE", false),
+			ReviewConfidenceThreshold:  getEnvFloat("VALIDATION_REVIEW_CONFIDENCE_THRESHOLD", 0.6),
+			MaxFutureDays:              getEnvInt("VALIDATION_MAX_FUTURE_DAYS", 730),
+			MaxEventNameLength:         getEnvInt("VALIDATION_MAX_EVENT_NAME_LENGTH", 500),
+			AmbiguousDateMaxFutureDays: getEnvInt("VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS", 60),
 		},
 		Tracing: TracingConfig{
 			Enabled:      getEnvBool("TRACING_ENABLED", false),
@@ -542,6 +579,17 @@ func Load() (Config, error) {
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "America/Toronto"),
 		Environment:     getEnv("ENVIRONMENT", "development"),
 	}
+
+	// Load geographic boundary configuration from YAML file (if present).
+	// Zero-valued (no filtering) when the file doesn't exist or is empty.
+	boundaryPath := getEnv("GEOGRAPHIC_BOUNDARY_CONFIG_FILE", "configs/boundary.yaml")
+	if boundary, err := loadGeographicBoundaryFile(boundaryPath); err == nil {
+		cfg.GeographicBoundary = boundary
+	} else if !os.IsNotExist(err) {
+		log.Printf("WARNING: failed to load geographic boundary config from %s, boundary filtering disabled: %v", boundaryPath, err)
+	}
+	cfg.GeographicBoundary.Mode = getEnv("GEOGRAPHIC_BOUNDARY_MODE", cfg.GeographicBoundary.Mode)
+	cfg.GeographicBoundary = cfg.GeographicBoundary.WithDefaults()
 
 	// Validate scraper polling configuration
 	if err := validateScraperPollingConfig(cfg.Scraper); err != nil {
@@ -735,4 +783,18 @@ func validateScraperPollingConfig(scraper ScraperConfig) error {
 		return fmt.Errorf("SCRAPER_CHAIN_ENQUEUE_RETRIES must be >= 0, got %d", scraper.ChainEnqueueRetries)
 	}
 	return nil
+}
+
+// loadGeographicBoundaryFile reads a YAML file into a GeographicBoundaryConfig.
+// Returns a zero-valued struct if the file does not exist or is empty.
+func loadGeographicBoundaryFile(path string) (GeographicBoundaryConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return GeographicBoundaryConfig{}, err
+	}
+	var cfg GeographicBoundaryConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return GeographicBoundaryConfig{}, err
+	}
+	return cfg, nil
 }

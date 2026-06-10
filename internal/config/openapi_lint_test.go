@@ -53,6 +53,18 @@ var openapiConfigEntries = []struct {
 		envVar:     "AUTH_TOKEN_EXCHANGE_EXPIRY_MINUTES",
 		wantSubstr: "AUTH_TOKEN_EXCHANGE_EXPIRY_MINUTES",
 	},
+	{
+		envVar:     "GEOGRAPHIC_BOUNDARY_CONFIG_FILE",
+		wantSubstr: "GEOGRAPHIC_BOUNDARY_CONFIG_FILE",
+	},
+	{
+		envVar:     "GEOGRAPHIC_BOUNDARY_MODE",
+		wantSubstr: "GEOGRAPHIC_BOUNDARY_MODE",
+	},
+	{
+		envVar:     "VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS",
+		wantSubstr: "VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

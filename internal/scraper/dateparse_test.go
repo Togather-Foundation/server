@@ -341,7 +341,7 @@ func TestAssembleDateTimeParts(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			start, end := assembleDateTimeParts(tc.parts, tz, testNow())
+			start, end, inferred := assembleDateTimeParts(tc.parts, tz, testNow())
 
 			if tc.wantStart == "" {
 				if start != "" {
@@ -359,6 +359,7 @@ func TestAssembleDateTimeParts(t *testing.T) {
 			if tc.wantEnd == "" && end != "" {
 				t.Errorf("end = %q, want empty", end)
 			}
+			_ = inferred // captured for completeness; explicit test coverage in TestAssembleDateTimeParts_YearInferred
 		})
 	}
 }
@@ -413,7 +414,7 @@ func TestAssembleDateTimeParts_PipeSeparatedDate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			start, end := assembleDateTimeParts(tc.parts, tz, testNow())
+			start, end, _ := assembleDateTimeParts(tc.parts, tz, testNow())
 
 			if tc.wantStart == "" {
 				if start != "" {
@@ -508,7 +509,7 @@ func TestNormalizeDateToRFC3339(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := normalizeDateToRFC3339(tc.s, tz, testNow())
+			got, _ := normalizeDateToRFC3339(tc.s, tz, testNow())
 			// Exact match for RFC 3339 passthroughs; prefix match for all others.
 			if _, err := time.Parse(time.RFC3339, tc.s); err == nil {
 				if got != tc.want {
@@ -598,7 +599,7 @@ func TestNormalizeStartDate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			start, end := normalizeStartDate(tc.raw, tz, testNow())
+			start, end, _ := normalizeStartDate(tc.raw, tz, testNow())
 
 			if tc.wantStart == "" {
 				if start != "" {
@@ -838,4 +839,197 @@ func TestHasTimePattern(t *testing.T) {
 // RFC 3339 timezone suffixes vary.
 func hasPrefix(s, prefix string) bool {
 	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+// ── year-inferred detection ────────────────────────────────────────────
+
+func TestAssembleDateTimeParts_YearInferred(t *testing.T) {
+	t.Parallel()
+
+	tz := "America/Toronto"
+
+	tests := []struct {
+		name         string
+		parts        []string
+		wantStart    string // prefix to check
+		wantInferred bool
+	}{
+		{
+			name:         "date with explicit year - not inferred",
+			parts:        []string{"March 5, 2026"},
+			wantStart:    "2026-03-05T00:00:00-",
+			wantInferred: false,
+		},
+		{
+			name:         "date without explicit year - inferred",
+			parts:        []string{"March 5"},
+			wantStart:    "2026-03-05T00:00:00-",
+			wantInferred: true,
+		},
+		{
+			name:         "RFC 3339 passthrough - not inferred",
+			parts:        []string{"2026-03-05T21:30:00Z"},
+			wantStart:    "2026-03-05T21:30:00Z",
+			wantInferred: false,
+		},
+		{
+			name:         "date+time combined with year - not inferred",
+			parts:        []string{"March 5, 2026 9:30 PM"},
+			wantStart:    "2026-03-05T21:30:00-",
+			wantInferred: false,
+		},
+		{
+			name:         "date+time combined without year - inferred",
+			parts:        []string{"March 5 9:30 PM"},
+			wantStart:    "2026-03-05T21:30:00-",
+			wantInferred: true,
+		},
+		{
+			name:         "date range with explicit years - not inferred",
+			parts:        []string{"Feb 3, 2026 - Mar 8, 2026"},
+			wantStart:    "2026-02-03T00:00:00-",
+			wantInferred: false,
+		},
+		{
+			name:         "short date range without year - inferred",
+			parts:        []string{"March 5-7"},
+			wantStart:    "2026-03-05T00:00:00-",
+			wantInferred: true,
+		},
+		{
+			name:         "empty parts - not inferred",
+			parts:        []string{},
+			wantStart:    "",
+			wantInferred: false,
+		},
+		{
+			name:         "partial ISO date - not inferred",
+			parts:        []string{"2026-03-05"},
+			wantStart:    "2026-03-05T00:00:00-",
+			wantInferred: false,
+		},
+		{
+			name:         "day-of-week ordinal month without year - inferred",
+			parts:        []string{"Thu 5th March"},
+			wantStart:    "2026-03-05T00:00:00-",
+			wantInferred: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			start, _, inferred := assembleDateTimeParts(tc.parts, tz, testNow())
+
+			if tc.wantStart == "" {
+				if start != "" {
+					t.Errorf("start = %q, want empty", start)
+				}
+			} else if !hasPrefix(start, tc.wantStart) {
+				t.Errorf("start = %q, want prefix %q", start, tc.wantStart)
+			}
+
+			if inferred != tc.wantInferred {
+				t.Errorf("yearWasInferred = %v, want %v", inferred, tc.wantInferred)
+			}
+		})
+	}
+}
+
+func TestNormalizeDateToRFC3339_YearInferred(t *testing.T) {
+	t.Parallel()
+
+	tz := "America/Toronto"
+
+	tests := []struct {
+		name         string
+		s            string
+		wantInferred bool
+	}{
+		{"RFC 3339 explicit", "2026-03-05T21:30:00Z", false},
+		{"partial ISO explicit", "2026-03-05", false},
+		{"human date with year", "March 5, 2026", false},
+		{"human date without year", "Thu 5th March", true},
+		{"empty", "", false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, inferred := normalizeDateToRFC3339(tc.s, tz, testNow())
+			if inferred != tc.wantInferred {
+				t.Errorf("yearWasInferred = %v, want %v", inferred, tc.wantInferred)
+			}
+		})
+	}
+}
+
+func TestNormalizeStartDate_YearInferred(t *testing.T) {
+	t.Parallel()
+
+	tz := "America/Toronto"
+
+	tests := []struct {
+		name         string
+		raw          RawEvent
+		wantInferred bool
+	}{
+		{
+			name: "DateParts with explicit year",
+			raw: RawEvent{
+				Name:      "Test",
+				DateParts: []string{"March 5, 2026", "9:30 PM"},
+			},
+			wantInferred: false,
+		},
+		{
+			name: "DateParts without year",
+			raw: RawEvent{
+				Name:      "Test",
+				DateParts: []string{"Thu 5th March"},
+			},
+			wantInferred: true,
+		},
+		{
+			name: "RFC 3339 StartDate - not inferred",
+			raw: RawEvent{
+				Name:      "Test",
+				StartDate: "2026-03-05T21:30:00Z",
+			},
+			wantInferred: false,
+		},
+		{
+			name: "human-readable StartDate without year",
+			raw: RawEvent{
+				Name:      "Show",
+				StartDate: "March 15 8:00 PM",
+			},
+			wantInferred: true,
+		},
+		{
+			name: "ISO StartDate has year - not inferred",
+			raw: RawEvent{
+				Name:      "Concert",
+				StartDate: "2026-06-01",
+			},
+			wantInferred: false,
+		},
+		{
+			name: "no date at all",
+			raw: RawEvent{
+				Name: "No Date",
+			},
+			wantInferred: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, inferred := normalizeStartDate(tc.raw, tz, testNow())
+			if inferred != tc.wantInferred {
+				t.Errorf("yearWasInferred = %v, want %v", inferred, tc.wantInferred)
+			}
+		})
+	}
 }

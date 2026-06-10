@@ -1,0 +1,23 @@
+# Geographic boundary configuration for this SEL node.
+# Lists acceptable regions and localities for event ingestion.
+# Events outside this boundary are rejected (mode: reject) or flagged for review (mode: review).
+# Override path via GEOGRAPHIC_BOUNDARY_CONFIG_FILE env var.
+# Default: Greater Toronto Area + surrounding municipalities.
+regions:
+  - Ontario
+localities:
+  - Toronto
+  - Old Toronto
+  - York
+  - North York
+  - Scarborough
+  - Etobicoke
+  - Mississauga
+  - Brampton
+  - Markham
+  - Richmond Hill
+  - Vaughan
+  - Pickering
+  - Ajax
+  - Whitby
+  - Oshawa

@@ -33,9 +33,9 @@ import (
 //
 // Returns startDate, endDate as RFC 3339 strings. endDate may be empty if
 // no end information was found.
-func assembleDateTimeParts(parts []string, timezone string, now time.Time) (startDate, endDate string) {
+func assembleDateTimeParts(parts []string, timezone string, now time.Time) (startDate, endDate string, yearWasInferred bool) {
 	if len(parts) == 0 {
-		return "", ""
+		return "", "", false
 	}
 
 	loc := loadTimezone(timezone)
@@ -73,14 +73,14 @@ func assembleDateTimeParts(parts []string, timezone string, now time.Time) (star
 		// RFC 3339 passthrough — check first to avoid false matches
 		// from the time/date extractors on ISO strings.
 		if _, err := time.Parse(time.RFC3339, strings.TrimSpace(part)); err == nil {
-			return strings.TrimSpace(part), ""
+			return strings.TrimSpace(part), "", false
 		}
 
 		// Partial ISO 8601 (e.g. "2026-03-05T19:00:00", "2026-03-05"):
 		// apply the source timezone to produce a full RFC 3339 string.
 		// Passing through bare would fail RFC 3339 validation downstream.
 		if isPartialISO8601(strings.TrimSpace(part)) {
-			return applyTimezoneToPartialISO8601(strings.TrimSpace(part), timezone), ""
+			return applyTimezoneToPartialISO8601(strings.TrimSpace(part), timezone), "", false
 		}
 
 		// Try splitting date ranges ("Feb 3 - Mar 8, 2026", "March 5-7").
@@ -128,18 +128,27 @@ func assembleDateTimeParts(parts []string, timezone string, now time.Time) (star
 		}
 	}
 
+	// Detect whether any parsed date still has year==0 after propagation.
+	// year==0 means buildDateTime will call inferYear — the year is a guess.
+	for _, d := range dates {
+		if d.year == 0 {
+			yearWasInferred = true
+			break
+		}
+	}
+
 	// Assemble: first date + first time → startDate.
 	// If a second time exists, use first date + second time → endDate.
 	now = now.In(loc)
 
 	if len(dates) == 0 && len(times) == 0 {
-		return "", ""
+		return "", "", false
 	}
 
 	// Build start datetime.
 	startDT := buildDateTime(dates, times, 0, now, loc)
 	if startDT.IsZero() {
-		return "", ""
+		return "", "", false
 	}
 	startDate = startDT.Format(time.RFC3339)
 
@@ -156,7 +165,7 @@ func assembleDateTimeParts(parts []string, timezone string, now time.Time) (star
 		}
 	}
 
-	return startDate, endDate
+	return startDate, endDate, yearWasInferred
 }
 
 // parsedDate holds the components of a parsed human-readable date.
@@ -513,26 +522,26 @@ func normalizeWhitespace(s string) string {
 //	"2026-03-05T21:30:00Z"       → "2026-03-05T21:30:00Z" (passthrough)
 //	"2026-03-05T21:30:00"        → "2026-03-05T21:30:00-05:00" (tz applied)
 //	"2026-03-05"                 → "2026-03-05T00:00:00-05:00" (tz applied)
-func normalizeDateToRFC3339(s string, timezone string, now time.Time) string {
+func normalizeDateToRFC3339(s string, timezone string, now time.Time) (string, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return ""
+		return "", false
 	}
 	// Already RFC 3339? Return as-is.
 	if _, err := time.Parse(time.RFC3339, s); err == nil {
-		return s
+		return s, false
 	}
 
 	// ISO 8601 without timezone (e.g. "2026-03-05T19:00:00" or "2026-03-05")?
 	// Apply the source timezone to produce a full RFC 3339 string — the
 	// downstream validation layer requires RFC 3339 with timezone.
 	if isPartialISO8601(s) {
-		return applyTimezoneToPartialISO8601(s, timezone)
+		return applyTimezoneToPartialISO8601(s, timezone), false
 	}
 
 	// Try to parse as combined date+time text.
-	result, _ := assembleDateTimeParts([]string{s}, timezone, now)
-	return result
+	result, _, yearInferred := assembleDateTimeParts([]string{s}, timezone, now)
+	return result, yearInferred
 }
 
 // applyTimezoneToPartialISO8601 converts a partial ISO 8601 date or datetime
@@ -570,7 +579,7 @@ func applyTimezoneToPartialISO8601(s string, timezone string) string {
 // combineAndNormalizeDateParts is called from NormalizeRawEvent when
 // RawEvent has DateParts populated (from date_selectors config). It
 // assembles the parts into RFC 3339 start and end dates.
-func combineAndNormalizeDateParts(dateParts []string, timezone string, now time.Time) (startDate, endDate string) {
+func combineAndNormalizeDateParts(dateParts []string, timezone string, now time.Time) (startDate, endDate string, yearWasInferred bool) {
 	return assembleDateTimeParts(dateParts, timezone, now)
 }
 
@@ -581,16 +590,17 @@ func combineAndNormalizeDateParts(dateParts []string, timezone string, now time.
 //  3. StartDate is human-readable → fuzzy parse
 //
 // Returns the RFC 3339 startDate and endDate (endDate may be empty).
-func normalizeStartDate(raw RawEvent, timezone string, now time.Time) (startDate, endDate string) {
+func normalizeStartDate(raw RawEvent, timezone string, now time.Time) (startDate, endDate string, yearWasInferred bool) {
 	// Case 1: date_selectors produced DateParts.
 	if len(raw.DateParts) > 0 {
 		return combineAndNormalizeDateParts(raw.DateParts, timezone, now)
 	}
 
 	// Case 2+3: traditional start_date selector.
-	startDate = normalizeDateToRFC3339(raw.StartDate, timezone, now)
-	endDate = normalizeDateToRFC3339(raw.EndDate, timezone, now)
-	return startDate, endDate
+	var startYearInferred, endYearInferred bool
+	startDate, startYearInferred = normalizeDateToRFC3339(raw.StartDate, timezone, now)
+	endDate, endYearInferred = normalizeDateToRFC3339(raw.EndDate, timezone, now)
+	return startDate, endDate, startYearInferred || endYearInferred
 }
 
 // formatTimezone returns a timezone-appropriate suffix for constructing

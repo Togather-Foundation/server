@@ -95,7 +95,13 @@ info:
     may have tighter per-endpoint limits:
     - `POST /api/v1/dev/login`: configurable via `RATE_LIMIT_LOGIN`, default 5 attempts per 15-minute window per IP
     - `POST /scraper/submissions`: configurable via `RATE_LIMIT_SUBMISSIONS_PER_IP_PER_24H`, default 20 URLs per 24 hours per IP
-    
+
+    ## Geographic Boundaries
+    Events outside the configured geographic scope may be filtered or flagged for review.
+    Boundaries are loaded from a YAML file configurable via `GEOGRAPHIC_BOUNDARY_CONFIG_FILE`
+    (default `configs/boundary.yaml`). The behaviour on out-of-boundary events is controlled
+    by `GEOGRAPHIC_BOUNDARY_MODE` (default `reject`; set to `review` to route to review queue).
+
     ## Content Negotiation
     API endpoints return JSON/JSON-LD via `Accept` header:
     - `application/ld+json` - JSON-LD (default)
@@ -205,6 +211,10 @@ paths:
         Submit a new event to the library. Requires agent or admin authentication.
         Events are auto-published immediately and appear in admin review queue
         if flagged or low-confidence.
+
+        Events with ambiguous (inferred) years are validated against
+        VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS (default 60 days in the future);
+        those exceeding this threshold are sent to the review queue.
       tags: [Events]
       security:
         - apiKey: []
@@ -2992,6 +3002,10 @@ components:
           type: string
           enum: [available, sold_out, limited]
           description: Ticket availability status
+        yearWasInferred:
+          type: boolean
+          description: |
+            True when the occurrence date lacked an explicit year and the parser inferred it.
 
     OccurrenceResponse:
       type: object
@@ -3456,6 +3470,12 @@ components:
           $ref: '#/components/schemas/OfferInput'
         source:
           $ref: '#/components/schemas/SourceInput'
+        yearWasInferred:
+          type: boolean
+          description: |
+            True when the source date lacked an explicit year and the parser inferred it.
+            When true, events beyond VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS (default 60)
+            are sent to the review queue with an ambiguous_year_far_future warning.
         recurrence:
           $ref: '#/components/schemas/RecurrenceInput'
           description: |
