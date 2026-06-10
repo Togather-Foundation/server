@@ -50,6 +50,15 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		return events.EventInput{}, fmt.Errorf("event has no startDate")
 	}
 
+	endDate := parseDate(re.EndDate)
+
+	// Detect year-inferred dates: if the raw date string lacks an explicit
+	// 4-digit year, the downstream date normalizer will use inferYear.
+	yearWasInferred := !yearPattern.MatchString(startDate)
+	if endDate != "" && !yearPattern.MatchString(endDate) {
+		yearWasInferred = true
+	}
+
 	urlStr := extractStringValue(re.URL)
 
 	// Preserve schema.org subtype (MusicEvent, TheaterEvent, etc.) with "Event" as fallback.
@@ -73,7 +82,7 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		Name:                          name,
 		Description:                   extractStringValue(re.Description),
 		StartDate:                     startDate,
-		EndDate:                       parseDate(re.EndDate),
+		EndDate:                       endDate,
 		DoorTime:                      parseDate(re.DoorTime),
 		Location:                      loc,
 		Organizer:                     parseOrganizer(re.Organizer),
@@ -93,6 +102,7 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 			Name:    source.Name,
 			License: source.License,
 		},
+		YearWasInferred: yearWasInferred,
 	}
 
 	// Unfold subEvent objects into Occurrences.
@@ -202,6 +212,9 @@ type RawEvent struct {
 	// selector). When populated, the smart date assembler combines these
 	// into RFC 3339 start/end dates, replacing StartDate/EndDate.
 	DateParts []string
+	// YearWasInferred is set by the date normalizer when the source date
+	// lacks an explicit year and inferYear() was used.
+	YearWasInferred bool
 }
 
 // NormalizeRawEvent converts a CSS-extracted RawEvent to EventInput.
@@ -217,7 +230,7 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig, now time.Time) (events
 	}
 
 	// Normalize dates: DateParts → assemble, or StartDate/EndDate → fuzzy parse.
-	startDate, endDate := normalizeStartDate(raw, source.GetTimezone(), now)
+	startDate, endDate, yearWasInferred := normalizeStartDate(raw, source.GetTimezone(), now)
 
 	if startDate == "" {
 		return events.EventInput{}, fmt.Errorf("raw event has no startDate: %q", raw.StartDate)
@@ -254,7 +267,8 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig, now time.Time) (events
 			Name:    source.Name,
 			License: source.License,
 		},
-		EventDomain: source.Domain,
+		EventDomain:     source.Domain,
+		YearWasInferred: yearWasInferred,
 	}, nil
 }
 
@@ -278,7 +292,7 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 
 	for _, raw := range raws {
 		// Normalize the date parts for this row.
-		startDate, endDate := normalizeStartDate(raw, tz, now)
+		startDate, endDate, _ := normalizeStartDate(raw, tz, now)
 		if startDate == "" {
 			// Skip rows that don't have a valid start date.
 			continue
