@@ -30,17 +30,18 @@ func unmarshalJSON[T any](data json.RawMessage) T {
 // via slog at the Warning level, consistent with YAML config loading.
 func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 	cfg := SourceConfig{
-		Name:       src.Name,
-		URL:        src.URL,
-		URLs:       src.URLs,
-		Tier:       src.Tier,
-		Schedule:   src.Schedule,
-		TrustLevel: src.TrustLevel,
-		License:    src.License,
-		Domain:     src.Domain,
-		Enabled:    src.Enabled,
-		MaxPages:   src.MaxPages,
-		Notes:      src.Notes,
+		Name:           src.Name,
+		URL:            src.URL,
+		URLs:           src.URLs,
+		Tier:           src.Tier,
+		Schedule:       src.Schedule,
+		TrustLevel:     src.TrustLevel,
+		License:        src.License,
+		Domain:         src.Domain,
+		TLSFingerprint: src.TLSFingerprint,
+		Enabled:        src.Enabled,
+		MaxPages:       src.MaxPages,
+		Notes:          src.Notes,
 	}
 
 	if len(src.Selectors) > 0 {

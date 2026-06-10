@@ -64,6 +64,13 @@ func (e *RestExtractor) Extract(
 	}
 	client = localClient
 
+	if source.TLSFingerprint != "" {
+		merged := mergeHeaders(ChromeHeaders(), cfg.Headers)
+		cfgCopy := *cfg
+		cfgCopy.Headers = merged
+		cfg = &cfgCopy
+	}
+
 	// Parse URL template once (if provided).
 	var urlTmpl *template.Template
 	if cfg.URLTemplate != "" {
@@ -136,15 +143,15 @@ func (e *RestExtractor) fetchPage(
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", fmt.Errorf("rest: unexpected status %d from %s", resp.StatusCode, pageURL)
-	}
-
 	// Read body with 10 MiB limit to prevent memory exhaustion
 	// (consistent with graphql.go and jsonld.go).
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
 	if err != nil {
 		return nil, "", fmt.Errorf("rest: reading response from %s: %w", pageURL, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("rest: unexpected status %d from %s", resp.StatusCode, pageURL)
 	}
 
 	var items []map[string]any
@@ -204,6 +211,19 @@ func (e *RestExtractor) fetchPage(
 	}
 
 	return events, nextURL, nil
+}
+
+// mergeHeaders creates a new map with base entries, then overwrites with
+// override entries. Source-specific headers take precedence over defaults.
+func mergeHeaders(base, override map[string]string) map[string]string {
+	merged := make(map[string]string, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+	return merged
 }
 
 // resolveNestedString traverses item using a dot-separated path and returns

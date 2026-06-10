@@ -2371,6 +2371,7 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 				TrustLevel:                    params.TrustLevel,
 				License:                       params.License,
 				Domain:                        params.Domain,
+				TLSFingerprint:                params.TLSFingerprint,
 				Enabled:                       params.Enabled,
 				MaxPages:                      params.MaxPages,
 				Selectors:                     params.Selectors,

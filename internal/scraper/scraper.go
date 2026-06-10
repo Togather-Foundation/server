@@ -22,24 +22,38 @@ import (
 
 // ScrapeOptions controls scraper behaviour.
 type ScrapeOptions struct {
-	DryRun           bool
-	Verbose          bool              // when true with DryRun, ScrapeResult.DryRunEvents is populated
-	Limit            int               // 0 = no limit
-	SourcesDir       string            // default: "configs/sources"
-	SourceFile       string            // if set, load a single YAML config from this path (bypasses DB and SourcesDir)
-	TierFilter       int               // -1 = all tiers; 0, 1, … = restrict to that tier
-	Transport        http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
-	RequestTimeout   time.Duration     // 0 = use the fetchTimeout package const
-	RateLimitMs      int32             // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
-	HeadlessOverride bool              // if true and rodExtractor is configured, ScrapeURL uses Tier 2 headless path
+	DryRun     bool
+	Verbose    bool              // when true with DryRun, ScrapeResult.DryRunEvents is populated
+	Limit      int               // 0 = no limit
+	SourcesDir string            // default: "configs/sources"
+	SourceFile string            // if set, load a single YAML config from this path (bypasses DB and SourcesDir)
+	TierFilter int               // -1 = all tiers; 0, 1, … = restrict to that tier
+	Transport  http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
+	// CookieJar is an optional cookie jar used for all HTTP clients created by
+	// HTTPClient(). When set, cookies are persisted across requests, which is
+	// required for sources that set WAF session cookies (e.g. Akamai pre-flight).
+	// nil means no cookie persistence (default).
+	CookieJar        http.CookieJar
+	RequestTimeout   time.Duration // 0 = use the fetchTimeout package const
+	RateLimitMs      int32         // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
+	HeadlessOverride bool          // if true and rodExtractor is configured, ScrapeURL uses Tier 2 headless path
+	TLSFingerprint   string        // set from SourceConfig.TLSFingerprint by callers; enables uTLS when non-empty
 }
 
 // HTTPClient returns an http.Client using the configured transport (if any).
-// When RequestTimeout is non-zero it is used as the client timeout; otherwise
-// the provided fallback is used. Used by all scraper HTTP code to ensure
-// consistent transport usage.
+// When TLSFingerprint is set, a uTLS transport is created and used (wrapping
+// any CachingTransport if one is already configured). When RequestTimeout is
+// non-zero it is used as the client timeout; otherwise the provided fallback
+// is used. Used by all scraper HTTP code to ensure consistent transport usage.
 func (o ScrapeOptions) HTTPClient(fallback time.Duration) *http.Client {
 	transport := o.Transport
+	if o.TLSFingerprint != "" {
+		if ct, ok := transport.(*CachingTransport); ok {
+			ct.Wrapped = NewChromeFingerprintTransport()
+		} else if transport == nil {
+			transport = NewChromeFingerprintTransport()
+		}
+	}
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
@@ -50,6 +64,7 @@ func (o ScrapeOptions) HTTPClient(fallback time.Duration) *http.Client {
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
+		Jar:       o.CookieJar,
 	}
 }
 
@@ -527,8 +542,13 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
+		opts.TLSFingerprint = source.TLSFingerprint
 		extractor := NewCollyExtractor(s.logger)
-		extractor.SetTransport(opts.Transport)
+		transport := opts.Transport
+		if opts.TLSFingerprint != "" && transport == nil {
+			transport = NewChromeFingerprintTransport()
+		}
+		extractor.SetTransport(transport)
 		if opts.RateLimitMs > 0 {
 			extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
 		}
@@ -644,6 +664,7 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
+		opts.TLSFingerprint = source.TLSFingerprint
 		var allRawEvents []json.RawMessage
 		urlList := source.GetURLs()
 		failCount := 0
@@ -722,6 +743,7 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 		var rawEvents []RawEvent
 		var err error
 
+		opts.TLSFingerprint = source.TLSFingerprint
 		extractor, extErr := NewExtractor(source, s.logger)
 		if extErr != nil {
 			return 0, nil, nil, extErr
@@ -754,6 +776,7 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 	}
 
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
+		opts.TLSFingerprint = source.TLSFingerprint
 		// 1. Compile filter regex
 		pattern, err := regexp.Compile(source.Sitemap.FilterPattern)
 		if err != nil {
@@ -816,7 +839,11 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 		switch source.Tier {
 		case 1:
 			extractor := NewCollyExtractor(s.logger)
-			extractor.SetTransport(opts.Transport)
+			transport := opts.Transport
+			if opts.TLSFingerprint != "" && transport == nil {
+				transport = NewChromeFingerprintTransport()
+			}
+			extractor.SetTransport(transport)
 			if opts.RateLimitMs > 0 {
 				extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
 			}

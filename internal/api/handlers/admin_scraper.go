@@ -61,6 +61,7 @@ type scraperSourceResponse struct {
 	License             string     `json:"license"`
 	Enabled             bool       `json:"enabled"`
 	ExtractionMethod    string     `json:"extraction_method,omitempty"`
+	TLSFingerprint      string     `json:"tls_fingerprint,omitempty"`
 	LastRunStatus       string     `json:"last_run_status,omitempty"`
 	LastRunStartedAt    *time.Time `json:"last_run_started_at,omitempty"`
 	LastRunCompletedAt  *time.Time `json:"last_run_completed_at,omitempty"`
@@ -82,6 +83,7 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 		License:             row.ScraperSource.License,
 		Enabled:             row.ScraperSource.Enabled,
 		ExtractionMethod:    row.ScraperSource.ExtractionMethod,
+		TLSFingerprint:      row.ScraperSource.TlsFingerprint,
 		LastRunStatus:       row.LastRunStatus,
 		LastRunEventsFound:  row.LastRunEventsFound,
 		LastRunEventsNew:    row.LastRunEventsNew,
