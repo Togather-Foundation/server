@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -27,7 +28,12 @@ func NewChromeFingerprintTransport() http.RoundTripper {
 					return nil, err
 				}
 
-				uconn := utls.UClient(tcpConn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+				uconn, err := setupChromeUConn(tcpConn, host)
+				if err != nil {
+					_ = tcpConn.Close()
+					return nil, fmt.Errorf("uTLS setup for %s: %w", host, err)
+				}
+
 				if err := uconn.Handshake(); err != nil {
 					_ = uconn.Close()
 					return nil, err
@@ -35,11 +41,39 @@ func NewChromeFingerprintTransport() http.RoundTripper {
 
 				return uconn, nil
 			},
-			ForceAttemptHTTP2: true,
+			ForceAttemptHTTP2: false,
 			MaxIdleConns:      10,
 			IdleConnTimeout:   90 * time.Second,
 		},
 	}
+}
+
+// setupChromeUConn creates a uTLS connection with Chrome's TLS fingerprint
+// but strips h2 from the ALPN extension. Go's http.Transport uses a concrete
+// type assertion (*crypto/tls.Conn) to detect TLS connections; utls.UConn
+// doesn't satisfy it, so Go treats the connection as non-TLS and speaks
+// HTTP/1.1. If ALPN negotiates h2, Cloudflare sends HTTP/2 frames but Go
+// expects HTTP/1.1, producing "malformed HTTP response" errors. Stripping
+// h2 forces HTTP/1.1-only while preserving the Chrome TLS fingerprint
+// for WAF bypass.
+func setupChromeUConn(tcpConn net.Conn, host string) (*utls.UConn, error) {
+	uconn := utls.UClient(tcpConn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+	if err := uconn.BuildHandshakeState(); err != nil {
+		return nil, err
+	}
+	for _, ext := range uconn.Extensions {
+		if alpn, ok := ext.(*utls.ALPNExtension); ok {
+			filtered := make([]string, 0, len(alpn.AlpnProtocols))
+			for _, p := range alpn.AlpnProtocols {
+				if p != "h2" {
+					filtered = append(filtered, p)
+				}
+			}
+			alpn.AlpnProtocols = filtered
+			break
+		}
+	}
+	return uconn, nil
 }
 
 // ChromeHeaders returns a set of HTTP headers that mimic a modern Chrome
