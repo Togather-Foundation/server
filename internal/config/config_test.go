@@ -378,3 +378,72 @@ func TestLoad_ScraperPolling_ValidConfig(t *testing.T) {
 		t.Errorf("PollBackoffMax = %d, want 5000", cfg.Scraper.PollBackoffMax)
 	}
 }
+
+func TestGeographicBoundaryConfig_LoadsFromYAML(t *testing.T) {
+	// Write a temporary YAML file
+	tmpDir := t.TempDir()
+	yamlPath := tmpDir + "/boundary.yaml"
+	yamlContent := []byte("regions:\n  - Ontario\n  - Quebec\nlocalities:\n  - Toronto\n  - Montreal\n")
+	if err := os.WriteFile(yamlPath, yamlContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	boundary, err := loadGeographicBoundaryFile(yamlPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(boundary.Regions) != 2 || boundary.Regions[0] != "Ontario" || boundary.Regions[1] != "Quebec" {
+		t.Errorf("expected regions [Ontario Quebec], got %v", boundary.Regions)
+	}
+	if len(boundary.Localities) != 2 || boundary.Localities[0] != "Toronto" || boundary.Localities[1] != "Montreal" {
+		t.Errorf("expected localities [Toronto Montreal], got %v", boundary.Localities)
+	}
+}
+
+func TestGeographicBoundaryConfig_ZeroWhenFileMissing(t *testing.T) {
+	boundary, err := loadGeographicBoundaryFile("/nonexistent/path/boundary.yaml")
+	if err == nil {
+		t.Fatal("expected error for missing file")
+	}
+	if len(boundary.Regions) != 0 || len(boundary.Localities) != 0 {
+		t.Errorf("expected zero-valued config when file is missing, got %+v", boundary)
+	}
+}
+
+func TestAmbiguousDateMaxFutureDays_Default(t *testing.T) {
+	v := ValidationConfig{}.WithDefaults()
+	if v.AmbiguousDateMaxFutureDays != 60 {
+		t.Errorf("AmbiguousDateMaxFutureDays default = %d, want 60", v.AmbiguousDateMaxFutureDays)
+	}
+}
+
+func TestAmbiguousDateMaxFutureDays_EnvVar(t *testing.T) {
+	originalEnv := map[string]string{
+		"ENVIRONMENT":  os.Getenv("ENVIRONMENT"),
+		"DATABASE_URL": os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":   os.Getenv("JWT_SECRET"),
+		"VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS": os.Getenv("VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS", "90")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Expected no error, got: %v", err)
+	}
+	if cfg.Validation.AmbiguousDateMaxFutureDays != 90 {
+		t.Errorf("AmbiguousDateMaxFutureDays = %d, want 90", cfg.Validation.AmbiguousDateMaxFutureDays)
+	}
+}
