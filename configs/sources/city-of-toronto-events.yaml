@@ -17,8 +17,9 @@ timezone: "America/Toronto"
 enabled: true
 tls_fingerprint: "chrome_auto"
 rest:
-  endpoint: "https://secure.toronto.ca/c3api_data/v2/DataAccess.svc/festivals_events/events?$format=json&$top=5000&$filter=calendar_date%20ge%202010-01-01T00:00:00-04:00&$orderby=calendar_date&$select=id,submission_id,event_name,event_description,event_startdate,event_enddate,calendar_date,calendar_date_group,event_locations,event_category,event_theme,event_image,event_website,facebook_url,instagram_url,twitter_url,free_event,featured_event,accessible_event,event_status,event_price_low,event_price_high,event_features"
+  endpoint: "https://secure.toronto.ca/c3api_data/v2/DataAccess.svc/festivals_events/events?$format=json&$top=1000&$filter=calendar_date%20ge%202010-01-01T00:00:00-04:00&$orderby=calendar_date&$select=id,submission_id,event_name,event_description,event_startdate,event_enddate,calendar_date,calendar_date_group,event_locations,event_category,event_theme,event_image,event_website,facebook_url,instagram_url,twitter_url,free_event,featured_event,accessible_event,event_status,event_price_low,event_price_high,event_features"
   results_field: "value"
+  next_field: "@odata.nextLink"
   field_map:
     name: "event_name"
     start_date: "calendar_date"
