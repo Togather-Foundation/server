@@ -27,7 +27,12 @@ func NewChromeFingerprintTransport() http.RoundTripper {
 					return nil, err
 				}
 
-				uconn := utls.UClient(tcpConn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+				uconn, err := setupChromeUConn(tcpConn, host)
+				if err != nil {
+					_ = tcpConn.Close()
+					return nil, err
+				}
+
 				if err := uconn.Handshake(); err != nil {
 					_ = uconn.Close()
 					return nil, err
@@ -35,11 +40,30 @@ func NewChromeFingerprintTransport() http.RoundTripper {
 
 				return uconn, nil
 			},
-			ForceAttemptHTTP2: true,
+			ForceAttemptHTTP2: false,
 			MaxIdleConns:      10,
 			IdleConnTimeout:   90 * time.Second,
 		},
 	}
+}
+
+func setupChromeUConn(tcpConn net.Conn, host string) (*utls.UConn, error) {
+	uconn := utls.UClient(tcpConn, &utls.Config{ServerName: host}, utls.HelloChrome_Auto)
+	if err := uconn.BuildHandshakeState(); err != nil {
+		return nil, err
+	}
+	for _, ext := range uconn.Extensions {
+		if alpn, ok := ext.(*utls.ALPNExtension); ok {
+			filtered := make([]string, 0, len(alpn.AlpnProtocols))
+			for _, p := range alpn.AlpnProtocols {
+				if p != "h2" {
+					filtered = append(filtered, p)
+				}
+			}
+			alpn.AlpnProtocols = filtered
+		}
+	}
+	return uconn, nil
 }
 
 // ChromeHeaders returns a set of HTTP headers that mimic a modern Chrome
