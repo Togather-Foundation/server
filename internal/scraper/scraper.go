@@ -22,16 +22,21 @@ import (
 
 // ScrapeOptions controls scraper behaviour.
 type ScrapeOptions struct {
-	DryRun           bool
-	Verbose          bool              // when true with DryRun, ScrapeResult.DryRunEvents is populated
-	Limit            int               // 0 = no limit
-	SourcesDir       string            // default: "configs/sources"
-	SourceFile       string            // if set, load a single YAML config from this path (bypasses DB and SourcesDir)
-	TierFilter       int               // -1 = all tiers; 0, 1, … = restrict to that tier
-	Transport        http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
-	RequestTimeout   time.Duration     // 0 = use the fetchTimeout package const
-	RateLimitMs      int32             // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
-	HeadlessOverride bool              // if true and rodExtractor is configured, ScrapeURL uses Tier 2 headless path
+	DryRun     bool
+	Verbose    bool              // when true with DryRun, ScrapeResult.DryRunEvents is populated
+	Limit      int               // 0 = no limit
+	SourcesDir string            // default: "configs/sources"
+	SourceFile string            // if set, load a single YAML config from this path (bypasses DB and SourcesDir)
+	TierFilter int               // -1 = all tiers; 0, 1, … = restrict to that tier
+	Transport  http.RoundTripper // optional custom transport (e.g. CachingTransport); nil = http.DefaultTransport
+	// CookieJar is an optional cookie jar used for all HTTP clients created by
+	// HTTPClient(). When set, cookies are persisted across requests, which is
+	// required for sources that set WAF session cookies (e.g. Akamai pre-flight).
+	// nil means no cookie persistence (default).
+	CookieJar        http.CookieJar
+	RequestTimeout   time.Duration // 0 = use the fetchTimeout package const
+	RateLimitMs      int32         // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
+	HeadlessOverride bool          // if true and rodExtractor is configured, ScrapeURL uses Tier 2 headless path
 }
 
 // HTTPClient returns an http.Client using the configured transport (if any).
@@ -50,6 +55,7 @@ func (o ScrapeOptions) HTTPClient(fallback time.Duration) *http.Client {
 	return &http.Client{
 		Timeout:   timeout,
 		Transport: transport,
+		Jar:       o.CookieJar,
 	}
 }
 

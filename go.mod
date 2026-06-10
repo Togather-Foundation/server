@@ -21,6 +21,7 @@ require (
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/piprate/json-gold v0.7.0
 	github.com/prometheus/client_golang v1.23.2
+	github.com/refraction-networking/utls v1.8.2
 	github.com/resend/resend-go/v2 v2.28.0
 	github.com/riverqueue/river v0.30.2
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.30.2
@@ -48,6 +49,7 @@ require (
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/andybalholm/brotli v1.0.6 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/antchfx/htmlquery v1.3.5 // indirect
 	github.com/antchfx/xmlquery v1.5.0 // indirect
