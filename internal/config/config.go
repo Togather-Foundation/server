@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -581,8 +582,11 @@ func Load() (Config, error) {
 
 	// Load geographic boundary configuration from YAML file (if present).
 	// Zero-valued (no filtering) when the file doesn't exist or is empty.
-	if boundary, err := loadGeographicBoundaryFile(getEnv("GEOGRAPHIC_BOUNDARY_CONFIG_FILE", "configs/boundary.yaml")); err == nil {
+	boundaryPath := getEnv("GEOGRAPHIC_BOUNDARY_CONFIG_FILE", "configs/boundary.yaml")
+	if boundary, err := loadGeographicBoundaryFile(boundaryPath); err == nil {
 		cfg.GeographicBoundary = boundary
+	} else if !os.IsNotExist(err) {
+		log.Printf("WARNING: failed to load geographic boundary config from %s, boundary filtering disabled: %v", boundaryPath, err)
 	}
 	cfg.GeographicBoundary.Mode = getEnv("GEOGRAPHIC_BOUNDARY_MODE", cfg.GeographicBoundary.Mode)
 	cfg.GeographicBoundary = cfg.GeographicBoundary.WithDefaults()
