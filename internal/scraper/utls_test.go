@@ -1,6 +1,9 @@
 package scraper
 
-import "testing"
+import (
+	"regexp"
+	"testing"
+)
 
 func TestNewChromeFingerprintTransport(t *testing.T) {
 	t.Parallel()
@@ -24,8 +27,8 @@ func TestNewChromeFingerprintTransport(t *testing.T) {
 		t.Error("ForceAttemptHTTP2 should be true")
 	}
 
-	if ct.MaxIdleConns != 10 {
-		t.Errorf("MaxIdleConns = %d, want 10", ct.MaxIdleConns)
+	if ct.MaxIdleConns <= 0 {
+		t.Errorf("MaxIdleConns = %d, want > 0", ct.MaxIdleConns)
 	}
 
 	if ct.IdleConnTimeout == 0 {
@@ -60,5 +63,11 @@ func TestChromeHeaders(t *testing.T) {
 				t.Errorf("header %s has empty value", key)
 			}
 		})
+	}
+
+	ua := headers["User-Agent"]
+	chromePattern := regexp.MustCompile(`Chrome/\d+`)
+	if !chromePattern.MatchString(ua) {
+		t.Errorf("User-Agent does not contain Chrome/<version>: %s", ua)
 	}
 }

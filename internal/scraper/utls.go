@@ -15,6 +15,7 @@ type chromeFingerprintTransport struct {
 func NewChromeFingerprintTransport() http.RoundTripper {
 	return &chromeFingerprintTransport{
 		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
 			DialTLS: func(network, addr string) (net.Conn, error) {
 				host, _, err := net.SplitHostPort(addr)
 				if err != nil {
@@ -53,6 +54,6 @@ func ChromeHeaders() map[string]string {
 		"Sec-Fetch-Mode":  "navigate",
 		"Sec-Fetch-Site":  "none",
 		"Sec-Fetch-User":  "?1",
-		"Cache-Control":   "max-age=0",
+		"Cache-Control":   "no-cache",
 	}
 }
