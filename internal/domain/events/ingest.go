@@ -49,11 +49,12 @@ func WithSourceID(id string) IngestOption {
 }
 
 type IngestService struct {
-	repo             Repository
-	nodeDomain       string
-	defaultTZ        string
-	validationConfig config.ValidationConfig
-	dedupConfig      config.DedupConfig
+	repo              Repository
+	nodeDomain        string
+	defaultTZ         string
+	validationConfig  config.ValidationConfig
+	dedupConfig       config.DedupConfig
+	geoBoundaryConfig config.GeographicBoundaryConfig
 }
 
 func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string, validationConfig config.ValidationConfig) *IngestService {
@@ -68,6 +69,12 @@ func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string
 // WithDedupConfig sets the deduplication configuration and returns the service for chaining.
 func (s *IngestService) WithDedupConfig(cfg config.DedupConfig) *IngestService {
 	s.dedupConfig = cfg
+	return s
+}
+
+// WithGeographicBoundaryConfig sets the geographic boundary configuration and returns the service for chaining.
+func (s *IngestService) WithGeographicBoundaryConfig(cfg config.GeographicBoundaryConfig) *IngestService {
+	s.geoBoundaryConfig = cfg
 	return s
 }
 

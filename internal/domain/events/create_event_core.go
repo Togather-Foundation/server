@@ -99,6 +99,11 @@ func (s *IngestService) createEventCore(
 		Int("validation_warnings", len(warnings)).
 		Msg("createEventCore: after validation")
 
+	// ── 1.5. Geographic boundary check ──────────────────────────────────────
+	if err := CheckGeographicBoundary(validated, s.geoBoundaryConfig); err != nil {
+		return nil, err
+	}
+
 	// ── 2. Quality warnings ──────────────────────────────────────────────────
 	warnings = appendQualityWarnings(warnings, validated, nil, s.validationConfig)
 
