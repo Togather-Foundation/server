@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/Togather-Foundation/server/internal/validation"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -187,12 +188,8 @@ func (h *AdminAuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 	// If already authenticated, redirect to dashboard (or original target)
 	if cookie, err := r.Cookie("auth_token"); err == nil && cookie.Value != "" {
 		if _, err := h.JWTManager.Validate(cookie.Value); err == nil {
-			redirect := r.URL.Query().Get("redirect")
-			if redirect != "" && strings.HasPrefix(redirect, "/") {
-				http.Redirect(w, r, redirect, http.StatusFound)
-			} else {
-				http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
-			}
+			target := validation.IsSafeRelativeRedirect(r.URL.Query().Get("redirect"))
+			http.Redirect(w, r, target, http.StatusFound)
 			return
 		}
 	}
