@@ -68,8 +68,8 @@ source .agent-keys/staging
 #   TOGATHER_ADMIN_API_KEY       - persistent admin API key (exchange for JWT via POST /api/v1/auth/token)
 #   TOGATHER_AGENT_API_KEY       - same as ADMIN_API_KEY (admin key serves agent routes too)
 
-# Admin API example — exchange for JWT first
-ADMIN_JWT=$(curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
+# Admin API example — exchange for JWT first (POST required)
+ADMIN_JWT=$(curl -s -X POST -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
   "$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token')
 curl -H "Authorization: Bearer $ADMIN_JWT" \
   "$TOGATHER_BASE_URL/api/v1/admin/scraper/diagnostics"
@@ -81,35 +81,42 @@ curl -H "Authorization: Bearer $TOGATHER_AGENT_API_KEY" \
 
 **Running server CLI commands on staging/production** (no need to know the active blue/green container):
 
+`scripts/remote.sh` reads `SSH_HOST`/`SSH_USER` from `.deploy.conf.{env}`, auto-discovers the active container, and forwards the command via SSH + docker exec.
+
+**Important:** `remote.sh` does NOT propagate local env vars into the container. Commands that need auth must pass credentials explicitly via flags:
+
 ```bash
-# Via script
-scripts/remote.sh staging token-exchange
-scripts/remote.sh staging api-key create my-key --role admin
-scripts/remote.sh staging scrape failures
+source .agent-keys/staging      # provides TOGATHER_ADMIN_API_KEY, TOGATHER_BASE_URL
+
+# Most commands need explicit --key and --server:
+scripts/remote.sh staging "token-exchange --key $TOGATHER_ADMIN_API_KEY --server $TOGATHER_BASE_URL"
+scripts/remote.sh staging "api-key create my-key --role admin --key $TOGATHER_ADMIN_API_KEY --server $TOGATHER_BASE_URL"
+scripts/remote.sh staging scrape failures      # reads DB directly, no key needed
 scripts/remote.sh staging scrape sync
 scripts/remote.sh staging review queue
 scripts/remote.sh staging review stats
 
 # Via Makefile
-make remote-staging CMD="token-exchange"
-make remote-staging CMD="api-key create my-agent --role admin"
-make remote-production CMD="events"
+make remote-staging CMD="token-exchange --key \$(TOGATHER_ADMIN_API_KEY) --server \$(TOGATHER_BASE_URL)"
+make remote-staging CMD="scrape failures"
 ```
 
-`scripts/remote.sh` reads `SSH_HOST`/`SSH_USER` from `.deploy.conf.{env}`, auto-discovers the active container, and forwards the command via SSH + docker exec.
-
-**Getting an admin JWT** — exchange an admin API key via the STS endpoint:
+**Getting an admin JWT for curl testing** — exchange the admin API key, capture the token:
 
 ```bash
-# 1. Source the persistent admin API key
 source .agent-keys/staging
 
-# 2. Exchange for a short-lived JWT (via HTTPS, no SSH needed)
-curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
-  "$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token'
+# Option A: via remote.sh (always works — runs inside the container)
+ADMIN_JWT=$(scripts/remote.sh staging \
+  "token-exchange --key $TOGATHER_ADMIN_API_KEY --server $TOGATHER_BASE_URL" 2>&1 | tail -1)
 
-# Or use the CLI wrapper
-server token-exchange
+# Option B: direct HTTPS curl (faster, no SSH needed; POST required)
+ADMIN_JWT=$(curl -s -X POST -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \
+  "$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token')
+
+# Then use the JWT in subsequent curl calls:
+curl -H "Authorization: Bearer $ADMIN_JWT" \
+  "$TOGATHER_BASE_URL/api/v1/admin/scraper/diagnostics"
 ```
 
 **Refreshing an admin token in emergencies** (when DB is down and API keys can't be validated):
