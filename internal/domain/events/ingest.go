@@ -76,7 +76,7 @@ func (s *IngestService) WithDedupConfig(cfg config.DedupConfig) *IngestService {
 
 // WithGeographicBoundaryConfig sets the geographic boundary configuration and returns the service for chaining.
 func (s *IngestService) WithGeographicBoundaryConfig(cfg config.GeographicBoundaryConfig) *IngestService {
-	s.geoBoundaryConfig = cfg
+	s.geoBoundaryConfig = cfg.WithDefaults()
 	return s
 }
 

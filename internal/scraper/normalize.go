@@ -190,10 +190,18 @@ func occurrencesFromRawMessages(raws []json.RawMessage) []events.OccurrenceInput
 		if sd == "" {
 			continue
 		}
+		ed := parseDate(re.EndDate)
+
+		yearWasInferred := !yearPattern.MatchString(sd)
+		if ed != "" && !yearPattern.MatchString(ed) {
+			yearWasInferred = true
+		}
+
 		occs = append(occs, events.OccurrenceInput{
-			StartDate: sd,
-			EndDate:   parseDate(re.EndDate),
-			DoorTime:  parseDate(re.DoorTime),
+			StartDate:       sd,
+			EndDate:         ed,
+			DoorTime:        parseDate(re.DoorTime),
+			YearWasInferred: yearWasInferred,
 		})
 	}
 	return occs
