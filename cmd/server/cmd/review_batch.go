@@ -155,9 +155,11 @@ func runReviewBatch(cmd *cobra.Command, args []string) error {
 				errStr := err.Error()
 				errors = append(errors, fmt.Sprintf("  %s", errStr))
 				if strings.Contains(errStr, "401") || strings.Contains(errStr, "403") {
-					_, _ = fmt.Fprintf(out, "✓ %d %s, ✗ %d failed (stopped: auth error)\n", succeeded, actionLabel(batchAction), failed)
-					for _, e := range errors {
-						_, _ = fmt.Fprintln(out, e)
+					if !reviewJSON {
+						_, _ = fmt.Fprintf(out, "✓ %d %s, ✗ %d failed (stopped: auth error)\n", succeeded, actionLabel(batchAction), failed)
+						for _, e := range errors {
+							_, _ = fmt.Fprintln(out, e)
+						}
 					}
 					return fmt.Errorf("authentication error: %s", errStr)
 				}
@@ -170,11 +172,13 @@ func runReviewBatch(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	_, _ = fmt.Fprintf(out, "✓ %d %s, ✗ %d failed\n", succeeded, actionLabel(batchAction), failed)
-	if len(errors) > 0 {
-		_, _ = fmt.Fprintln(out, "Errors:")
-		for _, e := range errors {
-			_, _ = fmt.Fprintln(out, e)
+	if !reviewJSON {
+		_, _ = fmt.Fprintf(out, "✓ %d %s, ✗ %d failed\n", succeeded, actionLabel(batchAction), failed)
+		if len(errors) > 0 {
+			_, _ = fmt.Fprintln(out, "Errors:")
+			for _, e := range errors {
+				_, _ = fmt.Fprintln(out, e)
+			}
 		}
 	}
 
