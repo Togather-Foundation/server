@@ -66,7 +66,11 @@ func TestReviewEditSuccess(t *testing.T) {
 		if r.Method == http.MethodPut {
 			putReqMethod = r.Method
 			putReqPath = r.URL.Path
-			_ = json.NewDecoder(r.Body).Decode(&putReqBody)
+			if err := json.NewDecoder(r.Body).Decode(&putReqBody); err != nil {
+				t.Logf("failed to decode request body: %v", err)
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
 			return
 		}
@@ -117,7 +121,7 @@ func TestReviewEditSuccess(t *testing.T) {
 	}
 }
 
-func TestReviewEditJSON(t *testing.T) {
+func TestReviewEditJSONFlagNoError(t *testing.T) {
 	t.Parallel()
 	reviewTestMu.Lock()
 	t.Cleanup(func() { reviewTestMu.Unlock() })
@@ -213,7 +217,7 @@ func TestReviewEditDryRun(t *testing.T) {
 	}
 }
 
-func TestReviewEditDryRunJSON(t *testing.T) {
+func TestReviewEditDryRunJSONFlagNoError(t *testing.T) {
 	t.Parallel()
 	reviewTestMu.Lock()
 	t.Cleanup(func() { reviewTestMu.Unlock() })

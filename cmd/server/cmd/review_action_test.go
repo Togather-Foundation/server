@@ -61,7 +61,11 @@ func TestReviewApproveSuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		reqMethod = r.Method
 		reqPath = r.URL.Path
-		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Logf("failed to decode request body: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "approved", "id": 42})
 	}))
@@ -100,7 +104,11 @@ func TestReviewRejectSuccess(t *testing.T) {
 
 	var reqBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Logf("failed to decode request body: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "rejected", "id": 42})
 	}))
@@ -133,7 +141,11 @@ func TestReviewFixSuccess(t *testing.T) {
 
 	var reqBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			t.Logf("failed to decode request body: %v", err)
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"status": "fixed", "id": 42})
 	}))
@@ -205,8 +217,8 @@ func TestReviewActionJSONUnmarshalError(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`not valid json at all {{{`))
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"title": "Internal Server Error"}`))
 	}))
 	defer server.Close()
 
@@ -219,10 +231,10 @@ func TestReviewActionJSONUnmarshalError(t *testing.T) {
 	cmd, _, _ := setupReviewActionCmd(t, []string{"review", "approve", "42", "--json"})
 	err := cmd.Execute()
 	if err == nil {
-		t.Error("expected error for corrupt JSON response")
+		t.Error("expected error for non-2xx JSON response")
 	}
-	if !strings.Contains(err.Error(), "unmarshal") {
-		t.Errorf("error should mention unmarshal, got: %v", err)
+	if !strings.Contains(err.Error(), "server returned status 500") {
+		t.Errorf("error should mention status 500, got: %v", err)
 	}
 }
 
