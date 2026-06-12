@@ -410,6 +410,83 @@ func TestGeographicBoundaryConfig_ZeroWhenFileMissing(t *testing.T) {
 	}
 }
 
+func TestGeographicBoundaryConfig_MalformedYAMLReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	yamlPath := tmpDir + "/boundary.yaml"
+	yamlContent := []byte("this: [ is: not: yaml")
+	if err := os.WriteFile(yamlPath, yamlContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	boundary, err := loadGeographicBoundaryFile(yamlPath)
+	if err == nil {
+		t.Fatal("expected error for malformed YAML")
+	}
+	if len(boundary.Regions) != 0 || len(boundary.Localities) != 0 {
+		t.Errorf("expected zero-valued config on malformed YAML, got %+v", boundary)
+	}
+}
+
+func TestGeographicBoundaryConfig_ReadErrorReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	childDir := tmpDir + "/nodir"
+	if err := os.Mkdir(childDir, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(childDir, 0700); err != nil {
+			t.Logf("failed to restore permissions on test dir: %v", err)
+		}
+	})
+
+	yamlPath := childDir + "/boundary.yaml"
+	boundary, err := loadGeographicBoundaryFile(yamlPath)
+	if err == nil {
+		t.Fatal("expected permission-denied error when directory is inaccessible")
+	}
+	if len(boundary.Regions) != 0 || len(boundary.Localities) != 0 {
+		t.Errorf("expected zero-valued config on read error, got %+v", boundary)
+	}
+}
+
+func TestLoad_BoundaryConfig_MalformedYAML(t *testing.T) {
+	tmpDir := t.TempDir()
+	yamlPath := tmpDir + "/boundary.yaml"
+	yamlContent := []byte("this: [ is: not: yaml")
+	if err := os.WriteFile(yamlPath, yamlContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	originalEnv := map[string]string{
+		"ENVIRONMENT":                     os.Getenv("ENVIRONMENT"),
+		"DATABASE_URL":                    os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":                      os.Getenv("JWT_SECRET"),
+		"GEOGRAPHIC_BOUNDARY_CONFIG_FILE": os.Getenv("GEOGRAPHIC_BOUNDARY_CONFIG_FILE"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("GEOGRAPHIC_BOUNDARY_CONFIG_FILE", yamlPath)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error for malformed boundary YAML, got nil")
+	}
+	if !strings.Contains(err.Error(), "geographic boundary") {
+		t.Errorf("expected error to mention geographic boundary, got: %v", err)
+	}
+}
+
 func TestAmbiguousDateMaxFutureDays_Default(t *testing.T) {
 	v := ValidationConfig{}.WithDefaults()
 	if v.AmbiguousDateMaxFutureDays != 60 {

@@ -10,7 +10,13 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 VERSION="${1:-$(git describe --tags --always --dirty)}"
+export VERSION
+source "${SCRIPT_DIR}/../../scripts/ldflags.sh"
+LDFLAGS="-s -w ${LDFLAGS_VERSION}"
+
 OUTPUT_DIR="${2:-./dist}"
 PACKAGE_NAME="togather-server-${VERSION}"
 PACKAGE_DIR="${OUTPUT_DIR}/${PACKAGE_NAME}"
@@ -24,7 +30,7 @@ mkdir -p "${PACKAGE_DIR}"
 
 # Build the server binary
 echo "→ Building server binary..."
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o "${PACKAGE_DIR}/server" ./cmd/server
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o "${PACKAGE_DIR}/server" ./cmd/server
 echo "  ✓ Binary built: $(du -h "${PACKAGE_DIR}/server" | cut -f1)"
 
 # Copy essential files

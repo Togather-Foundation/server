@@ -3,7 +3,6 @@ package config
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -581,12 +580,12 @@ func Load() (Config, error) {
 	}
 
 	// Load geographic boundary configuration from YAML file (if present).
-	// Zero-valued (no filtering) when the file doesn't exist or is empty.
+	// Zero-valued (no filtering) when the file doesn't exist.
 	boundaryPath := getEnv("GEOGRAPHIC_BOUNDARY_CONFIG_FILE", "configs/boundary.yaml")
 	if boundary, err := loadGeographicBoundaryFile(boundaryPath); err == nil {
 		cfg.GeographicBoundary = boundary
 	} else if !os.IsNotExist(err) {
-		log.Printf("WARNING: failed to load geographic boundary config from %s, boundary filtering disabled: %v", boundaryPath, err)
+		return Config{}, fmt.Errorf("failed to load geographic boundary config from %s: %w", boundaryPath, err)
 	}
 	cfg.GeographicBoundary.Mode = getEnv("GEOGRAPHIC_BOUNDARY_MODE", cfg.GeographicBoundary.Mode)
 	cfg.GeographicBoundary = cfg.GeographicBoundary.WithDefaults()
@@ -786,7 +785,8 @@ func validateScraperPollingConfig(scraper ScraperConfig) error {
 }
 
 // loadGeographicBoundaryFile reads a YAML file into a GeographicBoundaryConfig.
-// Returns a zero-valued struct if the file does not exist or is empty.
+// Returns a zero-valued struct and an error if the file does not exist or
+// cannot be parsed (missing file, malformed YAML, permission error, etc.).
 func loadGeographicBoundaryFile(path string) (GeographicBoundaryConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
