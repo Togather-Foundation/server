@@ -912,6 +912,65 @@ func TestValidateConfigWithWarnings_IframeTier(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
+// ValidateConfigWithWarnings — tls_fingerprint validation (srv-ufwf3)
+// --------------------------------------------------------------------------
+
+func TestValidateConfigWithWarnings_TLSFingerprint(t *testing.T) {
+	t.Parallel()
+
+	base := func(fingerprint string) SourceConfig {
+		return SourceConfig{
+			Name:           "TLS Test Source",
+			URL:            "https://example.com/events",
+			Tier:           0,
+			TrustLevel:     5,
+			MaxPages:       10,
+			Schedule:       "daily",
+			Enabled:        true,
+			TLSFingerprint: fingerprint,
+		}
+	}
+
+	tests := []struct {
+		name    string
+		cfg     SourceConfig
+		wantErr string
+	}{
+		{
+			name: "empty — valid",
+			cfg:  base(""),
+		},
+		{
+			name: "chrome_auto — valid",
+			cfg:  base("chrome_auto"),
+		},
+		{
+			name:    "firefox_auto — invalid",
+			cfg:     base("firefox_auto"),
+			wantErr: `tls_fingerprint: invalid value "firefox_auto"`,
+		},
+		{
+			name:    "random string — invalid",
+			cfg:     base("random"),
+			wantErr: `tls_fingerprint: invalid value`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ValidateConfigWithWarnings(tt.cfg)
+			if tt.wantErr == "" {
+				assert.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+// --------------------------------------------------------------------------
 // IframeConfig defaults (srv-mwy3y)
 // --------------------------------------------------------------------------
 

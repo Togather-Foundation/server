@@ -46,14 +46,7 @@ type ScrapeOptions struct {
 // non-zero it is used as the client timeout; otherwise the provided fallback
 // is used. Used by all scraper HTTP code to ensure consistent transport usage.
 func (o ScrapeOptions) HTTPClient(fallback time.Duration) *http.Client {
-	transport := o.Transport
-	if o.TLSFingerprint != "" {
-		if ct, ok := transport.(*CachingTransport); ok {
-			ct.Wrapped = NewChromeFingerprintTransport()
-		} else if transport == nil {
-			transport = NewChromeFingerprintTransport()
-		}
-	}
+	transport := resolveTransport(o.TLSFingerprint, o.Transport, nil)
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
@@ -544,10 +537,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
 		opts.TLSFingerprint = source.TLSFingerprint
 		extractor := NewCollyExtractor(s.logger)
-		transport := opts.Transport
-		if opts.TLSFingerprint != "" && transport == nil {
-			transport = NewChromeFingerprintTransport()
-		}
+		transport := resolveTransport(opts.TLSFingerprint, opts.Transport, nil)
 		extractor.SetTransport(transport)
 		if opts.RateLimitMs > 0 {
 			extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
@@ -839,10 +829,7 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 		switch source.Tier {
 		case 1:
 			extractor := NewCollyExtractor(s.logger)
-			transport := opts.Transport
-			if opts.TLSFingerprint != "" && transport == nil {
-				transport = NewChromeFingerprintTransport()
-			}
+			transport := resolveTransport(opts.TLSFingerprint, opts.Transport, nil)
 			extractor.SetTransport(transport)
 			if opts.RateLimitMs > 0 {
 				extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
