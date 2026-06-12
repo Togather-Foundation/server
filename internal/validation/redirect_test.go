@@ -34,10 +34,12 @@ func TestIsSafeRelativeRedirect(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsSafeRelativeRedirect(tt.input)
+			t.Parallel()
+			got := IsSafeRelativeRedirect(tt.input, "/admin/dashboard")
 			if got != tt.expected {
-				t.Errorf("IsSafeRelativeRedirect(%q) = %q, want %q", tt.input, got, tt.expected)
+				t.Errorf("IsSafeRelativeRedirect(%q, %q) = %q, want %q", tt.input, "/admin/dashboard", got, tt.expected)
 			}
 		})
 	}

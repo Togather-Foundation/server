@@ -6,54 +6,54 @@ import (
 )
 
 // IsSafeRelativeRedirect validates that a redirect target is a safe same-origin
-// relative URL. Returns the cleaned path if safe, or "/admin/dashboard" otherwise.
+// relative URL. Returns the cleaned path if safe, or fallback otherwise.
 //
 // Rejects: absolute URLs (scheme://host), protocol-relative URLs (//evil.com),
 // path traversal (..), backslashes, and CR/LF injection.
-func IsSafeRelativeRedirect(raw string) string {
+func IsSafeRelativeRedirect(raw, fallback string) string {
 	if raw == "" {
-		return "/admin/dashboard"
+		return fallback
 	}
 
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return "/admin/dashboard"
+		return fallback
 	}
 
 	if parsed.Scheme != "" || parsed.Host != "" || parsed.Opaque != "" {
-		return "/admin/dashboard"
+		return fallback
 	}
 
 	path := parsed.Path
 
 	if unescaped, err := url.PathUnescape(path); err == nil {
 		if strings.Contains(unescaped, "..") {
-			return "/admin/dashboard"
+			return fallback
 		}
 	} else {
-		return "/admin/dashboard"
+		return fallback
 	}
 
 	if strings.ContainsAny(path, "\\\r\n") {
-		return "/admin/dashboard"
+		return fallback
 	}
 
 	if strings.ContainsAny(parsed.RawQuery, "\r\n") || strings.ContainsAny(parsed.Fragment, "\r\n") {
-		return "/admin/dashboard"
+		return fallback
 	}
 	if q, err := url.QueryUnescape(parsed.RawQuery); err == nil {
 		if strings.ContainsAny(q, "\r\n") {
-			return "/admin/dashboard"
+			return fallback
 		}
 	}
 	if f, err := url.QueryUnescape(parsed.Fragment); err == nil {
 		if strings.ContainsAny(f, "\r\n") {
-			return "/admin/dashboard"
+			return fallback
 		}
 	}
 
 	if !strings.HasPrefix(path, "/") {
-		return "/admin/dashboard"
+		return fallback
 	}
 
 	result := path

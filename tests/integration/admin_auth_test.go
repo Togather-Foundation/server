@@ -421,7 +421,9 @@ func TestAdminLoginPageRedirectValidation(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			u, err := url.Parse(env.Server.URL + "/admin/login")
 			require.NoError(t, err)
 			if tt.redirectValue != "" {

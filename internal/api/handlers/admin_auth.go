@@ -188,7 +188,7 @@ func (h *AdminAuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 	// If already authenticated, redirect to dashboard (or original target)
 	if cookie, err := r.Cookie("auth_token"); err == nil && cookie.Value != "" {
 		if _, err := h.JWTManager.Validate(cookie.Value); err == nil {
-			target := validation.IsSafeRelativeRedirect(r.URL.Query().Get("redirect"))
+			target := validation.IsSafeRelativeRedirect(r.URL.Query().Get("redirect"), "/admin/dashboard")
 			http.Redirect(w, r, target, http.StatusFound)
 			return
 		}

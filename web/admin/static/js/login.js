@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             return;
                         }
                     } catch (e) {
-                        // Invalid URL — fall through to default
+                        console.warn('Invalid redirect param:', e);
                     }
                 }
                 window.location.href = '/admin/dashboard';
