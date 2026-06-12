@@ -27,6 +27,10 @@ func TestIsSafeRelativeRedirect(t *testing.T) {
 		{name: "backslash path", input: "\\evil.com", expected: "/admin/dashboard"},
 		{name: "backslash in path", input: "/\\evil.com", expected: "/admin/dashboard"},
 		{name: "CRLF injection", input: "/admin\r\nSet-Cookie: evil=true", expected: "/admin/dashboard"},
+		{name: "CRLF in query", input: "/admin/dashboard?%0d%0aSet-Cookie:evil=true", expected: "/admin/dashboard"},
+		{name: "CRLF in fragment", input: "/admin/dashboard#%0d%0aSet-Cookie:evil=true", expected: "/admin/dashboard"},
+		{name: "fully-encoded dots", input: "/admin/%2e%2e%2fetc", expected: "/admin/dashboard"},
+		{name: "uppercase encoded dots", input: "/admin/%2E%2E%2Fetc", expected: "/admin/dashboard"},
 	}
 
 	for _, tt := range tests {

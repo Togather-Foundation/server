@@ -26,12 +26,30 @@ func IsSafeRelativeRedirect(raw string) string {
 
 	path := parsed.Path
 
-	if strings.Contains(path, "..") {
+	if unescaped, err := url.PathUnescape(path); err == nil {
+		if strings.Contains(unescaped, "..") {
+			return "/admin/dashboard"
+		}
+	} else {
 		return "/admin/dashboard"
 	}
 
 	if strings.ContainsAny(path, "\\\r\n") {
 		return "/admin/dashboard"
+	}
+
+	if strings.ContainsAny(parsed.RawQuery, "\r\n") || strings.ContainsAny(parsed.Fragment, "\r\n") {
+		return "/admin/dashboard"
+	}
+	if q, err := url.QueryUnescape(parsed.RawQuery); err == nil {
+		if strings.ContainsAny(q, "\r\n") {
+			return "/admin/dashboard"
+		}
+	}
+	if f, err := url.QueryUnescape(parsed.Fragment); err == nil {
+		if strings.ContainsAny(f, "\r\n") {
+			return "/admin/dashboard"
+		}
 	}
 
 	if !strings.HasPrefix(path, "/") {
