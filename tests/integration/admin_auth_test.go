@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -323,4 +324,124 @@ func TestAdminInsufficientRole(t *testing.T) {
 
 	// Should be forbidden (403) not unauthorized (401)
 	require.Equal(t, http.StatusForbidden, resp.StatusCode, "expected forbidden for non-admin role")
+}
+
+// TestAdminLoginPageRedirectValidation tests the server-side redirect validation
+// in the LoginPage handler (GET /admin/login), which uses validation.IsSafeRelativeRedirect
+// to prevent open redirect attacks.
+func TestAdminLoginPageRedirectValidation(t *testing.T) {
+	env := setupTestEnv(t)
+
+	username := "admin"
+	password := "admin-password-123"
+	email := "admin@example.com"
+	insertAdminUser(t, env, username, password, email, "admin")
+
+	loginPayload := map[string]string{
+		"username": username,
+		"password": password,
+	}
+	body, err := json.Marshal(loginPayload)
+	require.NoError(t, err)
+
+	loginReq, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/admin/login", bytes.NewReader(body))
+	require.NoError(t, err)
+	loginReq.Header.Set("Content-Type", "application/json")
+
+	loginResp, err := env.Server.Client().Do(loginReq)
+	require.NoError(t, err)
+	defer func() { _ = loginResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, loginResp.StatusCode)
+
+	var authCookie *http.Cookie
+	for _, c := range loginResp.Cookies() {
+		if c.Name == "auth_token" {
+			authCookie = c
+			break
+		}
+	}
+	require.NotNil(t, authCookie, "expected auth_token cookie")
+
+	noRedirectClient := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	tests := []struct {
+		name             string
+		redirectValue    string
+		expectedLocation string
+	}{
+		{
+			name:             "valid relative path",
+			redirectValue:    "/admin/events",
+			expectedLocation: "/admin/events",
+		},
+		{
+			name:             "valid with query params",
+			redirectValue:    "/admin/events?tab=pending",
+			expectedLocation: "/admin/events?tab=pending",
+		},
+		{
+			name:             "protocol-relative URL",
+			redirectValue:    "//evil.com",
+			expectedLocation: "/admin/dashboard",
+		},
+		{
+			name:             "absolute HTTPS URL",
+			redirectValue:    "https://evil.com",
+			expectedLocation: "/admin/dashboard",
+		},
+		{
+			name:             "absolute HTTP URL",
+			redirectValue:    "http://evil.com",
+			expectedLocation: "/admin/dashboard",
+		},
+		{
+			name:             "javascript scheme",
+			redirectValue:    "javascript:alert(1)",
+			expectedLocation: "/admin/dashboard",
+		},
+		{
+			name:             "path traversal",
+			redirectValue:    "/admin/../../../etc/passwd",
+			expectedLocation: "/admin/dashboard",
+		},
+		{
+			name:             "backslash path",
+			redirectValue:    "\\evil.com",
+			expectedLocation: "/admin/dashboard",
+		},
+		{
+			name:             "empty redirect param",
+			redirectValue:    "",
+			expectedLocation: "/admin/dashboard",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			u, err := url.Parse(env.Server.URL + "/admin/login")
+			require.NoError(t, err)
+			if tt.redirectValue != "" {
+				q := u.Query()
+				q.Set("redirect", tt.redirectValue)
+				u.RawQuery = q.Encode()
+			}
+
+			req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+			require.NoError(t, err)
+			req.AddCookie(authCookie)
+
+			resp, err := noRedirectClient.Do(req)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+
+			require.Equal(t, http.StatusFound, resp.StatusCode, "expected 302 redirect")
+			assert.Equal(t, tt.expectedLocation, resp.Header.Get("Location"), "unexpected redirect location")
+		})
+	}
 }

@@ -38,11 +38,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Login successful - redirect to original page or dashboard
                 var params = new URLSearchParams(window.location.search);
                 var redirect = params.get('redirect');
-                if (redirect && redirect.startsWith('/')) {
-                    window.location.href = redirect;
-                } else {
-                    window.location.href = '/admin/dashboard';
+                if (redirect) {
+                    try {
+                        var target = new URL(redirect, location.origin);
+                        if (target.origin === location.origin) {
+                            window.location.href = target.pathname + target.search + target.hash;
+                            return;
+                        }
+                    } catch (e) {
+                        console.warn('Invalid redirect param:', e);
+                    }
                 }
+                window.location.href = '/admin/dashboard';
             } else {
                 // Show error message
                 if (errorDiv) {
