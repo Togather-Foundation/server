@@ -97,10 +97,10 @@ func TestResolveTransport(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected *CachingTransport, got %T", got)
 				}
-			if ct != tt.existing {
-				t.Error("expected same CachingTransport pointer to be returned")
-			}
-			if ct.Wrapped == nil {
+				if ct != tt.existing {
+					t.Error("expected same CachingTransport pointer to be returned")
+				}
+				if ct.Wrapped == nil {
 					t.Fatal("expected CachingTransport.Wrapped to be set to uTLS transport, got nil")
 				}
 				if _, ok := ct.Wrapped.(*chromeFingerprintTransport); !ok {

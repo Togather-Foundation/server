@@ -920,14 +920,14 @@ func TestValidateConfigWithWarnings_TLSFingerprint(t *testing.T) {
 
 	base := func(fingerprint string) SourceConfig {
 		return SourceConfig{
-			Name:            "TLS Test Source",
-			URL:             "https://example.com/events",
-			Tier:            0,
-			TrustLevel:      5,
-			MaxPages:        10,
-			Schedule:        "daily",
-			Enabled:         true,
-			TLSFingerprint:  fingerprint,
+			Name:           "TLS Test Source",
+			URL:            "https://example.com/events",
+			Tier:           0,
+			TrustLevel:     5,
+			MaxPages:       10,
+			Schedule:       "daily",
+			Enabled:        true,
+			TLSFingerprint: fingerprint,
 		}
 	}
 
