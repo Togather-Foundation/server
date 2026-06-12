@@ -12,6 +12,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/ical"
+	"github.com/rs/zerolog"
 )
 
 // ICSExtractor fetches and parses an ICS feed URL.
@@ -19,6 +20,7 @@ type ICSExtractor struct {
 	client             *http.Client
 	maxBodyBytes       int64 // Default: 10 * 1024 * 1024 (10 MB)
 	insecureSkipVerify bool  // Skip TLS verification
+	logger             zerolog.Logger
 }
 
 // defaultICSMaxBodyBytes is the default maximum ICS feed body size.
@@ -27,7 +29,7 @@ const defaultICSMaxBodyBytes int64 = 10 * 1024 * 1024 // 10 MB
 // NewICSExtractor creates an ICS extractor with the given HTTP client.
 // maxBodyBytes defaults to 10 MB if <= 0.
 // insecureSkipVerify disables TLS certificate verification (use for dev/testing only).
-func NewICSExtractor(client *http.Client, maxBodyBytes int64, insecureSkipVerify bool) *ICSExtractor {
+func NewICSExtractor(client *http.Client, maxBodyBytes int64, insecureSkipVerify bool, logger zerolog.Logger) *ICSExtractor {
 	if maxBodyBytes <= 0 {
 		maxBodyBytes = defaultICSMaxBodyBytes
 	}
@@ -35,6 +37,7 @@ func NewICSExtractor(client *http.Client, maxBodyBytes int64, insecureSkipVerify
 		client:             client,
 		maxBodyBytes:       maxBodyBytes,
 		insecureSkipVerify: insecureSkipVerify,
+		logger:             logger,
 	}
 }
 
@@ -64,6 +67,7 @@ func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig 
 		License:     cfg.License,
 		Timezone:    cfg.Timezone,
 		CountryCode: "CA",
+		Logger:      e.logger,
 	}
 
 	if opts.License == "" {
@@ -198,7 +202,7 @@ func (s *Scraper) scrapeICS(ctx context.Context, source SourceConfig, opts Scrap
 		if source.MaxBodyBytes > 0 {
 			maxBody = source.MaxBodyBytes
 		}
-		extractor := NewICSExtractor(httpClient, maxBody, source.InsecureSkipVerify)
+		extractor := NewICSExtractor(httpClient, maxBody, source.InsecureSkipVerify, s.logger)
 
 		eventInputs, warnings, err := extractor.Extract(ctx, source, s.icsConfig)
 		if err != nil {

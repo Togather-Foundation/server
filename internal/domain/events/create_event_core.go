@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/ids"
-	"github.com/rs/zerolog/log"
 )
 
 // CreateEventCoreOptions controls behavioural differences between callers.
@@ -94,7 +93,7 @@ func (s *IngestService) createEventCore(
 	validated := validationResult.Input
 	warnings := validationResult.Warnings
 
-	log.Debug().
+	s.logger.Debug().
 		Str("event_name", validated.Name).
 		Int("validation_warnings", len(warnings)).
 		Msg("createEventCore: after validation")
@@ -116,9 +115,9 @@ func (s *IngestService) createEventCore(
 	}
 
 	// ── 2. Quality warnings ──────────────────────────────────────────────────
-	warnings = appendQualityWarnings(warnings, validated, nil, s.validationConfig)
+	warnings = appendQualityWarnings(warnings, validated, nil, s.validationConfig, s.logger)
 
-	log.Debug().
+	s.logger.Debug().
 		Str("event_name", validated.Name).
 		Int("total_warnings", len(warnings)).
 		Msg("createEventCore: after quality warnings")
@@ -439,7 +438,7 @@ func (s *IngestService) createEventCore(
 					s.dedupConfig.PlaceReviewThreshold,
 				)
 				if err != nil {
-					log.Warn().Err(err).
+					s.logger.Warn().Err(err).
 						Str("place_name", validated.Location.Name).
 						Msg("Place similarity check failed, continuing")
 				} else {
@@ -454,18 +453,18 @@ func (s *IngestService) createEventCore(
 						if best.Similarity >= s.dedupConfig.PlaceAutoMergeThreshold {
 							mergeResult, mergeErr := s.repo.MergePlaces(ctx, place.ID, best.ID)
 							if mergeErr != nil {
-								log.Warn().Err(mergeErr).
+								s.logger.Warn().Err(mergeErr).
 									Str("duplicate_place", place.ULID).
 									Str("primary_place", best.ULID).
 									Msg("Place auto-merge failed, continuing with new place")
 							} else {
 								if mergeResult.AlreadyMerged {
-									log.Info().
+									s.logger.Info().
 										Str("duplicate_place", place.ULID).
 										Str("canonical_place", mergeResult.CanonicalID).
 										Msg("Place already merged by concurrent operation, using canonical")
 								} else {
-									log.Info().
+									s.logger.Info().
 										Str("duplicate_place", place.ULID).
 										Str("primary_place", best.ULID).
 										Float64("similarity", best.Similarity).
@@ -599,7 +598,7 @@ func (s *IngestService) createEventCore(
 				s.dedupConfig.OrgReviewThreshold,
 			)
 			if err != nil {
-				log.Warn().Err(err).
+				s.logger.Warn().Err(err).
 					Str("org_name", validated.Organizer.Name).
 					Msg("Organization similarity check failed, continuing")
 			} else {
@@ -614,18 +613,18 @@ func (s *IngestService) createEventCore(
 					if best.Similarity >= s.dedupConfig.OrgAutoMergeThreshold {
 						mergeResult, mergeErr := s.repo.MergeOrganizations(ctx, org.ID, best.ID)
 						if mergeErr != nil {
-							log.Warn().Err(mergeErr).
+							s.logger.Warn().Err(mergeErr).
 								Str("duplicate_org", org.ULID).
 								Str("primary_org", best.ULID).
 								Msg("Organization auto-merge failed, continuing with new org")
 						} else {
 							if mergeResult.AlreadyMerged {
-								log.Info().
+								s.logger.Info().
 									Str("duplicate_org", org.ULID).
 									Str("canonical_org", mergeResult.CanonicalID).
 									Msg("Organization already merged by concurrent operation, using canonical")
 							} else {
-								log.Info().
+								s.logger.Info().
 									Str("duplicate_org", org.ULID).
 									Str("primary_org", best.ULID).
 									Float64("similarity", best.Similarity).
@@ -764,7 +763,7 @@ func (s *IngestService) createEventCore(
 
 	// ── 14. Create review queue entry if needed ──────────────────────────────
 	if needsReview {
-		log.Debug().
+		s.logger.Debug().
 			Str("event_ulid", event.ULID).
 			Int("warnings_count", len(warnings)).
 			Msg("createEventCore: creating review queue entry")
@@ -812,7 +811,7 @@ func (s *IngestService) createEventCore(
 			return nil, fmt.Errorf("create review queue entry: %w", err)
 		}
 
-		log.Debug().
+		s.logger.Debug().
 			Str("event_ulid", event.ULID).
 			Int("review_entry_id", reviewEntry.ID).
 			Msg("createEventCore: created review queue entry")
@@ -893,7 +892,7 @@ func (s *IngestService) runDedupWarningChecks(
 
 	candidates, err = txRepo.FindNearDuplicates(ctx, venueID, startTime, name, nearDupThreshold)
 	if err != nil {
-		log.Warn().Err(err).
+		s.logger.Warn().Err(err).
 			Str("event_name", name).
 			Msg("Near-duplicate check failed, continuing")
 		return nil, nil, nil, nil
@@ -906,7 +905,7 @@ func (s *IngestService) runDedupWarningChecks(
 		}
 		notDup, err := txRepo.IsNotDuplicate(ctx, ulid, c.ULID)
 		if err != nil {
-			log.Warn().Err(err).
+			s.logger.Warn().Err(err).
 				Str("event_ulid", ulid).
 				Str("candidate_ulid", c.ULID).
 				Msg("Not-duplicate check failed, keeping candidate")
@@ -951,7 +950,7 @@ func (s *IngestService) runDedupWarningChecks(
 		ExcludeULID:    ulid,
 	})
 	if err != nil {
-		log.Warn().Err(err).
+		s.logger.Warn().Err(err).
 			Str("event_name", name).
 			Msg("Cross-week series check failed, continuing")
 		return warnings, candidates, nil, nil
@@ -1003,7 +1002,7 @@ func (s *IngestService) crossLinkSeriesCompanions(
 		var err error
 		startTime, err = time.Parse(time.RFC3339, strings.TrimSpace(validated.StartDate))
 		if err != nil {
-			log.Warn().Err(err).Str("start_date", validated.StartDate).
+			s.logger.Warn().Err(err).Str("start_date", validated.StartDate).
 				Msg("Series companion cross-link: failed to parse start_date, skipping")
 			return
 		}
@@ -1027,14 +1026,14 @@ func (s *IngestService) crossLinkSeriesCompanions(
 	}
 	companionWarningJSON, err := toJSON([]ValidationWarning{companionWarning})
 	if err != nil {
-		log.Warn().Err(err).Str("companion_ulid", companion.ULID).
+		s.logger.Warn().Err(err).Str("companion_ulid", companion.ULID).
 			Msg("Series companion cross-link: failed to marshal warning, skipping")
 		return
 	}
 
 	existingReview, lookupErr := s.repo.GetPendingReviewByEventUlid(ctx, companion.ULID)
 	if lookupErr != nil {
-		log.Warn().Err(lookupErr).Str("companion_ulid", companion.ULID).
+		s.logger.Warn().Err(lookupErr).Str("companion_ulid", companion.ULID).
 			Msg("Series companion cross-link: failed to look up existing review entry, skipping")
 		return
 	}
@@ -1043,14 +1042,14 @@ func (s *IngestService) crossLinkSeriesCompanions(
 		// Merge into existing pending review entry.
 		mergedWarnings, mergeErr := appendWarnings(existingReview.Warnings, companionWarningJSON)
 		if mergeErr != nil {
-			log.Warn().Err(mergeErr).Str("companion_ulid", companion.ULID).
+			s.logger.Warn().Err(mergeErr).Str("companion_ulid", companion.ULID).
 				Msg("Series companion cross-link: failed to merge warnings, skipping")
 			return
 		}
 		if _, updateErr := s.repo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
 			Warnings: &mergedWarnings,
 		}); updateErr != nil {
-			log.Warn().Err(updateErr).Str("companion_ulid", companion.ULID).
+			s.logger.Warn().Err(updateErr).Str("companion_ulid", companion.ULID).
 				Msg("Series companion cross-link: failed to update existing review entry, skipping")
 		}
 		return
@@ -1060,7 +1059,7 @@ func (s *IngestService) crossLinkSeriesCompanions(
 	// it to reconstruct a minimal review queue payload, then create an entry.
 	companionEvent, fetchErr := s.repo.GetByULID(ctx, companion.ULID)
 	if fetchErr != nil {
-		log.Warn().Err(fetchErr).Str("companion_ulid", companion.ULID).
+		s.logger.Warn().Err(fetchErr).Str("companion_ulid", companion.ULID).
 			Msg("Series companion cross-link: failed to fetch companion event, skipping")
 		return
 	}
@@ -1068,7 +1067,7 @@ func (s *IngestService) crossLinkSeriesCompanions(
 	companionStart, companionEnd := parseEventTimesFromEvent(companionEvent)
 	reconstructedPayload, payloadErr := reconstructPayloadFromEvent(companionEvent)
 	if payloadErr != nil {
-		log.Warn().Err(payloadErr).Str("companion_ulid", companion.ULID).
+		s.logger.Warn().Err(payloadErr).Str("companion_ulid", companion.ULID).
 			Msg("Series companion cross-link: failed to reconstruct payload, using empty")
 		reconstructedPayload = []byte("{}")
 	}
@@ -1081,7 +1080,7 @@ func (s *IngestService) crossLinkSeriesCompanions(
 		EventEndTime:      companionEnd,
 		Warnings:          companionWarningJSON,
 	}); createErr != nil {
-		log.Warn().Err(createErr).Str("companion_ulid", companion.ULID).
+		s.logger.Warn().Err(createErr).Str("companion_ulid", companion.ULID).
 			Msg("Series companion cross-link: failed to create review queue entry, skipping")
 	}
 }
@@ -1104,7 +1103,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 	for _, c := range candidates {
 		existingEvent, fetchErr := s.repo.GetByULID(ctx, c.ULID)
 		if fetchErr != nil {
-			log.Warn().Err(fetchErr).
+			s.logger.Warn().Err(fetchErr).
 				Str("candidate_ulid", c.ULID).
 				Msg("Near-duplicate: failed to fetch existing event for review flagging, skipping")
 			continue
@@ -1114,7 +1113,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 			if _, updateErr := s.repo.UpdateEvent(ctx, c.ULID, UpdateEventParams{
 				LifecycleState: &pendingState,
 			}); updateErr != nil {
-				log.Warn().Err(updateErr).
+				s.logger.Warn().Err(updateErr).
 					Str("candidate_ulid", c.ULID).
 					Msg("Near-duplicate: failed to update existing event lifecycle state, skipping")
 			}
@@ -1125,7 +1124,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 
 		reconstructedPayload, payloadErr := reconstructPayloadFromEvent(existingEvent)
 		if payloadErr != nil {
-			log.Warn().Err(payloadErr).
+			s.logger.Warn().Err(payloadErr).
 				Str("candidate_ulid", c.ULID).
 				Msg("Near-duplicate: failed to reconstruct payload for existing event, using empty")
 			reconstructedPayload = []byte("{}")
@@ -1142,7 +1141,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 			}(),
 		})
 		if warnErr != nil {
-			log.Warn().Err(warnErr).
+			s.logger.Warn().Err(warnErr).
 				Str("candidate_ulid", c.ULID).
 				Msg("Near-duplicate: failed to generate warnings for existing event, using empty")
 			existingWarnings = []byte("[]")
@@ -1154,7 +1153,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 		// UNIQUE constraint on event_id and be silently dropped).
 		existingReview, lookupErr := s.repo.GetPendingReviewByEventUlid(ctx, c.ULID)
 		if lookupErr != nil {
-			log.Warn().Err(lookupErr).
+			s.logger.Warn().Err(lookupErr).
 				Str("candidate_ulid", c.ULID).
 				Msg("Near-duplicate: failed to look up existing review entry, skipping")
 			continue
@@ -1164,7 +1163,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 			// Merge: append near_duplicate_of_new_event warning and set duplicate_of_event_id.
 			mergedWarnings, mergeErr := appendWarnings(existingReview.Warnings, existingWarnings)
 			if mergeErr != nil {
-				log.Warn().Err(mergeErr).
+				s.logger.Warn().Err(mergeErr).
 					Str("candidate_ulid", c.ULID).
 					Msg("Near-duplicate: failed to merge warnings into existing review entry, skipping")
 				continue
@@ -1173,7 +1172,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 				Warnings:           &mergedWarnings,
 				DuplicateOfEventID: &newEventID,
 			}); updateErr != nil {
-				log.Warn().Err(updateErr).
+				s.logger.Warn().Err(updateErr).
 					Str("candidate_ulid", c.ULID).
 					Msg("Near-duplicate: failed to update existing review entry with near-duplicate warning, skipping")
 			}
@@ -1189,7 +1188,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 			Warnings:           existingWarnings,
 			DuplicateOfEventID: &newEventID,
 		}); createErr != nil {
-			log.Warn().Err(createErr).
+			s.logger.Warn().Err(createErr).
 				Str("candidate_ulid", c.ULID).
 				Msg("Near-duplicate: failed to create review queue entry for existing event, skipping")
 		}

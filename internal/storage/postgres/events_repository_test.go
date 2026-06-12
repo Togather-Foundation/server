@@ -8,13 +8,14 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 
 	"github.com/stretchr/testify/require"
+	"github.com/rs/zerolog"
 )
 
 func TestEventRepositoryListFiltersAndPagination(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	orgA := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	orgB := insertOrganization(t, ctx, pool, "City Gallery")
@@ -78,7 +79,7 @@ func TestEventRepositoryListDedupesOccurrences(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	place := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
@@ -107,7 +108,7 @@ func TestEventRepositoryGetByULID(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	place := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
@@ -130,7 +131,7 @@ func TestFindSimilarPlacesReturnsAddressFields(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	// Insert a place with all optional fields populated.
 	placeULID := "01JPLCTEST00000000001"
@@ -177,7 +178,7 @@ func TestFindSimilarPlacesNullableFieldsAreNilWhenAbsent(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	// Insert a place with only required fields.
 	placeULID := "01JPLCTEST00000000002"
@@ -206,7 +207,7 @@ func TestFindSimilarOrganizationsReturnsAddressFields(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	orgULID := "01JORGTEST00000000001"
 	_, err := pool.Exec(ctx, `
@@ -244,7 +245,7 @@ func TestFindSeriesCompanion(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	place := insertPlace(t, ctx, pool, "The Rex Jazz Bar", "Toronto", "ON")
@@ -372,7 +373,7 @@ func TestFindSimilarOrganizationsNullableFieldsAreNilWhenAbsent(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	orgULID := "01JORGTEST00000000002"
 	_, err := pool.Exec(ctx, `

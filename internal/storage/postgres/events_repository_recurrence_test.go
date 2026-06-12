@@ -9,6 +9,7 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/rs/zerolog"
 )
 
 // TestGetByULID_RecurrenceRule covers the three recurrence scenarios for T2 (srv-i1f0t):
@@ -18,7 +19,7 @@ import (
 func TestGetByULID_RecurrenceRule(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	// Seed a place so occurrences satisfy the location constraint.
 	place := insertPlace(t, ctx, pool, "Test Venue", "Toronto", "ON")
@@ -148,7 +149,7 @@ func TestGetByULID_RecurrenceRule(t *testing.T) {
 func TestList_RecurrenceRule(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	place := insertPlace(t, ctx, pool, "Test Venue", "Toronto", "ON")
 

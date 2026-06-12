@@ -38,6 +38,7 @@ type ScrapeOptions struct {
 	RateLimitMs      int32         // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
 	HeadlessOverride bool          // if true and rodExtractor is configured, ScrapeURL uses Tier 2 headless path
 	TLSFingerprint   string        // set from SourceConfig.TLSFingerprint by callers; enables uTLS when non-empty
+	Logger           zerolog.Logger // optional logger for transport/warning output; zero value is a no-op
 }
 
 // HTTPClient returns an http.Client using the configured transport (if any).
@@ -46,7 +47,7 @@ type ScrapeOptions struct {
 // non-zero it is used as the client timeout; otherwise the provided fallback
 // is used. Used by all scraper HTTP code to ensure consistent transport usage.
 func (o ScrapeOptions) HTTPClient(fallback time.Duration) *http.Client {
-	transport := resolveTransport(o.TLSFingerprint, o.Transport, nil)
+	transport := resolveTransport(o.TLSFingerprint, o.Transport, o.Logger)
 	if transport == nil {
 		transport = http.DefaultTransport
 	}
@@ -222,7 +223,7 @@ func (s *Scraper) loadSourceConfigs(ctx context.Context, opts ScrapeOptions) ([]
 		} else if len(sources) > 0 {
 			configs := make([]SourceConfig, 0, len(sources))
 			for _, src := range sources {
-				cfg, convErr := SourceConfigFromDomain(src)
+				cfg, convErr := SourceConfigFromDomain(src, s.logger)
 				if convErr != nil {
 					s.logger.Warn().Err(convErr).Str("source", src.Name).
 						Msg("scraper: skipping DB source with conversion error")
@@ -241,7 +242,7 @@ func (s *Scraper) loadSourceConfigs(ctx context.Context, opts ScrapeOptions) ([]
 	if dir == "" {
 		dir = "configs/sources"
 	}
-	return LoadSourceConfigs(dir)
+	return LoadSourceConfigs(dir, s.logger)
 }
 
 // ScrapeURL fetches rawURL, extracts JSON-LD events, normalises them, and
@@ -319,7 +320,7 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 	var found *SourceConfig
 
 	if opts.SourceFile != "" {
-		cfg, err := LoadSourceConfig(opts.SourceFile)
+		cfg, err := LoadSourceConfig(opts.SourceFile, s.logger)
 		if err != nil {
 			return ScrapeResult{}, fmt.Errorf("loading source file %q: %w", opts.SourceFile, err)
 		}
@@ -537,7 +538,7 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 	return s.runWithTracking(ctx, &result, func(ctx context.Context) (int, []events.EventInput, []string, error) {
 		opts.TLSFingerprint = source.TLSFingerprint
 		extractor := NewCollyExtractor(s.logger)
-		transport := resolveTransport(opts.TLSFingerprint, opts.Transport, nil)
+		transport := resolveTransport(opts.TLSFingerprint, opts.Transport, s.logger)
 		extractor.SetTransport(transport)
 		if opts.RateLimitMs > 0 {
 			extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)
@@ -829,7 +830,7 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 		switch source.Tier {
 		case 1:
 			extractor := NewCollyExtractor(s.logger)
-			transport := resolveTransport(opts.TLSFingerprint, opts.Transport, nil)
+			transport := resolveTransport(opts.TLSFingerprint, opts.Transport, s.logger)
 			extractor.SetTransport(transport)
 			if opts.RateLimitMs > 0 {
 				extractor.SetRateLimit(time.Duration(opts.RateLimitMs) * time.Millisecond)

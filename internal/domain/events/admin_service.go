@@ -12,7 +12,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/validation"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // AdminService provides admin operations for event management
@@ -23,9 +23,10 @@ type AdminService struct {
 	validationConfig config.ValidationConfig
 	baseURL          string // canonical base URL for tombstone/superseded_by URIs (e.g. "https://toronto.togather.foundation")
 	ingestService    *IngestService
+	logger           zerolog.Logger
 }
 
-func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string, validationConfig config.ValidationConfig, baseURL string) *AdminService {
+func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string, validationConfig config.ValidationConfig, baseURL string, logger zerolog.Logger) *AdminService {
 	if baseURL == "" {
 		panic("NewAdminService: baseURL must not be empty — set SERVER_BASE_URL (default: http://localhost:8080)")
 	}
@@ -35,11 +36,12 @@ func NewAdminService(repo Repository, requireHTTPS bool, defaultTimezone string,
 		defaultTZ:        defaultTimezone,
 		validationConfig: validationConfig.WithDefaults(),
 		baseURL:          baseURL,
+		logger:           logger,
 	}
 	// Auto-create an internal IngestService so that existing tests that never
 	// call WithIngestService still work.  Router.go will call WithIngestService
 	// after both services are created to share the same configured instance.
-	svc.ingestService = NewIngestService(repo, "", defaultTimezone, validationConfig)
+	svc.ingestService = NewIngestService(repo, "", defaultTimezone, validationConfig, logger)
 	return svc
 }
 
@@ -1121,14 +1123,14 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 
 	// Verify neither event is deleted or already merged
 	if primary.LifecycleState == "deleted" {
-		log.Warn().
+		s.logger.Warn().
 			Str("primary_ulid", params.PrimaryULID).
 			Str("duplicate_ulid", params.DuplicateULID).
 			Msg("merge rejected: primary event is deleted")
 		return fmt.Errorf("primary event %s: %w", params.PrimaryULID, ErrEventDeleted)
 	}
 	if duplicate.LifecycleState == "deleted" {
-		log.Warn().
+		s.logger.Warn().
 			Str("primary_ulid", params.PrimaryULID).
 			Str("duplicate_ulid", params.DuplicateULID).
 			Msg("merge rejected: duplicate event is already deleted or merged")
@@ -1145,7 +1147,7 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 		if err != nil {
 			return fmt.Errorf("enrich primary event: %w", err)
 		}
-		log.Info().
+		s.logger.Info().
 			Str("primary_ulid", params.PrimaryULID).
 			Str("duplicate_ulid", params.DuplicateULID).
 			Msg("enriched primary event with duplicate data during merge")
@@ -1667,7 +1669,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 				s.ingestService.dedupConfig.NearDuplicateThreshold,
 			)
 			if dedupErr != nil {
-				log.Warn().Err(dedupErr).
+				s.logger.Warn().Err(dedupErr).
 					Str("canonical_ulid", canonicalEvent.ULID).
 					Msg("Consolidate: dedup warning checks failed, continuing")
 			} else if len(dedupWarnings) > 0 {
@@ -1921,7 +1923,7 @@ func (s *AdminService) consolidateUpdateThirdPartyCompanionWarnings(
 		entry, err := txRepo.GetReviewQueueEntry(ctx, target.ReviewID)
 		if err != nil {
 			if errors.Is(err, ErrNotFound) {
-				log.Warn().
+				s.logger.Warn().
 					Int("review_id", target.ReviewID).
 					Str("event_ulid", target.EventULID).
 					Msg("cross-week companion target review entry not found (concurrently dismissed?), skipping")
@@ -2164,7 +2166,7 @@ func (s *AdminService) consolidateSyncSeriesCompanion(
 		ExcludeULID:    canonical.ULID,
 	})
 	if err != nil {
-		log.Warn().Err(err).
+		s.logger.Warn().Err(err).
 			Str("canonical_ulid", canonical.ULID).
 			Msg("Consolidate: post-retirement cross-week series check failed, continuing")
 		return nil, nil

@@ -10,6 +10,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/audit"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -23,6 +24,7 @@ func newTestAdminHandler(repo *MockRepository) *AdminHandler {
 		"America/Toronto",
 		config.ValidationConfig{AllowTestDomains: true},
 		"https://toronto.togather.foundation",
+		zerolog.Nop(),
 	)
 	return &AdminHandler{
 		AdminService: adminService,

@@ -7,13 +7,14 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/stretchr/testify/require"
+	"github.com/rs/zerolog"
 )
 
 func TestUpsertEventSeries(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	seriesStart := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
 	seriesEnd := time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)

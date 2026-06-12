@@ -3,7 +3,8 @@ package scraper
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
+
+	"github.com/rs/zerolog"
 
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 )
@@ -28,7 +29,7 @@ func unmarshalJSON[T any](data json.RawMessage) T {
 //
 // Emits deprecation warnings for deprecated selector fields (e.g. Description)
 // via slog at the Warning level, consistent with YAML config loading.
-func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
+func SourceConfigFromDomain(src domainScraper.Source, logger zerolog.Logger) (SourceConfig, error) {
 	cfg := SourceConfig{
 		Name:           src.Name,
 		URL:            src.URL,
@@ -56,7 +57,7 @@ func SourceConfigFromDomain(src domainScraper.Source) (SourceConfig, error) {
 	normalizeDescriptionSelectors(&cfg)
 	cfg.normalized = true
 
-	emitDescriptionDeprecationWarnings(slog.Default(), "source", src.Name, hadDescription, hadDescriptionSelectors)
+	emitDescriptionDeprecationWarnings(logger, "source", src.Name, hadDescription, hadDescriptionSelectors)
 
 	cfg.EventURLPattern = src.EventURLPattern
 	cfg.SkipMultiSessionCheck = src.SkipMultiSessionCheck

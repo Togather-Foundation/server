@@ -69,14 +69,14 @@ func run() error {
 	log.Info().Msg("Database connection established")
 
 	// Initialize repository
-	repo, err := postgres.NewRepository(pool)
+	repo, err := postgres.NewRepository(pool, logger)
 	if err != nil {
 		return fmt.Errorf("repository initialization failed: %w", err)
 	}
 
 	// Initialize domain services
 	eventsService := events.NewService(repo.Events())
-	ingestService := events.NewIngestService(repo.Events(), cfg.Base.Server.BaseURL, cfg.Base.DefaultTimezone, cfg.Base.Validation)
+	ingestService := events.NewIngestService(repo.Events(), cfg.Base.Server.BaseURL, cfg.Base.DefaultTimezone, cfg.Base.Validation, logger)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
 	developerService := developers.NewService(repo.Developers(), log.Logger, cfg.Base.Developer)

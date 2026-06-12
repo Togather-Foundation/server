@@ -2,12 +2,12 @@ package scraper
 
 import (
 	"bytes"
-	"log/slog"
 	"net"
 	"net/http"
 	"regexp"
 	"testing"
 
+	"github.com/rs/zerolog"
 	utls "github.com/refraction-networking/utls"
 )
 
@@ -21,7 +21,6 @@ func TestResolveTransport(t *testing.T) {
 		name        string
 		fingerprint string
 		existing    http.RoundTripper
-		logger      *slog.Logger
 		wantNil     bool
 		wantSame    bool
 		wantWrapped bool
@@ -72,9 +71,9 @@ func TestResolveTransport(t *testing.T) {
 			t.Parallel()
 
 			var logBuf bytes.Buffer
-			var logger *slog.Logger
+			var logger zerolog.Logger
 			if tt.wantLogMsg != "" {
-				logger = slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+				logger = zerolog.New(&logBuf)
 			}
 
 			got := resolveTransport(tt.fingerprint, tt.existing, logger)

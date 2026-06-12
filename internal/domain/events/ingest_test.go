@@ -1,6 +1,7 @@
 package events
 
 import (
+	"github.com/rs/zerolog"
 	"context"
 	"encoding/json"
 	"errors"
@@ -1099,7 +1100,7 @@ func TestIngestService_Ingest(t *testing.T) {
 			} else {
 				repo = NewMockRepository()
 				tt.setupRepo(repo)
-				service = NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
+				service = NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true}, zerolog.Nop())
 			}
 
 			result, err := service.Ingest(context.Background(), tt.input)
@@ -1254,7 +1255,7 @@ func TestIngestService_IngestWithIdempotency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockRepository()
 			tt.setupRepo(repo)
-			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
+			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true}, zerolog.Nop())
 
 			result, err := service.IngestWithIdempotency(context.Background(), tt.input, tt.idempotencyKey)
 
@@ -1416,7 +1417,7 @@ func TestIngestService_ReversedDates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockRepository()
-			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
+			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true}, zerolog.Nop())
 
 			result, err := service.Ingest(context.Background(), tt.input)
 
@@ -1548,7 +1549,7 @@ func TestIngestService_PipelineOrder(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockRepository()
-			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
+			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true}, zerolog.Nop())
 
 			result, err := service.Ingest(context.Background(), tt.input)
 
@@ -1631,7 +1632,7 @@ func TestIngestService_WarningsInDuplicateDetection(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			repo := NewMockRepository()
 			tt.setupRepo(repo)
-			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
+			service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true}, zerolog.Nop())
 
 			result, err := service.Ingest(context.Background(), tt.input)
 
@@ -1803,7 +1804,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		// so this will fail if inheritance is broken.
 		repo := NewMockRepository()
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Weekly Yoga at Studio",
@@ -1863,7 +1864,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		// should inherit the parent's VirtualURL and satisfy occurrence_location_required.
 		repo := NewMockRepository()
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Online Yoga Series",
@@ -1913,7 +1914,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		repo.SeedPlaceByULID(placeULID, placeUUID)
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Hybrid Series",
@@ -1963,7 +1964,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		// The mock has no seeded place, so GetPlaceByULID returns ErrNotFound.
 		repo := NewMockRepository()
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Event at Canonical Venue (not found)",
@@ -2001,7 +2002,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "The Canonical Hall")
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Event at Canonical Hall",
@@ -2050,7 +2051,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, canonicalName)
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Event at Canonical Hall (with name)",
@@ -2089,7 +2090,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "The Canonical Hall")
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Event at Wrong Venue",
@@ -2131,7 +2132,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "The Canonical Hall")
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Single-Occ Event at Canonical Hall",
@@ -2175,7 +2176,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		repo.SeedPlaceByULID(placeULID, placeUUID)
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Event with Explicit venueId",
@@ -2229,7 +2230,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		// AND virtual_url set — violating the location contract.
 		repo := NewMockRepository()
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true, RequireImage: false})
+			config.ValidationConfig{AllowTestDomains: true, RequireImage: false}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Hybrid-parent single occurrence",
@@ -2280,7 +2281,7 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 		repo.SeedPlaceByULID(placeULID, placeUUID)
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true})
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Explicit Hybrid Occurrence",
@@ -2447,7 +2448,7 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 		}
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true}).
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop()).
 			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
 
 		input := EventInput{
@@ -2516,7 +2517,7 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 		repo.seriesCompanion = nil
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true}).
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop()).
 			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
 
 		input := EventInput{
@@ -2552,7 +2553,7 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 		repo.shouldFailFindSeriesCompanion = true
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true}).
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop()).
 			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
 
 		input := EventInput{
@@ -2585,7 +2586,7 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 		repo.seriesCompanion = &CrossWeekCompanion{ULID: "01ARZ3NDEKTSV4RRFFQ69G5FBV"}
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true}).
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop()).
 			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
 
 		input := EventInput{
@@ -2654,7 +2655,7 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 		}
 
 		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
-			config.ValidationConfig{AllowTestDomains: true}).
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop()).
 			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
 
 		// Ingest Week 2.

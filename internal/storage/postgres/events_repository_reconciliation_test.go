@@ -8,6 +8,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
+	"github.com/rs/zerolog"
 )
 
 func createPlaceParams(name, city, region, country string) events.PlaceCreateParams {
@@ -40,7 +41,7 @@ func TestUpsertPlaceReconciliation(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	t.Run("same name same city deduplicates", func(t *testing.T) {
 		place1, err := repo.UpsertPlace(ctx, createPlaceParams("DROM Taberna", "Toronto", "ON", "CA"))
@@ -60,7 +61,7 @@ func TestGetOrCreateSourceReconciliation(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	t.Run("same base_url deduplicates regardless of name", func(t *testing.T) {
 		source1, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
@@ -141,7 +142,7 @@ func TestUpsertOrganizationReconciliation(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	t.Run("same name same city deduplicates", func(t *testing.T) {
 		org1, err := repo.UpsertOrganization(ctx, createOrgParams("City of Toronto", "Toronto", "ON", "CA"))

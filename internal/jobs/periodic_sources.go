@@ -32,7 +32,7 @@ func LoadSourcesForPeriodicJobs(ctx context.Context, repo sourceRepository, logg
 			continue
 		}
 
-		cfg, err := scraper.SourceConfigFromDomain(src)
+		cfg, err := scraper.SourceConfigFromDomain(src, logger)
 		if err != nil {
 			logger.Warn().Err(err).Str("source", src.Name).Msg("periodic sources: skipping source with conversion error")
 			continue

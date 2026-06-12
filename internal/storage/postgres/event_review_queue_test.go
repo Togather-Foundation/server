@@ -10,6 +10,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,7 +70,7 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	// Create test venue (shared across subtests)
 	place := insertPlace(t, ctx, pool, "Test Venue", "Toronto", "ON")
@@ -405,7 +406,7 @@ func TestEventRepository_ReviewQueue_Pagination(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	// Create test venue
 	place := insertPlace(t, ctx, pool, "Test Venue 2", "Toronto", "ON")
@@ -468,7 +469,7 @@ func TestEventRepository_ListReviewQueue_PaginationEdgeCases(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	t.Run("SinglePageResult_NoNextCursor", func(t *testing.T) {
 		// Create test venue

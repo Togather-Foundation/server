@@ -17,6 +17,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/rs/zerolog"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -533,7 +534,7 @@ func TestApproveReview_SentinelErrors(t *testing.T) {
 				tt.serviceErr,
 			)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -585,7 +586,7 @@ func TestRejectReview_SentinelErrors(t *testing.T) {
 				tt.serviceErr,
 			)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -637,7 +638,7 @@ func TestFixReview_SentinelErrors(t *testing.T) {
 				tt.serviceErr,
 			)
 
-			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+			adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 			handler := &AdminReviewQueueHandler{
 				Repository:   mockRepo,
 				AdminService: adminService,
@@ -723,7 +724,7 @@ func TestReviewQueueDetail_RelatedEventsExpanded(t *testing.T) {
 	// Related event fetch
 	mockRepo.On("GetByULID", mock.Anything, relatedULID).Return(relatedEvent, nil)
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -798,7 +799,7 @@ func TestReviewQueueDetail_RelatedEventFetchFails(t *testing.T) {
 	// Simulate failure fetching the related event
 	mockRepo.On("GetByULID", mock.Anything, relatedULID).Return((*events.Event)(nil), errors.New("db timeout"))
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -868,7 +869,7 @@ func TestReviewQueueDetail_DuplicateOfEventULID(t *testing.T) {
 	mockRepo.On("GetByULID", mock.Anything, primaryULID).Return(primaryEvent, nil)
 	mockRepo.On("GetByULID", mock.Anything, companionULID).Return(companionEvent, nil)
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,
@@ -939,7 +940,7 @@ func TestReviewQueueDetail_CrossWeekSeriesCompanionExpanded(t *testing.T) {
 	mockRepo.On("GetByULID", mock.Anything, primaryULID).Return(primaryEvent, nil)
 	mockRepo.On("GetByULID", mock.Anything, companionULID).Return(companionEvent, nil)
 
-	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	adminService := events.NewAdminService(mockRepo, true, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	handler := &AdminReviewQueueHandler{
 		Repository:   mockRepo,
 		AdminService: adminService,

@@ -5,17 +5,18 @@ import (
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/rs/zerolog"
 )
 
 func TestScheduleFromRecurrence_NilInput(t *testing.T) {
-	if result := ScheduleFromRecurrence(nil); result != nil {
+	if result := ScheduleFromRecurrence(nil, zerolog.Nop()); result != nil {
 		t.Errorf("expected nil for nil input, got %v", result)
 	}
 }
 
 func TestScheduleFromRecurrence_EmptyRRule(t *testing.T) {
 	rec := &events.RecurrenceRule{RRule: ""}
-	if result := ScheduleFromRecurrence(rec); result != nil {
+	if result := ScheduleFromRecurrence(rec, zerolog.Nop()); result != nil {
 		t.Errorf("expected nil for empty RRULE, got %v", result)
 	}
 }
@@ -25,7 +26,7 @@ func TestScheduleFromRecurrence_Daily(t *testing.T) {
 		RRule: "FREQ=DAILY",
 		TZID:  "America/Toronto",
 	}
-	s := ScheduleFromRecurrence(rec)
+	s := ScheduleFromRecurrence(rec, zerolog.Nop())
 	if s == nil {
 		t.Fatal("expected non-nil Schedule")
 	}
@@ -44,7 +45,7 @@ func TestScheduleFromRecurrence_WeeklyWithByDay(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "FREQ=WEEKLY;BYDAY=MO,WE",
 	}
-	s := ScheduleFromRecurrence(rec)
+	s := ScheduleFromRecurrence(rec, zerolog.Nop())
 	if s == nil {
 		t.Fatal("expected non-nil Schedule")
 	}
@@ -66,7 +67,7 @@ func TestScheduleFromRecurrence_MonthlyWithInterval(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "FREQ=MONTHLY;INTERVAL=3",
 	}
-	s := ScheduleFromRecurrence(rec)
+	s := ScheduleFromRecurrence(rec, zerolog.Nop())
 	if s == nil {
 		t.Fatal("expected non-nil Schedule")
 	}
@@ -79,7 +80,7 @@ func TestScheduleFromRecurrence_Yearly(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "FREQ=YEARLY",
 	}
-	s := ScheduleFromRecurrence(rec)
+	s := ScheduleFromRecurrence(rec, zerolog.Nop())
 	if s == nil {
 		t.Fatal("expected non-nil Schedule")
 	}
@@ -92,7 +93,7 @@ func TestScheduleFromRecurrence_HourlySkipped(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "FREQ=HOURLY",
 	}
-	s := ScheduleFromRecurrence(rec)
+	s := ScheduleFromRecurrence(rec, zerolog.Nop())
 	if s != nil {
 		t.Errorf("expected nil Schedule for HOURLY, got %v", s)
 	}
@@ -102,7 +103,7 @@ func TestScheduleFromRecurrence_MinutelySkipped(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "FREQ=MINUTELY",
 	}
-	if s := ScheduleFromRecurrence(rec); s != nil {
+	if s := ScheduleFromRecurrence(rec, zerolog.Nop()); s != nil {
 		t.Errorf("expected nil for MINUTELY, got %v", s)
 	}
 }
@@ -111,7 +112,7 @@ func TestScheduleFromRecurrence_SecondlySkipped(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "FREQ=SECONDLY",
 	}
-	if s := ScheduleFromRecurrence(rec); s != nil {
+	if s := ScheduleFromRecurrence(rec, zerolog.Nop()); s != nil {
 		t.Errorf("expected nil for SECONDLY, got %v", s)
 	}
 }
@@ -120,7 +121,7 @@ func TestScheduleFromRecurrence_ByMonthDay(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "FREQ=MONTHLY;BYMONTHDAY=15,-15",
 	}
-	s := ScheduleFromRecurrence(rec)
+	s := ScheduleFromRecurrence(rec, zerolog.Nop())
 	if s == nil {
 		t.Fatal("expected non-nil Schedule")
 	}
@@ -140,7 +141,7 @@ func TestScheduleFromRecurrence_WeeklyWithInterval(t *testing.T) {
 		RRule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR",
 		TZID:  "Europe/London",
 	}
-	s := ScheduleFromRecurrence(rec)
+	s := ScheduleFromRecurrence(rec, zerolog.Nop())
 	if s == nil {
 		t.Fatal("expected non-nil Schedule")
 	}
@@ -159,7 +160,7 @@ func TestScheduleFromRecurrence_NoFreqKey(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "BYDAY=MO,WE",
 	}
-	if s := ScheduleFromRecurrence(rec); s != nil {
+	if s := ScheduleFromRecurrence(rec, zerolog.Nop()); s != nil {
 		t.Errorf("expected nil for RRULE without FREQ, got %v", s)
 	}
 }
@@ -168,7 +169,7 @@ func TestScheduleFromRecurrence_WithRRULEPrefix(t *testing.T) {
 	rec := &events.RecurrenceRule{
 		RRule: "RRULE:FREQ=WEEKLY;BYDAY=TU",
 	}
-	s := ScheduleFromRecurrence(rec)
+	s := ScheduleFromRecurrence(rec, zerolog.Nop())
 	if s == nil {
 		t.Fatal("expected non-nil Schedule")
 	}

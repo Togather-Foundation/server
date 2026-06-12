@@ -15,6 +15,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/mcp"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/mark3labs/mcp-go/client"
 	mcpTypes "github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -24,7 +25,7 @@ import (
 func TestMCPServerInitializeAndTools(t *testing.T) {
 	env := setupTestEnv(t)
 
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	eventsService := events.NewService(repo.Events())
@@ -79,7 +80,7 @@ func TestMCPServerInitializeAndTools(t *testing.T) {
 func TestMCPResources(t *testing.T) {
 	env := setupTestEnv(t)
 
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	eventsService := events.NewService(repo.Events())
@@ -132,7 +133,7 @@ func TestMCPResources(t *testing.T) {
 
 func eventsIngestService(t *testing.T, repo *postgres.Repository, env *testEnv) *events.IngestService {
 	t.Helper()
-	return events.NewIngestService(repo.Events(), env.Config.Server.BaseURL, "America/Toronto", env.Config.Validation)
+	return events.NewIngestService(repo.Events(), env.Config.Server.BaseURL, "America/Toronto", env.Config.Validation, testhelpers.TestLogger())
 }
 
 func decodeToolText(t *testing.T, result *mcpTypes.CallToolResult) map[string]any {
@@ -152,7 +153,7 @@ func decodeToolText(t *testing.T, result *mcpTypes.CallToolResult) map[string]an
 func TestMCPAuthUnauthorized(t *testing.T) {
 	env := setupTestEnv(t)
 
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	eventsService := events.NewService(repo.Events())
@@ -224,7 +225,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 func TestMCPAuthValidKey(t *testing.T) {
 	env := setupTestEnv(t)
 
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	// Create a valid API key
@@ -284,7 +285,7 @@ func TestMCPAuthValidKey(t *testing.T) {
 func TestMCPAuthInvalidKey(t *testing.T) {
 	env := setupTestEnv(t)
 
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	eventsService := events.NewService(repo.Events())
@@ -350,7 +351,7 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 
 	env := setupTestEnv(t)
 
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	// Create a valid API key
@@ -511,7 +512,7 @@ func TestMCPGetEvent(t *testing.T) {
 	ctx := context.Background()
 
 	// Create a test event first
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	ingestService := eventsIngestService(t, repo, env)
@@ -893,7 +894,7 @@ func TestMCPSearch(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test data
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	ingestService := eventsIngestService(t, repo, env)
@@ -981,7 +982,7 @@ func TestMCPSearch(t *testing.T) {
 func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 	t.Helper()
 
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	eventsService := events.NewService(repo.Events())
@@ -1262,7 +1263,7 @@ func TestMCPPagination(t *testing.T) {
 	ctx := context.Background()
 
 	// Create test data
-	repo, err := postgres.NewRepository(env.Pool)
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
 	require.NoError(t, err)
 
 	// Create multiple events for pagination testing

@@ -1,9 +1,7 @@
 package scraper
 
 import (
-	"context"
 	"encoding/json"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,41 +10,28 @@ import (
 	"time"
 
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type warningHandler struct {
+type warningCapture struct {
 	mu       sync.Mutex
 	warnings []string
 }
 
-func (h *warningHandler) Handle(ctx context.Context, r slog.Record) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	var msg string
-	if r.Message != "" {
-		msg = r.Message
-	}
-	r.Attrs(func(a slog.Attr) bool {
-		if a.Key == "warning" {
-			msg = a.Value.String()
-		}
-		return true
-	})
-	h.warnings = append(h.warnings, msg)
-	return nil
+func (w *warningCapture) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.warnings = append(w.warnings, string(p))
+	return len(p), nil
 }
 
-func (h *warningHandler) GetWarnings() []string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return slicesClone(h.warnings)
+func (w *warningCapture) GetWarnings() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slicesClone(w.warnings)
 }
-
-func (h *warningHandler) WithAttrs(attrs []slog.Attr) slog.Handler { return h }
-func (h *warningHandler) WithGroup(name string) slog.Handler       { return h }
-func (h *warningHandler) Enabled(context.Context, slog.Level) bool { return true }
 
 func slicesClone[T any](s []T) []T {
 	if s == nil {
@@ -996,7 +981,7 @@ headless:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "iframe.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		require.NotNil(t, cfg.Headless.Iframe)
 		assert.Equal(t, 10000, cfg.Headless.Iframe.WaitTimeoutMs,
@@ -1021,7 +1006,7 @@ headless:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "iframe_timeout.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		require.NotNil(t, cfg.Headless.Iframe)
 		assert.Equal(t, 5000, cfg.Headless.Iframe.WaitTimeoutMs,
@@ -1038,7 +1023,7 @@ tier: 0
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "no_iframe.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		assert.Nil(t, cfg.Headless.Iframe)
 	})
@@ -1104,14 +1089,14 @@ tier: 1
 `
 
 func TestLoadSourceConfigs_NonExistentDir(t *testing.T) {
-	configs, err := LoadSourceConfigs("/tmp/does-not-exist-ever-xyzzy")
+	configs, err := LoadSourceConfigs("/tmp/does-not-exist-ever-xyzzy", zerolog.Nop())
 	require.NoError(t, err)
 	assert.Empty(t, configs)
 }
 
 func TestLoadSourceConfigs_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	assert.Empty(t, configs)
 }
@@ -1120,7 +1105,7 @@ func TestLoadSourceConfigs_ValidTier0(t *testing.T) {
 	dir := t.TempDir()
 	writeYAML(t, dir, "tso.yaml", validTier0YAML)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 
@@ -1139,7 +1124,7 @@ func TestLoadSourceConfigs_ValidTier1(t *testing.T) {
 	dir := t.TempDir()
 	writeYAML(t, dir, "colly.yaml", validTier1YAML)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 
@@ -1157,7 +1142,7 @@ func TestLoadSourceConfigs_SkipsUnderscoreFiles(t *testing.T) {
 	writeYAML(t, dir, "tso.yaml", validTier0YAML)
 	writeYAML(t, dir, "_draft.yaml", missingNameYAML) // invalid but should be skipped
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 	assert.Equal(t, "Toronto Symphony Orchestra", configs[0].Name)
@@ -1169,7 +1154,7 @@ func TestLoadSourceConfigs_SkipsNonYAMLFiles(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "README.md"), []byte("# sources"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("notes"), 0o644))
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 }
@@ -1178,7 +1163,7 @@ func TestLoadSourceConfigs_InvalidMissingName(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, "bad.yaml", missingNameYAML)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), path)
 	assert.Contains(t, err.Error(), "name: required")
@@ -1189,7 +1174,7 @@ func TestLoadSourceConfigs_InvalidURL(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, "bad.yaml", invalidURLYAML)
 
-	_, err := LoadSourceConfigs(dir)
+	_, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), path)
 	assert.Contains(t, err.Error(), "url:")
@@ -1199,7 +1184,7 @@ func TestLoadSourceConfigs_Tier1NoSelectors(t *testing.T) {
 	dir := t.TempDir()
 	path := writeYAML(t, dir, "tier1.yaml", tier1NoSelectorsYAML)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), path)
 	assert.Contains(t, err.Error(), "selectors.event_list")
@@ -1211,7 +1196,7 @@ func TestLoadSourceConfigs_MultipleFiles_InvalidCausesError(t *testing.T) {
 	writeYAML(t, dir, "valid.yaml", validTier0YAML)
 	invalidPath := writeYAML(t, dir, "invalid.yaml", missingNameYAML)
 
-	_, err := LoadSourceConfigs(dir)
+	_, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.Error(t, err)
 	// Error message must include the file path of the invalid file.
 	assert.Contains(t, err.Error(), invalidPath)
@@ -1227,7 +1212,7 @@ tier: 0
 	dir := t.TempDir()
 	writeYAML(t, dir, "minimal.yaml", minimalYAML)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 
@@ -1249,7 +1234,7 @@ tier: 0
 	dir := t.TempDir()
 	writeYAML(t, dir, "source.yaml", yamlContent)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 	assert.True(t, configs[0].Enabled)
@@ -1265,7 +1250,7 @@ enabled: false
 	dir := t.TempDir()
 	writeYAML(t, dir, "source.yaml", yamlContent)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 	assert.False(t, configs[0].Enabled)
@@ -1281,7 +1266,7 @@ trust_level: 0
 	dir := t.TempDir()
 	writeYAML(t, dir, "source.yaml", yamlContent)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 	assert.Equal(t, 5, configs[0].TrustLevel)
@@ -1297,7 +1282,7 @@ trust_level: 11
 	dir := t.TempDir()
 	writeYAML(t, dir, "bad.yaml", yamlContent)
 
-	_, err := LoadSourceConfigs(dir)
+	_, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "trust_level")
 }
@@ -1310,7 +1295,7 @@ func TestLoadSourceConfigs_SubdirIgnored(t *testing.T) {
 	writeYAML(t, subDir, "sub.yaml", validTier0YAML)
 	writeYAML(t, dir, "top.yaml", validTier0YAML)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 }
@@ -1325,7 +1310,7 @@ tier: 0
 	dir := t.TempDir()
 	path := writeYAML(t, dir, "ftp.yaml", yamlContent)
 
-	_, err := LoadSourceConfigs(dir)
+	_, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), path)
 	assert.True(t,
@@ -1339,7 +1324,7 @@ func TestLoadSourceConfigs_DuplicateNameError(t *testing.T) {
 	writeYAML(t, dir, "a.yaml", validTier0YAML)
 	writeYAML(t, dir, "b.yaml", validTier0YAML) // same name: "Toronto Symphony Orchestra"
 
-	_, err := LoadSourceConfigs(dir)
+	_, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "duplicate source name")
 	assert.Contains(t, err.Error(), "Toronto Symphony Orchestra")
@@ -1359,7 +1344,7 @@ multi_session_duration_threshold: "720h"
 		dir := t.TempDir()
 		writeYAML(t, dir, "festival.yaml", yamlContent)
 
-		configs, err := LoadSourceConfigs(dir)
+		configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 		require.NoError(t, err)
 		require.Len(t, configs, 1)
 		assert.Equal(t, "720h", configs[0].MultiSessionDurationThreshold)
@@ -1375,7 +1360,7 @@ tier: 0
 		dir := t.TempDir()
 		writeYAML(t, dir, "normal.yaml", yamlContent)
 
-		configs, err := LoadSourceConfigs(dir)
+		configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 		require.NoError(t, err)
 		require.Len(t, configs, 1)
 		assert.Equal(t, "", configs[0].MultiSessionDurationThreshold)
@@ -1393,7 +1378,7 @@ multi_session_duration_threshold: "336h"
 		dir := t.TempDir()
 		writeYAML(t, dir, "custom.yaml", yamlContent)
 
-		configs, err := LoadSourceConfigs(dir)
+		configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 		require.NoError(t, err)
 		require.Len(t, configs, 1)
 		assert.Equal(t, "336h", configs[0].MultiSessionDurationThreshold)
@@ -1582,7 +1567,7 @@ func TestSourceConfigFromDomain_JSONRoundTrip(t *testing.T) {
 			}
 
 			// SourceConfigFromDomain must reconstruct with normalization applied.
-			cfg, err := SourceConfigFromDomain(src)
+			cfg, err := SourceConfigFromDomain(src, zerolog.Nop())
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantAfterNormalize, cfg.Selectors,
 				"SourceConfigFromDomain must round-trip SelectorConfig through JSON with normalization")
@@ -1602,7 +1587,7 @@ func TestSourceConfigFromDomain_EmptySelectors(t *testing.T) {
 		Selectors: nil,
 	}
 
-	cfg, err := SourceConfigFromDomain(src)
+	cfg, err := SourceConfigFromDomain(src, zerolog.Nop())
 	require.NoError(t, err)
 	// Selectors is zero-value; normalization produces nil DescriptionSelectors
 	assert.Equal(t, SelectorConfig{DescriptionSelectors: nil}, cfg.Selectors)
@@ -1620,7 +1605,7 @@ func TestSourceConfigFromDomain_InvalidJSON(t *testing.T) {
 		Selectors: []byte(`{not valid json`),
 	}
 
-	_, err := SourceConfigFromDomain(src)
+	_, err := SourceConfigFromDomain(src, zerolog.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad-source")
 }
@@ -1656,7 +1641,7 @@ func TestSourceConfigFromDomain_GraphQLRoundTrip(t *testing.T) {
 		GraphQLConfig: rawJSON,
 	}
 
-	cfg, err := SourceConfigFromDomain(src)
+	cfg, err := SourceConfigFromDomain(src, zerolog.Nop())
 	require.NoError(t, err)
 	require.NotNil(t, cfg.GraphQL, "GraphQL config must be non-nil for Tier 3 source")
 	assert.Equal(t, original.Endpoint, cfg.GraphQL.Endpoint)
@@ -1679,7 +1664,7 @@ func TestSourceConfigFromDomain_GraphQLNilForTier0(t *testing.T) {
 		GraphQLConfig: nil,
 	}
 
-	cfg, err := SourceConfigFromDomain(src)
+	cfg, err := SourceConfigFromDomain(src, zerolog.Nop())
 	require.NoError(t, err)
 	assert.Nil(t, cfg.GraphQL, "GraphQL config must be nil for Tier 0 source")
 }
@@ -1696,7 +1681,7 @@ func TestSourceConfigFromDomain_GraphQLInvalidJSON(t *testing.T) {
 		GraphQLConfig: []byte(`{not valid json`),
 	}
 
-	_, err := SourceConfigFromDomain(src)
+	_, err := SourceConfigFromDomain(src, zerolog.Nop())
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bad-graphql-source")
 }
@@ -1761,7 +1746,7 @@ tier: 0
 	dir := t.TempDir()
 	writeYAML(t, dir, "multi.yaml", yamlContent)
 
-	configs, err := LoadSourceConfigs(dir)
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
 	require.NoError(t, err)
 	require.Len(t, configs, 1)
 	assert.Equal(t, []string{"https://example.com/events", "https://example.com/workshops"}, configs[0].URLs)
@@ -1788,7 +1773,7 @@ rest:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "rest.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		require.NotNil(t, cfg.REST)
 		assert.Equal(t, "results", cfg.REST.ResultsField, "results_field default must be 'results'")
@@ -1809,7 +1794,7 @@ rest:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "rest_custom.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		require.NotNil(t, cfg.REST)
 		assert.Equal(t, "data", cfg.REST.ResultsField, "explicit results_field must not be overridden")
@@ -1829,7 +1814,7 @@ rest:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "rest_dot.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		require.NotNil(t, cfg.REST)
 		assert.Equal(t, ".", cfg.REST.ResultsField, "results_field '.' sentinel must not be overridden to default")
@@ -1845,7 +1830,7 @@ tier: 0
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "no_rest.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		assert.Nil(t, cfg.REST)
 	})
@@ -2409,7 +2394,7 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 	repoRoot := findRepoRoot(t)
 	configsDir := filepath.Join(repoRoot, "configs", "sources")
 
-	configs, err := LoadSourceConfigs(configsDir)
+	configs, err := LoadSourceConfigs(configsDir, zerolog.Nop())
 	require.NoError(t, err, "LoadSourceConfigs must succeed")
 	require.NotEmpty(t, configs, "should have at least one config")
 
@@ -2463,7 +2448,7 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 			src.LastScrapedAt = nil
 			cfg.LastScrapedAt = nil
 
-			got, err := SourceConfigFromDomain(src)
+			got, err := SourceConfigFromDomain(src, zerolog.Nop())
 			require.NoError(t, err, "SourceConfigFromDomain must succeed")
 
 			assert.Equal(t, cfg, got, "SourceConfig should survive DB round-trip without data loss")
@@ -2494,7 +2479,7 @@ selectors:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "single_desc.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		// Single description should also populate DescriptionSelectors for the unified path
 		assert.Equal(t, []string{"p.summary"}, cfg.Selectors.DescriptionSelectors,
@@ -2518,7 +2503,7 @@ selectors:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "multi_desc.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		assert.Equal(t, []string{"p.summary", "div.full-description"}, cfg.Selectors.DescriptionSelectors,
 			"multiple description selectors should be parsed as DescriptionSelectors")
@@ -2541,7 +2526,7 @@ selectors:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "desc_selectors.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		assert.Equal(t, []string{".lead", ".full", ".more"}, cfg.Selectors.DescriptionSelectors,
 			"description_selectors field should be parsed correctly")
@@ -2565,7 +2550,7 @@ selectors:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "both_desc.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		// description (single) takes precedence for backward compatibility
 		assert.Equal(t, []string{"p.summary"}, cfg.Selectors.DescriptionSelectors,
@@ -2589,7 +2574,7 @@ selectors:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "desc_selectors_only.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 		assert.Equal(t, []string{".lead", ".full"}, cfg.Selectors.DescriptionSelectors,
 			"empty description with description_selectors should use description_selectors")
@@ -2617,7 +2602,7 @@ selectors:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "desc_only.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 
 		// After normalization, both are populated, but the warning should reflect original input
@@ -2642,7 +2627,7 @@ selectors:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "both_set.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 
 		// Description takes precedence
@@ -2666,7 +2651,7 @@ selectors:
 		dir := t.TempDir()
 		path := writeYAML(t, dir, "desc_selectors_only.yaml", yamlContent)
 
-		cfg, err := loadFile(path)
+		cfg, err := loadFile(path, zerolog.Nop())
 		require.NoError(t, err)
 
 		assert.Equal(t, []string{".lead", ".full"}, cfg.Selectors.DescriptionSelectors)
@@ -2732,7 +2717,7 @@ func TestSourceConfigFromDomain_DescriptionSelectorsNormalization(t *testing.T) 
 				Selectors:  []byte(tt.selectorsJSON),
 			}
 
-			cfg, err := SourceConfigFromDomain(src)
+			cfg, err := SourceConfigFromDomain(src, zerolog.Nop())
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantDescSelectors, cfg.Selectors.DescriptionSelectors,
 				"DescriptionSelectors should be normalized consistently for DB-loaded configs")
@@ -2824,10 +2809,6 @@ func TestValidateConfigWithWarnings_DeprecatedDescription(t *testing.T) {
 func TestLoadFile_DescriptionDeprecationWarningsSlog(t *testing.T) {
 	dir := t.TempDir()
 
-	// Save original default logger and restore after test
-	originalDefault := slog.Default()
-	t.Cleanup(func() { slog.SetDefault(originalDefault) })
-
 	t.Run("only description set - deprecation warning (NOT both set)", func(t *testing.T) {
 		yamlContent := `
 name: "Desc Only Source"
@@ -2840,15 +2821,14 @@ selectors:
 `
 		path := writeYAML(t, dir, "desc_only_3.yaml", yamlContent)
 
-		handler := &warningHandler{}
-		logger := slog.New(handler)
-		slog.SetDefault(logger)
+		capture := &warningCapture{}
+		logger := zerolog.New(capture).Level(zerolog.WarnLevel)
 
-		_, err := loadFile(path)
+		_, err := loadFile(path, logger)
 		require.NoError(t, err)
 
-		warnings := handler.GetWarnings()
-		require.NotEmpty(t, warnings, "expected slog.Warn to be called, got: %v", warnings)
+		warnings := capture.GetWarnings()
+		require.NotEmpty(t, warnings, "expected zerolog.Warn to be called, got: %v", warnings)
 
 		foundDeprecation := false
 		foundBothSet := false
@@ -2879,15 +2859,14 @@ selectors:
 `
 		path := writeYAML(t, dir, "both_set_3.yaml", yamlContent)
 
-		handler := &warningHandler{}
-		logger := slog.New(handler)
-		slog.SetDefault(logger)
+		capture := &warningCapture{}
+		logger := zerolog.New(capture).Level(zerolog.WarnLevel)
 
-		_, err := loadFile(path)
+		_, err := loadFile(path, logger)
 		require.NoError(t, err)
 
-		warnings := handler.GetWarnings()
-		require.NotEmpty(t, warnings, "expected slog.Warn to be called, got: %v", warnings)
+		warnings := capture.GetWarnings()
+		require.NotEmpty(t, warnings, "expected zerolog.Warn to be called, got: %v", warnings)
 
 		foundPrecedence := false
 		for _, w := range warnings {
@@ -2912,14 +2891,13 @@ selectors:
 `
 		path := writeYAML(t, dir, "desc_selectors_only_3.yaml", yamlContent)
 
-		handler := &warningHandler{}
-		logger := slog.New(handler)
-		slog.SetDefault(logger)
+		capture := &warningCapture{}
+		logger := zerolog.New(capture).Level(zerolog.WarnLevel)
 
-		_, err := loadFile(path)
+		_, err := loadFile(path, logger)
 		require.NoError(t, err)
 
-		warnings := handler.GetWarnings()
+		warnings := capture.GetWarnings()
 		for _, w := range warnings {
 			assert.NotContains(t, w, "selectors.description", "should not warn about description when not set, got: %v", warnings)
 		}
@@ -2931,10 +2909,6 @@ selectors:
 // --------------------------------------------------------------------------
 
 func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T) {
-	// Save original default logger and restore after test
-	originalDefault := slog.Default()
-	t.Cleanup(func() { slog.SetDefault(originalDefault) })
-
 	t.Run("only description set - deprecation warning (NOT both set)", func(t *testing.T) {
 		selectorsJSON := `{"event_list": ".card", "description": "p.summary"}`
 
@@ -2950,15 +2924,14 @@ func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T)
 			Selectors:  []byte(selectorsJSON),
 		}
 
-		handler := &warningHandler{}
-		logger := slog.New(handler)
-		slog.SetDefault(logger)
+		capture := &warningCapture{}
+		logger := zerolog.New(capture).Level(zerolog.WarnLevel)
 
-		_, err := SourceConfigFromDomain(src)
+		_, err := SourceConfigFromDomain(src, logger)
 		require.NoError(t, err)
 
-		warnings := handler.GetWarnings()
-		require.NotEmpty(t, warnings, "expected slog.Warn to be called, got: %v", warnings)
+		warnings := capture.GetWarnings()
+		require.NotEmpty(t, warnings, "expected zerolog.Warn to be called, got: %v", warnings)
 
 		foundDeprecation := false
 		foundBothSet := false
@@ -2989,15 +2962,14 @@ func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T)
 			Selectors:  []byte(selectorsJSON),
 		}
 
-		handler := &warningHandler{}
-		logger := slog.New(handler)
-		slog.SetDefault(logger)
+		capture := &warningCapture{}
+		logger := zerolog.New(capture).Level(zerolog.WarnLevel)
 
-		_, err := SourceConfigFromDomain(src)
+		_, err := SourceConfigFromDomain(src, logger)
 		require.NoError(t, err)
 
-		warnings := handler.GetWarnings()
-		require.NotEmpty(t, warnings, "expected slog.Warn to be called, got: %v", warnings)
+		warnings := capture.GetWarnings()
+		require.NotEmpty(t, warnings, "expected zerolog.Warn to be called, got: %v", warnings)
 
 		foundPrecedence := false
 		for _, w := range warnings {
@@ -3023,14 +2995,13 @@ func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T)
 			Selectors:  []byte(selectorsJSON),
 		}
 
-		handler := &warningHandler{}
-		logger := slog.New(handler)
-		slog.SetDefault(logger)
+		capture := &warningCapture{}
+		logger := zerolog.New(capture).Level(zerolog.WarnLevel)
 
-		_, err := SourceConfigFromDomain(src)
+		_, err := SourceConfigFromDomain(src, logger)
 		require.NoError(t, err)
 
-		warnings := handler.GetWarnings()
+		warnings := capture.GetWarnings()
 		for _, w := range warnings {
 			assert.NotContains(t, w, "selectors.description", "should not warn about description when not set, got: %v", warnings)
 		}

@@ -12,7 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // escapeILIKEPattern escapes special characters in ILIKE patterns to prevent SQL injection.
@@ -31,8 +31,13 @@ func escapeILIKEPattern(pattern string) string {
 var _ events.Repository = (*EventRepository)(nil)
 
 type EventRepository struct {
-	pool *pgxpool.Pool
-	tx   pgx.Tx
+	pool   *pgxpool.Pool
+	tx     pgx.Tx
+	logger zerolog.Logger
+}
+
+func NewEventRepository(pool *pgxpool.Pool, logger zerolog.Logger) *EventRepository {
+	return &EventRepository{pool: pool, logger: logger}
 }
 
 type eventRow struct {
@@ -1355,8 +1360,9 @@ func (r *EventRepository) BeginTx(ctx context.Context) (events.Repository, event
 	}
 
 	txRepo := &EventRepository{
-		pool: r.pool,
-		tx:   tx,
+		pool:   r.pool,
+		tx:     tx,
+		logger: r.logger,
 	}
 
 	return txRepo, &txCommitter{tx: tx}, nil
@@ -2135,7 +2141,7 @@ func (r *EventRepository) MergeEvents(ctx context.Context, duplicateULID string,
 
 	// Log if we followed a chain (the target was already merged)
 	if canonicalULID != primaryULID {
-		log.Warn().
+		r.logger.Warn().
 			Str("original_target", primaryULID).
 			Str("canonical_target", canonicalULID).
 			Str("duplicate", duplicateULID).
