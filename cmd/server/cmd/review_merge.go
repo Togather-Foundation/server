@@ -140,6 +140,22 @@ func consolidateEvents(client *http.Client, serverURL, jwt, canonicalID string, 
 	}
 
 	if mergeDryRun {
+		if reviewJSON {
+			dryRunBody := map[string]any{
+				"event_ulid": canonicalID,
+				"retire":     retireIDs,
+			}
+			if mergeTransferOccurrences {
+				dryRunBody["transfer_occurrences"] = true
+			}
+			if len(patches) > 0 {
+				dryRunBody["event"] = ensureEvent()
+			}
+			dryRunBody["dry_run"] = true
+			enc := json.NewEncoder(out)
+			enc.SetIndent("", "  ")
+			return enc.Encode(dryRunBody)
+		}
 		_, _ = fmt.Fprintf(out, "Would consolidate %d event(s) into %s\n", len(retireIDs), canonicalID)
 		if mergeTransferOccurrences {
 			_, _ = fmt.Fprintln(out, "  + transfer occurrences from retired events")
@@ -172,7 +188,7 @@ func consolidateEvents(client *http.Client, serverURL, jwt, canonicalID string, 
 		var result map[string]any
 		if err := json.Unmarshal(respBody, &result); err != nil {
 			_, _ = fmt.Fprintln(out, string(respBody))
-			return nil
+			return fmt.Errorf("unmarshal response: %w", err)
 		}
 		return enc.Encode(result)
 	}

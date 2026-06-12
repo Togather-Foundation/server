@@ -95,6 +95,15 @@ func runReviewEdit(cmd *cobra.Command, args []string) error {
 	}
 
 	if editDryRun {
+		if reviewJSON {
+			enc := json.NewEncoder(out)
+			enc.SetIndent("", "  ")
+			return enc.Encode(map[string]any{
+				"dry_run":  true,
+				"event_id": detail.EventID,
+				"patches":  patches,
+			})
+		}
 		_, _ = fmt.Fprintf(out, "Would update event %s (%s):\n", detail.EventID, detail.EventName)
 		for _, p := range patches {
 			_, _ = fmt.Fprintf(out, "  %s → \"%s\"\n", p, body[fieldKey(p)])
@@ -125,6 +134,21 @@ func runReviewEdit(cmd *cobra.Command, args []string) error {
 	if resp.StatusCode >= 400 {
 		rb, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("server returned status %d: %s", resp.StatusCode, string(rb))
+	}
+
+	if reviewJSON {
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("read response: %w", err)
+		}
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		var result map[string]any
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			_, _ = fmt.Fprintln(out, string(respBody))
+			return fmt.Errorf("unmarshal response: %w", err)
+		}
+		return enc.Encode(result)
 	}
 
 	_, _ = fmt.Fprintf(out, "✓ Updated event %s (%s): %s\n", detail.EventID, detail.EventName, joinPatches(patches))

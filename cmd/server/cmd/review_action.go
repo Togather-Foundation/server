@@ -138,7 +138,7 @@ func reviewAction(cmd *cobra.Command, id int, action string, bodyMap map[string]
 		var result map[string]any
 		if err := json.Unmarshal(respBody, &result); err != nil {
 			_, _ = fmt.Fprintln(out, string(respBody))
-			return nil
+			return fmt.Errorf("unmarshal response: %w", err)
 		}
 		return enc.Encode(result)
 	}
