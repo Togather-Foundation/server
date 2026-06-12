@@ -157,22 +157,6 @@ func run() error {
 // setupLogging initializes the logger based on configuration.
 // IMPORTANT: All logs go to stderr to avoid corrupting MCP protocol on stdout.
 func setupLogging(cfg config.LoggingConfig) zerolog.Logger {
-	// Parse log level
-	level := zerolog.InfoLevel
-	switch cfg.Level {
-	case "debug":
-		level = zerolog.DebugLevel
-	case "info":
-		level = zerolog.InfoLevel
-	case "warn", "warning":
-		level = zerolog.WarnLevel
-	case "error":
-		level = zerolog.ErrorLevel
-	}
-
-	// Set global log level
-	zerolog.SetGlobalLevel(level)
-
 	// Configure output format
 	// CRITICAL: Always output to stderr (not stdout) to avoid corrupting MCP stdio protocol
 	var logger zerolog.Logger
@@ -186,6 +170,11 @@ func setupLogging(cfg config.LoggingConfig) zerolog.Logger {
 		// JSON format (default)
 		logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
 	}
+
+	// Setup slog logger for River job queue workers (injected, slog.Default() as nil-guard)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
 
 	return logger
 }
@@ -213,12 +202,6 @@ func connectDatabase(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.P
 		pool.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-
-	// Setup slog logger for database operations (sent to stderr)
-	slogLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(slogLogger)
 
 	return pool, nil
 }
