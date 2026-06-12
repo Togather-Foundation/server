@@ -105,6 +105,7 @@ func run() error {
 		nil, // geocodingService (not needed for MCP server)
 		loc,
 		cfg.Base.Server.BaseURL,
+		logger,
 	)
 
 	logger.Info().
@@ -120,7 +121,7 @@ func run() error {
 
 	// Start server in errgroup
 	g.Go(func() error {
-		return mcp.Serve(gctx, mcpServer.MCPServer(), cfg.Transport, repo.Auth().APIKeys(), cfg.Base.RateLimit)
+		return mcp.Serve(gctx, mcpServer.MCPServer(), cfg.Transport, repo.Auth().APIKeys(), cfg.Base.RateLimit, logger)
 	})
 
 	// Wait for shutdown signal or context cancellation

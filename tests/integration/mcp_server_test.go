@@ -47,6 +47,7 @@ func TestMCPServerInitializeAndTools(t *testing.T) {
 		nil,      // geocodingService
 		time.UTC, // loc
 		env.Config.Server.BaseURL,
+		testhelpers.TestLogger(),
 	)
 
 	cli, err := client.NewInProcessClient(mcpServer.MCPServer())
@@ -102,6 +103,7 @@ func TestMCPResources(t *testing.T) {
 		nil,      // geocodingService
 		time.UTC, // loc
 		env.Config.Server.BaseURL,
+		testhelpers.TestLogger(),
 	)
 
 	cli, err := client.NewInProcessClient(mcpServer.MCPServer())
@@ -175,6 +177,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 		nil,      // geocodingService
 		time.UTC, // loc
 		env.Config.Server.BaseURL,
+		testhelpers.TestLogger(),
 	)
 
 	// Create HTTP handler with auth middleware
@@ -250,6 +253,7 @@ func TestMCPAuthValidKey(t *testing.T) {
 		nil,      // geocodingService
 		time.UTC, // loc
 		env.Config.Server.BaseURL,
+		testhelpers.TestLogger(),
 	)
 
 	// Create HTTP handler with auth middleware
@@ -307,6 +311,7 @@ func TestMCPAuthInvalidKey(t *testing.T) {
 		nil,      // geocodingService
 		time.UTC, // loc
 		env.Config.Server.BaseURL,
+		testhelpers.TestLogger(),
 	)
 
 	// Create HTTP handler with auth middleware
@@ -376,6 +381,7 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 		nil,      // geocodingService
 		time.UTC, // loc
 		env.Config.Server.BaseURL,
+		testhelpers.TestLogger(),
 	)
 
 	// Create HTTP handler with VERY LOW rate limit for testing
@@ -1006,6 +1012,7 @@ func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 		nil,      // geocodingService
 		time.UTC, // loc
 		env.Config.Server.BaseURL,
+		testhelpers.TestLogger(),
 	)
 
 	cli, err := client.NewInProcessClient(mcpServer.MCPServer())

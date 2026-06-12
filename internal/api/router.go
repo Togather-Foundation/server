@@ -510,6 +510,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 				geocodingService,
 				loc,
 				cfg.Server.BaseURL,
+				logger,
 			)
 
 			mcpHandler, err := mcp.WrapHandler(

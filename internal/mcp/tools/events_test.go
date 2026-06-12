@@ -7,6 +7,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/rs/zerolog"
 )
 
 // Test buildEventURI
@@ -282,7 +283,7 @@ func TestResolveEventLocation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := resolveEventLocation(context.Background(), tt.event, tt.baseURL, tt.resolver)
+			result := resolveEventLocation(context.Background(), tt.event, tt.baseURL, tt.resolver, zerolog.Nop())
 
 			if tt.expectNil {
 				if result != nil {
@@ -401,7 +402,7 @@ func TestResolveEventOrganizer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := resolveEventOrganizer(context.Background(), "https://test.example.com", tt.orgID, tt.resolver)
+			result := resolveEventOrganizer(context.Background(), "https://test.example.com", tt.orgID, tt.resolver, zerolog.Nop())
 
 			if tt.expectNil {
 				if result != nil {
@@ -490,7 +491,7 @@ func TestBuildListItem(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildListItem(tt.event, tt.baseURL, nil, nil)
+			result := buildListItem(tt.event, tt.baseURL, nil, nil, zerolog.Nop())
 
 			if result["@type"] != "Event" {
 				t.Errorf("expected @type Event, got %v", result["@type"])

@@ -63,7 +63,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // TransportType represents the available MCP transport protocols.
@@ -184,8 +184,8 @@ func LoadTransportConfig() (*TransportConfig, error) {
 // ServeStdio starts the MCP server using stdio transport.
 // This is the default transport, suitable for Claude Desktop and CLI tools.
 // The server reads requests from stdin and writes responses to stdout.
-func ServeStdio(ctx context.Context, mcpServer *server.MCPServer, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
-	log.Info().Msg("Starting MCP server with stdio transport")
+func ServeStdio(ctx context.Context, mcpServer *server.MCPServer, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig, logger zerolog.Logger) error {
+	logger.Info().Msg("Starting MCP server with stdio transport")
 
 	// Run ServeStdio in goroutine to allow context cancellation
 	errCh := make(chan error, 1)
@@ -196,12 +196,12 @@ func ServeStdio(ctx context.Context, mcpServer *server.MCPServer, authStore auth
 		close(errCh)
 	}()
 
-	log.Info().Msg("Stdio server started")
+	logger.Info().Msg("Stdio server started")
 
 	// Wait for context cancellation or server error
 	select {
 	case <-ctx.Done():
-		log.Info().Msg("Context cancelled, stdio server stopping")
+		logger.Info().Msg("Context cancelled, stdio server stopping")
 		return ctx.Err()
 	case err := <-errCh:
 		return err
@@ -211,9 +211,9 @@ func ServeStdio(ctx context.Context, mcpServer *server.MCPServer, authStore auth
 // ServeSSE starts the MCP server using Server-Sent Events transport.
 // This transport is suitable for web applications and browser-based clients.
 // The server listens on the configured host and port.
-func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
+func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig, logger zerolog.Logger) error {
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	log.Info().
+	logger.Info().
 		Str("transport", "sse").
 		Str("addr", addr).
 		Msg("Starting MCP server with SSE transport")
@@ -239,19 +239,19 @@ func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportCo
 		close(errCh)
 	}()
 
-	log.Info().Str("addr", addr).Msg("SSE server listening")
+	logger.Info().Str("addr", addr).Msg("SSE server listening")
 
 	// Wait for context cancellation or server error
 	select {
 	case <-ctx.Done():
-		log.Info().Msg("Shutting down SSE server")
+		logger.Info().Msg("Shutting down SSE server")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), GracefulShutdownTimeout)
 		defer shutdownCancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Error().Err(err).Msg("error during graceful shutdown of SSE server")
+			logger.Error().Err(err).Msg("error during graceful shutdown of SSE server")
 			return fmt.Errorf("SSE server shutdown error: %w", err)
 		}
-		log.Info().Msg("SSE server shutdown complete")
+		logger.Info().Msg("SSE server shutdown complete")
 		return nil
 	case err := <-errCh:
 		return err
@@ -261,9 +261,9 @@ func ServeSSE(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportCo
 // ServeHTTP starts the MCP server using Streamable HTTP transport.
 // This is the production-grade transport, suitable for scalable web deployments.
 // The server listens on the configured host and port.
-func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
+func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig, logger zerolog.Logger) error {
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	log.Info().
+	logger.Info().
 		Str("transport", "http").
 		Str("addr", addr).
 		Msg("Starting MCP server with Streamable HTTP transport")
@@ -289,19 +289,19 @@ func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportC
 		close(errCh)
 	}()
 
-	log.Info().Str("addr", addr).Msg("Streamable HTTP server listening")
+	logger.Info().Str("addr", addr).Msg("Streamable HTTP server listening")
 
 	// Wait for context cancellation or server error
 	select {
 	case <-ctx.Done():
-		log.Info().Msg("Shutting down HTTP server")
+		logger.Info().Msg("Shutting down HTTP server")
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), GracefulShutdownTimeout)
 		defer shutdownCancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Error().Err(err).Msg("error during graceful shutdown of HTTP server")
+			logger.Error().Err(err).Msg("error during graceful shutdown of HTTP server")
 			return fmt.Errorf("HTTP server shutdown error: %w", err)
 		}
-		log.Info().Msg("HTTP server shutdown complete")
+		logger.Info().Msg("HTTP server shutdown complete")
 		return nil
 	case err := <-errCh:
 		return err
@@ -332,14 +332,14 @@ func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportC
 //	if err != nil && err != context.Canceled {
 //	    log.Fatal(err)
 //	}
-func Serve(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig) error {
+func Serve(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportConfig, authStore auth.APIKeyStore, rateLimitCfg config.RateLimitConfig, logger zerolog.Logger) error {
 	switch cfg.Type {
 	case TransportStdio:
-		return ServeStdio(ctx, mcpServer, authStore, rateLimitCfg)
+		return ServeStdio(ctx, mcpServer, authStore, rateLimitCfg, logger)
 	case TransportSSE:
-		return ServeSSE(ctx, mcpServer, cfg, authStore, rateLimitCfg)
+		return ServeSSE(ctx, mcpServer, cfg, authStore, rateLimitCfg, logger)
 	case TransportHTTP:
-		return ServeHTTP(ctx, mcpServer, cfg, authStore, rateLimitCfg)
+		return ServeHTTP(ctx, mcpServer, cfg, authStore, rateLimitCfg, logger)
 	default:
 		return fmt.Errorf("unsupported transport type: %s", cfg.Type)
 	}

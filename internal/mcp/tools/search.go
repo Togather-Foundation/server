@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/rs/zerolog"
 )
 
 const (
@@ -27,6 +28,7 @@ type SearchTools struct {
 	orgService    *organizations.Service
 	loc           *time.Location
 	baseURL       string
+	logger        zerolog.Logger
 }
 
 // NewSearchTools creates a new SearchTools instance.
@@ -36,12 +38,19 @@ func NewSearchTools(eventsService *events.Service, placesService *places.Service
 		placesService: placesService,
 		orgService:    orgService,
 		baseURL:       strings.TrimSpace(baseURL),
+		logger:        zerolog.Nop(),
 	}
 }
 
 // WithLoc sets the server timezone used for default date filtering in event searches.
 func (t *SearchTools) WithLoc(loc *time.Location) *SearchTools {
 	t.loc = loc
+	return t
+}
+
+// WithLogger sets the logger for search tools.
+func (t *SearchTools) WithLogger(logger zerolog.Logger) *SearchTools {
+	t.logger = logger
 	return t
 }
 
@@ -184,7 +193,7 @@ func (t *SearchTools) searchEvents(ctx context.Context, query string, limit int)
 	}
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		item := buildListItem(event, t.baseURL, t.placesService, t.orgService)
+		item := buildListItem(event, t.baseURL, t.placesService, t.orgService, t.logger)
 		item["type"] = "event"
 		items = append(items, item)
 	}
