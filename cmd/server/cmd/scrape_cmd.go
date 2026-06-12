@@ -164,7 +164,7 @@ func loadScrapeConfig() (serverURL, apiKey string, err error) {
 // set, both features are skipped (best-effort). The returned cleanup function
 // must be called when done.
 func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper.Scraper, func(), error) {
-	client := scraper.NewIngestClient(serverURL, apiKey)
+	client := scraper.NewIngestClient(serverURL, apiKey, scraper.WithLogger(logger))
 	cfg, err := config.Load()
 	if err != nil {
 		logger.Warn().Err(err).Msg("scraper: failed to load config, using ingest client defaults")
@@ -172,6 +172,7 @@ func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper
 		client = scraper.NewIngestClient(
 			serverURL,
 			apiKey,
+			scraper.WithLogger(logger),
 			scraper.WithPollBackoffStart(time.Duration(cfg.Scraper.PollBackoffStart)*time.Millisecond),
 			scraper.WithPollBackoffMax(time.Duration(cfg.Scraper.PollBackoffMax)*time.Millisecond),
 			scraper.WithPollTimeout(time.Duration(cfg.Scraper.PollTimeout)*time.Millisecond),

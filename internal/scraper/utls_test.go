@@ -35,7 +35,7 @@ func TestResolveTransport(t *testing.T) {
 		{
 			name:        "empty fingerprint, CachingTransport",
 			fingerprint: "",
-			existing:    NewCachingTransport(nil, tempDir, false),
+			existing:    NewCachingTransport(nil, tempDir, false, zerolog.Nop()),
 			wantSame:    true,
 		},
 		{
@@ -47,7 +47,7 @@ func TestResolveTransport(t *testing.T) {
 		{
 			name:        "chrome_auto fingerprint, CachingTransport",
 			fingerprint: "chrome_auto",
-			existing:    NewCachingTransport(nil, tempDir, false),
+			existing:    NewCachingTransport(nil, tempDir, false, zerolog.Nop()),
 			wantWrapped: true,
 		},
 		{
