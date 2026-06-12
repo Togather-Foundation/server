@@ -238,7 +238,7 @@ func TestExtractLocationWithPatterns(t *testing.T) {
 func TestDecomposeLocation(t *testing.T) {
 	t.Parallel()
 
-	t.Run("full address from name", func(t *testing.T) {
+	t.Run("full address extracts city and region", func(t *testing.T) {
 		t.Parallel()
 		opts := DecomposeOpts{}
 		pi := DecomposeLocation("100 King St W, Toronto, ON M5X 1A9", opts)
@@ -248,6 +248,67 @@ func TestDecomposeLocation(t *testing.T) {
 		}
 		if pi.StreetAddress == "" {
 			t.Error("StreetAddress should not be empty")
+		}
+		if pi.AddressLocality != "Toronto" {
+			t.Errorf("AddressLocality = %q, want %q", pi.AddressLocality, "Toronto")
+		}
+		if pi.AddressRegion != "ON" {
+			t.Errorf("AddressRegion = %q, want %q", pi.AddressRegion, "ON")
+		}
+	})
+
+	t.Run("meetup escaped comma format", func(t *testing.T) {
+		t.Parallel()
+		opts := DecomposeOpts{}
+		pi := DecomposeLocation("MaRS Discovery District\\, 101 College St\\, Toronto\\, ON", opts)
+
+		if pi.AddressLocality != "Toronto" {
+			t.Errorf("AddressLocality = %q, want %q", pi.AddressLocality, "Toronto")
+		}
+		if pi.AddressRegion != "ON" {
+			t.Errorf("AddressRegion = %q, want %q", pi.AddressRegion, "ON")
+		}
+	})
+
+	t.Run("meetup venue and city only", func(t *testing.T) {
+		t.Parallel()
+		opts := DecomposeOpts{}
+		pi := DecomposeLocation("High Park\\, Toronto\\, ON", opts)
+
+		if pi.AddressLocality != "Toronto" {
+			t.Errorf("AddressLocality = %q, want %q", pi.AddressLocality, "Toronto")
+		}
+		if pi.AddressRegion != "ON" {
+			t.Errorf("AddressRegion = %q, want %q", pi.AddressRegion, "ON")
+		}
+	})
+
+	t.Run("non-toronto city extracted", func(t *testing.T) {
+		t.Parallel()
+		opts := DecomposeOpts{}
+		pi := DecomposeLocation("Dance Studio\\, 123 Main St\\, New York\\, NY 10001", opts)
+
+		if pi.AddressLocality != "New York" {
+			t.Errorf("AddressLocality = %q, want %q", pi.AddressLocality, "New York")
+		}
+		if pi.AddressRegion != "NY" {
+			t.Errorf("AddressRegion = %q, want %q", pi.AddressRegion, "NY")
+		}
+	})
+
+	t.Run("extracted overrides defaults", func(t *testing.T) {
+		t.Parallel()
+		opts := DecomposeOpts{
+			DefaultLocality: "Toronto",
+			DefaultRegion:   "ON",
+		}
+		pi := DecomposeLocation("Venue\\, Montreal\\, QC", opts)
+
+		if pi.AddressLocality != "Montreal" {
+			t.Errorf("AddressLocality = %q, want Montreal (extracted overrides default)", pi.AddressLocality)
+		}
+		if pi.AddressRegion != "QC" {
+			t.Errorf("AddressRegion = %q, want QC (extracted overrides default)", pi.AddressRegion)
 		}
 	})
 
@@ -274,7 +335,7 @@ func TestDecomposeLocation(t *testing.T) {
 		}
 	})
 
-	t.Run("minimal address", func(t *testing.T) {
+	t.Run("minimal address no extraction", func(t *testing.T) {
 		t.Parallel()
 		opts := DecomposeOpts{}
 		pi := DecomposeLocation("Some Venue", opts)
@@ -327,6 +388,91 @@ func TestDecomposeLocation(t *testing.T) {
 			t.Errorf("AddressCountry = %q, want %q", pi.AddressCountry, "CA")
 		}
 	})
+}
+
+func TestExtractAddressComponents(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		raw          string
+		wantLocality string
+		wantRegion   string
+	}{
+		{
+			name:         "meetup escaped comma full address",
+			raw:          "MaRS Discovery District\\, 101 College St\\, Toronto\\, ON",
+			wantLocality: "Toronto",
+			wantRegion:   "ON",
+		},
+		{
+			name:         "meetup escaped comma venue and city",
+			raw:          "High Park\\, Toronto\\, ON",
+			wantLocality: "Toronto",
+			wantRegion:   "ON",
+		},
+		{
+			name:         "meetup with postal code",
+			raw:          "100 King St W\\, Toronto\\, ON M5X 1A9",
+			wantLocality: "Toronto",
+			wantRegion:   "ON",
+		},
+		{
+			name:         "standard comma address",
+			raw:          "123 Main St, Toronto, ON",
+			wantLocality: "Toronto",
+			wantRegion:   "ON",
+		},
+		{
+			name:         "non-toronto city",
+			raw:          "Dance Studio\\, 123 Main St\\, New York\\, NY 10001",
+			wantLocality: "New York",
+			wantRegion:   "NY",
+		},
+		{
+			name:         "montreal",
+			raw:          "Venue\\, Montreal\\, QC",
+			wantLocality: "Montreal",
+			wantRegion:   "QC",
+		},
+		{
+			name:         "vancouver",
+			raw:          "Studio, Vancouver, BC V6B 1A1",
+			wantLocality: "Vancouver",
+			wantRegion:   "BC",
+		},
+		{
+			name:         "simple venue no comma",
+			raw:          "Toronto Reference Library",
+			wantLocality: "",
+			wantRegion:   "",
+		},
+		{
+			name:         "single comma only",
+			raw:          "Venue, Toronto",
+			wantLocality: "",
+			wantRegion:   "",
+		},
+		{
+			name:         "empty string",
+			raw:          "",
+			wantLocality: "",
+			wantRegion:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			loc, reg := extractAddressComponents(tt.raw)
+			if loc != tt.wantLocality {
+				t.Errorf("locality = %q, want %q", loc, tt.wantLocality)
+			}
+			if reg != tt.wantRegion {
+				t.Errorf("region = %q, want %q", reg, tt.wantRegion)
+			}
+		})
+	}
 }
 
 func TestDefaultLocationPatterns(t *testing.T) {

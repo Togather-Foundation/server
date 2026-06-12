@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -71,7 +72,7 @@ func TestEventRepository_ILIKEInjectionPrevention(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
-	repo := &EventRepository{pool: pool}
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
 	// Setup test data
 	org := insertOrganization(t, ctx, pool, "Test Org")

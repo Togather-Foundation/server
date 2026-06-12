@@ -63,7 +63,7 @@ type RouterWithClient struct {
 }
 
 func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string, shutdownCtx ...context.Context) *RouterWithClient {
-	repo, err := postgres.NewRepository(pool)
+	repo, err := postgres.NewRepository(pool, logger)
 	if err != nil {
 		logger.Error().Err(err).Msg("repository init failed")
 		return &RouterWithClient{
@@ -74,7 +74,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	}
 
 	eventsService := events.NewService(repo.Events())
-	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL, cfg.DefaultTimezone, cfg.Validation).WithDedupConfig(cfg.Dedup).WithGeographicBoundaryConfig(cfg.GeographicBoundary)
+	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL, cfg.DefaultTimezone, cfg.Validation, logger).WithDedupConfig(cfg.Dedup).WithGeographicBoundaryConfig(cfg.GeographicBoundary)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
 	provenanceService := provenance.NewService(repo.Provenance())
@@ -127,6 +127,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Initialize River job queue for batch processing
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(slogLogger)
 
 	// Knowledge graph reconciliation service (srv-titkr)
 	// Use a KGService interface variable (not a typed *kg.ReconciliationService pointer)
@@ -211,7 +212,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		if loadErr != nil {
 			// DB error - fall back to YAML
 			logger.Warn().Err(loadErr).Msg("router: DB sources unavailable for periodic jobs, falling back to YAML")
-			sourceCfgs, loadErr = scraper.LoadSourceConfigs("configs/sources")
+			sourceCfgs, loadErr = scraper.LoadSourceConfigs("configs/sources", logger)
 			if loadErr != nil {
 				logger.Warn().Err(loadErr).Msg("router: YAML fallback also failed for periodic jobs (non-fatal)")
 			}
@@ -284,7 +285,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		loc = time.UTC
 	}
 
-	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, riverClient, queries, cfg.Environment, cfg.Server.BaseURL).
+	eventsHandler := handlers.NewEventsHandler(eventsService, ingestService, provenanceService, riverClient, queries, cfg.Environment, cfg.Server.BaseURL, logger).
 		WithPlaceResolver(placesService).
 		WithOrgResolver(orgService)
 	eventsHandler.Loc = loc
@@ -401,7 +402,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create AdminService
 	requireHTTPS := cfg.Environment == "production"
-	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone, cfg.Validation, cfg.Server.BaseURL)
+	adminService := events.NewAdminService(repo.Events(), requireHTTPS, cfg.DefaultTimezone, cfg.Validation, cfg.Server.BaseURL, logger)
 	adminService.WithIngestService(ingestService)
 	adminHandler := handlers.NewAdminHandler(eventsService, adminService, placesService, orgService, auditLogger, queries, cfg.Environment, cfg.Server.BaseURL)
 	adminHandler.Loc = loc
@@ -410,7 +411,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
 
 	// Create Admin Review Queue handler (srv-bjo)
-	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, repo.Places(), repo.Organizations(), auditLogger, cfg.Environment, cfg.Server.BaseURL)
+	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, repo.Places(), repo.Organizations(), auditLogger, cfg.Environment, cfg.Server.BaseURL, logger.With().Str("component", "admin_review_queue").Logger())
 
 	// Create scraper submission handlers (srv-1cxmi); uses the shared submissionRepo declared above.
 	submissionService := domainScraper.NewSubmissionService(submissionRepo, cfg.RateLimit.SubmissionsPerIPPer24h)

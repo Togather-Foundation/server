@@ -15,6 +15,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -293,7 +294,7 @@ func TestEventsHandlerListSuccess(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?limit=2", nil)
 	req.Header.Set("Accept", "application/ld+json")
 	res := httptest.NewRecorder()
@@ -330,7 +331,7 @@ func TestEventsHandlerListValidationError(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?limit=abc", nil)
 	res := httptest.NewRecorder()
 
@@ -350,7 +351,7 @@ func TestEventsHandlerGetNotFound(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -370,7 +371,7 @@ func TestEventsHandlerGetSuccess(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -400,7 +401,7 @@ func TestEventsHandlerGetInvalidID(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/bad", nil)
 	req.SetPathValue("id", "bad")
 	res := httptest.NewRecorder()
@@ -420,7 +421,7 @@ func TestEventsHandlerListServiceError(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	params := url.Values{}
 	params.Set("limit", "1")
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?"+params.Encode(), nil)
@@ -454,8 +455,8 @@ func TestEventsHandlerCreateUsesIdempotencyHeader(t *testing.T) {
 	}
 
 	service := events.NewService(repo)
-	ingest := events.NewIngestService(repo, "example.org", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
-	h := NewEventsHandler(service, ingest, nil, nil, nil, "test", "https://example.org")
+	ingest := events.NewIngestService(repo, "example.org", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true}, zerolog.Nop())
+	h := NewEventsHandler(service, ingest, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 
 	body := `{"name":"Jazz","startDate":"2026-07-10T19:00:00Z"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
@@ -482,7 +483,7 @@ func TestEventsHandlerListDefaultStartDate(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	h.Loc = time.UTC
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
 	res := httptest.NewRecorder()
@@ -531,7 +532,7 @@ func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -638,7 +639,7 @@ func TestEventsHandlerGetSubEventPhysicalVenueOverride(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	h.WithPlaceResolver(resolver)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
@@ -684,7 +685,7 @@ func TestEventsHandlerListSnakeCaseAliasWarning(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	h.Loc = time.UTC
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?start_date=2026-06-01", nil)
 	res := httptest.NewRecorder()
@@ -730,7 +731,7 @@ func TestEventsHandlerGetSubEventVenueURIFallback(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	h.WithPlaceResolver(resolver)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
@@ -783,7 +784,7 @@ func TestEventsHandlerGetRecurringEventHasEventSchedule(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -833,7 +834,7 @@ func TestEventsHandlerGetRecurringEventScheduleFallbackToOccurrences(t *testing.
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -869,7 +870,7 @@ func TestEventsHandlerGetNonRecurringEventNoEventSchedule(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()
@@ -904,7 +905,7 @@ func TestEventsHandlerGetEventScheduleWithInterval(t *testing.T) {
 		},
 	}
 
-	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org")
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
 	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
 	res := httptest.NewRecorder()

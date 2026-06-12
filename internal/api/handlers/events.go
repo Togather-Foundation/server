@@ -21,7 +21,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // EventPlaceResolver looks up a place by ULID for embedding in event responses.
@@ -45,9 +45,10 @@ type EventsHandler struct {
 	Env               string
 	BaseURL           string
 	Loc               *time.Location // configured timezone for default date filtering
+	Logger            zerolog.Logger
 }
 
-func NewEventsHandler(service *events.Service, ingest *events.IngestService, provenanceService *provenance.Service, riverClient *river.Client[pgx.Tx], queries *postgres.Queries, env string, baseURL string) *EventsHandler {
+func NewEventsHandler(service *events.Service, ingest *events.IngestService, provenanceService *provenance.Service, riverClient *river.Client[pgx.Tx], queries *postgres.Queries, env string, baseURL string, logger zerolog.Logger) *EventsHandler {
 	return &EventsHandler{
 		Service:           service,
 		Ingest:            ingest,
@@ -56,6 +57,7 @@ func NewEventsHandler(service *events.Service, ingest *events.IngestService, pro
 		Queries:           queries,
 		Env:               env,
 		BaseURL:           baseURL,
+		Logger:            logger,
 	}
 }
 
@@ -121,7 +123,7 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Populate eventSchedule from canonical recurrence data
-		item.EventSchedule = schema.ScheduleFromRecurrence(event.Recurrence)
+		item.EventSchedule = schema.ScheduleFromRecurrence(event.Recurrence, h.Logger)
 		if item.EventSchedule != nil && event.Recurrence != nil {
 			if event.Recurrence.SeriesStart != nil {
 				item.EventSchedule.StartDate = event.Recurrence.SeriesStart.Format("2006-01-02")
@@ -135,7 +137,7 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 		// Add location (required per Interop Profile §3.1)
 		// Resolve to embedded Place object when possible
-		item.Location = resolveEventLocation(r.Context(), h.BaseURL, &event, h.PlaceResolver)
+		item.Location = h.resolveEventLocation(r.Context(), h.BaseURL, &event, h.PlaceResolver)
 
 		items = append(items, item)
 	}
@@ -214,7 +216,7 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		})
 		if err != nil {
 			// Log error but don't fail event creation - geocoding is not critical for event acceptance
-			log.Warn().Err(err).Str("event_ulid", result.Event.ULID).Msg("failed to enqueue geocoding job")
+			h.Logger.Warn().Err(err).Str("event_ulid", result.Event.ULID).Msg("failed to enqueue geocoding job")
 		}
 	}
 
@@ -231,7 +233,7 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 				MaxAttempts: jobs.ReconciliationMaxAttempts,
 			})
 			if err != nil {
-				log.Warn().Err(err).Str("place_ulid", result.PlaceULID).Msg("failed to enqueue place reconciliation job")
+				h.Logger.Warn().Err(err).Str("place_ulid", result.PlaceULID).Msg("failed to enqueue place reconciliation job")
 			}
 		}
 		if result.OrganizerULID != "" {
@@ -243,7 +245,7 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 				MaxAttempts: jobs.ReconciliationMaxAttempts,
 			})
 			if err != nil {
-				log.Warn().Err(err).Str("org_ulid", result.OrganizerULID).Msg("failed to enqueue org reconciliation job")
+				h.Logger.Warn().Err(err).Str("org_ulid", result.OrganizerULID).Msg("failed to enqueue org reconciliation job")
 			}
 		}
 	}
@@ -405,7 +407,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			// This ensures admin detail shows occurrence-specific venue data rather
 			// than silently omitting it when it differs from the parent event location.
 			if occ.VenueULID != nil && *occ.VenueULID != "" {
-				sub.Location = resolveOccurrenceVenueLocation(r.Context(), h.BaseURL, *occ.VenueULID, h.PlaceResolver)
+				sub.Location = h.resolveOccurrenceVenueLocation(r.Context(), h.BaseURL, *occ.VenueULID, h.PlaceResolver)
 			} else if occ.VirtualURL != nil && *occ.VirtualURL != "" {
 				sub.Location = schema.NewVirtualLocation(*occ.VirtualURL)
 			}
@@ -416,7 +418,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	// Populate eventSchedule from canonical recurrence data (Phase 3 T3).
 	// Only present for events that belong to a series with an RRULE.
-	event.EventSchedule = schema.ScheduleFromRecurrence(item.Recurrence)
+	event.EventSchedule = schema.ScheduleFromRecurrence(item.Recurrence, h.Logger)
 	if event.EventSchedule != nil && item.Recurrence != nil {
 		if item.Recurrence.SeriesStart != nil {
 			event.EventSchedule.StartDate = item.Recurrence.SeriesStart.Format("2006-01-02")
@@ -430,10 +432,10 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	// Add location (required per Interop Profile §3.1)
 	// Resolve to embedded Place object when possible for richer consumer experience
-	event.Location = resolveEventLocation(r.Context(), h.BaseURL, item, h.PlaceResolver)
+	event.Location = h.resolveEventLocation(r.Context(), h.BaseURL, item, h.PlaceResolver)
 
 	// Add organizer as embedded Organization when possible, URI reference as fallback
-	event.Organizer = resolveEventOrganizer(r.Context(), h.BaseURL, item.OrganizerID, h.OrgResolver)
+	event.Organizer = h.resolveEventOrganizer(r.Context(), h.BaseURL, item.OrganizerID, h.OrgResolver)
 
 	// Add license information per FR-024
 	if item.LicenseURL != "" {
@@ -525,7 +527,7 @@ func eventURI(baseURL string, result *events.IngestResult) string {
 
 // resolveEventLocation resolves the venue ULID to an embedded Place object.
 // Falls back to URI string if the resolver is nil or the lookup fails.
-func resolveEventLocation(ctx context.Context, baseURL string, event *events.Event, resolver EventPlaceResolver) any {
+func (h *EventsHandler) resolveEventLocation(ctx context.Context, baseURL string, event *events.Event, resolver EventPlaceResolver) any {
 	// Determine the venue ULID (prefer occurrence-level, fall back to primary)
 	var venueULID string
 	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueULID != nil {
@@ -548,7 +550,7 @@ func resolveEventLocation(ctx context.Context, baseURL string, event *events.Eve
 				return p
 			}
 			// Lookup failed — fall back to URI
-			log.Warn().Err(err).Str("venue_ulid", venueULID).Msg("failed to resolve venue for event, falling back to URI")
+			h.Logger.Warn().Err(err).Str("venue_ulid", venueULID).Msg("failed to resolve venue for event, falling back to URI")
 		}
 		// No resolver or lookup failed — return URI
 		if uri := schema.BuildPlaceURI(baseURL, venueULID); uri != "" {
@@ -570,7 +572,7 @@ func resolveEventLocation(ctx context.Context, baseURL string, event *events.Eve
 // embedded Place object (if a resolver is available) or a URI string fallback.
 // It is the per-occurrence analogue of resolveEventLocation and is used when
 // serialising subEvent entries that carry a physical venue override.
-func resolveOccurrenceVenueLocation(ctx context.Context, baseURL string, venueULID string, resolver EventPlaceResolver) any {
+func (h *EventsHandler) resolveOccurrenceVenueLocation(ctx context.Context, baseURL string, venueULID string, resolver EventPlaceResolver) any {
 	if resolver != nil {
 		place, err := resolver.GetByULID(ctx, venueULID)
 		if err == nil && place != nil {
@@ -582,7 +584,7 @@ func resolveOccurrenceVenueLocation(ctx context.Context, baseURL string, venueUL
 			}
 			return p
 		}
-		log.Warn().Err(err).Str("venue_ulid", venueULID).Msg("failed to resolve occurrence venue, falling back to URI")
+		h.Logger.Warn().Err(err).Str("venue_ulid", venueULID).Msg("failed to resolve occurrence venue, falling back to URI")
 	}
 	if uri := schema.BuildPlaceURI(baseURL, venueULID); uri != "" {
 		return uri
@@ -592,7 +594,7 @@ func resolveOccurrenceVenueLocation(ctx context.Context, baseURL string, venueUL
 
 // resolveEventOrganizer resolves the organizer ULID to an embedded Organization object.
 // Falls back to URI string if the resolver is nil or the lookup fails.
-func resolveEventOrganizer(ctx context.Context, baseURL string, orgID *string, resolver EventOrgResolver) any {
+func (h *EventsHandler) resolveEventOrganizer(ctx context.Context, baseURL string, orgID *string, resolver EventOrgResolver) any {
 	if orgID == nil || *orgID == "" {
 		return nil
 	}
@@ -608,7 +610,7 @@ func resolveEventOrganizer(ctx context.Context, baseURL string, orgID *string, r
 			return o
 		}
 		// Lookup failed — fall back to URI
-		log.Warn().Err(err).Str("org_ulid", *orgID).Msg("failed to resolve organizer for event, falling back to URI")
+		h.Logger.Warn().Err(err).Str("org_ulid", *orgID).Msg("failed to resolve organizer for event, falling back to URI")
 	}
 
 	// No resolver or lookup failed — return URI

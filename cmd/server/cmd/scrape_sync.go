@@ -9,6 +9,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -46,7 +47,7 @@ Examples:
 		dir := scrapeSourceDir
 		var created, updated, warnings, errors int
 
-		configs, err := scraper.LoadSourceConfigs(dir)
+		configs, err := scraper.LoadSourceConfigs(dir, zerolog.Nop())
 		if err != nil {
 			warnings++
 			if !syncJSON {
@@ -169,7 +170,7 @@ Examples:
 		}
 
 		for _, src := range sources {
-			cfg, decErr := scraper.SourceConfigFromDomain(src)
+			cfg, decErr := scraper.SourceConfigFromDomain(src, zerolog.Nop())
 			if decErr != nil {
 				fmt.Fprintf(os.Stderr, "Warning: skipping %q: %v\n", src.Name, decErr)
 				continue

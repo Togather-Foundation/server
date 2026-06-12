@@ -2,6 +2,7 @@ package events
 
 import (
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/rs/zerolog"
 	"testing"
 	"time"
 )
@@ -403,7 +404,7 @@ func TestAppendQualityWarnings_AmbiguousYear(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := config.ValidationConfig{RequireImage: true}.WithDefaults()
-			warnings := appendQualityWarnings([]ValidationWarning{}, tt.input, nil, cfg)
+			warnings := appendQualityWarnings([]ValidationWarning{}, tt.input, nil, cfg, zerolog.Nop())
 
 			found := false
 			for _, w := range warnings {
@@ -603,7 +604,7 @@ func TestHashInput(t *testing.T) {
 }
 
 func TestNewIngestService(t *testing.T) {
-	service := NewIngestService(nil, "https://example.com", "America/Toronto", config.ValidationConfig{RequireImage: true})
+	service := NewIngestService(nil, "https://example.com", "America/Toronto", config.ValidationConfig{RequireImage: true}, zerolog.Nop())
 
 	if service == nil {
 		t.Fatal("NewIngestService() returned nil")

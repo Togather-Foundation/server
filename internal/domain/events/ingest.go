@@ -13,7 +13,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 type IngestResult struct {
@@ -55,14 +55,16 @@ type IngestService struct {
 	validationConfig  config.ValidationConfig
 	dedupConfig       config.DedupConfig
 	geoBoundaryConfig config.GeographicBoundaryConfig
+	logger            zerolog.Logger
 }
 
-func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string, validationConfig config.ValidationConfig) *IngestService {
+func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string, validationConfig config.ValidationConfig, logger zerolog.Logger) *IngestService {
 	return &IngestService{
 		repo:             repo,
 		nodeDomain:       nodeDomain,
 		defaultTZ:        defaultTimezone,
 		validationConfig: validationConfig.WithDefaults(),
+		logger:           logger,
 	}
 }
 
@@ -560,8 +562,8 @@ func float64PtrNonZero(value float64) *float64 {
 // appendQualityWarnings adds synthetic validation warnings for quality issues
 // that trigger review but aren't structural validation errors.
 // This ensures admins can see WHY an event was flagged for review.
-func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig) []ValidationWarning {
-	log.Debug().
+func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkStatuses map[string]int, validationConfig config.ValidationConfig, logger zerolog.Logger) []ValidationWarning {
+	logger.Debug().
 		Str("event_name", input.Name).
 		Int("initial_warnings", len(warnings)).
 		Str("has_description", fmt.Sprintf("%v", input.Description != "")).
@@ -651,7 +653,7 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 		}
 	}
 
-	log.Debug().
+	logger.Debug().
 		Str("event_name", input.Name).
 		Int("final_warnings", len(result)).
 		Int("added_warnings", len(result)-len(warnings)).

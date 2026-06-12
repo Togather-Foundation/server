@@ -3,7 +3,6 @@ package scraper
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/rs/zerolog"
 	"gopkg.in/yaml.v3"
 )
 
@@ -22,17 +22,17 @@ const (
 )
 
 // emitDescriptionDeprecationWarnings logs deprecation warnings for the
-// deprecated selectors.description field via slog.Warn. The key parameter
+// deprecated selectors.description field via zerolog. The key parameter
 // should be "file" when loading from YAML or "source" when loading from DB.
 // The identifier is the file path or source name respectively.
-func emitDescriptionDeprecationWarnings(logger *slog.Logger, key string, identifier string, hadDescription bool, hadDescriptionSelectors bool) {
+func emitDescriptionDeprecationWarnings(logger zerolog.Logger, key string, identifier string, hadDescription bool, hadDescriptionSelectors bool) {
 	if !hadDescription {
 		return
 	}
 	if hadDescriptionSelectors {
-		logger.Warn("source config warning", key, identifier, "warning", msgDescriptionDeprecatedBoth)
+		logger.Warn().Str(key, identifier).Str("warning", msgDescriptionDeprecatedBoth).Msg("source config warning")
 	} else {
-		logger.Warn("source config warning", key, identifier, "warning", msgDescriptionDeprecated)
+		logger.Warn().Str(key, identifier).Str("warning", msgDescriptionDeprecated).Msg("source config warning")
 	}
 }
 
@@ -747,7 +747,7 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 // each config, and returns the slice of valid configs. If any config is
 // invalid an error is returned that includes the file path and field errors.
 // A non-existent directory returns an empty slice with no error.
-func LoadSourceConfigs(dir string) ([]SourceConfig, error) {
+func LoadSourceConfigs(dir string, logger zerolog.Logger) ([]SourceConfig, error) {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		return []SourceConfig{}, nil
 	}
@@ -774,14 +774,14 @@ func LoadSourceConfigs(dir string) ([]SourceConfig, error) {
 		}
 
 		filePath := filepath.Join(dir, name)
-		cfg, err := loadFile(filePath)
+		cfg, err := loadFile(filePath, logger)
 		if err != nil {
 			return nil, fmt.Errorf("loading %s: %w", filePath, err)
 		}
 
 		warnings, err := ValidateConfigWithWarnings(cfg)
 		for _, w := range warnings {
-			slog.Warn("source config warning", "file", filePath, "warning", w)
+			logger.Warn().Str("file", filePath).Str("warning", w).Msg("source config warning")
 		}
 		if err != nil {
 			validationErrors = append(validationErrors, fmt.Sprintf("%s: %s", filePath, err.Error()))
@@ -806,8 +806,8 @@ func LoadSourceConfigs(dir string) ([]SourceConfig, error) {
 // LoadSourceConfig reads a single YAML source config file, applies defaults,
 // and validates it. It is the public counterpart of the internal loadFile,
 // intended for use by CLI commands that accept an explicit config path.
-func LoadSourceConfig(path string) (SourceConfig, error) {
-	cfg, err := loadFile(path)
+func LoadSourceConfig(path string, logger zerolog.Logger) (SourceConfig, error) {
+	cfg, err := loadFile(path, logger)
 	if err != nil {
 		return SourceConfig{}, fmt.Errorf("loading %s: %w", path, err)
 	}
@@ -839,7 +839,7 @@ func normalizeDescriptionSelectors(cfg *SourceConfig) bool {
 }
 
 // loadFile reads a single YAML source config file and applies defaults.
-func loadFile(path string) (SourceConfig, error) {
+func loadFile(path string, logger zerolog.Logger) (SourceConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return SourceConfig{}, err
@@ -875,7 +875,7 @@ func loadFile(path string) (SourceConfig, error) {
 	hadDescription := normalizeDescriptionSelectors(&cfg)
 	cfg.normalized = true
 
-	emitDescriptionDeprecationWarnings(slog.Default(), "file", path, hadDescription, hadDescriptionSelectors)
+	emitDescriptionDeprecationWarnings(logger, "file", path, hadDescription, hadDescriptionSelectors)
 
 	return cfg, nil
 }

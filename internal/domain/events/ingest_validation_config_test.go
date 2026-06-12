@@ -1,6 +1,7 @@
 package events
 
 import (
+	"github.com/rs/zerolog"
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/config"
@@ -16,7 +17,7 @@ func TestAppendQualityWarnings_ImageValidationFlag(t *testing.T) {
 
 	t.Run("RequireImage=true adds missing_image warning", func(t *testing.T) {
 		cfg := config.ValidationConfig{RequireImage: true}
-		warnings := appendQualityWarnings([]ValidationWarning{}, input, nil, cfg)
+		warnings := appendQualityWarnings([]ValidationWarning{}, input, nil, cfg, zerolog.Nop())
 
 		found := false
 		for _, w := range warnings {
@@ -33,7 +34,7 @@ func TestAppendQualityWarnings_ImageValidationFlag(t *testing.T) {
 
 	t.Run("RequireImage=false does NOT add missing_image warning", func(t *testing.T) {
 		cfg := config.ValidationConfig{RequireImage: false}
-		warnings := appendQualityWarnings([]ValidationWarning{}, input, nil, cfg)
+		warnings := appendQualityWarnings([]ValidationWarning{}, input, nil, cfg, zerolog.Nop())
 
 		for _, w := range warnings {
 			if w.Code == "missing_image" {
@@ -48,7 +49,7 @@ func TestAppendQualityWarnings_ImageValidationFlag(t *testing.T) {
 
 		// Test with RequireImage=true
 		cfg := config.ValidationConfig{RequireImage: true}
-		warnings := appendQualityWarnings([]ValidationWarning{}, inputWithImage, nil, cfg)
+		warnings := appendQualityWarnings([]ValidationWarning{}, inputWithImage, nil, cfg, zerolog.Nop())
 		for _, w := range warnings {
 			if w.Code == "missing_image" {
 				t.Errorf("Unexpected missing_image warning when image is present (RequireImage=true): %+v", w)
@@ -57,7 +58,7 @@ func TestAppendQualityWarnings_ImageValidationFlag(t *testing.T) {
 
 		// Test with RequireImage=false
 		cfg = config.ValidationConfig{RequireImage: false}
-		warnings = appendQualityWarnings([]ValidationWarning{}, inputWithImage, nil, cfg)
+		warnings = appendQualityWarnings([]ValidationWarning{}, inputWithImage, nil, cfg, zerolog.Nop())
 		for _, w := range warnings {
 			if w.Code == "missing_image" {
 				t.Errorf("Unexpected missing_image warning when image is present (RequireImage=false): %+v", w)

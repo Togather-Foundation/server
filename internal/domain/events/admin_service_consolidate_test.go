@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/rs/zerolog"
 	"testing"
 	"time"
 
@@ -25,8 +26,8 @@ const consolidateBaseURL = "https://toronto.togather.foundation"
 // via DedupConfig on the embedded IngestService — the single source of truth
 // for the post-consolidation near-dup check.
 func newConsolidateSvc(repo Repository, nearDupThreshold float64) *AdminService {
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{AllowTestDomains: true}, consolidateBaseURL)
-	ingest := NewIngestService(repo, "", "America/Toronto", config.ValidationConfig{AllowTestDomains: true}).
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{AllowTestDomains: true}, consolidateBaseURL, zerolog.Nop())
+	ingest := NewIngestService(repo, "", "America/Toronto", config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop()).
 		WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: nearDupThreshold})
 	svc.WithIngestService(ingest)
 	return svc
@@ -78,7 +79,7 @@ func makePublishedEvent(id, ulid, name string) *Event {
 func TestConsolidate_NeitherEventField_Error(t *testing.T) {
 	ctx := context.Background()
 	repo := makeConsolidateRepo(nil)
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	_, err := svc.Consolidate(ctx, ConsolidateParams{
 		Retire: []string{consolidateRetireULID},
@@ -91,7 +92,7 @@ func TestConsolidate_NeitherEventField_Error(t *testing.T) {
 func TestConsolidate_EmptyRetire_Error(t *testing.T) {
 	ctx := context.Background()
 	repo := makeConsolidateRepo(nil)
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	_, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -105,7 +106,7 @@ func TestConsolidate_EmptyRetire_Error(t *testing.T) {
 func TestConsolidate_CanonicalInRetire_Error(t *testing.T) {
 	ctx := context.Background()
 	repo := makeConsolidateRepo(nil)
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	_, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -126,7 +127,7 @@ func TestConsolidate_PromotePath_HappyPath(t *testing.T) {
 		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
 	}
 	repo := makeConsolidateRepo(known)
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -218,7 +219,7 @@ func TestConsolidate_CreatePath_HappyPath(t *testing.T) {
 
 	svc := NewAdminService(custom, false, "America/Toronto", config.ValidationConfig{
 		AllowTestDomains: true,
-	}, consolidateBaseURL)
+	}, consolidateBaseURL, zerolog.Nop())
 
 	input := EventInput{
 		Name:      "New Canon Event",
@@ -256,7 +257,7 @@ func TestConsolidate_RetiredNotFound_Error(t *testing.T) {
 		consolidateCanonULID: makePublishedEvent("uuid-canon", consolidateCanonULID, "Canon Event"),
 		// retire ULID intentionally absent → ErrNotFound
 	})
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	_, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -283,7 +284,7 @@ func TestConsolidate_RetiredAlreadyDeleted_Error(t *testing.T) {
 		consolidateCanonULID:  makePublishedEvent("uuid-canon", consolidateCanonULID, "Canon Event"),
 		consolidateRetireULID: deleted,
 	})
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	_, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -305,7 +306,7 @@ func TestConsolidate_TransactionRollbackOnRetireFailure(t *testing.T) {
 	repo.softDeleteEventFunc = func(_ context.Context, _, _ string) error {
 		return fmt.Errorf("soft-delete DB error")
 	}
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	_, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -339,7 +340,7 @@ func TestConsolidate_MultiRetire(t *testing.T) {
 		return nil
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -674,7 +675,7 @@ func TestConsolidate_CreatePath_DedupHashMatch_FlagsAsReview(t *testing.T) {
 
 	svc := NewAdminService(custom, false, "America/Toronto", config.ValidationConfig{
 		AllowTestDomains: true,
-	}, consolidateBaseURL)
+	}, consolidateBaseURL, zerolog.Nop())
 
 	input := EventInput{
 		Name:        "New Canon Event",
@@ -751,7 +752,7 @@ func TestConsolidate_CreatePath_DedupHashMatch_RetiredExcluded(t *testing.T) {
 
 	svc := NewAdminService(custom, false, "America/Toronto", config.ValidationConfig{
 		AllowTestDomains: true,
-	}, consolidateBaseURL)
+	}, consolidateBaseURL, zerolog.Nop())
 
 	input := EventInput{
 		Name:        "New Canon Event",
@@ -818,7 +819,7 @@ func TestConsolidate_CreatePath_QualityWarnings(t *testing.T) {
 
 	svc := NewAdminService(custom, false, "America/Toronto", config.ValidationConfig{
 		AllowTestDomains: true,
-	}, consolidateBaseURL)
+	}, consolidateBaseURL, zerolog.Nop())
 
 	// Event with no description — should trigger missing_description quality warning.
 	input := EventInput{
@@ -1000,7 +1001,7 @@ func TestConsolidate_StripRetiredDupWarnings_ClearsNearDupWarning(t *testing.T) 
 		return nil, nil
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: canonULID,
@@ -1080,7 +1081,7 @@ func TestConsolidate_StripRetiredDupWarnings_DismissesIfNoWarningsRemain(t *test
 		return &Event{}, nil
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: canonULID,
@@ -1148,7 +1149,7 @@ func TestConsolidate_StripRetiredDupWarnings_NoEntryNoop(t *testing.T) {
 		return nil, nil
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: canonULID,
@@ -1239,7 +1240,7 @@ func TestConsolidate_StripRetiredDupWarnings_CrossWeekCompanionSurvivesWhenDupOf
 		return nil, nil
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: canonULID,
@@ -1807,7 +1808,7 @@ func TestConsolidate_PromotePath_WithEventPatch_AppliedInTransaction(t *testing.
 		return nil, ErrNotFound
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -1887,7 +1888,7 @@ func TestConsolidate_PromotePath_WithEventPatch_RefreshesReviewPayload(t *testin
 		return &ReviewQueueEntry{ID: id}, nil
 	}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	_, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: consolidateCanonULID,
@@ -2020,7 +2021,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings(t *testing.T) {
 	canonEvent := known[canonULID]
 	canonEvent.Occurrences = []Occurrence{{StartTime: startTime}}
 
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	result, err := svc.Consolidate(ctx, ConsolidateParams{
 		EventULID: canonULID,
@@ -2110,7 +2111,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_EmptyRetireULIDs(t *testi
 	}
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{})
 	if err != nil {
@@ -2133,7 +2134,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_NoOccurrences(t *testing.
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
 	canonical.Occurrences = nil
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
 	if err != nil {
@@ -2178,7 +2179,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_SelfReferenceGuard(t *tes
 	}
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
 	if err != nil {
@@ -2207,7 +2208,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_NoTargetsFound(t *testing
 	}
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
 	if err != nil {
@@ -2247,7 +2248,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_MultipleRetiringEvents(t 
 	}
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{retire1, retire2})
 	if err != nil {
@@ -2296,7 +2297,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_NoWarnings(t *testing.T) 
 	}
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
 	if err != nil {
@@ -2335,7 +2336,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_MultipleCompanionWarnings
 	}
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
 	if err != nil {
@@ -2388,7 +2389,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_MalformedWarningsJSON(t *
 	}
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
 	if err == nil {
@@ -2427,7 +2428,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_GetReviewQueueEntry_ErrNo
 	}
 
 	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "Canonical Event")
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
 	if err != nil {
@@ -2463,7 +2464,7 @@ func TestConsolidate_UpdateThirdPartyCompanionWarnings_ZeroStartTime(t *testing.
 		{StartTime: time.Time{}},
 		{StartTime: time.Time{}},
 	}
-	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL)
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
 
 	err := svc.consolidateUpdateThirdPartyCompanionWarnings(ctx, repo, canonical, []string{consolidateRetireULID})
 	if err == nil {

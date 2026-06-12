@@ -3,13 +3,13 @@ package ical
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/sanitize"
+	"github.com/rs/zerolog"
 )
 
 // deriveSeriesEnd parses the UNTIL value from an RRULE string and returns the
@@ -65,7 +65,8 @@ type MapperOptions struct {
 	MaxOccurrences  int                // Safety cap on expanded occurrences (default: 100)
 	// Now is the reference time used to filter out past events. If zero,
 	// time.Now() is called once at the start of MapToEventInputs.
-	Now time.Time
+	Now    time.Time
+	Logger zerolog.Logger // Logger for debug/warn output; use zerolog.Nop() in tests
 }
 
 // MapToEventInputs converts parsed ICS events to SEL EventInputs.
@@ -130,7 +131,7 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 
 		// Skip cancelled events.
 		if ev.Status == "CANCELLED" {
-			slog.Debug("skipping cancelled event", "uid", ev.UID)
+			opts.Logger.Debug().Str("uid", ev.UID).Msg("skipping cancelled event")
 			continue
 		}
 
@@ -243,7 +244,7 @@ func MapToEventInputs(ctx context.Context, cal *ParsedCalendar, opts MapperOptio
 		} else {
 			// Non-recurring event: skip if it has already ended.
 			if isOccurrencePast(ev.Start, ev.End, now) {
-				slog.Debug("skipping past event", "uid", ev.UID, "start", ev.Start)
+				opts.Logger.Debug().Str("uid", ev.UID).Time("start", ev.Start).Msg("skipping past event")
 				continue
 			}
 			input, ws := mapSingleEvent(ev, ev.Start, ev.End, fallbackLoc, opts)
@@ -375,12 +376,21 @@ func normalizeURL(rawURL string, warnings *[]string, uid string) string {
 //  5. nil, nil (reject)
 func buildLocation(ev ParsedEvent, opts MapperOptions) (*events.PlaceInput, *events.VirtualLocationInput) {
 	if ev.Location != "" {
-		loc := &events.PlaceInput{Name: sanitize.Text(ev.Location)}
+		var decomposeOpts DecomposeOpts
+		if opts.DefaultLocation != nil {
+			decomposeOpts.DefaultLocality = opts.DefaultLocation.AddressLocality
+			decomposeOpts.DefaultRegion = opts.DefaultLocation.AddressRegion
+			decomposeOpts.DefaultCountry = opts.DefaultLocation.AddressCountry
+		}
+		if decomposeOpts.DefaultCountry == "" {
+			decomposeOpts.DefaultCountry = strings.ToUpper(opts.CountryCode)
+		}
+		loc := DecomposeLocation(ev.Location, decomposeOpts)
 		if ev.HasGeo {
 			loc.Latitude = ev.GeoLat
 			loc.Longitude = ev.GeoLon
 		}
-		return loc, nil
+		return &loc, nil
 	}
 
 	if ev.HasGeo {

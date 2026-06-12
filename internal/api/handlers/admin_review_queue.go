@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
+	"github.com/rs/zerolog"
 	"net/http"
 	"strconv"
 	"time"
@@ -27,10 +27,11 @@ type AdminReviewQueueHandler struct {
 	AuditLogger            *audit.Logger
 	Env                    string
 	BaseURL                string
+	Logger                 zerolog.Logger
 }
 
 // NewAdminReviewQueueHandler creates a new review queue handler
-func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.AdminService, placeRepo places.Repository, orgRepo organizations.Repository, auditLogger *audit.Logger, env string, baseURL string) *AdminReviewQueueHandler {
+func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.AdminService, placeRepo places.Repository, orgRepo organizations.Repository, auditLogger *audit.Logger, env string, baseURL string, logger zerolog.Logger) *AdminReviewQueueHandler {
 	return &AdminReviewQueueHandler{
 		Repository:             repo,
 		AdminService:           adminService,
@@ -39,6 +40,7 @@ func NewAdminReviewQueueHandler(repo events.Repository, adminService *events.Adm
 		AuditLogger:            auditLogger,
 		Env:                    env,
 		BaseURL:                baseURL,
+		Logger:                 logger,
 	}
 }
 
@@ -188,11 +190,9 @@ func (h *AdminReviewQueueHandler) ListReviewQueue(w http.ResponseWriter, r *http
 	// Build response items
 	items := make([]reviewQueueItem, 0, len(result.Entries))
 	for _, review := range result.Entries {
-		item, err := buildReviewQueueItem(r.Context(), h.Repository, review)
+		item, err := buildReviewQueueItem(r.Context(), h.Repository, review, h.Logger)
 		if err != nil {
-			slog.ErrorContext(r.Context(), "ListReviewQueue: skipping review item due to build error",
-				slog.Int("review_id", review.ID),
-				slog.String("error", err.Error()))
+			h.Logger.Error().Int("review_id", review.ID).Err(err).Msg("ListReviewQueue: skipping review item due to build error")
 			continue
 		}
 		items = append(items, item)
@@ -245,7 +245,7 @@ func (h *AdminReviewQueueHandler) GetReviewQueueEntry(w http.ResponseWriter, r *
 	}
 
 	// Build detailed response
-	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *review)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *review, h.Logger)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("build review queue detail for id=%d: %w", id, err), h.Env)
 		return
@@ -359,7 +359,7 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 	}
 
 	// Build response
-	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview, h.Logger)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("approve review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -469,7 +469,7 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 	h.recordNotDuplicatesFromWarnings(r.Context(), review, reviewedBy)
 
 	// Build response
-	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview, h.Logger)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("reject review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -592,7 +592,7 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Build response
-	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview)
+	detail, err := buildReviewQueueDetail(r.Context(), h.Repository, h.PlaceRepository, h.OrganizationRepository, *updatedReview, h.Logger)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to build review detail", fmt.Errorf("fix review id=%d: build detail: %w", id, err), h.Env)
 		return
@@ -631,7 +631,7 @@ func populateReviewQueueBase(review events.ReviewQueueEntry, warnings []events.V
 	return base
 }
 
-func buildReviewQueueItem(ctx context.Context, repo events.Repository, review events.ReviewQueueEntry) (reviewQueueItem, error) {
+func buildReviewQueueItem(ctx context.Context, repo events.Repository, review events.ReviewQueueEntry, logger zerolog.Logger) (reviewQueueItem, error) {
 	// Parse warnings from JSON
 	var warnings []events.ValidationWarning
 	if len(review.Warnings) > 0 {
@@ -645,9 +645,7 @@ func buildReviewQueueItem(ctx context.Context, repo events.Repository, review ev
 	if len(review.OriginalPayload) > 0 {
 		var original map[string]any
 		if err := json.Unmarshal(review.OriginalPayload, &original); err != nil {
-			slog.Warn("failed to parse original payload",
-				slog.Int("review_id", review.ID),
-				slog.String("error", err.Error()))
+			logger.Warn().Int("review_id", review.ID).Err(err).Msg("failed to parse original payload")
 		} else if name, ok := original["name"].(string); ok {
 			eventName = name
 		}
@@ -667,9 +665,7 @@ func buildReviewQueueItem(ctx context.Context, repo events.Repository, review ev
 	occCount, err := repo.CountOccurrences(ctx, review.EventID)
 	if err != nil {
 		// Log but don't fail — occurrence count is optional
-		slog.WarnContext(ctx, "buildReviewQueueItem: failed to fetch occurrence count",
-			slog.String("event_id", review.EventID),
-			slog.String("error", err.Error()))
+		logger.Warn().Str("event_id", review.EventID).Err(err).Msg("buildReviewQueueItem: failed to fetch occurrence count")
 		item.OccurrenceCount = 0
 	} else {
 		item.OccurrenceCount = int(occCount)
@@ -678,7 +674,7 @@ func buildReviewQueueItem(ctx context.Context, repo events.Repository, review ev
 	return item, nil
 }
 
-func buildReviewQueueDetail(ctx context.Context, repo events.Repository, placeRepo places.Repository, orgRepo organizations.Repository, review events.ReviewQueueEntry) (reviewQueueDetail, error) {
+func buildReviewQueueDetail(ctx context.Context, repo events.Repository, placeRepo places.Repository, orgRepo organizations.Repository, review events.ReviewQueueEntry, logger zerolog.Logger) (reviewQueueDetail, error) {
 	// Parse warnings
 	var warnings []events.ValidationWarning
 	if len(review.Warnings) > 0 {
@@ -706,9 +702,7 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, placeRe
 	event, err := repo.GetByULID(ctx, review.EventULID)
 	if err != nil {
 		// Log but don't fail — occurrences are optional
-		slog.WarnContext(ctx, "buildReviewQueueDetail: failed to fetch event for occurrences",
-			slog.String("event_ulid", review.EventULID),
-			slog.String("error", err.Error()))
+		logger.Warn().Str("event_ulid", review.EventULID).Err(err).Msg("buildReviewQueueDetail: failed to fetch event for occurrences")
 		event = nil
 	}
 
@@ -795,9 +789,7 @@ func buildReviewQueueDetail(ctx context.Context, repo events.Repository, placeRe
 		relEvent, err := repo.GetByULID(ctx, rs.ULID)
 		if err != nil {
 			// Log but don't fail — include ULID-only entry as fallback
-			slog.WarnContext(ctx, "buildReviewQueueDetail: failed to fetch related event",
-				slog.String("related_ulid", rs.ULID),
-				slog.String("error", err.Error()))
+			logger.Warn().Str("related_ulid", rs.ULID).Err(err).Msg("buildReviewQueueDetail: failed to fetch related event")
 		} else if relEvent.LifecycleState == "deleted" {
 			// Related event has been retired — skip it entirely so the UI
 			// does not show a side-by-side panel for a deleted companion.
@@ -1008,9 +1000,7 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 
 	var warnings []events.ValidationWarning
 	if err := json.Unmarshal(review.Warnings, &warnings); err != nil {
-		slog.Warn("recordNotDuplicates: failed to parse warnings",
-			slog.Int("review_id", review.ID),
-			slog.String("error", err.Error()))
+		h.Logger.Warn().Int("review_id", review.ID).Err(err).Msg("recordNotDuplicates: failed to parse warnings")
 		return
 	}
 
@@ -1037,11 +1027,7 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 					continue
 				}
 				if err := h.Repository.InsertNotDuplicate(ctx, eventULID, candidateULID, reviewedBy); err != nil {
-					slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair",
-						slog.Int("review_id", review.ID),
-						slog.String("event_ulid", eventULID),
-						slog.String("candidate_ulid", candidateULID),
-						slog.String("error", err.Error()))
+					h.Logger.Warn().Int("review_id", review.ID).Str("event_ulid", eventULID).Str("candidate_ulid", candidateULID).Err(err).Msg("recordNotDuplicates: failed to insert not-duplicate pair")
 				}
 				// Best-effort: refresh the companion review and auto-approve it if no
 				// issues remain after the duplicate pair is removed.
@@ -1057,11 +1043,7 @@ func (h *AdminReviewQueueHandler) recordNotDuplicatesFromWarnings(ctx context.Co
 			}
 			companionULID := *review.DuplicateOfEventULID
 			if err := h.Repository.InsertNotDuplicate(ctx, eventULID, companionULID, reviewedBy); err != nil {
-				slog.Warn("recordNotDuplicates: failed to insert not-duplicate pair (near-dup side)",
-					slog.Int("review_id", review.ID),
-					slog.String("event_ulid", eventULID),
-					slog.String("companion_ulid", companionULID),
-					slog.String("error", err.Error()))
+				h.Logger.Warn().Int("review_id", review.ID).Str("event_ulid", eventULID).Str("companion_ulid", companionULID).Err(err).Msg("recordNotDuplicates: failed to insert not-duplicate pair (near-dup side)")
 			}
 			// Best-effort: refresh the companion review and auto-approve it if no
 			// issues remain after the duplicate pair is removed.
@@ -1083,10 +1065,7 @@ func (h *AdminReviewQueueHandler) recheckCompanionNotDuplicateReview(ctx context
 		// ErrNotFound is normal (companion may have been already processed or never
 		// existed).  Any other error is unexpected but still best-effort.
 		if !errors.Is(err, events.ErrNotFound) {
-			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to look up companion review",
-				slog.String("companion_ulid", companionULID),
-				slog.String("event_ulid", eventULID),
-				slog.String("error", err.Error()))
+			h.Logger.Warn().Str("companion_ulid", companionULID).Str("event_ulid", eventULID).Err(err).Msg("recheckCompanionNotDuplicateReview: failed to look up companion review")
 		}
 		return
 	}
@@ -1097,38 +1076,23 @@ func (h *AdminReviewQueueHandler) recheckCompanionNotDuplicateReview(ctx context
 
 	updatedWarnings, err := filteredCompanionWarnings(companion, eventULID)
 	if err != nil {
-		slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to filter companion warnings",
-			slog.Int("review_id", companion.ID),
-			slog.String("companion_ulid", companionULID),
-			slog.String("event_ulid", eventULID),
-			slog.String("error", err.Error()))
+		h.Logger.Warn().Int("review_id", companion.ID).Str("companion_ulid", companionULID).Str("event_ulid", eventULID).Err(err).Msg("recheckCompanionNotDuplicateReview: failed to filter companion warnings")
 		return
 	}
 
 	if err := h.Repository.UpdateReviewWarnings(ctx, companion.ID, updatedWarnings); err != nil {
-		slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to update companion warnings",
-			slog.Int("review_id", companion.ID),
-			slog.String("companion_ulid", companionULID),
-			slog.String("event_ulid", eventULID),
-			slog.String("error", err.Error()))
+		h.Logger.Warn().Int("review_id", companion.ID).Str("companion_ulid", companionULID).Str("event_ulid", eventULID).Err(err).Msg("recheckCompanionNotDuplicateReview: failed to update companion warnings")
 		return
 	}
 
 	if string(updatedWarnings) == "[]" {
 		if h.AdminService == nil {
-			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: admin service unavailable for auto-approval",
-				slog.Int("review_id", companion.ID),
-				slog.String("companion_ulid", companionULID),
-				slog.String("event_ulid", eventULID))
+			h.Logger.Warn().Int("review_id", companion.ID).Str("companion_ulid", companionULID).Str("event_ulid", eventULID).Msg("recheckCompanionNotDuplicateReview: admin service unavailable for auto-approval")
 			return
 		}
 		note := "Auto-approved after companion not-duplicate recheck"
 		if _, err := h.AdminService.ApproveEventWithReview(ctx, companionULID, companion.ID, reviewedBy, &note); err != nil {
-			slog.WarnContext(ctx, "recheckCompanionNotDuplicateReview: failed to auto-approve companion review",
-				slog.Int("review_id", companion.ID),
-				slog.String("companion_ulid", companionULID),
-				slog.String("event_ulid", eventULID),
-				slog.String("error", err.Error()))
+			h.Logger.Warn().Int("review_id", companion.ID).Str("companion_ulid", companionULID).Str("event_ulid", eventULID).Err(err).Msg("recheckCompanionNotDuplicateReview: failed to auto-approve companion review")
 		}
 		return
 	}

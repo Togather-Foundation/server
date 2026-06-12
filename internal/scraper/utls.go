@@ -2,12 +2,12 @@ package scraper
 
 import (
 	"fmt"
-	"log/slog"
 	"net"
 	"net/http"
 	"time"
 
 	utls "github.com/refraction-networking/utls"
+	"github.com/rs/zerolog"
 )
 
 type chromeFingerprintTransport struct {
@@ -86,7 +86,7 @@ func setupChromeUConn(tcpConn net.Conn, host string) (*utls.UConn, error) {
 // When fingerprint is set and existing is non-nil but not a *CachingTransport, the existing
 // transport is preserved (caller's explicit choice takes precedence) — this case logs
 // a warning via the provided logger that uTLS is being skipped.
-func resolveTransport(fingerprint string, existing http.RoundTripper, logger *slog.Logger) http.RoundTripper {
+func resolveTransport(fingerprint string, existing http.RoundTripper, logger zerolog.Logger) http.RoundTripper {
 	if fingerprint == "" {
 		return existing
 	}
@@ -98,9 +98,7 @@ func resolveTransport(fingerprint string, existing http.RoundTripper, logger *sl
 	if existing == nil {
 		return NewChromeFingerprintTransport()
 	}
-	if logger != nil {
-		logger.Warn("uTLS fingerprint set but existing transport is not a CachingTransport; skipping uTLS", "fingerprint", fingerprint, "transport_type", fmt.Sprintf("%T", existing))
-	}
+	logger.Warn().Str("fingerprint", fingerprint).Str("transport_type", fmt.Sprintf("%T", existing)).Msg("uTLS fingerprint set but existing transport is not a CachingTransport; skipping uTLS")
 	return existing
 }
 

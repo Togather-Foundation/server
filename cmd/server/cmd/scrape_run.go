@@ -103,7 +103,7 @@ Examples:
 				sources, listErr := repo.List(ctx, nil) // all, not just enabled
 				if listErr == nil && len(sources) > 0 {
 					for _, src := range sources {
-						cfg, convErr := scraper.SourceConfigFromDomain(src)
+						cfg, convErr := scraper.SourceConfigFromDomain(src, zerolog.Nop())
 						if convErr != nil {
 							fmt.Fprintf(os.Stderr, "Warning: skipping %q: %v\n", src.Name, convErr)
 							continue
@@ -117,7 +117,7 @@ Examples:
 		// Fall back to YAML if DB yielded nothing.
 		if len(configs) == 0 {
 			var err error
-			configs, err = scraper.LoadSourceConfigs(dir)
+			configs, err = scraper.LoadSourceConfigs(dir, zerolog.Nop())
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 			}

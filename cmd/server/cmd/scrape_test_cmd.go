@@ -184,7 +184,7 @@ Examples:
 
 		// Load base from YAML file if provided.
 		if scrapeTestSelectorFile != "" {
-			loaded, err := scraper.LoadSourceConfig(scrapeTestSelectorFile)
+			loaded, err := scraper.LoadSourceConfig(scrapeTestSelectorFile, zerolog.Nop())
 			if err != nil {
 				return fmt.Errorf("load config: %w", err)
 			}

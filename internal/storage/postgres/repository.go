@@ -7,6 +7,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 )
 
 // Repository implements storage.Repository interface with PostgreSQL backend
@@ -24,14 +25,14 @@ type Repository struct {
 }
 
 // NewRepository creates a new PostgreSQL-backed repository
-func NewRepository(pool *pgxpool.Pool) (*Repository, error) {
+func NewRepository(pool *pgxpool.Pool, logger zerolog.Logger) (*Repository, error) {
 	if pool == nil {
 		return nil, fmt.Errorf("pool cannot be nil")
 	}
 
 	return &Repository{
 		pool:          pool,
-		events:        &EventRepository{pool: pool},
+		events:        NewEventRepository(pool, logger),
 		places:        &PlaceRepository{pool: pool},
 		organizations: &OrganizationRepository{pool: pool},
 		provenance:    &ProvenanceRepository{pool: pool},
@@ -44,7 +45,7 @@ func NewRepository(pool *pgxpool.Pool) (*Repository, error) {
 // Events returns the events repository
 func (r *Repository) Events() storage.EventRepository {
 	if r.tx != nil {
-		return &EventRepository{pool: r.pool, tx: r.tx}
+		return &EventRepository{pool: r.pool, tx: r.tx, logger: r.events.logger}
 	}
 	return r.events
 }
@@ -111,7 +112,7 @@ func (r *Repository) WithTx(ctx context.Context, fn func(context.Context, storag
 	txRepo := &Repository{
 		pool:          r.pool,
 		tx:            tx,
-		events:        &EventRepository{pool: r.pool, tx: tx},
+		events:        &EventRepository{pool: r.pool, tx: tx, logger: r.events.logger},
 		places:        &PlaceRepository{pool: r.pool, tx: tx},
 		organizations: &OrganizationRepository{pool: r.pool, tx: tx},
 		provenance:    &ProvenanceRepository{pool: r.pool, tx: tx},

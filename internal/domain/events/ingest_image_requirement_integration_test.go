@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"encoding/json"
+	"github.com/rs/zerolog"
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/config"
@@ -15,7 +16,7 @@ func TestIngestService_ImageRequirementIntegration(t *testing.T) {
 	t.Run("RequireImage=false - event without image publishes directly", func(t *testing.T) {
 		repo := NewMockRepository()
 
-		service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: false, AllowTestDomains: true})
+		service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: false, AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Event Without Image",
@@ -57,7 +58,7 @@ func TestIngestService_ImageRequirementIntegration(t *testing.T) {
 	t.Run("RequireImage=true - event without image goes to review", func(t *testing.T) {
 		repo := NewMockRepository()
 
-		service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true})
+		service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: true, AllowTestDomains: true}, zerolog.Nop())
 
 		input := EventInput{
 			Name:        "Event Without Image",
@@ -147,7 +148,7 @@ func TestIngestService_ImageRequirementIntegration(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				repo := NewMockRepository()
 
-				service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: tc.requireImage, AllowTestDomains: true})
+				service := NewIngestService(repo, "https://test.com", "America/Toronto", config.ValidationConfig{RequireImage: tc.requireImage, AllowTestDomains: true}, zerolog.Nop())
 
 				input := EventInput{
 					Name:        "Event With Image",

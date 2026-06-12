@@ -79,7 +79,12 @@ API_KEY=01KG5PE0V9TGJQADQ0QT1KJ2E9secret
 
 ## Logging Standards
 
-The server uses [zerolog](https://github.com/rs/zerolog) for structured logging with the following standards:
+The server uses two logging frameworks with a strict separation of concerns:
+
+- **`zerolog`**: For HTTP handlers, services, domain code, and repositories. Injected via constructors — never use the global `zerolog/log` package.
+- **`log/slog`**: For River job queue workers only. Injected via struct fields with `slog.Default()` as nil-guard fallback.
+
+This separation is enforced by convention (see `AGENTS.md`). `slog.SetDefault()` is called during server startup in `router.go:130` to ensure the nil-guard fallback is always available.
 
 ### Configuration
 
@@ -104,25 +109,36 @@ Every HTTP request automatically receives a correlation ID:
 
 ### Logging in Handlers
 
-HTTP handlers should retrieve the logger from context:
+HTTP handlers, services, and repositories accept `zerolog.Logger` via constructor injection. The logger is stored as a struct field and used throughout the handler:
 
 ```go
 import (
-    "github.com/Togather-Foundation/server/internal/api/middleware"
     "github.com/rs/zerolog"
 )
 
-func MyHandler(w http.ResponseWriter, r *http.Request) {
-    logger := middleware.LoggerFromContext(r.Context())
-    
-    logger.Info().
+type MyHandler struct {
+    Logger zerolog.Logger
+    Service *events.Service
+}
+
+func NewMyHandler(service *events.Service, logger zerolog.Logger) *MyHandler {
+    return &MyHandler{
+        Logger:  logger,
+        Service: service,
+    }
+}
+
+func (h MyHandler) Handle(w http.ResponseWriter, r *http.Request) {
+    h.Logger.Info().
         Str("event_id", eventID).
         Str("action", "created").
         Msg("event created successfully")
 }
 ```
 
-The logger from context automatically includes the `request_id` field.
+**Never** import or use the global `zerolog/log` package. Always inject loggers through constructors.
+
+For cases where per-request correlation is needed, `middleware.LoggerFromContext(r.Context())` returns a logger pre-populated with the `request_id` field. This is used sparingly (primarily by the audit logger and a few handlers).
 
 ### Logging Levels
 
@@ -202,18 +218,28 @@ problem.Write(w, r, http.StatusInternalServerError,
 
 ### Background Jobs
 
-Background jobs (River) use `log/slog` for consistency with River's internal logging:
+River job queue workers use `log/slog` with constructor injection and a nil-guard fallback:
 
 ```go
 import "log/slog"
 
+type MyWorker struct {
+    river.WorkerDefaults[MyArgs]
+    Pool   *pgxpool.Pool
+    Logger *slog.Logger  // injected, nil-guard fallback to slog.Default()
+}
+
 func (w MyWorker) Work(ctx context.Context, job *river.Job[MyArgs]) error {
-    // River provides a logger in context
-    logger := rivercommon.LoggerFromContext(ctx)
+    logger := w.Logger
+    if logger == nil {
+        logger = slog.Default()
+    }
     logger.Info("job started", "job_id", job.ID, "event_id", job.Args.EventID)
     return nil
 }
 ```
+
+The `slog.Default()` fallback relies on `slog.SetDefault()` being called during server startup (see `internal/api/router.go:129-130`). This ensures River workers are always usable even when a logger is not explicitly injected.
 
 ### PII and Sensitive Data
 
@@ -489,4 +515,4 @@ To add validation for new entity types:
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-06-12

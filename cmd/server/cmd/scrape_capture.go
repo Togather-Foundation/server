@@ -166,7 +166,7 @@ func captureWithURL(ctx context.Context, ext *scraper.RodExtractor, logger zerol
 // that extractEventsFromHTML would receive — the exact DOM for selector debugging.
 // When scrapeCaptureNetwork is true, also captures network activity.
 func captureWithSourceConfig(ctx context.Context, ext *scraper.RodExtractor, logger zerolog.Logger, args []string) (string, string, []scraper.NetworkRequest, error) {
-	config, err := scraper.LoadSourceConfig(scrapeCaptureSourceFile)
+	config, err := scraper.LoadSourceConfig(scrapeCaptureSourceFile, logger)
 	if err != nil {
 		return "", "", nil, fmt.Errorf("capture: load source config: %w", err)
 	}

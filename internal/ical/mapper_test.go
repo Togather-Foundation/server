@@ -1455,6 +1455,79 @@ func TestBuildLocation_FullGeo(t *testing.T) {
 	}
 }
 
+func TestBuildLocation_MeetupEscapedCommas(t *testing.T) {
+	t.Parallel()
+
+	opts := defaultMapperOpts()
+	opts.CountryCode = "CA"
+	ev := ParsedEvent{
+		Location: `100 King St W\, Toronto\, ON M5X 1A9`,
+	}
+
+	loc, virtual := buildLocation(ev, opts)
+	if virtual != nil {
+		t.Errorf("VirtualLocation = %+v, want nil", virtual)
+	}
+	if loc == nil {
+		t.Fatal("Location is nil")
+	}
+	if loc.AddressLocality != "Toronto" {
+		t.Errorf("AddressLocality = %q, want Toronto", loc.AddressLocality)
+	}
+	if loc.AddressRegion != "ON" {
+		t.Errorf("AddressRegion = %q, want ON", loc.AddressRegion)
+	}
+	if loc.AddressCountry != "CA" {
+		t.Errorf("AddressCountry = %q, want CA", loc.AddressCountry)
+	}
+}
+
+func TestBuildLocation_NonTorontoCity(t *testing.T) {
+	t.Parallel()
+
+	opts := defaultMapperOpts()
+	ev := ParsedEvent{
+		Location: `Dance Studio\, 123 Main St\, New York\, NY 10001`,
+	}
+
+	loc, virtual := buildLocation(ev, opts)
+	if virtual != nil {
+		t.Errorf("VirtualLocation = %+v, want nil", virtual)
+	}
+	if loc == nil {
+		t.Fatal("Location is nil")
+	}
+	if loc.AddressLocality != "New York" {
+		t.Errorf("AddressLocality = %q, want New York", loc.AddressLocality)
+	}
+	if loc.AddressRegion != "NY" {
+		t.Errorf("AddressRegion = %q, want NY", loc.AddressRegion)
+	}
+}
+
+func TestBuildLocation_VenueAndCityOnly(t *testing.T) {
+	t.Parallel()
+
+	opts := defaultMapperOpts()
+	ev := ParsedEvent{
+		Location: `High Park\, Toronto\, ON`,
+	}
+
+	loc, virtual := buildLocation(ev, opts)
+	if virtual != nil {
+		t.Errorf("VirtualLocation = %+v, want nil", virtual)
+	}
+	if loc == nil {
+		t.Fatal("Location is nil")
+	}
+	if loc.AddressLocality != "Toronto" {
+		t.Errorf("AddressLocality = %q, want Toronto", loc.AddressLocality)
+	}
+	if loc.AddressRegion != "ON" {
+		t.Errorf("AddressRegion = %q, want ON", loc.AddressRegion)
+	}
+}
+
 func TestMapRealMeetupFixtures(t *testing.T) {
 	t.Parallel()
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/rs/zerolog"
 	"testing"
 	"time"
 
@@ -57,7 +58,7 @@ func TestAddOccurrenceFromReview_CommitOnSuccess(t *testing.T) {
 	startTime := time.Now()
 	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -78,7 +79,7 @@ func TestAddOccurrenceFromReview_RollbackOnOverlap(t *testing.T) {
 		return true, nil // overlap detected
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	err := func() error {
 		_, e := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 		return e
@@ -108,7 +109,7 @@ func TestAddOccurrenceFromReview_RollbackOnCreateOccurrenceFailure(t *testing.T)
 		return errors.New("db write failed")
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -132,7 +133,7 @@ func TestAddOccurrenceFromReview_RollbackOnSoftDeleteFailure(t *testing.T) {
 		return errors.New("soft-delete failed")
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -498,7 +499,7 @@ func TestAddOccurrenceFromReview_AllowsNonPublishedTarget(t *testing.T) {
 					Occurrences: []Occurrence{{StartTime: startTime}}}, nil
 			}
 
-			service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+			service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 			_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 			if err != nil {
@@ -526,7 +527,7 @@ func TestAddOccurrenceFromReview_RejectsDeletedTarget(t *testing.T) {
 			Occurrences: []Occurrence{{StartTime: startTime}}}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -563,7 +564,7 @@ func TestAddOccurrenceFromReview_RejectsDeletedSource(t *testing.T) {
 			Occurrences:    []Occurrence{{StartTime: startTime}}}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, targetULID, "admin")
 
 	if err == nil {
@@ -591,7 +592,7 @@ func TestAddOccurrenceFromReview_ConcurrentReviewLock(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -662,7 +663,7 @@ func TestAddOccurrenceFromReview_PreservesOccurrenceMetadata(t *testing.T) {
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -727,7 +728,7 @@ func TestAddOccurrenceFromReview_PreservesAvailability(t *testing.T) {
 			return nil
 		}
 
-		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 		_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 		if err != nil {
@@ -759,7 +760,7 @@ func TestAddOccurrenceFromReview_PreservesAvailability(t *testing.T) {
 			return nil
 		}
 
-		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 		_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 		if err != nil {
@@ -798,7 +799,7 @@ func TestAddOccurrenceFromReview_ZeroOccurrenceSourceRejected(t *testing.T) {
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -850,7 +851,7 @@ func TestAddOccurrenceFromReview_UsesLockedOccurrenceTimestamps(t *testing.T) {
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 	if err != nil {
 		t.Fatalf("expected success, got: %v", err)
@@ -902,7 +903,7 @@ func TestAddOccurrenceFromReview_MultiOccurrenceSourceRejected(t *testing.T) {
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -947,7 +948,7 @@ func TestApproveEventWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "approved"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.ApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil)
 
 	if err == nil {
@@ -981,7 +982,7 @@ func TestApproveEventWithReview_SuccessLockFirst(t *testing.T) {
 		return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", LifecycleState: "draft"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.ApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil)
 
 	if err != nil {
@@ -1081,7 +1082,7 @@ func TestApproveEventWithReview_DismissesCompanionNearDupEntry(t *testing.T) {
 		return &Event{ULID: ulid}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.ApproveEventWithReview(ctx, approvedULID, 1, "admin", nil)
 
 	if err != nil {
@@ -1107,7 +1108,7 @@ func TestRejectEventWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "rejected"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.RejectEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", "spam")
 
 	if err == nil {
@@ -1126,7 +1127,7 @@ func TestRejectEventWithReview_SuccessLockFirst(t *testing.T) {
 	ctx := context.Background()
 	repo := makeReviewLockRepo("01HEVENT000000000000000001")
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.RejectEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", "spam")
 
 	if err != nil {
@@ -1147,7 +1148,7 @@ func TestFixAndApproveEventWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "approved"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.FixAndApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil, nil, &endTime)
 
 	if err == nil {
@@ -1167,7 +1168,7 @@ func TestFixAndApproveEventWithReview_SuccessLockFirst(t *testing.T) {
 	endTime := time.Now().Add(2 * time.Hour)
 	repo := makeReviewLockRepo("01HEVENT000000000000000001")
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.FixAndApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil, nil, &endTime)
 
 	if err != nil {
@@ -1238,7 +1239,7 @@ func TestAddOccurrenceFromReviewNearDup_CommitOnSuccess(t *testing.T) {
 	ctx := context.Background()
 	repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", time.Now())
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	entry, targetULID, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -1269,7 +1270,7 @@ func TestAddOccurrenceFromReviewNearDup_MissingDuplicateULID(t *testing.T) {
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -1293,7 +1294,7 @@ func TestAddOccurrenceFromReviewNearDup_AlreadyProcessed(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, EventULID: "01HTARGET00000000000000001", DuplicateOfEventULID: &dup, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -1321,7 +1322,7 @@ func TestAddOccurrenceFromReviewNearDup_DeletedTarget(t *testing.T) {
 		return &Event{ID: "source-id", ULID: sourceULID, Name: "New Instance"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -1357,7 +1358,7 @@ func TestAddOccurrenceFromReviewNearDup_RejectsDeletedSource(t *testing.T) {
 			Occurrences:    []Occurrence{{StartTime: time.Now()}}}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -1380,7 +1381,7 @@ func TestAddOccurrenceFromReviewNearDup_Overlap(t *testing.T) {
 		return true, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -1417,7 +1418,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionDismissalNonFatal(t *testing.T)
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	entry, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -1471,7 +1472,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockSkipsAlreadyProcessed(t *te
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	entry, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -1525,7 +1526,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockConcurrentDelete(t *testing
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	entry, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -1560,7 +1561,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLookupUnexpectedError(t *testin
 		return nil, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -1596,7 +1597,7 @@ func TestAddOccurrenceFromReviewNearDup_TargetIsKeepNotAbsorbed(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -1637,7 +1638,7 @@ func TestAddOccurrenceFromReviewNearDup_MultiOccurrenceSourceRejected(t *testing
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -1687,7 +1688,7 @@ func TestAddOccurrenceFromReviewNearDup_CompanionLockedBeforeTargetEvent(t *test
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -1731,7 +1732,7 @@ func TestAddOccurrenceFromReviewNearDup_ZeroOccurrenceSourceRejected(t *testing.
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -1782,7 +1783,7 @@ func TestAddOccurrenceFromReview_SourceEventLockedBeforeOccurrenceRead(t *testin
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, targetULID, "admin")
 
 	if err != nil {
@@ -1846,7 +1847,7 @@ func TestAddOccurrenceFromReview_UsesPostLockSourceTimestamps(t *testing.T) {
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, targetULID, "admin")
 
 	if err != nil {
@@ -1877,7 +1878,7 @@ func TestAddOccurrenceFromReviewNearDup_SourceEventLockedBeforeOccurrenceRead(t 
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -1941,7 +1942,7 @@ func TestAddOccurrenceFromReviewNearDup_UsesPostLockSourceTimestamps(t *testing.
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -1969,7 +1970,7 @@ func TestAddOccurrenceFromReview_WrongPathWhenLockedWarningsIndicateNearDup(t *t
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -1999,7 +2000,7 @@ func TestAddOccurrenceFromReview_AmbiguousDispatchFromLockedWarnings(t *testing.
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -2033,7 +2034,7 @@ func TestAddOccurrenceFromReview_ForwardPathRejectsNoWarnings(t *testing.T) {
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -2062,7 +2063,7 @@ func TestAddOccurrenceFromReview_ForwardPathAcceptsPotentialDuplicateWarning(t *
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -2088,7 +2089,7 @@ func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsMissing(t *te
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -2119,7 +2120,7 @@ func TestAddOccurrenceFromReviewNearDup_WrongPathWhenLockedWarningsForwardOnly(t
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -2151,7 +2152,7 @@ func TestAddOccurrenceFromReviewNearDup_AmbiguousDispatchFromLockedWarnings(t *t
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -2174,7 +2175,7 @@ func TestMergeEventsWithReview_ConflictOnAlreadyProcessed(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
 		PrimaryULID:   "01HPRMARY00000000000000001",
 		DuplicateULID: "01HDPCT0000000000000000001",
@@ -2211,7 +2212,7 @@ func TestMergeEventsWithReview_SuccessLockFirst(t *testing.T) {
 		return &Event{ID: "event-" + ulid, ULID: ulid, Name: "Event " + ulid, LifecycleState: "published"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
 		PrimaryULID:   "01HPRMARY00000000000000001",
 		DuplicateULID: "01HDPCT0000000000000000001",
@@ -2255,7 +2256,7 @@ func TestAddOccurrenceFromReview_TombstoneUsesCanonicalURIs(t *testing.T) {
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, baseURL)
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, baseURL, zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, targetEventULID, "admin")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2294,7 +2295,7 @@ func TestAddOccurrenceFromReviewNearDup_TombstoneUsesCanonicalURIs(t *testing.T)
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, baseURL)
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, baseURL, zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -2328,7 +2329,7 @@ func TestNewAdminService_PanicsOnEmptyBaseURL(t *testing.T) {
 			t.Fatal("panic message must not be empty")
 		}
 	}()
-	NewAdminService(&mockTransactionalRepo{}, false, "America/Toronto", config.ValidationConfig{}, "")
+	NewAdminService(&mockTransactionalRepo{}, false, "America/Toronto", config.ValidationConfig{}, "", zerolog.Nop())
 }
 
 // ── Malformed warnings JSON → ErrMalformedWarnings (data-integrity fault) ─────
@@ -2349,7 +2350,7 @@ func TestAddOccurrenceFromReview_MalformedWarningsJSON(t *testing.T) {
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -2382,7 +2383,7 @@ func TestAddOccurrenceFromReviewNearDup_MalformedWarningsJSON(t *testing.T) {
 		}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err == nil {
@@ -2426,7 +2427,7 @@ func TestAddOccurrenceFromReview_RestoresTargetLifecycleFromPendingReview(t *tes
 		return &Event{ULID: ulid, LifecycleState: "published"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -2461,7 +2462,7 @@ func TestAddOccurrenceFromReview_SkipsLifecycleRestorationWhenNotPendingReview(t
 		return &Event{ULID: "01HTARGET00000000000000001"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -2498,7 +2499,7 @@ func TestAddOccurrenceFromReviewNearDup_RestoresTargetLifecycleFromPendingReview
 		return &Event{ULID: ulid, LifecycleState: "published"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -2562,7 +2563,7 @@ func TestAddOccurrenceFromReview_KeepsTargetPendingWhenOtherReviewsRemain(t *tes
 		return &Event{ULID: "01HTARGET00000000000000001"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -2622,7 +2623,7 @@ func TestAddOccurrenceFromReviewNearDup_KeepsTargetPendingWhenOtherReviewsRemain
 		return &Event{ULID: "01HTARGET00000000000000001"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -2694,7 +2695,7 @@ func TestAddOccurrenceFromReview_DismissesCompanionReview(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -2717,7 +2718,7 @@ func TestAddOccurrenceFromReview_NoCompanionReviewIsOK(t *testing.T) {
 	repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
 	// getPendingReviewByEventUlidFunc defaults to nil → returns nil, nil (no companion)
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -2748,7 +2749,7 @@ func TestAddOccurrenceFromReview_DeletesSourceOccurrences(t *testing.T) {
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err != nil {
@@ -2780,7 +2781,7 @@ func TestAddOccurrenceFromReviewNearDup_DeletesSourceOccurrences(t *testing.T) {
 		return nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -2806,7 +2807,7 @@ func TestAddOccurrenceFromReview_RollbackOnOccurrenceDeleteError(t *testing.T) {
 		return errors.New("occurrence cleanup failed")
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
 
 	if err == nil {
@@ -2889,7 +2890,7 @@ func TestAddOccurrenceFromReview_OnlyTrueCompanionDismissed(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.AddOccurrenceFromReview(ctx, 1, targetULID, "admin")
 
 	if err != nil {
@@ -2978,7 +2979,7 @@ func TestAddOccurrenceFromReviewNearDup_OnlyTrueCompanionDismissed(t *testing.T)
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
 
 	if err != nil {
@@ -3089,7 +3090,7 @@ func TestMergeEventsWithReview_CompanionCleanupUsesPrimaryULID(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
 		PrimaryULID:   primaryULID,
 		DuplicateULID: duplicateULID,
@@ -3146,7 +3147,7 @@ func TestMergeEventsWithReview_NoCompanionSucceeds(t *testing.T) {
 		return &ReviewQueueEntry{ID: id, Status: "merged"}, nil
 	}
 
-	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation")
+	service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
 	_, err := service.MergeEventsWithReview(ctx, MergeEventsParams{
 		PrimaryULID:   primaryULID,
 		DuplicateULID: duplicateULID,

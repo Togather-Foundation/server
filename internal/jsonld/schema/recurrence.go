@@ -2,16 +2,16 @@ package schema
 
 import (
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/rs/zerolog"
 )
 
 // ScheduleFromRecurrence projects a domain RecurrenceRule into a schema.org
 // Schedule suitable for JSON-LD output. Returns nil if the recurrence data is
 // nil or cannot be projected (e.g. HOURLY/MINUTELY/SECONDLY frequencies).
-func ScheduleFromRecurrence(rec *events.RecurrenceRule) *Schedule {
+func ScheduleFromRecurrence(rec *events.RecurrenceRule, logger zerolog.Logger) *Schedule {
 	if rec == nil || rec.RRule == "" {
 		return nil
 	}
@@ -24,7 +24,7 @@ func ScheduleFromRecurrence(rec *events.RecurrenceRule) *Schedule {
 
 	repeatFreq, ok := freqToISO8601(freq, params)
 	if !ok {
-		slog.Warn("skipping eventSchedule projection: unsupported FREQ value", "freq", freq, "rrule", rec.RRule)
+		logger.Warn().Str("freq", freq).Str("rrule", rec.RRule).Msg("skipping eventSchedule projection: unsupported FREQ value")
 		return nil
 	}
 
