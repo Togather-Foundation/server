@@ -433,7 +433,11 @@ func TestGeographicBoundaryConfig_ReadErrorReturnsError(t *testing.T) {
 	if err := os.Mkdir(childDir, 0000); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(childDir, 0700)
+	defer func() {
+		if err := os.Chmod(childDir, 0700); err != nil {
+			t.Logf("failed to restore permissions on test dir: %v", err)
+		}
+	}()
 
 	yamlPath := childDir + "/boundary.yaml"
 	boundary, err := loadGeographicBoundaryFile(yamlPath)
