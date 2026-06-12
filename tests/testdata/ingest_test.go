@@ -1,7 +1,6 @@
 package testdata
 
 import (
-	"github.com/rs/zerolog"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/rs/zerolog"
 	"net/url"
 	"strings"
 	"sync"

@@ -1,9 +1,9 @@
 package events
 
 import (
-	"github.com/rs/zerolog"
 	"context"
 	"encoding/json"
+	"github.com/rs/zerolog"
 	"testing"
 
 	"github.com/Togather-Foundation/server/internal/config"

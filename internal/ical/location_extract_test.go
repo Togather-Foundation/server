@@ -394,10 +394,10 @@ func TestExtractAddressComponents(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name          string
-		raw           string
-		wantLocality  string
-		wantRegion    string
+		name         string
+		raw          string
+		wantLocality string
+		wantRegion   string
 	}{
 		{
 			name:         "meetup escaped comma full address",

@@ -15,8 +15,8 @@ import (
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/places"
-	"github.com/stretchr/testify/require"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 type stubEventsRepo struct {

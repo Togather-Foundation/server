@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
-	"github.com/stretchr/testify/require"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 func TestUpsertEventSeries(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/rs/zerolog"
 	utls "github.com/refraction-networking/utls"
+	"github.com/rs/zerolog"
 )
 
 func TestResolveTransport(t *testing.T) {

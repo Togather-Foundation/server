@@ -7,8 +7,8 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 
-	"github.com/stretchr/testify/require"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 func TestEventRepositoryListFiltersAndPagination(t *testing.T) {

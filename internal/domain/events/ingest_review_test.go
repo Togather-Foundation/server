@@ -1,8 +1,8 @@
 package events
 
 import (
-	"github.com/rs/zerolog"
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/rs/zerolog"
 	"testing"
 	"time"
 )

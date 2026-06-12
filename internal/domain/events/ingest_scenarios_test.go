@@ -1,10 +1,10 @@
 package events
 
 import (
-	"github.com/rs/zerolog"
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/rs/zerolog"
 	"testing"
 	"time"
 

@@ -1,12 +1,12 @@
 package events
 
 import (
-	"github.com/rs/zerolog"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/rs/zerolog"
 	"strings"
 	"sync"
 	"testing"

@@ -7,9 +7,9 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/oklog/ulid/v2"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/rs/zerolog"
 )
 
 // TestGetByULID_RecurrenceRule covers the three recurrence scenarios for T2 (srv-i1f0t):

@@ -34,10 +34,10 @@ type ScrapeOptions struct {
 	// required for sources that set WAF session cookies (e.g. Akamai pre-flight).
 	// nil means no cookie persistence (default).
 	CookieJar        http.CookieJar
-	RequestTimeout   time.Duration // 0 = use the fetchTimeout package const
-	RateLimitMs      int32         // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
-	HeadlessOverride bool          // if true and rodExtractor is configured, ScrapeURL uses Tier 2 headless path
-	TLSFingerprint   string        // set from SourceConfig.TLSFingerprint by callers; enables uTLS when non-empty
+	RequestTimeout   time.Duration  // 0 = use the fetchTimeout package const
+	RateLimitMs      int32          // 0 = use CollyExtractor default (1 s); >0 overrides per-domain delay
+	HeadlessOverride bool           // if true and rodExtractor is configured, ScrapeURL uses Tier 2 headless path
+	TLSFingerprint   string         // set from SourceConfig.TLSFingerprint by callers; enables uTLS when non-empty
 	Logger           zerolog.Logger // optional logger for transport/warning output; zero value is a no-op
 }
 

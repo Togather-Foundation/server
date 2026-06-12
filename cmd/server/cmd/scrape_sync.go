@@ -9,8 +9,8 @@ import (
 	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/spf13/cobra"
 	"github.com/rs/zerolog"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
 
