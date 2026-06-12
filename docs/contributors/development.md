@@ -84,7 +84,7 @@ The server uses two logging frameworks with a strict separation of concerns:
 - **`zerolog`**: For HTTP handlers, services, domain code, and repositories. Injected via constructors — never use the global `zerolog/log` package.
 - **`log/slog`**: For River job queue workers only. Injected via struct fields with `slog.Default()` as nil-guard fallback.
 
-This separation is enforced by convention (see `AGENTS.md`). `slog.SetDefault()` is called during server startup in `router.go:130` to ensure the nil-guard fallback is always available.
+This separation is enforced by convention (see `AGENTS.md`). `slog.SetDefault()` is called during server startup in `cmd/server/cmd/serve.go` to ensure the nil-guard fallback is always available.
 
 ### Configuration
 

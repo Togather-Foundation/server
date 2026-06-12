@@ -175,7 +175,7 @@ func (s *Server) registerTools() {
 	s.mcp.AddTool(eventTools.AddEventTool(), eventTools.AddEventHandler)
 
 	// Register place tools (server-9185, server-g8q5)
-	placeTools := tools.NewPlaceTools(s.placesService, s.baseURL).WithLoc(s.loc)
+	placeTools := tools.NewPlaceTools(s.placesService, s.baseURL).WithLoc(s.loc).WithLogger(s.logger)
 
 	// places tool - list places with filters OR get a specific place by ULID
 	s.mcp.AddTool(placeTools.PlacesTool(), placeTools.PlacesHandler)
@@ -184,7 +184,7 @@ func (s *Server) registerTools() {
 	// s.mcp.AddTool(placeTools.AddPlaceTool(), placeTools.AddPlaceHandler)
 
 	// Register organization tools (server-slhh, server-5yr5)
-	organizationTools := tools.NewOrganizationTools(s.orgService, s.baseURL).WithLoc(s.loc)
+	organizationTools := tools.NewOrganizationTools(s.orgService, s.baseURL).WithLoc(s.loc).WithLogger(s.logger)
 
 	// organizations tool - list organizations with filters OR get a specific organization by ULID
 	s.mcp.AddTool(organizationTools.OrganizationsTool(), organizationTools.OrganizationsHandler)

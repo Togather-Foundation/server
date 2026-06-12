@@ -62,7 +62,7 @@ func init() {
 }
 
 func runServer() error {
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
 
 	// Load configuration
 	cfg, err := loadConfig()

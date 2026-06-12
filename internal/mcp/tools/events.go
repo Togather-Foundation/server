@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -181,7 +179,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 			tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
 			if tombErr != nil && !errors.Is(tombErr, events.ErrNotFound) {
 				// Log tombstone fetch error for diagnostics (don't fail the request)
-				fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for event %s: %v\n", id, tombErr)
+				t.logger.Warn().Err(tombErr).Str("event_id", id).Msg("MCP: failed to fetch tombstone for event")
 			}
 			if tombErr == nil && tombstone != nil {
 				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
@@ -208,7 +206,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 		tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
 		if tombErr != nil && !errors.Is(tombErr, events.ErrNotFound) {
 			// Log tombstone fetch error for diagnostics (don't fail the request)
-			fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for deleted event %s: %v\n", id, tombErr)
+			t.logger.Warn().Err(tombErr).Str("event_id", id).Msg("MCP: failed to fetch tombstone for deleted event")
 		}
 		if tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
