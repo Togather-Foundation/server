@@ -221,4 +221,4 @@ func TestReviewCheckAuthError(t *testing.T) {
 }
 
 func ptrFloat(f float64) *float64 { return &f }
-func ptrString(s string) *string   { return &s }
+func ptrString(s string) *string  { return &s }
