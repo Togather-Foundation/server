@@ -190,10 +190,18 @@ func occurrencesFromRawMessages(raws []json.RawMessage) []events.OccurrenceInput
 		if sd == "" {
 			continue
 		}
+		ed := parseDate(re.EndDate)
+
+		yearWasInferred := !yearPattern.MatchString(sd)
+		if ed != "" && !yearPattern.MatchString(ed) {
+			yearWasInferred = true
+		}
+
 		occs = append(occs, events.OccurrenceInput{
-			StartDate: sd,
-			EndDate:   parseDate(re.EndDate),
-			DoorTime:  parseDate(re.DoorTime),
+			StartDate:       sd,
+			EndDate:         ed,
+			DoorTime:        parseDate(re.DoorTime),
+			YearWasInferred: yearWasInferred,
 		})
 	}
 	return occs
@@ -294,12 +302,12 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 	for _, raw := range raws {
 		// Normalize the date parts for this row.
 		startDate, endDate, yearInferred := normalizeStartDate(raw, tz, now)
-		if yearInferred {
-			anyYearInferred = true
-		}
 		if startDate == "" {
 			// Skip rows that don't have a valid start date.
 			continue
+		}
+		if yearInferred {
+			anyYearInferred = true
 		}
 
 		occ := events.OccurrenceInput{

@@ -1937,3 +1937,185 @@ func TestDefaultLocation_NilDefaultLocation(t *testing.T) {
 		t.Errorf("expected nil Location when no scraped location and no DefaultLocation, got %+v", got.Location)
 	}
 }
+
+// TestConsolidateOccurrences_YearWasInferred verifies that anyYearInferred
+// (OR'd across all rows) is propagated to the consolidated EventInput.
+func TestConsolidateOccurrences_YearWasInferred(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+
+	tests := []struct {
+		name         string
+		raws         []RawEvent
+		wantInferred bool
+	}{
+		{
+			name: "all rows have inferred years → true",
+			raws: []RawEvent{
+				{Name: "Show", URL: "https://example.com/show", StartDate: "March 15 8:00 PM"},
+				{Name: "Show", URL: "https://example.com/show", StartDate: "March 16 8:00 PM"},
+				{Name: "Show", URL: "https://example.com/show", StartDate: "March 17 8:00 PM"},
+			},
+			wantInferred: true,
+		},
+		{
+			name: "no rows have inferred years → false",
+			raws: []RawEvent{
+				{Name: "Show", URL: "https://example.com/show", StartDate: "2026-03-15T20:00:00"},
+				{Name: "Show", URL: "https://example.com/show", StartDate: "2026-03-16T20:00:00"},
+			},
+			wantInferred: false,
+		},
+		{
+			name: "mix: some rows inferred, some not → true (OR'd)",
+			raws: []RawEvent{
+				{Name: "Show", URL: "https://example.com/show", StartDate: "2026-03-15T20:00:00"},
+				{Name: "Show", URL: "https://example.com/show", StartDate: "March 16 8:00 PM"},
+			},
+			wantInferred: true,
+		},
+		{
+			name: "single row with inferred year → true",
+			raws: []RawEvent{
+				{Name: "Solo Show", URL: "https://example.com/solo", StartDate: "March 15 8:00 PM"},
+			},
+			wantInferred: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result, err := consolidateOccurrences(tc.raws, src, testNow())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.YearWasInferred != tc.wantInferred {
+				t.Errorf("YearWasInferred = %v, want %v", result.YearWasInferred, tc.wantInferred)
+			}
+
+			if tc.name == "mix: some rows inferred, some not → true (OR'd)" {
+				if len(result.Occurrences) != 2 {
+					t.Fatalf("expected 2 occurrences, got %d", len(result.Occurrences))
+				}
+				if result.Occurrences[0].YearWasInferred {
+					t.Error("first occurrence (ISO date) should not have inferred year")
+				}
+				if !result.Occurrences[1].YearWasInferred {
+					t.Error("second occurrence (fuzzy date) should have inferred year")
+				}
+			}
+		})
+	}
+}
+
+func TestOccurrencesFromRawMessages_YearWasInferred(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		subEvents    []json.RawMessage
+		wantInferred []bool
+	}{
+		{
+			name: "ISO dates with explicit years",
+			subEvents: []json.RawMessage{
+				mustJSON(map[string]any{
+					"startDate": "2026-03-15T20:00:00",
+					"endDate":   "2026-03-15T23:00:00",
+				}),
+			},
+			wantInferred: []bool{false},
+		},
+		{
+			name: "dates without years (fuzzy)",
+			subEvents: []json.RawMessage{
+				mustJSON(map[string]any{
+					"startDate": "March 15 8:00 PM",
+				}),
+			},
+			wantInferred: []bool{true},
+		},
+		{
+			name: "startDate has year but endDate does not",
+			subEvents: []json.RawMessage{
+				mustJSON(map[string]any{
+					"startDate": "2026-03-15T20:00:00",
+					"endDate":   "March 15 11:00 PM",
+				}),
+			},
+			wantInferred: []bool{true},
+		},
+		{
+			name: "startDate without year but endDate has year",
+			subEvents: []json.RawMessage{
+				mustJSON(map[string]any{
+					"startDate": "March 15 8:00 PM",
+					"endDate":   "2026-03-15T23:00:00",
+				}),
+			},
+			wantInferred: []bool{true},
+		},
+		{
+			name: "mixed: first occurrence explicit, second inferred",
+			subEvents: []json.RawMessage{
+				mustJSON(map[string]any{
+					"startDate": "2026-03-15T20:00:00",
+				}),
+				mustJSON(map[string]any{
+					"startDate": "March 16 8:00 PM",
+				}),
+			},
+			wantInferred: []bool{false, true},
+		},
+		{
+			name: "doorTime without year does not flag occurrence as inferred",
+			subEvents: []json.RawMessage{
+				mustJSON(map[string]any{
+					"startDate": "2026-03-15T20:00:00",
+					"doorTime":  "19:30:00",
+				}),
+			},
+			wantInferred: []bool{false},
+		},
+		{
+			name: "all three dates have explicit years",
+			subEvents: []json.RawMessage{
+				mustJSON(map[string]any{
+					"startDate": "2026-03-15T20:00:00",
+					"endDate":   "2026-03-15T23:00:00",
+					"doorTime":  "2026-03-15T19:30:00",
+				}),
+			},
+			wantInferred: []bool{false},
+		},
+		{
+			name: "message with no startDate is skipped",
+			subEvents: []json.RawMessage{
+				mustJSON(map[string]any{
+					"endDate": "2026-03-15T23:00:00",
+				}),
+				mustJSON(map[string]any{
+					"startDate": "2026-03-15T20:00:00",
+				}),
+			},
+			wantInferred: []bool{false},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			occs := occurrencesFromRawMessages(tc.subEvents)
+			if len(occs) != len(tc.wantInferred) {
+				t.Fatalf("got %d occurrences, want %d", len(occs), len(tc.wantInferred))
+			}
+			for i, occ := range occs {
+				if occ.YearWasInferred != tc.wantInferred[i] {
+					t.Errorf("occurrence[%d] YearWasInferred = %v, want %v", i, occ.YearWasInferred, tc.wantInferred[i])
+				}
+			}
+		})
+	}
+}
