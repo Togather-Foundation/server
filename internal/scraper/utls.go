@@ -80,7 +80,8 @@ func setupChromeUConn(tcpConn net.Conn, host string) (*utls.UConn, error) {
 // resolveTransport returns the appropriate transport for the given TLS fingerprint.
 // When fingerprint is empty, existing is returned unchanged.
 // When fingerprint is set and existing is a *CachingTransport, the uTLS transport is
-// set as the CachingTransport's Wrapped (mutating it).
+// wrapped inside a clone of the CachingTransport (the original is not mutated,
+// avoiding cross-source state leaks).
 // When fingerprint is set and existing is nil, a new Chrome fingerprint transport is returned.
 // When fingerprint is set and existing is non-nil but not a *CachingTransport, the existing
 // transport is preserved (caller's explicit choice takes precedence) — this case logs
@@ -90,8 +91,9 @@ func resolveTransport(fingerprint string, existing http.RoundTripper, logger *sl
 		return existing
 	}
 	if ct, ok := existing.(*CachingTransport); ok {
-		ct.Wrapped = NewChromeFingerprintTransport()
-		return existing
+		clone := *ct
+		clone.Wrapped = NewChromeFingerprintTransport()
+		return &clone
 	}
 	if existing == nil {
 		return NewChromeFingerprintTransport()

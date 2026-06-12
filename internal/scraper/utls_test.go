@@ -58,6 +58,12 @@ func TestResolveTransport(t *testing.T) {
 			wantSame:    true,
 			wantLogMsg:  "uTLS fingerprint set but existing transport is not a CachingTransport",
 		},
+		{
+			name:        "chrome_auto fingerprint, non-CachingTransport, nil logger",
+			fingerprint: "chrome_auto",
+			existing:    defaultTransport,
+			wantSame:    true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -97,14 +103,22 @@ func TestResolveTransport(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected *CachingTransport, got %T", got)
 				}
-				if ct != tt.existing {
-					t.Error("expected same CachingTransport pointer to be returned")
+				if ct == tt.existing {
+					t.Error("expected cloned CachingTransport, got same pointer")
 				}
 				if ct.Wrapped == nil {
 					t.Fatal("expected CachingTransport.Wrapped to be set to uTLS transport, got nil")
 				}
 				if _, ok := ct.Wrapped.(*chromeFingerprintTransport); !ok {
 					t.Errorf("expected Wrapped to be *chromeFingerprintTransport, got %T", ct.Wrapped)
+				}
+				// Verify original CachingTransport was not mutated
+				orig, ok := tt.existing.(*CachingTransport)
+				if !ok {
+					t.Fatalf("expected existing to be *CachingTransport, got %T", tt.existing)
+				}
+				if orig.Wrapped != nil {
+					t.Errorf("original CachingTransport.Wrapped was mutated, got %T", orig.Wrapped)
 				}
 				return
 			}
