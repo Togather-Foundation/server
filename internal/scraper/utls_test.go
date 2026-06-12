@@ -1,12 +1,121 @@
 package scraper
 
 import (
+	"bytes"
+	"log/slog"
 	"net"
+	"net/http"
 	"regexp"
 	"testing"
 
 	utls "github.com/refraction-networking/utls"
 )
+
+func TestResolveTransport(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	defaultTransport := http.DefaultTransport
+
+	tests := []struct {
+		name        string
+		fingerprint string
+		existing    http.RoundTripper
+		logger      *slog.Logger
+		wantNil     bool
+		wantSame    bool
+		wantWrapped bool
+		wantLogMsg  string
+	}{
+		{
+			name:        "empty fingerprint, nil transport",
+			fingerprint: "",
+			existing:    nil,
+			wantNil:     true,
+		},
+		{
+			name:        "empty fingerprint, CachingTransport",
+			fingerprint: "",
+			existing:    NewCachingTransport(nil, tempDir, false),
+			wantSame:    true,
+		},
+		{
+			name:        "chrome_auto fingerprint, nil transport",
+			fingerprint: "chrome_auto",
+			existing:    nil,
+			wantNil:     false,
+		},
+		{
+			name:        "chrome_auto fingerprint, CachingTransport",
+			fingerprint: "chrome_auto",
+			existing:    NewCachingTransport(nil, tempDir, false),
+			wantWrapped: true,
+		},
+		{
+			name:        "chrome_auto fingerprint, non-CachingTransport",
+			fingerprint: "chrome_auto",
+			existing:    defaultTransport,
+			wantSame:    true,
+			wantLogMsg:  "uTLS fingerprint set but existing transport is not a CachingTransport",
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			var logBuf bytes.Buffer
+			var logger *slog.Logger
+			if tt.wantLogMsg != "" {
+				logger = slog.New(slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+			}
+
+			got := resolveTransport(tt.fingerprint, tt.existing, logger)
+
+			if tt.wantNil {
+				if got != nil {
+					t.Errorf("expected nil, got %T", got)
+				}
+				return
+			}
+
+			if tt.wantSame {
+				if got != tt.existing {
+					t.Errorf("expected same transport %T, got %T", tt.existing, got)
+				}
+				if tt.wantLogMsg != "" {
+					if !bytes.Contains(logBuf.Bytes(), []byte(tt.wantLogMsg)) {
+						t.Errorf("expected log message %q, got %s", tt.wantLogMsg, logBuf.String())
+					}
+				}
+				return
+			}
+
+			if tt.wantWrapped {
+				ct, ok := got.(*CachingTransport)
+				if !ok {
+					t.Fatalf("expected *CachingTransport, got %T", got)
+				}
+				if ct == tt.existing {
+					// same CachingTransport returned, verify Wrapped is set
+				}
+				if ct.Wrapped == nil {
+					t.Fatal("expected CachingTransport.Wrapped to be set to uTLS transport, got nil")
+				}
+				if _, ok := ct.Wrapped.(*chromeFingerprintTransport); !ok {
+					t.Errorf("expected Wrapped to be *chromeFingerprintTransport, got %T", ct.Wrapped)
+				}
+				return
+			}
+
+			// Non-nil result, verify it's a uTLS transport
+			if _, ok := got.(*chromeFingerprintTransport); !ok {
+				t.Errorf("expected *chromeFingerprintTransport, got %T", got)
+			}
+		})
+	}
+}
 
 func TestNewChromeFingerprintTransport(t *testing.T) {
 	t.Parallel()

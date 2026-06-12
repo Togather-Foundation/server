@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"time"
@@ -74,6 +75,31 @@ func setupChromeUConn(tcpConn net.Conn, host string) (*utls.UConn, error) {
 		}
 	}
 	return uconn, nil
+}
+
+// resolveTransport returns the appropriate transport for the given TLS fingerprint.
+// When fingerprint is empty, existing is returned unchanged.
+// When fingerprint is set and existing is a *CachingTransport, the uTLS transport is
+// set as the CachingTransport's Wrapped (mutating it).
+// When fingerprint is set and existing is nil, a new Chrome fingerprint transport is returned.
+// When fingerprint is set and existing is non-nil but not a *CachingTransport, the existing
+// transport is preserved (caller's explicit choice takes precedence) — this case logs
+// a warning via the provided logger that uTLS is being skipped.
+func resolveTransport(fingerprint string, existing http.RoundTripper, logger *slog.Logger) http.RoundTripper {
+	if fingerprint == "" {
+		return existing
+	}
+	if ct, ok := existing.(*CachingTransport); ok {
+		ct.Wrapped = NewChromeFingerprintTransport()
+		return existing
+	}
+	if existing == nil {
+		return NewChromeFingerprintTransport()
+	}
+	if logger != nil {
+		logger.Warn("uTLS fingerprint set but existing transport is not a CachingTransport; skipping uTLS", "fingerprint", fingerprint, "transport_type", fmt.Sprintf("%T", existing))
+	}
+	return existing
 }
 
 // ChromeHeaders returns a set of HTTP headers that mimic a modern Chrome

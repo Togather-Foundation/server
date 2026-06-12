@@ -65,13 +65,14 @@ func (e *GraphQLExtractor) Extract(
 	if err != nil {
 		return nil, fmt.Errorf("graphql: creating request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
 	if source.TLSFingerprint != "" {
 		for k, v := range ChromeHeaders() {
 			req.Header.Set(k, v)
 		}
-	} else {
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	if source.TLSFingerprint == "" {
 		req.Header.Set("User-Agent", ScraperUserAgent)
 	}
 	if cfg.Token != "" {

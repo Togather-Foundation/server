@@ -128,6 +128,42 @@ func TestGraphQLExtract_RequestHeaders(t *testing.T) {
 	assert.Equal(t, ScraperUserAgent, gotUserAgent, "User-Agent must be the Togather scraper identity string")
 }
 
+func TestGraphQLExtract_TLSFingerprintHeaders(t *testing.T) {
+	t.Parallel()
+
+	var gotAccept, gotContentType, gotUserAgent string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAccept = r.Header.Get("Accept")
+		gotContentType = r.Header.Get("Content-Type")
+		gotUserAgent = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(tranzacResponse(nil))
+	}))
+	t.Cleanup(srv.Close)
+
+	source := SourceConfig{
+		Name:           "test-graphql-tls",
+		URL:            "https://example.com",
+		Tier:           3,
+		TrustLevel:     7,
+		License:        "CC0-1.0",
+		TLSFingerprint: "chrome_auto",
+		GraphQL: &GraphQLConfig{
+			Endpoint:   srv.URL,
+			Query:      `{ allEvents { title } }`,
+			EventField: "allEvents",
+		},
+	}
+
+	extractor := NewGraphQLExtractor(zerolog.Nop())
+	_, err := extractor.Extract(context.Background(), source, &http.Client{})
+	require.NoError(t, err)
+	assert.Equal(t, "application/json", gotAccept, "Accept must be application/json even with ChromeHeaders")
+	assert.Equal(t, "application/json", gotContentType, "Content-Type must be application/json even with ChromeHeaders")
+	assert.NotEmpty(t, gotUserAgent, "User-Agent must be set")
+	assert.NotEqual(t, ScraperUserAgent, gotUserAgent, "User-Agent must be from ChromeHeaders, not the scraper identity")
+}
+
 func TestGraphQLExtract_NoToken(t *testing.T) {
 	t.Parallel()
 
