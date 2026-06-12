@@ -239,7 +239,7 @@ func (w MyWorker) Work(ctx context.Context, job *river.Job[MyArgs]) error {
 }
 ```
 
-The `slog.Default()` fallback relies on `slog.SetDefault()` being called during server startup (see `internal/api/router.go:129-130`). This ensures River workers are always usable even when a logger is not explicitly injected.
+The `slog.Default()` fallback relies on `slog.SetDefault()` being called during server startup (see `cmd/server/cmd/serve.go:65`). This ensures River workers are always usable even when a logger is not explicitly injected.
 
 ### PII and Sensitive Data
 
