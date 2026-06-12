@@ -2803,7 +2803,7 @@ func TestValidateConfigWithWarnings_DeprecatedDescription(t *testing.T) {
 }
 
 // --------------------------------------------------------------------------
-// slog.Warn — loadFile path (srv-nojwn)
+// zerolog.Warn — loadFile path (srv-nojwn)
 // --------------------------------------------------------------------------
 
 func TestLoadFile_DescriptionDeprecationWarningsSlog(t *testing.T) {
@@ -2905,7 +2905,7 @@ selectors:
 }
 
 // --------------------------------------------------------------------------
-// slog.Warn — SourceConfigFromDomain path (srv-nojwn)
+// zerolog.Warn — SourceConfigFromDomain path (srv-nojwn)
 // --------------------------------------------------------------------------
 
 func TestSourceConfigFromDomain_DescriptionDeprecationWarningsSlog(t *testing.T) {
