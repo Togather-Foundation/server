@@ -104,6 +104,12 @@ func TestReviewEditSuccess(t *testing.T) {
 	if !strings.Contains(output, "Updated event evt_abc123") {
 		t.Errorf("expected 'Updated event evt_abc123', got:\n%s", output)
 	}
+	if !strings.Contains(output, "Weekly Jazz Night") {
+		t.Error("expected event name 'Weekly Jazz Night' in output")
+	}
+	if !strings.Contains(output, "name and description") {
+		t.Errorf("expected 'name and description' in output, got:\n%s", output)
+	}
 	if putReqMethod != http.MethodPut {
 		t.Errorf("expected PUT, got %s", putReqMethod)
 	}
@@ -121,7 +127,7 @@ func TestReviewEditSuccess(t *testing.T) {
 	}
 }
 
-func TestReviewEditJSONFlagNoError(t *testing.T) {
+func TestReviewEditJSON(t *testing.T) {
 	t.Parallel()
 	reviewTestMu.Lock()
 	t.Cleanup(func() { reviewTestMu.Unlock() })
@@ -130,7 +136,7 @@ func TestReviewEditJSONFlagNoError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPut {
-			_ = json.NewEncoder(w).Encode(map[string]any{"updated": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"updated": true, "event_id": "evt_abc123"})
 			return
 		}
 		_ = json.NewEncoder(w).Encode(ReviewQueueDetail{
@@ -150,14 +156,31 @@ func TestReviewEditJSONFlagNoError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewEditCmd(t, []string{"review", "edit", "42", "--name", "JSON Name", "--json"})
+	cmd, buf, _ := setupReviewEditCmd(t, []string{"review", "edit", "42", "--name", "JSON Name", "--json"})
 
-	// The edit command doesn't have a JSON output mode for the execution path -
-	// it always prints text. The --json flag just sets reviewJSON which isn't
-	// checked in runReviewEdit. Let's verify it doesn't error.
 	err := cmd.Execute()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+
+	output := strings.TrimSpace(buf.String())
+	if output == "" {
+		t.Fatal("expected non-empty JSON output")
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, output)
+	}
+
+	updated, ok := result["updated"].(bool)
+	if !ok || !updated {
+		t.Errorf("expected updated=true, got: %v", result["updated"])
+	}
+
+	eventID, ok := result["event_id"].(string)
+	if !ok || eventID != "evt_abc123" {
+		t.Errorf("expected event_id=evt_abc123, got: %v", result["event_id"])
 	}
 }
 
@@ -217,7 +240,7 @@ func TestReviewEditDryRun(t *testing.T) {
 	}
 }
 
-func TestReviewEditDryRunJSONFlagNoError(t *testing.T) {
+func TestReviewEditDryRunJSON(t *testing.T) {
 	t.Parallel()
 	reviewTestMu.Lock()
 	t.Cleanup(func() { reviewTestMu.Unlock() })
@@ -242,7 +265,7 @@ func TestReviewEditDryRunJSONFlagNoError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewEditCmd(t, []string{
+	cmd, buf, _ := setupReviewEditCmd(t, []string{
 		"review", "edit", "42",
 		"--name", "Updated Name",
 		"--dry-run",
@@ -252,8 +275,33 @@ func TestReviewEditDryRunJSONFlagNoError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	// In dry-run mode with --json, runReviewEdit doesn't use reviewJSON - it prints text.
-	// Just verify no error.
+
+	output := strings.TrimSpace(buf.String())
+	if output == "" {
+		t.Fatal("expected non-empty JSON output")
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput:\n%s", err, output)
+	}
+
+	dryRun, ok := result["dry_run"].(bool)
+	if !ok || !dryRun {
+		t.Errorf("expected dry_run=true, got: %v", result["dry_run"])
+	}
+
+	eventID, ok := result["event_id"].(string)
+	if !ok || eventID != "evt_abc123" {
+		t.Errorf("expected event_id=evt_abc123, got: %v", result["event_id"])
+	}
+
+	patches, ok := result["patches"].([]interface{})
+	if !ok || len(patches) != 1 {
+		t.Errorf("expected patches=[\"name\"], got: %v", result["patches"])
+	} else if patches[0] != "name" {
+		t.Errorf("expected patches[0]=\"name\", got: %v", patches[0])
+	}
 }
 
 func TestReviewEditAuthError(t *testing.T) {
