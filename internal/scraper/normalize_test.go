@@ -1994,6 +1994,18 @@ func TestConsolidateOccurrences_YearWasInferred(t *testing.T) {
 			if result.YearWasInferred != tc.wantInferred {
 				t.Errorf("YearWasInferred = %v, want %v", result.YearWasInferred, tc.wantInferred)
 			}
+
+			if tc.name == "mix: some rows inferred, some not → true (OR'd)" {
+				if len(result.Occurrences) != 2 {
+					t.Fatalf("expected 2 occurrences, got %d", len(result.Occurrences))
+				}
+				if result.Occurrences[0].YearWasInferred {
+					t.Error("first occurrence (ISO date) should not have inferred year")
+				}
+				if !result.Occurrences[1].YearWasInferred {
+					t.Error("second occurrence (fuzzy date) should have inferred year")
+				}
+			}
 		})
 	}
 }

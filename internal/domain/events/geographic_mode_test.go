@@ -10,6 +10,8 @@ import (
 )
 
 func TestIngestService_GeographicBoundaryMode(t *testing.T) {
+	t.Parallel()
+
 	insideBoundary := config.GeographicBoundaryConfig{
 		Localities: []string{"Toronto"},
 		Mode:       "review",
