@@ -79,12 +79,15 @@ fi
 # over HTTPS without SSH (no need to reach into the container).
 FIRST_ARG="$1"
 if [ "$FIRST_ARG" = "token-exchange" ] && [ -n "${TOGATHER_ADMIN_API_KEY:-}" ]; then
-    BASE_URL=$(grep '^TOGATHER_BASE_URL=' ".agent-keys/${ENV}" 2>/dev/null | cut -d= -f2- | tr -d '"')
+    BASE_URL="${TOGATHER_BASE_URL:-}"
     if [ -z "$BASE_URL" ]; then
-        echo "Error: TOGATHER_BASE_URL not found in .agent-keys/${ENV}"
+        BASE_URL=$(grep -E '^(export )?TOGATHER_BASE_URL=' ".agent-keys/${ENV}" 2>/dev/null | cut -d= -f2- | tr -d '"' | xargs)
+    fi
+    if [ -z "$BASE_URL" ]; then
+        echo "Error: TOGATHER_BASE_URL not set and not found in .agent-keys/${ENV}"
         exit 1
     fi
-    RESPONSE=$(curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" "$BASE_URL/api/v1/auth/token")
+    RESPONSE=$(curl -s -X POST -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" "$BASE_URL/api/v1/auth/token")
     TOKEN=$(echo "$RESPONSE" | jq -r '.token' 2>/dev/null || true)
     if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
         echo "Error: token exchange failed"

@@ -83,13 +83,15 @@ curl -H "Authorization: Bearer $TOGATHER_AGENT_API_KEY" \
 
 `scripts/remote.sh` reads `SSH_HOST`/`SSH_USER` from `.deploy.conf.{env}`, auto-discovers the active container, and forwards the command via SSH + docker exec.
 
-**Important:** `remote.sh` does NOT propagate local env vars into the container. Commands that need auth must pass credentials explicitly via flags:
+**Important:** `remote.sh` does NOT propagate local env vars into the container. Most commands (api-key create, review, etc.) need credentials passed explicitly via `--key` and `--server` flags. The `token-exchange` command is an exception — it runs locally over HTTPS when `TOGATHER_ADMIN_API_KEY` is sourced.
 
 ```bash
 source .agent-keys/staging      # provides TOGATHER_ADMIN_API_KEY, TOGATHER_BASE_URL
 
-# Most commands need explicit --key and --server:
-scripts/remote.sh staging "token-exchange --key $TOGATHER_ADMIN_API_KEY --server $TOGATHER_BASE_URL"
+# token-exchange: runs locally over HTTPS (no SSH, no --key/--server needed)
+scripts/remote.sh staging token-exchange
+
+# Other commands: need explicit --key and --server (runs inside container)
 scripts/remote.sh staging "api-key create my-key --role admin --key $TOGATHER_ADMIN_API_KEY --server $TOGATHER_BASE_URL"
 scripts/remote.sh staging scrape failures      # reads DB directly, no key needed
 scripts/remote.sh staging scrape sync
@@ -97,7 +99,8 @@ scripts/remote.sh staging review queue
 scripts/remote.sh staging review stats
 
 # Via Makefile
-make remote-staging CMD="token-exchange --key \$(TOGATHER_ADMIN_API_KEY) --server \$(TOGATHER_BASE_URL)"
+make remote-staging CMD="token-exchange"
+make remote-staging CMD="api-key create my-agent --role admin --key \$(TOGATHER_ADMIN_API_KEY) --server \$(TOGATHER_BASE_URL)"
 make remote-staging CMD="scrape failures"
 ```
 
@@ -106,9 +109,8 @@ make remote-staging CMD="scrape failures"
 ```bash
 source .agent-keys/staging
 
-# Option A: via remote.sh (always works — runs inside the container)
-ADMIN_JWT=$(scripts/remote.sh staging \
-  "token-exchange --key $TOGATHER_ADMIN_API_KEY --server $TOGATHER_BASE_URL" 2>&1 | tail -1)
+# Option A: via remote.sh (easiest — auto-discovers container, no SSH flags needed)
+ADMIN_JWT=$(scripts/remote.sh staging token-exchange 2>&1 | tail -1)
 
 # Option B: direct HTTPS curl (faster, no SSH needed; POST required)
 ADMIN_JWT=$(curl -s -X POST -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" \

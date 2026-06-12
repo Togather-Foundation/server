@@ -2172,7 +2172,7 @@ REMOTE_EOF
 #   - Writes .agent-keys/<env> as a sourceable shell env file (chmod 600)
 # Usage (after deploy):
 #   source .agent-keys/staging
-#   ADMIN_JWT=$(curl -s -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" "$TOGATHER_BASE_URL/api/v1/auth/token")
+#   ADMIN_JWT=$(curl -s -X POST -H "Authorization: Bearer $TOGATHER_ADMIN_API_KEY" "$TOGATHER_BASE_URL/api/v1/auth/token")
 #   curl -H "Authorization: Bearer $ADMIN_JWT" "$TOGATHER_BASE_URL/api/v1/admin/..."
 #   curl -H "Authorization: Bearer $TOGATHER_AGENT_API_KEY" "$TOGATHER_BASE_URL/api/v1/events"
 mint_agent_key() {
@@ -2232,14 +2232,14 @@ mint_agent_key() {
 #
 # Usage — exchange admin key for a JWT, then call admin endpoints:
 #   source .agent-keys/${env}
-#   ADMIN_JWT=\$(curl -s -H "Authorization: Bearer \$TOGATHER_ADMIN_API_KEY" "\$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token')
+#   ADMIN_JWT=\$(curl -s -X POST -H "Authorization: Bearer \$TOGATHER_ADMIN_API_KEY" "\$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token')
 #   curl -H "Authorization: Bearer \$ADMIN_JWT" "\$TOGATHER_BASE_URL/api/v1/admin/scraper/diagnostics"
 #
 # Agent endpoint usage (no JWT exchange needed):
 #   curl -H "Authorization: Bearer \$TOGATHER_AGENT_API_KEY" "\$TOGATHER_BASE_URL/api/v1/events"
 #
 # Refresh admin JWT (uses stored admin API key, valid 30m):
-#   curl -s -H "Authorization: Bearer \$TOGATHER_ADMIN_API_KEY" \\
+#   curl -s -X POST -H "Authorization: Bearer \$TOGATHER_ADMIN_API_KEY" \\
 #     "\$TOGATHER_BASE_URL/api/v1/auth/token" | jq -r '.token'
 # Create a new admin API key:
 #   docker exec togather-server-<slot> /app/server api-key create <name> --role admin
