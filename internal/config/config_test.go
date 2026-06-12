@@ -410,6 +410,41 @@ func TestGeographicBoundaryConfig_ZeroWhenFileMissing(t *testing.T) {
 	}
 }
 
+func TestGeographicBoundaryConfig_MalformedYAMLReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	yamlPath := tmpDir + "/boundary.yaml"
+	yamlContent := []byte("this: [ is: not: yaml")
+	if err := os.WriteFile(yamlPath, yamlContent, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	boundary, err := loadGeographicBoundaryFile(yamlPath)
+	if err == nil {
+		t.Fatal("expected error for malformed YAML")
+	}
+	if len(boundary.Regions) != 0 || len(boundary.Localities) != 0 {
+		t.Errorf("expected zero-valued config on malformed YAML, got %+v", boundary)
+	}
+}
+
+func TestGeographicBoundaryConfig_ReadErrorReturnsError(t *testing.T) {
+	tmpDir := t.TempDir()
+	childDir := tmpDir + "/nodir"
+	if err := os.Mkdir(childDir, 0000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(childDir, 0700)
+
+	yamlPath := childDir + "/boundary.yaml"
+	boundary, err := loadGeographicBoundaryFile(yamlPath)
+	if err == nil {
+		t.Fatal("expected error when path is not a regular file")
+	}
+	if len(boundary.Regions) != 0 || len(boundary.Localities) != 0 {
+		t.Errorf("expected zero-valued config on read error, got %+v", boundary)
+	}
+}
+
 func TestAmbiguousDateMaxFutureDays_Default(t *testing.T) {
 	v := ValidationConfig{}.WithDefaults()
 	if v.AmbiguousDateMaxFutureDays != 60 {
