@@ -122,12 +122,9 @@ help:
 	@echo "  make db-init       - Create .env for local PostgreSQL development"
 
 # Build variables
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-GIT_COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-BUILD_DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-LDFLAGS := -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=$(VERSION)' \
-           -X 'github.com/Togather-Foundation/server/cmd/server/cmd.GitCommit=$(GIT_COMMIT)' \
-           -X 'github.com/Togather-Foundation/server/cmd/server/cmd.BuildDate=$(BUILD_DATE)'
+# Override via env: VERSION=foo GIT_COMMIT=bar BUILD_DATE=baz make build
+LDFLAGS_VERSION := $(shell bash scripts/ldflags.sh)
+LDFLAGS := $(LDFLAGS_VERSION)
 
 # Build the server
 build:

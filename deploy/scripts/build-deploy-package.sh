@@ -10,10 +10,13 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 VERSION="${1:-$(git describe --tags --always --dirty)}"
-GIT_COMMIT="$(git rev-parse --short HEAD)"
-BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-LDFLAGS="-s -w -X 'github.com/Togather-Foundation/server/cmd/server/cmd.Version=${VERSION}' -X 'github.com/Togather-Foundation/server/cmd/server/cmd.GitCommit=${GIT_COMMIT}' -X 'github.com/Togather-Foundation/server/cmd/server/cmd.BuildDate=${BUILD_DATE}'"
+export VERSION
+source "${SCRIPT_DIR}/../../scripts/ldflags.sh"
+LDFLAGS="-s -w ${LDFLAGS_VERSION}"
+
 OUTPUT_DIR="${2:-./dist}"
 PACKAGE_NAME="togather-server-${VERSION}"
 PACKAGE_DIR="${OUTPUT_DIR}/${PACKAGE_NAME}"

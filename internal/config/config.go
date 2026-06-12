@@ -785,7 +785,8 @@ func validateScraperPollingConfig(scraper ScraperConfig) error {
 }
 
 // loadGeographicBoundaryFile reads a YAML file into a GeographicBoundaryConfig.
-// Returns a zero-valued struct if the file does not exist or is empty.
+// Returns a zero-valued struct and an error if the file does not exist or
+// cannot be parsed (missing file, malformed YAML, permission error, etc.).
 func loadGeographicBoundaryFile(path string) (GeographicBoundaryConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
