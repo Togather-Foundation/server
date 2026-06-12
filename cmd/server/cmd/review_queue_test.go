@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -562,19 +561,10 @@ func TestReviewQueueAuthViaTokenFlag(t *testing.T) {
 }
 
 func TestReviewQueueAuthViaEnvToken(t *testing.T) {
-	t.Parallel()
 	reviewTestMu.Lock()
 	t.Cleanup(func() { reviewTestMu.Unlock() })
 
-	origEnv := os.Getenv("TOGATHER_ADMIN_API_KEY")
-	defer func() {
-		if origEnv != "" {
-			_ = os.Setenv("TOGATHER_ADMIN_API_KEY", origEnv)
-		} else {
-			_ = os.Unsetenv("TOGATHER_ADMIN_API_KEY")
-		}
-	}()
-	_ = os.Setenv("TOGATHER_ADMIN_API_KEY", "env-admin-key")
+	t.Setenv("TOGATHER_ADMIN_API_KEY", "env-admin-key")
 
 	var authHeader string
 	var reqPath string

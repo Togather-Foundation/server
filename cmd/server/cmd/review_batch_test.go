@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -99,19 +98,10 @@ func TestReviewBatchDryRun(t *testing.T) {
 }
 
 func TestReviewBatchExecute(t *testing.T) {
-	t.Parallel()
 	reviewTestMu.Lock()
 	t.Cleanup(func() { reviewTestMu.Unlock() })
 
-	origDelay := os.Getenv("REVIEW_BATCH_DELAY_MS")
-	defer func() {
-		if origDelay != "" {
-			_ = os.Setenv("REVIEW_BATCH_DELAY_MS", origDelay)
-		} else {
-			_ = os.Unsetenv("REVIEW_BATCH_DELAY_MS")
-		}
-	}()
-	_ = os.Setenv("REVIEW_BATCH_DELAY_MS", "0")
+	t.Setenv("REVIEW_BATCH_DELAY_MS", "0")
 
 	var approveCalls int
 	now := time.Now()
@@ -227,19 +217,10 @@ func TestReviewBatchJSONNoMatches(t *testing.T) {
 }
 
 func TestReviewBatchAuthError(t *testing.T) {
-	t.Parallel()
 	reviewTestMu.Lock()
 	t.Cleanup(func() { reviewTestMu.Unlock() })
 
-	origDelay := os.Getenv("REVIEW_BATCH_DELAY_MS")
-	defer func() {
-		if origDelay != "" {
-			_ = os.Setenv("REVIEW_BATCH_DELAY_MS", origDelay)
-		} else {
-			_ = os.Unsetenv("REVIEW_BATCH_DELAY_MS")
-		}
-	}()
-	_ = os.Setenv("REVIEW_BATCH_DELAY_MS", "0")
+	t.Setenv("REVIEW_BATCH_DELAY_MS", "0")
 
 	now := time.Now()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
