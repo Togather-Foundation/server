@@ -1937,3 +1937,63 @@ func TestDefaultLocation_NilDefaultLocation(t *testing.T) {
 		t.Errorf("expected nil Location when no scraped location and no DefaultLocation, got %+v", got.Location)
 	}
 }
+
+// TestConsolidateOccurrences_YearWasInferred verifies that anyYearInferred
+// (OR'd across all rows) is propagated to the consolidated EventInput.
+func TestConsolidateOccurrences_YearWasInferred(t *testing.T) {
+	t.Parallel()
+
+	src := SourceConfig{Name: "Test", URL: "https://example.com", License: "CC0-1.0"}
+
+	tests := []struct {
+		name         string
+		raws         []RawEvent
+		wantInferred bool
+	}{
+		{
+			name: "all rows have inferred years → true",
+			raws: []RawEvent{
+				{Name: "Show", URL: "https://example.com/show", StartDate: "March 15 8:00 PM"},
+				{Name: "Show", URL: "https://example.com/show", StartDate: "March 16 8:00 PM"},
+				{Name: "Show", URL: "https://example.com/show", StartDate: "March 17 8:00 PM"},
+			},
+			wantInferred: true,
+		},
+		{
+			name: "no rows have inferred years → false",
+			raws: []RawEvent{
+				{Name: "Show", URL: "https://example.com/show", StartDate: "2026-03-15T20:00:00"},
+				{Name: "Show", URL: "https://example.com/show", StartDate: "2026-03-16T20:00:00"},
+			},
+			wantInferred: false,
+		},
+		{
+			name: "mix: some rows inferred, some not → true (OR'd)",
+			raws: []RawEvent{
+				{Name: "Show", URL: "https://example.com/show", StartDate: "2026-03-15T20:00:00"},
+				{Name: "Show", URL: "https://example.com/show", StartDate: "March 16 8:00 PM"},
+			},
+			wantInferred: true,
+		},
+		{
+			name: "single row with inferred year → true",
+			raws: []RawEvent{
+				{Name: "Solo Show", URL: "https://example.com/solo", StartDate: "March 15 8:00 PM"},
+			},
+			wantInferred: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			result, err := consolidateOccurrences(tc.raws, src, testNow())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.YearWasInferred != tc.wantInferred {
+				t.Errorf("YearWasInferred = %v, want %v", result.YearWasInferred, tc.wantInferred)
+			}
+		})
+	}
+}

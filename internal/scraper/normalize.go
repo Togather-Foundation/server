@@ -294,12 +294,11 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 	for _, raw := range raws {
 		// Normalize the date parts for this row.
 		startDate, endDate, yearInferred := normalizeStartDate(raw, tz, now)
+		if startDate == "" {
+			continue
+		}
 		if yearInferred {
 			anyYearInferred = true
-		}
-		if startDate == "" {
-			// Skip rows that don't have a valid start date.
-			continue
 		}
 
 		occ := events.OccurrenceInput{
