@@ -84,7 +84,7 @@ The server uses two logging frameworks with a strict separation of concerns:
 - **`zerolog`**: For HTTP handlers, services, domain code, and repositories. Injected via constructors — never use the global `zerolog/log` package.
 - **`log/slog`**: For River job queue workers only. Injected via struct fields with `slog.Default()` as nil-guard fallback.
 
-This separation is enforced by convention (see `AGENTS.md`). `slog.SetDefault()` is called during server startup in `router.go:130` to ensure the nil-guard fallback is always available.
+This separation is enforced by convention (see `AGENTS.md`). `slog.SetDefault()` is called during server startup in `cmd/server/cmd/serve.go` to ensure the nil-guard fallback is always available.
 
 ### Configuration
 
@@ -239,7 +239,7 @@ func (w MyWorker) Work(ctx context.Context, job *river.Job[MyArgs]) error {
 }
 ```
 
-The `slog.Default()` fallback relies on `slog.SetDefault()` being called during server startup (see `internal/api/router.go:129-130`). This ensures River workers are always usable even when a logger is not explicitly injected.
+The `slog.Default()` fallback relies on `slog.SetDefault()` being called during server startup (see `cmd/server/cmd/serve.go:65`). This ensures River workers are always usable even when a logger is not explicitly injected.
 
 ### PII and Sensitive Data
 

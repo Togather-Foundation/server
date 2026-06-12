@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,7 +14,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // PlaceResolver looks up a place by ULID for embedding in event responses.
@@ -37,6 +35,7 @@ type EventTools struct {
 	orgResolver   OrgResolver
 	loc           *time.Location
 	baseURL       string
+	logger        zerolog.Logger
 }
 
 // NewEventTools creates a new EventTools instance.
@@ -45,6 +44,7 @@ func NewEventTools(eventsService *events.Service, ingestService *events.IngestSe
 		eventsService: eventsService,
 		ingestService: ingestService,
 		baseURL:       strings.TrimSpace(baseURL),
+		logger:        zerolog.Nop(),
 	}
 }
 
@@ -63,6 +63,12 @@ func (t *EventTools) WithOrgResolver(resolver OrgResolver) *EventTools {
 // WithLoc sets the server timezone used for the default startDate filter.
 func (t *EventTools) WithLoc(loc *time.Location) *EventTools {
 	t.loc = loc
+	return t
+}
+
+// WithLogger sets the logger for event tools.
+func (t *EventTools) WithLogger(logger zerolog.Logger) *EventTools {
+	t.logger = logger
 	return t
 }
 
@@ -173,7 +179,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 			tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
 			if tombErr != nil && !errors.Is(tombErr, events.ErrNotFound) {
 				// Log tombstone fetch error for diagnostics (don't fail the request)
-				fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for event %s: %v\n", id, tombErr)
+				t.logger.Warn().Err(tombErr).Str("event_id", id).Msg("MCP: failed to fetch tombstone for event")
 			}
 			if tombErr == nil && tombstone != nil {
 				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
@@ -200,7 +206,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 		tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
 		if tombErr != nil && !errors.Is(tombErr, events.ErrNotFound) {
 			// Log tombstone fetch error for diagnostics (don't fail the request)
-			fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for deleted event %s: %v\n", id, tombErr)
+			t.logger.Warn().Err(tombErr).Str("event_id", id).Msg("MCP: failed to fetch tombstone for deleted event")
 		}
 		if tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
@@ -230,7 +236,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 		return resultJSON, nil
 	}
 
-	payload := buildEventPayload(ctx, event, t.baseURL, t.placeResolver, t.orgResolver)
+	payload := buildEventPayload(ctx, event, t.baseURL, t.placeResolver, t.orgResolver, t.logger)
 	resultJSON, err := mcp.NewToolResultJSON(payload)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("failed to build response", err), nil
@@ -290,7 +296,7 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		items = append(items, buildListItem(event, t.baseURL, t.placeResolver, t.orgResolver))
+		items = append(items, buildListItem(event, t.baseURL, t.placeResolver, t.orgResolver, t.logger))
 	}
 
 	response := map[string]any{
@@ -391,7 +397,7 @@ func (t *EventTools) AddEventHandler(ctx context.Context, request mcp.CallToolRe
 	return resultJSON, nil
 }
 
-func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver) map[string]any {
+func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver, logger zerolog.Logger) map[string]any {
 	item := map[string]any{
 		"@context": defaultContext(),
 		"@type":    "Event",
@@ -405,12 +411,12 @@ func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, o
 		item["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
 	}
 
-	location := resolveEventLocation(context.Background(), event, baseURL, placeRes)
+	location := resolveEventLocation(context.Background(), event, baseURL, placeRes, logger)
 	if location != nil {
 		item["location"] = location
 	}
 
-	organizer := resolveEventOrganizer(context.Background(), baseURL, event.OrganizerID, orgRes)
+	organizer := resolveEventOrganizer(context.Background(), baseURL, event.OrganizerID, orgRes, logger)
 	if organizer != nil {
 		item["organizer"] = organizer
 	}
@@ -418,7 +424,7 @@ func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, o
 	return item
 }
 
-func buildEventPayload(ctx context.Context, event *events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver) map[string]any {
+func buildEventPayload(ctx context.Context, event *events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver, logger zerolog.Logger) map[string]any {
 	if event == nil {
 		return map[string]any{}
 	}
@@ -434,12 +440,12 @@ func buildEventPayload(ctx context.Context, event *events.Event, baseURL string,
 		payload["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
 	}
 
-	location := resolveEventLocation(ctx, *event, baseURL, placeRes)
+	location := resolveEventLocation(ctx, *event, baseURL, placeRes, logger)
 	if location != nil {
 		payload["location"] = location
 	}
 
-	organizer := resolveEventOrganizer(ctx, baseURL, event.OrganizerID, orgRes)
+	organizer := resolveEventOrganizer(ctx, baseURL, event.OrganizerID, orgRes, logger)
 	if organizer != nil {
 		payload["organizer"] = organizer
 	}
@@ -460,7 +466,7 @@ func buildEventPayload(ctx context.Context, event *events.Event, baseURL string,
 // resolveEventLocation resolves the event's venue to an embedded Place object.
 // Falls back to URI string if the resolver is nil or the lookup fails.
 // Falls back to VirtualLocation if no physical venue is set.
-func resolveEventLocation(ctx context.Context, event events.Event, baseURL string, resolver PlaceResolver) any {
+func resolveEventLocation(ctx context.Context, event events.Event, baseURL string, resolver PlaceResolver, logger zerolog.Logger) any {
 	// Determine the venue ULID (prefer occurrence-level, fall back to primary)
 	var venueULID string
 	if len(event.Occurrences) > 0 && event.Occurrences[0].VenueULID != nil {
@@ -516,7 +522,7 @@ func resolveEventLocation(ctx context.Context, event events.Event, baseURL strin
 				return result
 			}
 			// Lookup failed — fall back to URI
-			log.Warn().Err(err).Str("venue_ulid", venueULID).Msg("MCP: failed to resolve venue for event, falling back to URI")
+			logger.Warn().Err(err).Str("venue_ulid", venueULID).Msg("MCP: failed to resolve venue for event, falling back to URI")
 		}
 		// No resolver or lookup failed — return URI
 		if placeURI, err := ids.BuildCanonicalURI(baseURL, "places", venueULID); err == nil {
@@ -542,7 +548,7 @@ func resolveEventLocation(ctx context.Context, event events.Event, baseURL strin
 
 // resolveEventOrganizer resolves the organizer ULID to an embedded Organization object.
 // Falls back to URI string if the resolver is nil or the lookup fails.
-func resolveEventOrganizer(ctx context.Context, baseURL string, orgID *string, resolver OrgResolver) any {
+func resolveEventOrganizer(ctx context.Context, baseURL string, orgID *string, resolver OrgResolver, logger zerolog.Logger) any {
 	if orgID == nil || *orgID == "" {
 		return nil
 	}
@@ -589,7 +595,7 @@ func resolveEventOrganizer(ctx context.Context, baseURL string, orgID *string, r
 			return result
 		}
 		// Lookup failed — fall back to URI
-		log.Warn().Err(err).Str("org_ulid", *orgID).Msg("MCP: failed to resolve organizer for event, falling back to URI")
+		logger.Warn().Err(err).Str("org_ulid", *orgID).Msg("MCP: failed to resolve organizer for event, falling back to URI")
 	}
 
 	// No resolver or lookup failed — return URI

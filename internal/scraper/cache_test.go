@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/rs/zerolog"
 )
 
 // countingTransport wraps an http.RoundTripper and counts how many times
@@ -30,7 +32,7 @@ func TestCachingTransport_CacheMiss(t *testing.T) {
 
 	counter := &countingTransport{wrapped: http.DefaultTransport}
 	cacheDir := t.TempDir()
-	transport := NewCachingTransport(counter, cacheDir, false)
+	transport := NewCachingTransport(counter, cacheDir, false, zerolog.Nop())
 	client := &http.Client{Transport: transport}
 
 	resp, err := client.Get(srv.URL + "/page")
@@ -61,7 +63,7 @@ func TestCachingTransport_CacheHit(t *testing.T) {
 
 	counter := &countingTransport{wrapped: http.DefaultTransport}
 	cacheDir := t.TempDir()
-	transport := NewCachingTransport(counter, cacheDir, false)
+	transport := NewCachingTransport(counter, cacheDir, false, zerolog.Nop())
 	client := &http.Client{Transport: transport}
 
 	// First request — populates cache.
@@ -103,7 +105,7 @@ func TestCachingTransport_Refresh(t *testing.T) {
 	cacheDir := t.TempDir()
 
 	// First pass: populate cache without refresh.
-	populateTransport := NewCachingTransport(counter, cacheDir, false)
+	populateTransport := NewCachingTransport(counter, cacheDir, false, zerolog.Nop())
 	populateClient := &http.Client{Transport: populateTransport}
 	resp, err := populateClient.Get(srv.URL + "/page")
 	if err != nil {
@@ -112,7 +114,7 @@ func TestCachingTransport_Refresh(t *testing.T) {
 	_ = resp.Body.Close()
 
 	// Second pass: use Refresh=true — should bypass cache and hit server again.
-	refreshTransport := NewCachingTransport(counter, cacheDir, true)
+	refreshTransport := NewCachingTransport(counter, cacheDir, true, zerolog.Nop())
 	refreshClient := &http.Client{Transport: refreshTransport}
 	resp2, err := refreshClient.Get(srv.URL + "/page")
 	if err != nil {
@@ -143,7 +145,7 @@ func TestCachingTransport_NonGetNotCached(t *testing.T) {
 
 	counter := &countingTransport{wrapped: http.DefaultTransport}
 	cacheDir := t.TempDir()
-	transport := NewCachingTransport(counter, cacheDir, false)
+	transport := NewCachingTransport(counter, cacheDir, false, zerolog.Nop())
 	client := &http.Client{Transport: transport}
 
 	// First POST.
@@ -175,7 +177,7 @@ func TestCachingTransport_NonSuccessNotCached(t *testing.T) {
 
 	counter := &countingTransport{wrapped: http.DefaultTransport}
 	cacheDir := t.TempDir()
-	transport := NewCachingTransport(counter, cacheDir, false)
+	transport := NewCachingTransport(counter, cacheDir, false, zerolog.Nop())
 	client := &http.Client{Transport: transport}
 
 	// First request — 404, should not be cached.

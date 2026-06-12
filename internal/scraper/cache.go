@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/Togather-Foundation/server/internal/fileutil"
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // cachedResponse stores the HTTP response metadata and body on disk.
@@ -28,15 +28,17 @@ type CachingTransport struct {
 	Wrapped  http.RoundTripper
 	CacheDir string
 	Refresh  bool
+	Logger   zerolog.Logger
 }
 
 // NewCachingTransport creates a caching transport wrapping the given transport.
 // cacheDir is created automatically if it doesn't exist.
-func NewCachingTransport(wrapped http.RoundTripper, cacheDir string, refresh bool) *CachingTransport {
+func NewCachingTransport(wrapped http.RoundTripper, cacheDir string, refresh bool, logger zerolog.Logger) *CachingTransport {
 	return &CachingTransport{
 		Wrapped:  wrapped,
 		CacheDir: cacheDir,
 		Refresh:  refresh,
+		Logger:   logger,
 	}
 }
 
@@ -55,7 +57,7 @@ func (t *CachingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	// Try reading from cache (unless refresh mode).
 	if !t.Refresh {
 		if resp, err := t.readCache(cachePath, req); err == nil {
-			log.Debug().Str("url", req.URL.String()).Str("cache_key", key).Msg("scrape cache: hit")
+			t.Logger.Debug().Str("url", req.URL.String()).Str("cache_key", key).Msg("scrape cache: hit")
 			return resp, nil
 		}
 	}
@@ -69,9 +71,9 @@ func (t *CachingTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	// Only cache successful responses (2xx).
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		if writeErr := t.writeCache(cachePath, resp); writeErr != nil {
-			log.Warn().Err(writeErr).Str("url", req.URL.String()).Msg("scrape cache: failed to write")
+			t.Logger.Warn().Err(writeErr).Str("url", req.URL.String()).Msg("scrape cache: failed to write")
 		} else {
-			log.Debug().Str("url", req.URL.String()).Str("cache_key", key).Msg("scrape cache: written")
+			t.Logger.Debug().Str("url", req.URL.String()).Str("cache_key", key).Msg("scrape cache: written")
 		}
 	}
 

@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +12,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/rs/zerolog"
 )
 
 // OrganizationTools provides MCP tools for querying and managing organizations.
@@ -21,6 +20,7 @@ type OrganizationTools struct {
 	orgService *organizations.Service
 	loc        *time.Location
 	baseURL    string
+	logger     zerolog.Logger
 }
 
 // NewOrganizationTools creates a new OrganizationTools instance.
@@ -28,7 +28,13 @@ func NewOrganizationTools(orgService *organizations.Service, baseURL string) *Or
 	return &OrganizationTools{
 		orgService: orgService,
 		baseURL:    strings.TrimSpace(baseURL),
+		logger:     zerolog.Nop(),
 	}
+}
+
+func (t *OrganizationTools) WithLogger(logger zerolog.Logger) *OrganizationTools {
+	t.logger = logger
+	return t
 }
 
 // WithLoc sets the server timezone (passed through to ParseFilters for future use).
@@ -116,7 +122,7 @@ func (t *OrganizationTools) getOrganizationByID(ctx context.Context, id string) 
 			tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id)
 			if tombErr != nil && !errors.Is(tombErr, organizations.ErrNotFound) {
 				// Log tombstone fetch error for diagnostics (don't fail the request)
-				fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for organization %s: %v\n", id, tombErr)
+				t.logger.Warn().Err(tombErr).Str("org_id", id).Msg("MCP: failed to fetch tombstone for organization")
 			}
 			if tombErr == nil && tombstone != nil {
 				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
@@ -139,7 +145,7 @@ func (t *OrganizationTools) getOrganizationByID(ctx context.Context, id string) 
 		tombstone, tombErr := t.orgService.GetTombstoneByULID(ctx, id)
 		if tombErr != nil && !errors.Is(tombErr, organizations.ErrNotFound) {
 			// Log tombstone fetch error for diagnostics (don't fail the request)
-			fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for deleted organization %s: %v\n", id, tombErr)
+			t.logger.Warn().Err(tombErr).Str("org_id", id).Msg("MCP: failed to fetch tombstone for deleted organization")
 		}
 		if tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)

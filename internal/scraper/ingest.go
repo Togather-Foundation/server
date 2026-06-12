@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 )
@@ -32,6 +32,9 @@ type IngestClientConfig struct {
 	// HTTPClientTimeout is the timeout for HTTP requests.
 	// Default: 30s
 	HTTPClientTimeout time.Duration
+
+	// Logger is the injected logger. Zero value is a no-op.
+	Logger zerolog.Logger
 }
 
 // IngestClientOption configures an IngestClient.
@@ -57,6 +60,11 @@ func WithHTTPClientTimeout(d time.Duration) IngestClientOption {
 	return func(c *IngestClientConfig) { c.HTTPClientTimeout = d }
 }
 
+// WithLogger sets the logger for the IngestClient.
+func WithLogger(l zerolog.Logger) IngestClientOption {
+	return func(c *IngestClientConfig) { c.Logger = l }
+}
+
 // IngestClient submits event batches to a SEL server via the batch ingest API.
 type IngestClient struct {
 	baseURL    string
@@ -67,6 +75,7 @@ type IngestClient struct {
 	pollBackoffStart time.Duration
 	pollBackoffMax   time.Duration
 	pollTimeout      time.Duration
+	logger           zerolog.Logger
 }
 
 // IngestResult holds the parsed response from a batch ingest submission.
@@ -155,6 +164,7 @@ func NewIngestClient(baseURL, apiKey string, opts ...IngestClientOption) *Ingest
 		pollBackoffStart: cfg.PollBackoffStart,
 		pollBackoffMax:   cfg.PollBackoffMax,
 		pollTimeout:      cfg.PollTimeout,
+		logger:           cfg.Logger,
 	}
 }
 
@@ -290,7 +300,7 @@ func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL s
 			// If the error is due to our internal poll deadline exceeded, treat it
 			// as a soft timeout rather than a hard error - return partial result.
 			if isDeadlineExceeded(err) {
-				log.Warn().
+				c.logger.Warn().
 					Str("batch_id", batchID).
 					Dur("poll_timeout", c.pollTimeout).
 					Msg("scraper: timed out polling batch status; counts may be incomplete")
@@ -306,7 +316,7 @@ func (c *IngestClient) pollBatchStatus(ctx context.Context, batchID, statusURL s
 		// Not yet complete — wait or bail if we're out of time.
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			log.Warn().
+			c.logger.Warn().
 				Str("batch_id", batchID).
 				Dur("poll_timeout", c.pollTimeout).
 				Msg("scraper: timed out polling batch status; counts may be incomplete")

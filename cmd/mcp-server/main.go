@@ -19,7 +19,6 @@ import (
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -49,9 +48,8 @@ func run() error {
 	// CRITICAL: For stdio transport, NEVER log to stdout - it corrupts MCP protocol messages
 	// Always log to stderr for all transports
 	logger := setupLogging(cfg.Base.Logging)
-	log.Logger = logger
 
-	log.Info().
+	logger.Info().
 		Str("transport", string(cfg.Transport.Type)).
 		Str("mcp_name", cfg.MCP.Name).
 		Str("mcp_version", cfg.MCP.Version).
@@ -66,7 +64,7 @@ func run() error {
 	}
 	defer pool.Close()
 
-	log.Info().Msg("Database connection established")
+	logger.Info().Msg("Database connection established")
 
 	// Initialize repository
 	repo, err := postgres.NewRepository(pool, logger)
@@ -79,14 +77,14 @@ func run() error {
 	ingestService := events.NewIngestService(repo.Events(), cfg.Base.Server.BaseURL, cfg.Base.DefaultTimezone, cfg.Base.Validation, logger)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())
-	developerService := developers.NewService(repo.Developers(), log.Logger, cfg.Base.Developer)
+	developerService := developers.NewService(repo.Developers(), logger, cfg.Base.Developer)
 
-	log.Info().Msg("Domain services initialized")
+	logger.Info().Msg("Domain services initialized")
 
 	// Load configured timezone for default date filtering (srv-h7j38)
 	loc, err := time.LoadLocation(cfg.Base.DefaultTimezone)
 	if err != nil {
-		log.Warn().Err(err).Str("timezone", cfg.Base.DefaultTimezone).Msg("invalid DefaultTimezone, falling back to UTC")
+		logger.Warn().Err(err).Str("timezone", cfg.Base.DefaultTimezone).Msg("invalid DefaultTimezone, falling back to UTC")
 		loc = time.UTC
 	}
 
@@ -107,9 +105,10 @@ func run() error {
 		nil, // geocodingService (not needed for MCP server)
 		loc,
 		cfg.Base.Server.BaseURL,
+		logger,
 	)
 
-	log.Info().
+	logger.Info().
 		Str("transport", string(cfg.Transport.Type)).
 		Msg("MCP server created, starting transport")
 
@@ -122,19 +121,19 @@ func run() error {
 
 	// Start server in errgroup
 	g.Go(func() error {
-		return mcp.Serve(gctx, mcpServer.MCPServer(), cfg.Transport, repo.Auth().APIKeys(), cfg.Base.RateLimit)
+		return mcp.Serve(gctx, mcpServer.MCPServer(), cfg.Transport, repo.Auth().APIKeys(), cfg.Base.RateLimit, logger)
 	})
 
 	// Wait for shutdown signal or context cancellation
 	select {
 	case sig := <-sigCh:
-		log.Info().Str("signal", sig.String()).Msg("Received shutdown signal")
+		logger.Info().Str("signal", sig.String()).Msg("Received shutdown signal")
 	case <-gctx.Done():
-		log.Info().Msg("Context cancelled during startup")
+		logger.Info().Msg("Context cancelled during startup")
 	}
 
 	// Initiate graceful shutdown
-	log.Info().Msg("Initiating graceful shutdown")
+	logger.Info().Msg("Initiating graceful shutdown")
 
 	// Create shutdown context with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
@@ -142,38 +141,22 @@ func run() error {
 
 	// Shutdown MCP server
 	if err := mcpServer.Shutdown(shutdownCtx); err != nil {
-		log.Warn().Err(err).Msg("MCP server shutdown error")
+		logger.Warn().Err(err).Msg("MCP server shutdown error")
 	}
 
 	// Wait for errgroup to finish
 	if err := g.Wait(); err != nil && !errors.Is(err, context.Canceled) {
-		log.Error().Err(err).Msg("Server error during shutdown")
+		logger.Error().Err(err).Msg("Server error during shutdown")
 		return fmt.Errorf("server error: %w", err)
 	}
 
-	log.Info().Msg("Shutdown complete")
+	logger.Info().Msg("Shutdown complete")
 	return nil
 }
 
 // setupLogging initializes the logger based on configuration.
 // IMPORTANT: All logs go to stderr to avoid corrupting MCP protocol on stdout.
 func setupLogging(cfg config.LoggingConfig) zerolog.Logger {
-	// Parse log level
-	level := zerolog.InfoLevel
-	switch cfg.Level {
-	case "debug":
-		level = zerolog.DebugLevel
-	case "info":
-		level = zerolog.InfoLevel
-	case "warn", "warning":
-		level = zerolog.WarnLevel
-	case "error":
-		level = zerolog.ErrorLevel
-	}
-
-	// Set global log level
-	zerolog.SetGlobalLevel(level)
-
 	// Configure output format
 	// CRITICAL: Always output to stderr (not stdout) to avoid corrupting MCP stdio protocol
 	var logger zerolog.Logger
@@ -187,6 +170,11 @@ func setupLogging(cfg config.LoggingConfig) zerolog.Logger {
 		// JSON format (default)
 		logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
 	}
+
+	// Setup slog logger for River job queue workers (injected, slog.Default() as nil-guard)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
 
 	return logger
 }
@@ -214,12 +202,6 @@ func connectDatabase(ctx context.Context, cfg config.DatabaseConfig) (*pgxpool.P
 		pool.Close()
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
-
-	// Setup slog logger for database operations (sent to stderr)
-	slogLogger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(slogLogger)
 
 	return pool, nil
 }

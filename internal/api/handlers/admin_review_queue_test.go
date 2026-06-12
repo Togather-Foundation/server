@@ -540,6 +540,7 @@ func TestApproveReview_SentinelErrors(t *testing.T) {
 				AdminService: adminService,
 				AuditLogger:  audit.NewLogger(),
 				Env:          "test",
+				Logger:       zerolog.Nop(),
 			}
 
 			body, _ := json.Marshal(map[string]string{})
@@ -592,6 +593,7 @@ func TestRejectReview_SentinelErrors(t *testing.T) {
 				AdminService: adminService,
 				AuditLogger:  audit.NewLogger(),
 				Env:          "test",
+				Logger:       zerolog.Nop(),
 			}
 
 			body, _ := json.Marshal(map[string]string{"reason": "test reason"})
@@ -644,6 +646,7 @@ func TestFixReview_SentinelErrors(t *testing.T) {
 				AdminService: adminService,
 				AuditLogger:  audit.NewLogger(),
 				Env:          "test",
+				Logger:       zerolog.Nop(),
 			}
 
 			body, _ := json.Marshal(map[string]any{
@@ -730,6 +733,7 @@ func TestReviewQueueDetail_RelatedEventsExpanded(t *testing.T) {
 		AdminService: adminService,
 		AuditLogger:  audit.NewLogger(),
 		Env:          "test",
+		Logger:       zerolog.Nop(),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/review-queue/1", nil)
@@ -805,6 +809,7 @@ func TestReviewQueueDetail_RelatedEventFetchFails(t *testing.T) {
 		AdminService: adminService,
 		AuditLogger:  audit.NewLogger(),
 		Env:          "test",
+		Logger:       zerolog.Nop(),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/review-queue/2", nil)
@@ -875,6 +880,7 @@ func TestReviewQueueDetail_DuplicateOfEventULID(t *testing.T) {
 		AdminService: adminService,
 		AuditLogger:  audit.NewLogger(),
 		Env:          "test",
+		Logger:       zerolog.Nop(),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/review-queue/3", nil)
@@ -946,6 +952,7 @@ func TestReviewQueueDetail_CrossWeekSeriesCompanionExpanded(t *testing.T) {
 		AdminService: adminService,
 		AuditLogger:  audit.NewLogger(),
 		Env:          "test",
+		Logger:       zerolog.Nop(),
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/admin/review-queue/4", nil)

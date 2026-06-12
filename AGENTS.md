@@ -10,7 +10,7 @@ Go 1.24+ SEL backend (Togather server). PostgreSQL 16+/PostGIS, SQLc, River, net
 - Use `context7` MCP server for external library docs.
 - Act without confirmation unless blocked by missing info or irreversibility.
 - When stuck (cryptic errors, multiple failed approaches): escalate via Task tool with `subagent_type: "diagnose"`.
-- **Logging:** Use `zerolog` for HTTP handlers, services, and domain code (inject via constructors, never use global `zerolog/log`). Use `log/slog` for River job queue workers only (injected, with `slog.Default()` as nil-guard fallback). See `docs/contributors/development.md` for full conventions.
+- **Logging:** Use `zerolog` for HTTP handlers, services, and domain code (inject via constructors, never use global `zerolog/log`). `internal/config/logging.go` is the sole intentional exception — it sets the global `log.Logger` during server initialization. Use `log/slog` for River job queue workers only (injected, with `slog.Default()` as nil-guard fallback). See `docs/contributors/development.md` for full conventions.
 
 ## Documentation First
 

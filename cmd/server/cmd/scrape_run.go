@@ -398,5 +398,5 @@ func buildScrapeTransport(cmd *cobra.Command, logger zerolog.Logger) http.RoundT
 	refresh, _ := cmd.Flags().GetBool("refresh")
 	cacheDir, _ := cmd.Flags().GetString("cache-dir")
 	logger.Info().Str("cache_dir", cacheDir).Bool("refresh", refresh).Msg("scrape cache enabled")
-	return scraper.NewCachingTransport(http.DefaultTransport, cacheDir, refresh)
+	return scraper.NewCachingTransport(http.DefaultTransport, cacheDir, refresh, logger)
 }

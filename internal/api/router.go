@@ -127,7 +127,6 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Initialize River job queue for batch processing
 	slogLogger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(slogLogger)
 
 	// Knowledge graph reconciliation service (srv-titkr)
 	// Use a KGService interface variable (not a typed *kg.ReconciliationService pointer)
@@ -176,6 +175,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		ingestClient := scraper.NewIngestClient(
 			cfg.Server.BaseURL,
 			ingestAPIKey,
+			scraper.WithLogger(logger),
 			scraper.WithPollBackoffStart(time.Duration(cfg.Scraper.PollBackoffStart)*time.Millisecond),
 			scraper.WithPollBackoffMax(time.Duration(cfg.Scraper.PollBackoffMax)*time.Millisecond),
 			scraper.WithPollTimeout(time.Duration(cfg.Scraper.PollTimeout)*time.Millisecond),
@@ -510,6 +510,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 				geocodingService,
 				loc,
 				cfg.Server.BaseURL,
+				logger,
 			)
 
 			mcpHandler, err := mcp.WrapHandler(

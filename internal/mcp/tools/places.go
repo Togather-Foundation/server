@@ -4,9 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +12,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/rs/zerolog"
 )
 
 // PlaceTools provides MCP tools for querying and managing places.
@@ -21,6 +20,7 @@ type PlaceTools struct {
 	placesService *places.Service
 	loc           *time.Location
 	baseURL       string
+	logger        zerolog.Logger
 }
 
 // NewPlaceTools creates a new PlaceTools instance.
@@ -28,7 +28,13 @@ func NewPlaceTools(placesService *places.Service, baseURL string) *PlaceTools {
 	return &PlaceTools{
 		placesService: placesService,
 		baseURL:       strings.TrimSpace(baseURL),
+		logger:        zerolog.Nop(),
 	}
+}
+
+func (t *PlaceTools) WithLogger(logger zerolog.Logger) *PlaceTools {
+	t.logger = logger
+	return t
 }
 
 // WithLoc sets the server timezone (passed through to ParseFilters for future use).
@@ -132,7 +138,7 @@ func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallTool
 			tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id)
 			if tombErr != nil && !errors.Is(tombErr, places.ErrNotFound) {
 				// Log tombstone fetch error for diagnostics (don't fail the request)
-				fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for place %s: %v\n", id, tombErr)
+				t.logger.Warn().Err(tombErr).Str("place_id", id).Msg("MCP: failed to fetch tombstone for place")
 			}
 			if tombErr == nil && tombstone != nil {
 				payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
@@ -155,7 +161,7 @@ func (t *PlaceTools) getPlaceByID(ctx context.Context, id string) (*mcp.CallTool
 		tombstone, tombErr := t.placesService.GetTombstoneByULID(ctx, id)
 		if tombErr != nil && !errors.Is(tombErr, places.ErrNotFound) {
 			// Log tombstone fetch error for diagnostics (don't fail the request)
-			fmt.Fprintf(os.Stderr, "MCP: failed to fetch tombstone for deleted place %s: %v\n", id, tombErr)
+			t.logger.Warn().Err(tombErr).Str("place_id", id).Msg("MCP: failed to fetch tombstone for deleted place")
 		}
 		if tombErr == nil && tombstone != nil {
 			payload, payloadErr := decodeTombstonePayload(tombstone.Payload)
