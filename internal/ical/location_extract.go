@@ -100,8 +100,14 @@ type DecomposeOpts struct {
 // there are typically no structured address components to decompose. The name is
 // used as StreetAddress, and any missing locality/region/country fields are filled
 // from opts defaults (typically sourced from MapperOptions.DefaultLocation).
-// Full address decomposition (e.g. "123 Main St, Toronto, ON M5V 1A1") is handled
-// downstream by the geocoding pipeline.
+//
+// Before falling back to defaults, the function attempts to extract city (locality)
+// and state/province (region) from the raw name string using common address patterns:
+//   - Meetup ICS: "Venue\, 123 Main St\, Toronto\, ON M5V 1A1"
+//   - General:    "123 Main St, Toronto, ON"
+//
+// Extracted components override the DefaultLocality/DefaultRegion defaults.
+// When defaults are present and extraction fails, defaults are still applied.
 func DecomposeLocation(name string, opts DecomposeOpts) events.PlaceInput {
 	pi := events.PlaceInput{
 		Name: sanitize.Text(name),
@@ -111,15 +117,88 @@ func DecomposeLocation(name string, opts DecomposeOpts) events.PlaceInput {
 		pi.StreetAddress = sanitize.Text(name)
 	}
 
-	if opts.DefaultLocality != "" {
+	extractedLocality, extractedRegion := extractAddressComponents(name)
+	if extractedLocality != "" {
+		pi.AddressLocality = extractedLocality
+	} else if opts.DefaultLocality != "" {
 		pi.AddressLocality = opts.DefaultLocality
 	}
-	if opts.DefaultRegion != "" {
+
+	if extractedRegion != "" {
+		pi.AddressRegion = extractedRegion
+	} else if opts.DefaultRegion != "" {
 		pi.AddressRegion = opts.DefaultRegion
 	}
+
 	if opts.DefaultCountry != "" {
 		pi.AddressCountry = opts.DefaultCountry
 	}
 
 	return pi
+}
+
+// extractAddressComponents attempts to extract city (locality) and
+// state/province (region) from a raw location string.
+//
+// Handles Meetup ICS escaped-comma format: "Venue\, 123 Main St\, Toronto\, ON"
+// and standard comma-separated addresses with 3+ parts: "123 Main St, Toronto, ON".
+//
+// Returns empty strings when no structured address components can be extracted
+// (fewer than 3 comma-separated parts, or no recognizable region code).
+func extractAddressComponents(raw string) (locality, region string) {
+	parts := splitAddressParts(raw)
+	if len(parts) < 3 {
+		return "", ""
+	}
+
+	last := strings.TrimSpace(parts[len(parts)-1])
+	region = extractRegionFromLastPart(last)
+	if region == "" {
+		return "", ""
+	}
+
+	secondLast := strings.TrimSpace(parts[len(parts)-2])
+	locality = sanitize.Text(secondLast)
+	if locality == "" {
+		return "", ""
+	}
+
+	return locality, region
+}
+
+// splitAddressParts splits a raw address string into comma-separated parts.
+// Handles both ICS escaped commas (\, ) and regular commas.
+func splitAddressParts(raw string) []string {
+	raw = strings.ReplaceAll(raw, "\\,", "\x00")
+	parts := strings.Split(raw, "\x00")
+	if len(parts) == 1 {
+		parts = strings.Split(raw, ",")
+	}
+	return parts
+}
+
+// extractRegionFromLastPart extracts a state/province code from the last
+// comma-separated part of an address (e.g. "ON M5V 1A1" → "ON").
+func extractRegionFromLastPart(last string) string {
+	last = strings.TrimSpace(last)
+	if last == "" {
+		return ""
+	}
+
+	firstWord := strings.Fields(last)[0]
+	firstWord = strings.TrimRight(firstWord, ".,;:")
+
+	if len(firstWord) >= 2 && isAlphaStr(firstWord) {
+		return firstWord
+	}
+	return ""
+}
+
+func isAlphaStr(s string) bool {
+	for _, r := range s {
+		if r < 'A' || r > 'z' || (r > 'Z' && r < 'a') {
+			return false
+		}
+	}
+	return len(s) > 0
 }
