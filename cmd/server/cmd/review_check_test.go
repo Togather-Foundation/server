@@ -1,48 +1,13 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/spf13/cobra"
 )
-
-func setupReviewCheckCmd(t *testing.T, args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
-	t.Helper()
-
-	var origParent *cobra.Command
-	if reviewCmd.HasParent() {
-		origParent = reviewCmd.Parent()
-		origParent.RemoveCommand(reviewCmd)
-	}
-
-	t.Cleanup(func() {
-		if origParent != nil {
-			if reviewCmd.HasParent() {
-				reviewCmd.Parent().RemoveCommand(reviewCmd)
-			}
-			origParent.AddCommand(reviewCmd)
-		}
-	})
-
-	reviewJSON = false
-
-	testRoot := &cobra.Command{Use: "server"}
-	testRoot.AddCommand(reviewCmd)
-
-	buf := new(bytes.Buffer)
-	errBuf := new(bytes.Buffer)
-	testRoot.SetOut(buf)
-	testRoot.SetErr(errBuf)
-	testRoot.SetArgs(args)
-
-	return testRoot, buf, errBuf
-}
 
 func TestReviewCheckJSON(t *testing.T) {
 	t.Parallel()
@@ -84,7 +49,7 @@ func TestReviewCheckJSON(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewCheckCmd(t, []string{"review", "check", "42", "--json"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "check", "42", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -143,7 +108,7 @@ func TestReviewCheckText(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewCheckCmd(t, []string{"review", "check", "42"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "check", "42"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +149,7 @@ func TestReviewCheckNotFound(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewCheckCmd(t, []string{"review", "check", "99"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "check", "99"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 404 response")
@@ -210,7 +175,7 @@ func TestReviewCheckAuthError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewCheckCmd(t, []string{"review", "check", "42"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "check", "42"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 401 response")

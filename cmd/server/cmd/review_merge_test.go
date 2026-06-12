@@ -1,55 +1,12 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
-
-func setupReviewMergeCmd(t *testing.T, args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
-	t.Helper()
-
-	var origParent *cobra.Command
-	if reviewCmd.HasParent() {
-		origParent = reviewCmd.Parent()
-		origParent.RemoveCommand(reviewCmd)
-	}
-
-	t.Cleanup(func() {
-		if origParent != nil {
-			if reviewCmd.HasParent() {
-				reviewCmd.Parent().RemoveCommand(reviewCmd)
-			}
-			origParent.AddCommand(reviewCmd)
-		}
-	})
-
-	reviewJSON = false
-
-	mergeTransferOccurrences = false
-	mergeName = ""
-	mergeDescription = ""
-	mergeImage = ""
-	mergeURL = ""
-	mergeDomain = ""
-	mergeDryRun = false
-
-	testRoot := &cobra.Command{Use: "server"}
-	testRoot.AddCommand(reviewCmd)
-
-	buf := new(bytes.Buffer)
-	errBuf := new(bytes.Buffer)
-	testRoot.SetOut(buf)
-	testRoot.SetErr(errBuf)
-	testRoot.SetArgs(args)
-
-	return testRoot, buf, errBuf
-}
 
 func TestReviewMergeDryRun(t *testing.T) {
 	t.Parallel()
@@ -60,7 +17,7 @@ func TestReviewMergeDryRun(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewMergeCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate", "--dry-run"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate", "--dry-run"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,7 +43,7 @@ func TestReviewMergeDryRunJSON(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewMergeCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate", "--dry-run", "--json"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate", "--dry-run", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -131,7 +88,7 @@ func TestReviewMergeExecute(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewMergeCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -162,7 +119,7 @@ func TestReviewMergeExecuteJSON(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewMergeCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate", "--json"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -200,7 +157,7 @@ func TestReviewMergeWithPatches(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewMergeCmd(t, []string{
+	cmd, _, _ := setupReviewCmd(t, []string{
 		"review", "merge", "evt_primary", "evt_duplicate",
 		"--name", "Updated Name",
 		"--description", "Updated description",
@@ -256,7 +213,7 @@ func TestReviewMergeTransferOccurrences(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewMergeCmd(t, []string{
+	cmd, _, _ := setupReviewCmd(t, []string{
 		"review", "merge", "evt_primary", "evt_duplicate",
 		"--transfer-occurrences",
 	})
@@ -278,7 +235,7 @@ func TestReviewMergeTransferOccurrencesDryRun(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewMergeCmd(t, []string{
+	cmd, buf, _ := setupReviewCmd(t, []string{
 		"review", "merge", "evt_primary", "evt_duplicate",
 		"--transfer-occurrences", "--dry-run",
 	})
@@ -308,7 +265,7 @@ func TestReviewMergeAuthError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewMergeCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "merge", "evt_primary", "evt_duplicate"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 401 response")
@@ -341,7 +298,7 @@ func TestReviewConsolidate(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewMergeCmd(t, []string{"review", "consolidate", "evt_canon", "dup1", "dup2", "dup3"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "consolidate", "evt_canon", "dup1", "dup2", "dup3"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -365,7 +322,7 @@ func TestReviewConsolidateDryRun(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewMergeCmd(t, []string{"review", "consolidate", "evt_canon", "dup1", "dup2", "--dry-run"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "consolidate", "evt_canon", "dup1", "dup2", "--dry-run"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -391,7 +348,7 @@ func TestReviewConsolidateWithPatchesDryRun(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewMergeCmd(t, []string{
+	cmd, buf, _ := setupReviewCmd(t, []string{
 		"review", "consolidate", "evt_canon", "dup1",
 		"--name", "Merged Name",
 		"--transfer-occurrences",

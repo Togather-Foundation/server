@@ -1,60 +1,13 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/spf13/cobra"
 )
-
-func setupReviewBatchCmd(t *testing.T, args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
-	t.Helper()
-
-	var origParent *cobra.Command
-	if reviewCmd.HasParent() {
-		origParent = reviewCmd.Parent()
-		origParent.RemoveCommand(reviewCmd)
-	}
-
-	t.Cleanup(func() {
-		if origParent != nil {
-			if reviewCmd.HasParent() {
-				reviewCmd.Parent().RemoveCommand(reviewCmd)
-			}
-			origParent.AddCommand(reviewCmd)
-		}
-	})
-
-	reviewJSON = false
-
-	batchName = ""
-	batchSource = ""
-	batchWarning = ""
-	batchAction = ""
-	batchReason = ""
-	batchPrimaryID = ""
-	batchDryRun = false
-	batchLimit = 200
-	batchNotes = ""
-	batchStartDate = ""
-	batchEndDate = ""
-
-	testRoot := &cobra.Command{Use: "server"}
-	testRoot.AddCommand(reviewCmd)
-
-	buf := new(bytes.Buffer)
-	errBuf := new(bytes.Buffer)
-	testRoot.SetOut(buf)
-	testRoot.SetErr(errBuf)
-	testRoot.SetArgs(args)
-
-	return testRoot, buf, errBuf
-}
 
 func TestReviewBatchDryRun(t *testing.T) {
 	t.Parallel()
@@ -80,7 +33,7 @@ func TestReviewBatchDryRun(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewBatchCmd(t, []string{"review", "batch", "--name", "Jazz", "--action", "approve", "--dry-run"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "batch", "--name", "Jazz", "--action", "approve", "--dry-run"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -128,7 +81,7 @@ func TestReviewBatchExecute(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewBatchCmd(t, []string{"review", "batch", "--name", "Jazz", "--action", "approve"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "batch", "--name", "Jazz", "--action", "approve"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -166,7 +119,7 @@ func TestReviewBatchJSON(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewBatchCmd(t, []string{"review", "batch", "--name", "Jazz", "--json"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "batch", "--name", "Jazz", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -201,7 +154,7 @@ func TestReviewBatchJSONNoMatches(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewBatchCmd(t, []string{"review", "batch", "--name", "Nonexistent", "--json"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "batch", "--name", "Nonexistent", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,7 +198,7 @@ func TestReviewBatchAuthError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewBatchCmd(t, []string{"review", "batch", "--name", "Jazz", "--action", "approve"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "batch", "--name", "Jazz", "--action", "approve"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 401 during batch processing")
@@ -278,7 +231,7 @@ func TestReviewBatchNoAction(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewBatchCmd(t, []string{"review", "batch", "--name", "Jazz"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "batch", "--name", "Jazz"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -317,7 +270,7 @@ func TestReviewBatchWithSourceFilter(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewBatchCmd(t, []string{"review", "batch", "--source", "source-a", "--dry-run"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "batch", "--source", "source-a", "--dry-run"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -355,7 +308,7 @@ func TestReviewBatchWithWarningFilter(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewBatchCmd(t, []string{"review", "batch", "--warning", "bad_date", "--dry-run"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "batch", "--warning", "bad_date", "--dry-run"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -378,7 +331,7 @@ func TestReviewBatchNoFilter(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewBatchCmd(t, []string{"review", "batch"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "batch"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error when no filter is provided")

@@ -1,55 +1,13 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/spf13/cobra"
 )
-
-func setupReviewEditCmd(t *testing.T, args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
-	t.Helper()
-
-	var origParent *cobra.Command
-	if reviewCmd.HasParent() {
-		origParent = reviewCmd.Parent()
-		origParent.RemoveCommand(reviewCmd)
-	}
-
-	t.Cleanup(func() {
-		if origParent != nil {
-			if reviewCmd.HasParent() {
-				reviewCmd.Parent().RemoveCommand(reviewCmd)
-			}
-			origParent.AddCommand(reviewCmd)
-		}
-	})
-
-	reviewJSON = false
-
-	editName = ""
-	editDescription = ""
-	editImage = ""
-	editURL = ""
-	editDomain = ""
-	editDryRun = false
-
-	testRoot := &cobra.Command{Use: "server"}
-	testRoot.AddCommand(reviewCmd)
-
-	buf := new(bytes.Buffer)
-	errBuf := new(bytes.Buffer)
-	testRoot.SetOut(buf)
-	testRoot.SetErr(errBuf)
-	testRoot.SetArgs(args)
-
-	return testRoot, buf, errBuf
-}
 
 func TestReviewEditSuccess(t *testing.T) {
 	t.Parallel()
@@ -91,7 +49,7 @@ func TestReviewEditSuccess(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewEditCmd(t, []string{
+	cmd, buf, _ := setupReviewCmd(t, []string{
 		"review", "edit", "42",
 		"--name", "Updated Name",
 		"--description", "New description",
@@ -156,7 +114,7 @@ func TestReviewEditJSON(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewEditCmd(t, []string{"review", "edit", "42", "--name", "JSON Name", "--json"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "edit", "42", "--name", "JSON Name", "--json"})
 
 	err := cmd.Execute()
 	if err != nil {
@@ -209,7 +167,7 @@ func TestReviewEditDryRun(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewEditCmd(t, []string{
+	cmd, buf, _ := setupReviewCmd(t, []string{
 		"review", "edit", "42",
 		"--name", "Updated Name",
 		"--description", "New description",
@@ -265,7 +223,7 @@ func TestReviewEditDryRunJSON(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewEditCmd(t, []string{
+	cmd, buf, _ := setupReviewCmd(t, []string{
 		"review", "edit", "42",
 		"--name", "Updated Name",
 		"--dry-run",
@@ -320,7 +278,7 @@ func TestReviewEditAuthError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewEditCmd(t, []string{"review", "edit", "42", "--name", "New Name"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "edit", "42", "--name", "New Name"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 401 response")
@@ -339,7 +297,7 @@ func TestReviewEditNoPatches(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewEditCmd(t, []string{"review", "edit", "42"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "edit", "42"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error when no edit flags are provided")
@@ -358,7 +316,7 @@ func TestReviewEditInvalidID(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewEditCmd(t, []string{"review", "edit", "notanumber", "--name", "Test"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "edit", "notanumber", "--name", "Test"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for non-integer ID")

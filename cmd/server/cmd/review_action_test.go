@@ -1,55 +1,12 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
-
-func setupReviewActionCmd(t *testing.T, args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
-	t.Helper()
-
-	var origParent *cobra.Command
-	if reviewCmd.HasParent() {
-		origParent = reviewCmd.Parent()
-		origParent.RemoveCommand(reviewCmd)
-	}
-
-	t.Cleanup(func() {
-		if origParent != nil {
-			if reviewCmd.HasParent() {
-				reviewCmd.Parent().RemoveCommand(reviewCmd)
-			}
-			origParent.AddCommand(reviewCmd)
-		}
-	})
-
-	reviewJSON = false
-
-	approveNotes = ""
-	approveRecordNotDup = false
-	rejectReason = ""
-	rejectNotes = ""
-	fixNotes = ""
-	fixStartDate = ""
-	fixEndDate = ""
-
-	testRoot := &cobra.Command{Use: "server"}
-	testRoot.AddCommand(reviewCmd)
-
-	buf := new(bytes.Buffer)
-	errBuf := new(bytes.Buffer)
-	testRoot.SetOut(buf)
-	testRoot.SetErr(errBuf)
-	testRoot.SetArgs(args)
-
-	return testRoot, buf, errBuf
-}
 
 func TestReviewApproveSuccess(t *testing.T) {
 	t.Parallel()
@@ -77,7 +34,7 @@ func TestReviewApproveSuccess(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewActionCmd(t, []string{"review", "approve", "42", "--notes", "all good"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "approve", "42", "--notes", "all good"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -120,7 +77,7 @@ func TestReviewRejectSuccess(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewActionCmd(t, []string{"review", "reject", "42", "--reason", "spam"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "reject", "42", "--reason", "spam"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -157,7 +114,7 @@ func TestReviewFixSuccess(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewActionCmd(t, []string{
+	cmd, buf, _ := setupReviewCmd(t, []string{
 		"review", "fix", "42",
 		"--start-date", "2026-07-15T20:00:00Z",
 		"--end-date", "2026-07-15T22:00:00Z",
@@ -195,7 +152,7 @@ func TestReviewActionJSON(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewActionCmd(t, []string{"review", "approve", "42", "--json"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "approve", "42", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -228,7 +185,7 @@ func TestReviewActionJSONUnmarshalError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewActionCmd(t, []string{"review", "approve", "42", "--json"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "approve", "42", "--json"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for non-2xx JSON response")
@@ -254,7 +211,7 @@ func TestReviewActionAuthError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewActionCmd(t, []string{"review", "approve", "42"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "approve", "42"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 401 response")
@@ -273,7 +230,7 @@ func TestReviewActionInvalidID(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewActionCmd(t, []string{"review", "approve", "notanumber"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "approve", "notanumber"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for non-integer ID")
@@ -292,7 +249,7 @@ func TestReviewRejectMissingReason(t *testing.T) {
 	defer func() { reviewTokenFlag = origToken }()
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewActionCmd(t, []string{"review", "reject", "42"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "reject", "42"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for missing --reason")

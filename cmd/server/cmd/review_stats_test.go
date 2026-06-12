@@ -1,50 +1,13 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/spf13/cobra"
 )
-
-func setupReviewStatsCmd(t *testing.T, args []string) (*cobra.Command, *bytes.Buffer, *bytes.Buffer) {
-	t.Helper()
-
-	var origParent *cobra.Command
-	if reviewCmd.HasParent() {
-		origParent = reviewCmd.Parent()
-		origParent.RemoveCommand(reviewCmd)
-	}
-
-	t.Cleanup(func() {
-		if origParent != nil {
-			if reviewCmd.HasParent() {
-				reviewCmd.Parent().RemoveCommand(reviewCmd)
-			}
-			origParent.AddCommand(reviewCmd)
-		}
-	})
-
-	reviewJSON = false
-
-	statsOutput = ""
-
-	testRoot := &cobra.Command{Use: "server"}
-	testRoot.AddCommand(reviewCmd)
-
-	buf := new(bytes.Buffer)
-	errBuf := new(bytes.Buffer)
-	testRoot.SetOut(buf)
-	testRoot.SetErr(errBuf)
-	testRoot.SetArgs(args)
-
-	return testRoot, buf, errBuf
-}
 
 func TestReviewStatsDefault(t *testing.T) {
 	t.Parallel()
@@ -71,7 +34,7 @@ func TestReviewStatsDefault(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewStatsCmd(t, []string{"review", "stats"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "stats"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -115,7 +78,7 @@ func TestReviewStatsJSON(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewStatsCmd(t, []string{"review", "stats", "--json"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "stats", "--json"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -150,7 +113,7 @@ func TestReviewStatsEmpty(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewStatsCmd(t, []string{"review", "stats"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "stats"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,7 +143,7 @@ func TestReviewStatsAuthError(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, _, _ := setupReviewStatsCmd(t, []string{"review", "stats"})
+	cmd, _, _ := setupReviewCmd(t, []string{"review", "stats"})
 	err := cmd.Execute()
 	if err == nil {
 		t.Error("expected error for 401 response")
@@ -216,7 +179,7 @@ func TestReviewStatsNameGroups(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewStatsCmd(t, []string{"review", "stats"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "stats"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -264,7 +227,7 @@ func TestReviewStatsAgeBuckets(t *testing.T) {
 	reviewServerURL = server.URL
 	reviewTokenFlag = "test-jwt"
 
-	cmd, buf, _ := setupReviewStatsCmd(t, []string{"review", "stats"})
+	cmd, buf, _ := setupReviewCmd(t, []string{"review", "stats"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
