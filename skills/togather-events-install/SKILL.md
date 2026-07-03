@@ -52,6 +52,30 @@ tailored to your tastes, plus a weekly roundup.
 
 `SKILL_DIR` refers to the directory containing this SKILL.md file.
 
+### Phase 0: Gather Configuration
+
+Before installing anything, ask the user for these four values using the
+`clarify` tool. Do not proceed until all are provided.
+
+1. **Server URL** — the base URL of your city's Togather instance.
+   Example: `https://toronto.togather.foundation` or
+   `https://staging.toronto.togather.foundation`.
+
+2. **API key** — a Togather agent/public-scope API key. Get this from
+   your city's volunteer operator.
+
+3. **City name** — the city as it appears in Togather event data.
+   Example: `Toronto`, `Montreal`, `Vancouver`.
+
+4. **Delivery target** — where to send daily and weekly picks. Offer
+   options based on the user's active gateway platforms (Matrix room,
+   Telegram, Discord channel, etc.). If unsure, ask which platform
+   they use with Hermes.
+
+Store these as variables for the rest of the procedure. Every command
+below that shows `YOUR_SERVER`, `YOUR_API_KEY`, or `YOUR_CITY` should
+use the actual values gathered here.
+
 ### Phase 1: Install the Poll Script
 
 Copy the poll script to Hermes' scripts directory so cron can find it:
@@ -62,13 +86,13 @@ cp SKILL_DIR/scripts/togather-poll.py ~/.hermes/scripts/
 chmod +x ~/.hermes/scripts/togather-poll.py
 ```
 
-Test it with a dry run (replace the values with your actual server and key):
+Test it with a dry run using the values gathered in Phase 0:
 
 ```bash
 python3 ~/.hermes/scripts/togather-poll.py \
-  --server https://your-instance.example.com \
+  --server YOUR_SERVER \
   --api-key YOUR_API_KEY \
-  --city "Your City"
+  --city "YOUR_CITY"
 ```
 
 Expected output: a JSON summary like `{"status":"ok","new_events":...}`.
@@ -95,17 +119,15 @@ sections gracefully. The more specific you are, the better the picks.
 
 ### Phase 3: Create the Daily Curation Cron Job
 
-Use the `cronjob` tool to create a daily job that collects and curates
-events. Replace `YOUR_SERVER`, `YOUR_API_KEY`, and `YOUR_CITY` with your
-actual values. For `deliver`, use your platform of choice (e.g., `matrix:!room:server.org`
-for Matrix, `telegram` for Telegram, `discord:#channel` for Discord).
+Use the `cronjob` tool to create a daily job. Use the server URL, API key,
+city, and delivery target gathered in Phase 0.
 
 ```
 cronjob(
   action="create",
   name="Togather Daily Curation",
   schedule="0 8 * * *",
-  deliver="YOUR_DELIVERY_TARGET",
+  deliver="DELIVERY_TARGET_FROM_PHASE_0",
   skills=["togather-events-search"],
   enabled_toolsets=["terminal", "file", "web"],
   prompt="""You are the Togather daily event curator.
@@ -113,9 +135,9 @@ cronjob(
 STEP 1 — Collect new events
 Run the poll script:
   python3 ~/.hermes/scripts/togather-poll.py \
-    --server YOUR_SERVER \
-    --api-key YOUR_API_KEY \
-    --city "YOUR_CITY"
+    --server SERVER_FROM_PHASE_0 \
+    --api-key API_KEY_FROM_PHASE_0 \
+    --city "CITY_FROM_PHASE_0"
 
 If the output says new_events: 0, reply with [SILENT] and stop.
 
@@ -167,7 +189,7 @@ cronjob(
   action="create",
   name="Togather Weekly Digest",
   schedule="30 9 * * 1",
-  deliver="YOUR_DELIVERY_TARGET",
+  deliver="DELIVERY_TARGET_FROM_PHASE_0",
   skills=["togather-events-search"],
   enabled_toolsets=["terminal", "file", "web"],
   prompt="""You are the Togather weekly digest curator.
