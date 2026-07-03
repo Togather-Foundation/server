@@ -99,27 +99,101 @@ Celebrate this moment. The hardest part is done.
 
 ### Step 3: Your Taste (create the event profile)
 
-"This is where the magic gets personal. I need to know what you love."
+"This is where the magic gets personal. I'm going to learn what you love
+so the daily curator can find the good stuff."
 
-Copy the template and tell them what to fill in:
+Start by offering a choice:
+
+> "Two ways to do this. I can interview you — ask a few questions and
+> build your profile from your answers. Takes about two minutes. Or I
+> can drop a template file you can edit yourself. Which sounds better?"
+
+Use `clarify()` with choices: "Interview me" / "Give me the template."
+
+#### Path A: The Interview (preferred)
+
+If they pick the interview, ask these questions one at a time. Don't rush.
+Let them elaborate. The goal is a rich profile, not a form.
+
+**Question 1 — Recent hits:**
+> "Think about the last few events you actually went to and loved. Concerts,
+> gallery openings, workshops, talks, film screenings — anything. What
+> were they? Names or just describe them, whatever comes to mind."
+
+Listen for patterns. Underground music? Experimental art? Indie cinema?
+Make mental notes — these become HIGH interest areas.
+
+**Question 2 — The ones that got away:**
+> "Anything you wanted to go to recently but couldn't make? Or saw the
+> listing after it happened and kicked yourself?"
+
+This reveals aspirational taste — the stuff they'd prioritize if they'd
+known. Often more revealing than what they actually attend.
+
+**Question 3 — Home base:**
+> "Any venues you find yourself at again and again? Maybe a favourite
+> gallery, a bar with good programming, a cinema you trust?"
+
+These become HIGH priority venues. Events there get auto-flagged. If
+they mention a neighbourhood instead of specific venues, ask which
+spots in that area they love.
+
+**Question 4 — The icks:**
+> "What makes you close a tab immediately? What kind of event listing do
+> you see and think 'absolutely not'?"
+
+Prompt for specifics: "Generic comedy open mics? Corporate networking
+mixers? Salsa nights at clubs?" Give them categories to react to.
+These become the skips list.
+
+**Question 5 — People to watch:**
+> "Anyone whose name on a poster makes you buy a ticket? Artists,
+> curators, musicians, organizers — people whose taste you trust."
+
+This is the collaborators list. Even a single name helps.
+
+After all five, synthesize their answers into the profile file:
+
+```bash
+mkdir -p ~/.hermes/togather
+```
+
+Then use `write_file()` to create `~/.hermes/togather/event-profile.md`
+from the interview notes. Follow the same section structure as the
+template, but fill it with real content from their answers:
+
+- **Venues of Interest** — every venue they named, plus a short phrase
+  about why (e.g. "The Garrison — reliably good programming")
+- **Interest Areas** — distilled into HIGH / MEDIUM / LOW tiers based on
+  how enthusiastically they described each interest
+- **Collaborators** — full names with brief context
+- **Skips** — everything they rejected, plus common defaults (corporate
+  networking, speed dating, generic fitness classes)
+- **Practical Constraints** — neighbourhood from Question 3, any transit
+  preferences they mentioned
+
+Show them what you wrote and say:
+> "Here's what I put together. Take a look — you can edit this file any
+> time at `~/.hermes/togather/event-profile.md`. Add venues as you discover
+> them, remove skips you change your mind about. The more you refine it,
+> the sharper the picks get."
+
+#### Path B: The Template
+
+If they choose the template, copy it and walk them through the sections
+briefly — but keep it light:
 
 ```bash
 mkdir -p ~/.hermes/togather
 cp SKILL_DIR/assets/event-profile-template.md ~/.hermes/togather/event-profile.md
 ```
 
-Explain the sections in plain English — not as a checklist:
+> "I dropped the template at `~/.hermes/togather/event-profile.md`. It's
+> commented — fill in whatever sections speak to you. The big ones are
+> Venues and Skips. Delete anything you don't need, the curator handles
+> missing sections gracefully."
 
-- **Venues you love** — your favourite spots. Events there get auto-flagged.
-- **What you're into** — ranked HIGH (must-see), MEDIUM (nice to have),
-  LOW (wildcards). Be honest, be specific.
-- **People you follow** — artists, organizers, collectives. Anything they're
-  involved in, you'll hear about.
-- **Things to skip** — stuff you never want. Generic comedy? Corporate
-  networking? This is where you say "no thanks."
-
-Tell them to delete sections they don't need. The curation agent handles
-missing sections gracefully. The more they put in, the better the picks.
+Either way, confirm the file exists before moving to Step 4.
 
 ### Step 4: The Daily Magic (create the daily curation cron)
 
