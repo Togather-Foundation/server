@@ -1,5 +1,5 @@
 ---
-description: Full-lifecycle workflow from beads to merge. Handles planning, branching, TDD, review, deployment, and user sign-off.
+description: Full-lifecycle workflow from beads to merge. Handles planning, branching, TDD, review, final verification, and user sign-off. Loads a project extension for project-specific commands.
 ---
 
 # Orchestrate: Bead-to-Merge Workflow
@@ -7,9 +7,46 @@ description: Full-lifecycle workflow from beads to merge. Handles planning, bran
 You are an **orchestrator**, not an implementor. Your job is to manage the workflow,
 make decisions, and delegate work to subagents via the Task tool.
 
+## Step 0 — Load Project Extension (REQUIRED, do this first)
+
+This workflow needs project-specific commands for build, test, verification, and
+cleanup. Find and read the project extension file:
+
+```bash
+# Find the project root and locate the extension
+PROJECT_ROOT=$(git rev-parse --show-toplevel)
+find "$PROJECT_ROOT" -maxdepth 4 -name "orchestrate.project.md" -not -path "*/.git/*"
+```
+
+Use the `read` tool on the found path. If `find` returns multiple matches,
+prefer the one closest to the project root or under an `agents/` directory.
+
+If `find` returns nothing, try these fallback paths relative to project root:
+- `agents/agent/orchestrate.project.md`
+- `agents/commands/orchestrate.project.md`
+- `.opencode/commands/orchestrate.project.md`
+
+If no extension file is found **anywhere**, ask the user for the required
+commands before proceeding to Phase 3.
+
+The extension defines commands you will use in phases 3, 4, 5, 8, and 9:
+
+- **Build & test commands** (CI gate, unit tests, code generation, dev server)
+- **Technology stack** (language, database, query builder, migrations)
+- **Worktree setup** (paths, setup scripts, database test workarounds)
+- **Final verification** — what "done and correct" means for this project.
+  For services: deploy to staging + integration tests. For libraries: full CI
+  matrix + dry-run publish. For CLIs: cross-platform build + smoke tests.
+  If the extension defines staging deploy scripts, use them here.
+- **Land & cleanup** (post-rebase CI, cleanup scripts, worktree land script)
+
+If no extension file is found, use your best judgement based on AGENTS details.
+
+---
+
 ## Mandatory Phases (do NOT skip or combine)
 
-This workflow has exactly **9 phases**. Execute them in order. Your TodoWrite items
+This workflow has **9 phases**. Execute them in order. Your TodoWrite items
 MUST map 1:1 to these phases -- do not collapse multiple phases into one todo.
 
 ```
@@ -20,12 +57,12 @@ Phase 2b: UI DESIGN     -- (UI features only) Write visual spec; present to user
   >>> GATE: Stop and wait for user to approve the UI design <<<
 Phase 3: BEAD & BRANCH  -- Create feature branch, create/claim bead
 Phase 4: IMPLEMENT      -- TDD in subagents (delegate to @general)
-Phase 5: REVIEW         -- CI + code review (delegate to @beads-go-reviewer)
+Phase 5: REVIEW         -- CI + code review (delegate to @beads-code-reviewer)
 Phase 6: REFLECT        -- Design hindsight, create follow-up beads
   >>> GATE: Stop and present reflection report to the user <<<
 Phase 7: DOCUMENTATION  -- Update docs (delegate to @general)
-Phase 8: DEPLOY         -- Push, deploy to staging, run tests
-  >>> GATE: Stop and wait for user to test staging and sign off <<<
+Phase 8: VERIFY         -- Run final verification (extension defines what "done" means)
+  >>> GATE: Stop and wait for user to verify and sign off <<<
 Phase 9: LAND           -- Rebase, merge to main, close beads, push
 ```
 
@@ -39,9 +76,9 @@ There are exactly **3 mandatory stops** where you MUST wait for the user:
 2. **After Phase 6 (REFLECT):** Present the reflection report. STOP. Do not proceed
    to Phase 7 until the user acknowledges it.
 
-3. **After Phase 8 (DEPLOY):** Present staging test results and list manual testing
-   steps. STOP. Do not proceed to Phase 9 (LAND) until the user explicitly signs off.
-   The user may need minutes or hours to manually test. **Wait.**
+3. **After Phase 8 (VERIFY):** Present verification results and any manual testing
+   steps. STOP. Do not proceed to Phase 9 (LAND) until the user explicitly signs
+   off. The user may need minutes or hours to manually verify. **Wait.**
 
 **NEVER skip a GATE. NEVER merge without user sign-off. Violating a GATE is a
 critical failure of this workflow.**
@@ -55,7 +92,7 @@ for management, decisions, and coordination.
 |---|---|
 | Beads (`bd show/update/close`) | Exploration, doc reading -> `@explore` |
 | Git (branch, commit, push) | Code + tests -> `@general` |
-| Build/test/deploy (`scripts/agent-run.sh`) | Code review -> `@beads-go-reviewer` |
+| Build/test/verify (from project extension) | Code review -> `@beads-code-reviewer` |
 | TodoWrite, GATEs, coordination | Hard problems -> `@diagnose` |
 
 When delegating, always include: what to do, reference doc paths from Phase 1,
@@ -104,9 +141,9 @@ If bead IDs are provided, read them with `bd show <id> --json` to get context.
 2. **Explore** -- Delegate to `@explore`: find related code, patterns, files to change,
    and relevant docs from `specs/`, `docs/`, `contexts/`, `shapes/`. Ask it to return
    a context summary with **file paths** of all relevant docs (you'll pass these to
-   later subagents as "Reference Docs"). Remind to only explore, update bead, not plan 
-   or implement. Explore subagents should update the associated bead with the exploration
-   report so work can be resumed as needed.
+   later subagents as "Reference Docs"). Remind to only explore, not plan or implement.
+   Explore subagents should update the associated bead with the exploration report so
+   work can be resumed as needed.
 3. **Check blockers** -- `bd blocked --json`. If blocked, report to user and STOP.
 
 **Output:** Concise context summary for the user with a "Reference Docs" file list.
@@ -177,26 +214,23 @@ bd update <id> --status in_progress
 
 ### Worktree mode (`--worktree`)
 
+Use the worktree commands from the project extension (Step 0):
+- Worktree path and branch naming from the extension
+- Setup script from the extension
+- If the project extension notes a database workaround (e.g. Postgres not
+  available in worktrees), apply it
+
 For multi-bead work, pick a primary bead for naming, and claim every bead:
 ```bash
 git worktree prune
-WORKTREE=".worktrees/togather-<primary-bead-id>"
-git worktree add -b <type>/<primary-bead-id>-<short-description> "$WORKTREE" main
-scripts/worktree-setup.sh "$WORKTREE"
+# Then use the worktree commands from the project extension
 bd update <primary-bead-id> --status in_progress
 bd update <bead-id-2> --status in_progress  # if multiple beads
 ```
 
 **All subsequent phases in worktree mode** run with `workdir="$WORKTREE"` on
-every bash command (`make ci-fast`, `git`, `go build`, etc.). Subagent prompts must
-include the worktree path so they know where to operate.
-
-**Postgres tests in worktrees:** `internal/storage/postgres/` tests need a running
-PostgreSQL instance. If `pg_isready` fails during worktree setup, skip `make ci-fast`
-(the DB tests will hang) and run targeted unit tests instead:
-```bash
-go test -count=1 $(go list ./... | grep -v '/storage/postgres$')
-```
+every bash command (CI, tests, git, etc.). Subagent prompts must include the
+worktree path so they know where to operate.
 
 ---
 
@@ -204,27 +238,27 @@ go test -count=1 $(go list ./... | grep -v '/storage/postgres$')
 
 **Goal:** Write tests first, then implement. Delegate each step to `@general`.
 
-Tell each subagent: the step to implement, that this is Go TDD (failing tests first,
-table-driven, edge cases), the Reference Doc paths from Phase 1, files to modify,
-and to use context7 MCP for external library docs. For migrations: `migrate create
--ext sql -dir internal/storage/postgres/migrations -seq <name>`, write up+down,
-update SQLc queries as needed.
+Tell each subagent: the step to implement, the language and testing conventions
+(from the project extension), the Reference Doc paths from Phase 1, files to
+modify, and to use context7 MCP for external library docs.
+
+For schema changes: use the migration command from the project extension.
 
 **Implement subagent prompts must include:**
 > **Do NOT commit or push any changes. The orchestrator owns all git commits.
 > Write the code, run the tests, fix failures — then stop and reflect.
-> 
+>
 > Answer these concrete questions in your response (do not skip or generalize):
 > 1. What was the trickiest decision you made and why?
 > 2. What edge case did you almost miss?
 > 3. What would you do differently if you started over?
 > 4. Is there any tech debt or awkward abstraction you're leaving behind?
-> 
+>
 > Return a summary of what you changed, your concrete answers above, and any remaining issues.**
 
 After each subagent returns:
-1. `scripts/agent-run.sh make test` -- verify tests pass
-2. `make sqlc` if SQL queries changed
+1. Run the unit test command from the project extension to verify tests pass
+2. Run the code generation command from the project extension if queries/schemas changed
 3. **Triage subagent reflections** -- read them carefully. Fix anything actionable
    before committing (e.g. a missed edge case, a cleanup, a confusing variable name).
    Record non-trivial items that can't be fixed now as beads. Do not silently discard
@@ -239,12 +273,9 @@ After each subagent returns:
 6. Mark TodoWrite items complete; update bead notes for significant decisions
 7. If stuck, delegate to `@diagnose`
 
-**Local verification:** After all steps are implemented, run the fast CI gate
-and start the local server to verify the feature works end-to-end:
-```bash
-scripts/agent-run.sh make ci-fast
-make run   # or make dev for live reload
-```
+**Local verification:** After all steps are implemented, run the CI gate and
+start the dev server (commands from the project extension) to verify the feature
+works end-to-end.
 
 ---
 
@@ -252,20 +283,21 @@ make run   # or make dev for live reload
 
 **Goal:** Verify everything works locally before staging.
 
-1. **CI gate:** `scripts/agent-run.sh make ci-fast` -- fix failures before continuing.
-2. **Code review** -- Delegate to `@beads-go-reviewer`: review `git diff main...HEAD`
-   for the current branch. The reviewer reports findings at four severity levels 
-   (Critical/High/Medium/Low) with `file:line` references. It creates beads for 
+1. **CI gate:** Run the CI command from the project extension — fix failures
+   before continuing.
+2. **Code review** -- Delegate to `@beads-code-reviewer`: review `git diff main...HEAD`
+   for the current branch. The reviewer reports findings at four severity levels
+   (Critical/High/Medium/Low) with `file:line` references. It creates beads for
    trackable P0–P2 issues automatically. Include Reference Doc paths from Phase 1.
 3. **Triage findings** -- Read the review report. Fix Critical (P0) and High (P1) findings
-   first (delegate to `@general`). Medium (P2) may be deferred if substantial and 
-   documented as follow-up beads, while simple fixes can be done immediately in subagents. 
+   first (delegate to `@general`). Medium (P2) may be deferred if substantial and
+   documented as follow-up beads, while simple fixes can be done immediately in subagents.
    Low/nitpicks should be done immediately if trivial and you think improves code quality.
-4. **Re-run CI** after fixes: `scripts/agent-run.sh make ci-fast`
-5. **Local user review** -- Present a summary of changes to the user. If the server
-   is running locally (`make run`), suggest specific things to test (endpoints, UI,
+4. **Re-run CI** after fixes (same CI command from the project extension).
+5. **Local user review** -- Present a summary of changes to the user. If the
+   dev server is running, suggest specific things to test (endpoints, UI,
    behavior changes). Ask the user to confirm it works before proceeding. If they
-   find issues, fix them here -- it's much faster than iterating on staging.
+   find issues, fix them here — it's much faster than iterating on staging.
 
 ---
 
@@ -290,13 +322,15 @@ The goal is meta-process improvement and surfacing hidden debt, not recounting a
   5. **Quality gaps** (tests/docs/observability still missing)
   6. **Actionable follow-ups** (what should happen next and why)
 - Create follow-up beads for actionable items:
-  `bd create --title="<improvement>" --description="Discovered during <bead-id>: <context>" --type=task --priority=3`
+  `bd create --title="<follow-up>" --description="<context>" --type=<bug|feature|task> --priority=3`
 - Include created follow-up bead IDs in the report so the user can track them.
 - Do not block on these, except for critical tests that are missing, which should be done now.
 
 ### >>> GATE: Reflection Review <<<
 
-Present the reflection report to the user. **STOP HERE.** Wait for the user to read it and optionally discuss the follow-ups before proceeding to Phase 7.
+Present the reflection report to the user. **STOP HERE.** Wait for the user to
+read it and optionally discuss the follow-ups before proceeding to Phase 7. 
+Do not proceed after first reflection feedback, ask for explicit consent to continue.
 
 ---
 
@@ -305,7 +339,7 @@ Present the reflection report to the user. **STOP HERE.** Wait for the user to r
 **Goal:** Keep docs in sync with code changes.
 
 If behavior changed, delegate to `@general`: update `docs/`, subdirectory AGENTS.md,
-`contexts/`/`shapes/` if JSON-LD changed, API docs if endpoints changed. Capture
+`contexts/`/`shapes/` if schemas changed, API docs if endpoints changed. Capture
 non-obvious learnings (gotchas, patterns) in relevant AGENTS.md files.
 
 ### Documentation delegation requirements (important)
@@ -318,92 +352,100 @@ Your documentation prompt should include:
 - `Reference Docs` paths from Phase 1
 - **Behavior deltas to verify** (runtime behavior, deploy behavior, env vars,
   endpoint/schema changes, defaults)
-- What to check for consistency: code vs docs, docs vs openapi, docs vs tests
+- What to check for consistency: code vs docs, docs vs API spec, docs vs tests
 - Explicit instruction to verify claims against current code (not assumptions)
 - Expected output sections: changed docs, contradictions found, open questions,
-  and whether `docs/api/openapi.yaml` must be updated
+  and whether the API spec must be updated
 
 Ask the doc agent to propose updates only when confirmed by code/tests, and to
 call out uncertainty explicitly.
 
 Include the no-commit instruction in the delegation prompt (see Delegation Principle).
 
-After: review changes against code, run relevant docs/openapi lint checks, `make sqlc`
-if needed, commit.
+After: review changes against code, run any lint/doc-check commands from the
+project extension, commit.
 
 ---
 
-## Phase 8: DEPLOY TO STAGING
+## Phase 8: VERIFY
 
-**Goal:** Confirm in a real environment what already works locally.
+**Goal:** Confirm the work is correct in the most realistic environment available.
+This is the final gate before merging — every project needs this, but the shape
+varies.
 
-Staging deploys are slow -- all testing and user review should happen locally first
-(Phase 4-5). Staging is for final confirmation, not debugging.
+**What verification means by project type:**
 
-**Step 1 — Push the branch first (REQUIRED). The remote deploy pulls this exact commit.
-If the branch is not pushed, the deploy will fail with "reference is not a tree".**
+| Project type | Typical Phase 8 |
+|---|---|
+| Web service / API | Deploy to staging, run integration tests, manual smoke test |
+| Library / SDK | Full CI matrix, dry-run publish, semver check, doc build |
+| CLI tool | Cross-platform build, smoke test key commands, verify `--help` |
+| Worker / daemon | Deploy to staging, run a job, verify idempotency, check metrics |
+| Game / realtime | Build all targets, profile hot path, playtest |
+
+Use the project extension's **Final verification** section. If the extension
+defines staging deploy scripts, Phase 8 is a deploy-and-verify. If it defines
+only CI commands, Phase 8 is a thorough CI pass. If no specific verification
+is configured, run the full CI command and present the branch diff for manual
+review.
+
+**When verification includes a remote deploy:**
+
+Push the branch first (the remote deploy pulls this exact commit):
 ```bash
 git push -u origin HEAD
 ```
 
-**Step 2 — Deploy and test:**
-> **WARNING:** Deployment scripts (specifically Docker builds) often take longer than the default agent `bash` tool timeout (120s). You MUST increase the tool's timeout limit (e.g., `timeout: 600000` / 10 minutes) when running these deploy commands to prevent premature termination.
+Then run the deploy and test commands from the project extension (Docker builds
+may need extended timeout, e.g. `timeout: 600000`).
 
-```bash
-source .deploy.conf.staging 2>/dev/null
-scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD
-scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
-```
+Summarize what passed and failed. List concrete manual testing steps the user
+should perform (specific endpoints, behaviors, edge cases).
 
-**If staging data needs resetting** (schema changes, clean slate needed):
-```bash
-scripts/staging-reset.sh --yes          # wipe events, keep users/keys/sources
-scripts/staging-reset.sh --wipe-all     # full wipe (keeps only users)
-```
+### >>> GATE: Verification Review <<<
 
-Summarize what passed and failed.
-
-### >>> GATE: Staging Review <<<
-
-Present results and list manual testing steps. **STOP HERE.** See GATE Rules above.
-Do not proceed to Phase 9 until user explicitly signs off.
+Present results and list manual verification steps. **STOP HERE.** See GATE Rules
+above. Do not proceed to Phase 9 until the user explicitly signs off.
 
 ---
 
 ## Phase 9: LAND
 
-**Goal:** Merge to main. Only after user sign-off from Phase 8.
+**Goal:** Merge to main. Only after user sign-off from Phase 8 (VERIFY).
 
-**In-tree (default):**
+### Default (in-tree)
+
 ```bash
 # Rebase
 git checkout main && git pull && git checkout - && git rebase main
-scripts/agent-run.sh make ci    # re-verify after rebase
-
+# Re-verify CI after rebase (use the project extension CI command)
 # Merge (include a detailed summary of changes and resolved beads in the commit message)
-git checkout main && git merge --no-ff <branch-name> -m "Merge branch '<branch-name>'" -m "<Detailed summary of what was built, fixed, and why. List closed beads.>"
+git checkout main && git merge --no-ff <branch-name> \
+  -m "Merge branch '<branch-name>'" \
+  -m "<Detailed summary of what was built, fixed, and why. List closed beads.>"
 
 # Close beads
 bd close <id> --reason "<summary of what changed and why>"
-
-# Add any final follow-ups discovered during staging
-bd create --title="<follow-up>" --description="<context>" --type=task --priority=3
 
 # Push and clean up
 git push
 git status    # Must show "up to date with origin"
 git branch -d <branch-name>
-scripts/agent-cleanup.sh
+# Run the project extension's cleanup script (if any)
 ```
 
-**Worktree mode (`--worktree`):** main is locked in the main worktree.
-Push first, then switch to main working directory for the merge:
+### Worktree mode (`--worktree`)
+
+Main is locked in the main worktree. Push first, then switch to main working
+directory for the merge:
+
 ```bash
 # From the worktree:
 git fetch origin main && git rebase origin/main
-scripts/agent-run.sh make ci    # re-verify after rebase (runs in worktree via workdir="$WORKTREE")
+# Re-verify CI (use the project extension CI command)
 git push
 ```
+
 ```bash
 # In the main working directory (NOT the worktree):
 git checkout main && git pull && git merge --no-ff <branch-name> \
@@ -412,10 +454,11 @@ git checkout main && git pull && git merge --no-ff <branch-name> \
 bd close <id> --reason "<summary of what changed and why>"
 # Add any final follow-ups
 bd create --title="<follow-up>" --description="<context>" --type=task --priority=3
-make ci && git push
+# Re-verify CI on main (use the project extension CI command)
+git push
 git status    # Must show "up to date with origin"
 git branch -d <branch-name>
-scripts/land-worktree.sh "$WORKTREE"
+# Run the project extension's land-worktree script
 ```
 
 ---
@@ -429,20 +472,22 @@ reorder as follows:
 Same as feature but Phase 4 starts with a **reproducing test** before any fix.
 
 ### refactor
-Skip Phase 8 (staging deploy) unless the refactor changes observable behavior.
-Phase 5 (review) is critical -- verify no behavior changes.
+Phase 8 (VERIFY) may be lighter: run full CI and confirm no behavior changes.
+Phase 5 (review) is critical.
 
 ### security
 Phase 5 adds a security-focused review. Use `@diagnose` with a security lens.
-Phase 8 (staging) is mandatory. Phase 9 requires explicit security sign-off.
+Phase 8 must include security-specific verification (dependency audit,
+penetration test smoke, secret scan). Phase 9 requires explicit security
+sign-off.
 
 ## Rules and Error Recovery
 
 - **GATE rules** are in the "GATE Rules (CRITICAL)" section above -- never skip them.
 - **Never deploy to production** -- staging only.
-- **Always use `scripts/agent-run.sh`** for build/test/deploy commands.
+- **Always use the project extension's command runner** for build/test/verify commands.
 - **Always update bead status** as you progress.
 - **Commit early, push before stopping** -- work is not safe until pushed.
 - **Tests/CI fail:** Fix before proceeding. Use `@diagnose` if stuck.
-- **Deploy fails:** Check agent-run output. Use `@diagnose` if stuck.
+- **Deploy fails:** Check output. Use `@diagnose` if stuck.
 - **User says "stop":** Commit, update bead notes, push branch. Safe to resume later.
