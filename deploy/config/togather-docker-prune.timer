@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly Docker prune for Togather
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target

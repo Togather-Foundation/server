@@ -91,6 +91,7 @@ update_system() {
         fail2ban \
         build-essential \
         make \
+        logrotate \
         jq
     log_info "✓ System packages updated"
 }
@@ -344,6 +345,94 @@ setup_swap() {
     log_info "✓ Swap space configured (2GB)"
 }
 
+configure_maintenance() {
+    log_info "Configuring automated maintenance..."
+
+    mkdir -p /var/log/togather/deployments /var/log/togather/db-snapshots /var/log/togather/health /var/log/togather/migrations
+    chown root:togather /var/log/togather /var/log/togather/deployments /var/log/togather/db-snapshots /var/log/togather/health /var/log/togather/migrations 2>/dev/null || true
+    chmod 750 /var/log/togather /var/log/togather/deployments /var/log/togather/db-snapshots /var/log/togather/health /var/log/togather/migrations
+
+    log_info "Installing logrotate config..."
+    if [ -f "deploy/config/logrotate.conf" ]; then
+        cp deploy/config/logrotate.conf /etc/logrotate.d/togather
+        chmod 644 /etc/logrotate.d/togather
+    else
+        log_warn "deploy/config/logrotate.conf not found — skipping."
+    fi
+
+    log_info "Installing containerd PID cleanup timer..."
+    cat > /etc/systemd/system/containerd-pid-cleanup.service << 'UNIT'
+[Unit]
+Description=Clean up stale containerd exec PID files
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find /run/containerd/io.containerd.runtime.v2.task/moby -name '*.pid' -not -name 'init.pid' -mmin +5 -delete
+UNIT
+
+    cat > /etc/systemd/system/containerd-pid-cleanup.timer << 'UNIT'
+[Unit]
+Description=Hourly cleanup of stale containerd exec PID files
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+    systemctl daemon-reload
+    systemctl enable --now containerd-pid-cleanup.timer
+    log_info "✓ Containerd PID cleanup timer enabled (hourly)"
+
+    log_info "Installing Docker prune timer..."
+    cat > /etc/systemd/system/togather-docker-prune.service << 'UNIT'
+[Unit]
+Description=Weekly Docker system prune for Togather
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker system prune -a -f --filter "until=48h"
+ExecStart=/usr/bin/docker builder prune -f
+SyslogIdentifier=togather-docker-prune
+UNIT
+
+    cat > /etc/systemd/system/togather-docker-prune.timer << 'UNIT'
+[Unit]
+Description=Weekly Docker prune for Togather
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+    systemctl daemon-reload
+    systemctl enable --now togather-docker-prune.timer
+    log_info "✓ Docker prune timer enabled (weekly)"
+
+    log_info "Configuring journald size limits..."
+    mkdir -p /etc/systemd/journald.conf.d
+    if [ ! -f /etc/systemd/journald.conf.d/togather.conf ]; then
+        cat > /etc/systemd/journald.conf.d/togather.conf << 'CONF'
+[Journal]
+SystemMaxUse=500M
+MaxFileSec=14day
+CONF
+        systemctl restart systemd-journald
+        log_info "✓ Journald limits configured (500M max, 14 day retention)"
+    else
+        log_info "Journald limits already configured — skipping."
+    fi
+
+    log_info "✓ Automated maintenance configured"
+}
+
 print_next_steps() {
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
@@ -384,6 +473,12 @@ print_next_steps() {
     echo "  - Firewall (UFW) is active (SSH, HTTP, HTTPS allowed)"
     echo "  - Fail2ban is protecting SSH"
     echo ""
+    echo "Automated maintenance:"
+    echo "  - Log rotation (logrotate): /etc/logrotate.d/togather"
+    echo "  - Docker prune timer: weekly (systemctl status togather-docker-prune.timer)"
+    echo "  - Containerd PID cleanup: hourly (systemctl status containerd-pid-cleanup.timer)"
+    echo "  - Journald max size: 500M (/etc/systemd/journald.conf.d/togather.conf)"
+    echo ""
     echo "═══════════════════════════════════════════════════════════════"
 }
 
@@ -407,6 +502,7 @@ main() {
     setup_deploy_user
     configure_system_limits
     setup_swap
+    configure_maintenance
     
     # SSH hardening should be done last (after deploy user is set up)
     if [[ "$SKIP_SSH_HARDEN" == "true" ]]; then

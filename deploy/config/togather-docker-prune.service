@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly Docker system prune for Togather
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker system prune -a -f --filter "until=48h"
+ExecStart=/usr/bin/docker builder prune -f
+SyslogIdentifier=togather-docker-prune

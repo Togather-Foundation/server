@@ -615,35 +615,16 @@ df -h /run   # should drop to ~1%
 
 **Permanent fix — systemd cleanup timer:**
 
-A timer is installed on staging to run this cleanup hourly. Verify it is active:
+The timer is installed automatically by `provision-server.sh` (see [server-maintenance.md](./server-maintenance.md)). Verify it is active:
 ```bash
 systemctl status containerd-pid-cleanup.timer
 # Should show: active (waiting)
 ```
 
-If missing, reinstall:
+If missing, install from the shipped unit files:
 ```bash
-sudo tee /etc/systemd/system/containerd-pid-cleanup.service > /dev/null << 'EOF'
-[Unit]
-Description=Clean up stale containerd exec PID files
-
-[Service]
-Type=oneshot
-ExecStart=/usr/bin/find /run/containerd/io.containerd.runtime.v2.task/moby -name '*.pid' -not -name 'init.pid' -mmin +5 -delete
-EOF
-
-sudo tee /etc/systemd/system/containerd-pid-cleanup.timer > /dev/null << 'EOF'
-[Unit]
-Description=Hourly cleanup of stale containerd exec PID files
-
-[Timer]
-OnBootSec=10min
-OnUnitActiveSec=1h
-
-[Install]
-WantedBy=timers.target
-EOF
-
+sudo cp deploy/config/containerd-pid-cleanup.service /etc/systemd/system/
+sudo cp deploy/config/containerd-pid-cleanup.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now containerd-pid-cleanup.timer
 ```

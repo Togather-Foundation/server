@@ -1,0 +1,6 @@
+[Unit]
+Description=Clean up stale containerd exec PID files
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/find /run/containerd/io.containerd.runtime.v2.task/moby -name '*.pid' -not -name 'init.pid' -mmin +5 -delete
