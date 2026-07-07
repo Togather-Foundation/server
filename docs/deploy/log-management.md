@@ -82,9 +82,9 @@ Without rotation, these logs can fill disk space and cause deployment failures.
    ```bash
    sudo mkdir -p /var/log/togather/{deployments,db-snapshots,migrations,health}
    sudo chown -R root:togather /var/log/togather
-   sudo chmod 750 /var/log/togather
-   sudo chmod 770 /var/log/togather/*
-   ```
+    sudo chmod 750 /var/log/togather
+    sudo chmod 750 /var/log/togather/*
+    ```
 
 3. **Create togather group (if it doesn't exist):**
    ```bash
@@ -469,9 +469,9 @@ sudo cat /var/log/logrotate.log | grep -i error
    
    # Fix if needed
    sudo chown -R root:togather /var/log/togather/
-   sudo chmod 750 /var/log/togather/
-   sudo chmod 770 /var/log/togather/*
-   ```
+    sudo chmod 750 /var/log/togather/
+    sudo chmod 750 /var/log/togather/*
+    ```
 
 3. **Cron not running**
    ```bash
