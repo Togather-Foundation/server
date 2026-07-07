@@ -94,6 +94,7 @@ func TestICSInteropIngest(t *testing.T) {
 				SourceName: "Test",
 				TrustLevel: 1,
 				License:    "CC0-1.0",
+				Now:        time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
 			}
 
 			results, warnings, err := ical.MapToEventInputs(context.Background(), cal, opts)
@@ -288,14 +289,15 @@ func TestICSIngestEventSchedule(t *testing.T) {
 		TrustLevel: 5,
 		License:    "CC0-1.0",
 		Timezone:   "America/Toronto",
+		Now:        time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
 	}
 	inputs, warnings, err := ical.MapToEventInputs(context.Background(), cal, opts)
 	require.NoError(t, err, "MapToEventInputs")
 	require.Empty(t, warnings, "unexpected mapper warnings: %v", warnings)
 
 	// Fixture: RRULE FREQ=WEEKLY;BYDAY=MO,WE with one EXDATE on the first Monday.
-	// Within the default 90-day horizon from 2026-07-05: July 8 (Wed) and July 13 (Mon)
-	// survive. The first Monday (July 6) is excluded by EXDATE.
+	// Within the default 90-day horizon from 2026-06-01: July 8 (Wed), July 13 (Mon),
+	// July 15 (Wed), etc. survive. The first Monday (July 6) is excluded by EXDATE.
 	require.GreaterOrEqual(t, len(inputs), 2, "expected at least 2 non-excluded occurrences from fixture")
 
 	// ── 2. Verify EXDATE occurrence is absent from mapped inputs ───────────────
@@ -489,9 +491,10 @@ func insertRecurringEventWithSeries(t *testing.T, env *testEnv, name, orgID, ven
 
 	rrule := "FREQ=WEEKLY;BYDAY=MO,WE"
 	tzid := "America/Toronto"
-	seriesStart := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
-	seriesEnd := time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)
-	exdate := time.Date(2026, 7, 6, 19, 0, 0, 0, mustLoadLocation(t, tzid))
+	tomorrow := time.Now().In(time.UTC).Add(24 * time.Hour)
+	seriesStart := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 0, 0, 0, 0, time.UTC)
+	seriesEnd := seriesStart.AddDate(0, 2, 0)
+	exdate := tomorrow.In(mustLoadLocation(t, tzid))
 
 	var seriesID string
 	err := env.Pool.QueryRow(env.Context,
@@ -517,7 +520,7 @@ func insertRecurringEventWithSeries(t *testing.T, env *testEnv, name, orgID, ven
 	).Scan(&eventID)
 	require.NoError(t, err, "insert event linked to series")
 
-	startTime := time.Date(2026, 7, 6, 19, 0, 0, 0, time.UTC)
+	startTime := tomorrow
 	endTime := startTime.Add(2 * time.Hour)
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, end_time, venue_id)
