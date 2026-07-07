@@ -1,11 +1,11 @@
 # Server Maintenance
 
 Automated disk space management for Togather SEL nodes. All maintenance runs via
-systemd timers — no cron, no manual intervention required after provisioning.
+systemd timers and cron — no manual intervention required after provisioning.
 
 ## Automated Maintenance
 
-Three systemd timers are installed during `provision-server.sh`:
+Two systemd timers and one cron-based job are installed during `provision-server.sh`:
 
 | Timer | Schedule | What it does |
 |---|---|---|

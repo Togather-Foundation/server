@@ -348,16 +348,22 @@ setup_swap() {
 configure_maintenance() {
     log_info "Configuring automated maintenance..."
 
+    log_info "Creating togather group..."
+    if ! getent group togather >/dev/null; then
+        groupadd --system togather
+    fi
+
     mkdir -p /var/log/togather/deployments /var/log/togather/db-snapshots /var/log/togather/health /var/log/togather/migrations
     chown root:togather /var/log/togather /var/log/togather/deployments /var/log/togather/db-snapshots /var/log/togather/health /var/log/togather/migrations 2>/dev/null || true
     chmod 750 /var/log/togather /var/log/togather/deployments /var/log/togather/db-snapshots /var/log/togather/health /var/log/togather/migrations
 
     log_info "Installing logrotate config..."
-    if [ -f "deploy/config/logrotate.conf" ]; then
-        cp deploy/config/logrotate.conf /etc/logrotate.d/togather
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd 2>/dev/null || true)"
+    if [ -n "${SCRIPT_DIR}" ] && [ -f "${SCRIPT_DIR}/../config/logrotate.conf" ]; then
+        cp "${SCRIPT_DIR}/../config/logrotate.conf" /etc/logrotate.d/togather
         chmod 644 /etc/logrotate.d/togather
     else
-        log_warn "deploy/config/logrotate.conf not found — skipping."
+        log_warn "deploy/config/logrotate.conf not found (ran via curl?) — skipping logrotate setup."
     fi
 
     log_info "Installing containerd PID cleanup timer..."
@@ -382,7 +388,6 @@ OnUnitActiveSec=1h
 WantedBy=timers.target
 UNIT
 
-    systemctl daemon-reload
     systemctl enable --now containerd-pid-cleanup.timer
     log_info "✓ Containerd PID cleanup timer enabled (hourly)"
 
