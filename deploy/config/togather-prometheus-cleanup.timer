@@ -1,0 +1,9 @@
+[Unit]
+Description=Weekly Prometheus WAL cleanup for Togather
+
+[Timer]
+OnCalendar=Sat *-*-* 03:00:00
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target

@@ -12,7 +12,10 @@ import (
 
 // HTTP metrics
 var (
-	pathParamRegex = regexp.MustCompile(`\{[^/]+\}`)
+	pathParamRegex  = regexp.MustCompile(`\{[^/]+\}`)
+	ulidRegex       = regexp.MustCompile(`[0-9A-HJ-NP-TV-Za-hj-np-tv-z]{26,}`)
+	numericSegRegex = regexp.MustCompile(`/\d+`)
+
 	// HTTPRequestsTotal counts HTTP requests by method, path, and status code
 	HTTPRequestsTotal = promauto.With(Registry).NewCounterVec(
 		prometheus.CounterOpts{
@@ -144,5 +147,8 @@ func normalizePath(path string) string {
 	if path == "" || path[0] != '/' {
 		return path
 	}
-	return pathParamRegex.ReplaceAllString(path, "{param}")
+	path = pathParamRegex.ReplaceAllString(path, "{param}")
+	path = ulidRegex.ReplaceAllString(path, "{id}")
+	path = numericSegRegex.ReplaceAllString(path, "/{id}")
+	return path
 }

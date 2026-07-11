@@ -33,6 +33,26 @@ func TestNormalizePath(t *testing.T) {
 			input:    "api/v1/events/{id}",
 			expected: "api/v1/events/{id}",
 		},
+		{
+			name:     "ulid in path",
+			input:    "/api/v1/admin/events/01JMKZGVPF3KD1NKPGGNN37HBM",
+			expected: "/api/v1/admin/events/{id}",
+		},
+		{
+			name:     "numeric id in path",
+			input:    "/api/v1/events/42",
+			expected: "/api/v1/events/{id}",
+		},
+		{
+			name:     "ulid and numeric segments",
+			input:    "/api/v1/organizations/01ARZ3NDEKTSV4RRFFQ69G5FAV/nested/123",
+			expected: "/api/v1/organizations/{id}/nested/{id}",
+		},
+		{
+			name:     "ulid in query",
+			input:    "/api/v1/events/01JMKZGVPF3KD1NKPGGNN37HBM/occurrences",
+			expected: "/api/v1/events/{id}/occurrences",
+		},
 	}
 
 	for _, tt := range tests {

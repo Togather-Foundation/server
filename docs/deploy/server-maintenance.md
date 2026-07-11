@@ -5,12 +5,13 @@ systemd timers and cron — no manual intervention required after provisioning.
 
 ## Automated Maintenance
 
-Two systemd timers and one cron-based job are installed during `provision-server.sh`:
+Three systemd timers and one cron-based job are installed during `provision-server.sh`:
 
 | Timer | Schedule | What it does |
 |---|---|---|
 | `togather-docker-prune.timer` | Weekly | Removes Docker images older than 48h and build cache |
 | `containerd-pid-cleanup.timer` | Hourly | Deletes stale containerd exec PID files from `/run` tmpfs |
+| `togather-prometheus-cleanup.timer` | Weekly (Sat 03:00) | Stops Prometheus, clears WAL + chunks_head, restarts |
 | `logrotate` (system) | Daily | Rotates Togather logs per `/etc/logrotate.d/togather` |
 
 Journald is capped at 500 MB via `/etc/systemd/journald.conf.d/togather.conf`.
@@ -98,6 +99,24 @@ Without this timer, a `/run` tmpfs (197 MB) fills in ~7-8 weeks from health chec
 alone. See [troubleshooting.md](./troubleshooting.md#issue-run-tmpfs-full--docker-cannot-start-containers)
 for details.
 
+## Prometheus WAL Cleanup
+
+Prometheus `--storage.tsdb.retention.size` only caps compacted TSDB blocks — the
+write-ahead log (WAL) can grow unbounded if the disk fills before compaction runs.
+When the disk is full, Prometheus can't compact, and the WAL enters a
+self-reinforcing growth loop (cascade outage — see
+[troubleshooting.md](./troubleshooting.md#issue-prometheus-wal-fills-disk-cascade-outage)).
+
+The weekly timer stops Prometheus, clears the WAL and in-memory chunks, then
+restarts it. This loses up to 2 hours of metrics (the compaction window) but is a
+safety valve against disk exhaustion. Prometheus retention is configured at
+7 days / 5 GB in `docker-compose.blue-green.yml`.
+
+```bash
+systemctl status togather-prometheus-cleanup.timer
+systemctl start togather-prometheus-cleanup.service   # trigger immediately
+```
+
 ## Manual Cleanup
 
 The `server cleanup` CLI wraps `deploy/scripts/cleanup.sh` for targeted cleanup:
@@ -156,8 +175,13 @@ sudo systemctl enable --now containerd-pid-cleanup.timer
 
 # Docker prune
 sudo cp deploy/config/togather-docker-prune.{service,timer} /etc/systemd/system/
+
+# Prometheus WAL cleanup
+sudo cp deploy/config/togather-prometheus-cleanup.{service,timer} /etc/systemd/system/
+
 sudo systemctl daemon-reload
 sudo systemctl enable --now togather-docker-prune.timer
+sudo systemctl enable --now togather-prometheus-cleanup.timer
 
 # Journald
 sudo ./deploy/config/journald-configure.sh

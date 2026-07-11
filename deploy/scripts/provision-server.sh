@@ -421,6 +421,37 @@ UNIT
     systemctl enable --now togather-docker-prune.timer
     log_info "✓ Docker prune timer enabled (weekly)"
 
+    log_info "Installing Prometheus WAL cleanup timer..."
+    cat > /etc/systemd/system/togather-prometheus-cleanup.service << 'UNIT'
+[Unit]
+Description=Weekly Prometheus WAL cleanup for Togather
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker stop togather-prometheus
+ExecStart=-/usr/bin/find /var/lib/docker/volumes/togather-staging_prometheus-data/_data/wal -mindepth 1 -delete
+ExecStart=-/usr/bin/find /var/lib/docker/volumes/togather-staging_prometheus-data/_data/chunks_head -mindepth 1 -delete
+ExecStart=/usr/bin/docker start togather-prometheus
+SyslogIdentifier=togather-prometheus-cleanup
+UNIT
+
+    cat > /etc/systemd/system/togather-prometheus-cleanup.timer << 'UNIT'
+[Unit]
+Description=Weekly Prometheus WAL cleanup for Togather
+
+[Timer]
+OnCalendar=Sat *-*-* 03:00:00
+RandomizedDelaySec=3600
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+    systemctl enable --now togather-prometheus-cleanup.timer
+    log_info "✓ Prometheus WAL cleanup timer enabled (weekly, Sat 03:00)"
+
     log_info "Configuring journald size limits..."
     mkdir -p /etc/systemd/journald.conf.d
     if [ ! -f /etc/systemd/journald.conf.d/togather.conf ]; then
@@ -482,6 +513,7 @@ print_next_steps() {
     echo "  - Log rotation (logrotate): /etc/logrotate.d/togather"
     echo "  - Docker prune timer: weekly (systemctl status togather-docker-prune.timer)"
     echo "  - Containerd PID cleanup: hourly (systemctl status containerd-pid-cleanup.timer)"
+    echo "  - Prometheus WAL cleanup: weekly (systemctl status togather-prometheus-cleanup.timer)"
     echo "  - Journald max size: 500M (/etc/systemd/journald.conf.d/togather.conf)"
     echo ""
     echo "═══════════════════════════════════════════════════════════════"

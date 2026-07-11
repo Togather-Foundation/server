@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly Prometheus WAL cleanup for Togather
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker stop togather-prometheus
+ExecStart=-/usr/bin/find /var/lib/docker/volumes/togather-staging_prometheus-data/_data/wal -mindepth 1 -delete
+ExecStart=-/usr/bin/find /var/lib/docker/volumes/togather-staging_prometheus-data/_data/chunks_head -mindepth 1 -delete
+ExecStart=/usr/bin/docker start togather-prometheus
+SyslogIdentifier=togather-prometheus-cleanup
