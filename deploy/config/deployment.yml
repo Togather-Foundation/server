@@ -71,7 +71,7 @@ monitoring:
     # Metrics scrape interval
     scrape_interval: 15s
     # Metrics retention period
-    retention_days: 15
+    retention_days: 7
   
   # Grafana settings
   grafana:

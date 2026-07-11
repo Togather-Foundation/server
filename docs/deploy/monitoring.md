@@ -54,9 +54,9 @@ The Togather monitoring stack provides real-time observability into server perfo
 
 | Component  | CPU    | Memory | Disk  | Notes                          |
 |------------|--------|--------|-------|--------------------------------|
-| Prometheus | 0.5-1  | 1-2GB  | 10GB  | Grows with retention period    |
+| Prometheus | 0.5-1  | 1-2GB  | 5GB   | Grows with retention period    |
 | Grafana    | 0.25   | 256MB  | 1GB   | Lightweight visualization      |
-| **Total**  | 1-1.5  | 2-3GB  | 11GB  | Additional to server resources |
+| **Total**  | 1-1.5  | 2-3GB  | 6GB   | Additional to server resources |
 
 **Recommended for Production**:
 - 8GB RAM minimum (4GB server + 3GB monitoring + 1GB overhead)
@@ -142,7 +142,7 @@ Then deploy:
 | `GRAFANA_PASSWORD`    | No       | `admin` | Grafana admin password                         |
 | `BLUE_ACTIVE_SLOT`    | No       | `true`  | Mark blue slot as active in metrics            |
 | `GREEN_ACTIVE_SLOT`   | No       | `false` | Mark green slot as active in metrics           |
-| `PROMETHEUS_RETENTION`| No       | `15d`   | How long Prometheus stores metrics             |
+| `PROMETHEUS_RETENTION`| No       | `7d`    | How long Prometheus stores metrics             |
 
 ### Prometheus Configuration
 

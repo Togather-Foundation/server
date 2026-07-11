@@ -500,7 +500,7 @@ volumes:
 #
 # Prometheus Configuration:
 #   - Scrape interval: 15 seconds
-#   - Retention: 15 days or 10GB (whichever comes first)
+#   - Retention: 7 days or 5GB (whichever comes first)
 #   - Scrape targets: togather-blue:8080/metrics, togather-green:8080/metrics
 #
 # Grafana Configuration:

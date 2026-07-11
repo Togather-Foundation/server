@@ -560,8 +560,8 @@ sudo du -sh /var/lib/docker/volumes/togather-staging_prometheus-data/_data/wal/
 **Verify retention config:**
 ```bash
 docker inspect togather-prometheus | grep -A2 'retention'
-# Should show: --storage.tsdb.retention.time=15d
-#              --storage.tsdb.retention.size=10GB
+# Should show: --storage.tsdb.retention.time=7d
+#              --storage.tsdb.retention.size=5GB
 ```
 
 If retention flags are missing from the container args, update
