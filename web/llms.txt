@@ -153,6 +153,38 @@ Server version: /version
 SEL profile:    /.well-known/sel-profile
 Sitemap:        /sitemap.xml
 
+## Agent Skills (Hermes)
+
+Togather provides installable Agent Skills so AI assistants (Hermes, Claude Code,
+Codex, OpenCode) can curate and deliver event picks to people automatically —
+no coding required.
+
+Skills live in the repo under `skills/` and follow the Agent Skills v1 specification
+(https://agentskills.io).
+
+### Available Skills
+
+- togather-events-install — setup wizard for automated daily curation (polling script,
+  cron jobs, event profile, chat delivery)
+- togather-events-search  — ad-hoc event queries via public REST API and MCP;
+  domain, keyword, city, date filters
+- togather-review         — guidebook for triaging the event review queue; warning
+  types, batch strategies, CLI reference
+- togather-server-ops     — auth (API keys + JWT), REST API reference, MCP
+  connectivity, data quality patterns
+
+### Install via Hermes
+
+  hermes skills tap add Togather-Foundation/server
+  hermes skills install togather-events-install togather-events-search togather-review togather-server-ops
+
+### Install for Other Agent Runtimes
+
+Copy the skill directory into your agent's skills folder. Each skill is self-contained
+with a SKILL.md and optional scripts/, references/, and assets/ directories.
+
+Repo: https://github.com/Togather-Foundation/server/tree/main/skills
+
 ## License
 
 All event data served by this node is CC0 (public domain dedication).

@@ -285,6 +285,27 @@
         </section>
         
         <section>
+            <h2>Agent Skills (Hermes)</h2>
+            <p style="margin-bottom: 1rem; line-height: 1.7; color: #555;">
+                Installable <a href="https://agentskills.io">Agent Skills</a> that teach AI assistants how to curate and deliver event picks — no coding required. Compatible with Hermes, Claude Code, Codex, OpenCode, and others.
+            </p>
+            <ul>
+                <li><strong>togather-events-install:</strong> Automated daily curation pipeline — polling, cron, chat delivery</li>
+                <li><strong>togather-events-search:</strong> Ad-hoc event queries via REST API and MCP</li>
+                <li><strong>togather-review:</strong> Event review queue triage for server operators</li>
+                <li><strong>togather-server-ops:</strong> Auth, API reference, MCP connectivity reference</li>
+            </ul>
+            <p style="margin-top: 1rem; font-size: 0.95rem; color: #555;">
+                Install via Hermes:<br>
+                <code>hermes skills tap add Togather-Foundation/server</code><br>
+                <code>hermes skills install togather-events-install togather-events-search togather-review togather-server-ops</code>
+            </p>
+            <p style="margin-top: 0.5rem; font-size: 0.95rem; color: #555;">
+                <a href="https://github.com/Togather-Foundation/server/tree/main/skills">Browse all skills on GitHub</a>
+            </p>
+        </section>
+
+        <section>
             <h2>For Coding Agents</h2>
             <p style="margin-bottom: 1rem; line-height: 1.7; color: #555;">
                 <strong>Note:</strong> Write endpoints require authentication. See <a href="#getting-started">Getting Started</a> for API key setup.
