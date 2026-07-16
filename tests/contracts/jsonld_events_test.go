@@ -19,7 +19,7 @@ func TestJSONLDEventListAndDetailFraming(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Now().AddDate(0, 0, 1))
 
 	listReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events", nil)
 	require.NoError(t, err)

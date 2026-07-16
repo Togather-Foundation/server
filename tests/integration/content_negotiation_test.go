@@ -196,7 +196,7 @@ func TestContentNegotiationListEndpoint(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Now().AddDate(0, 0, 1))
 
 	testCases := []struct {
 		name        string

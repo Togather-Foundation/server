@@ -16,8 +16,8 @@ func TestPaginationCursorEncodingAndNextCursor(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
-	_ = insertEventWithOccurrence(t, env, "Summer Arts Expo", org.ID, place.ID, "arts", "published", []string{"summer"}, time.Date(2026, 7, 11, 19, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Now().AddDate(0, 0, 1))
+	_ = insertEventWithOccurrence(t, env, "Summer Arts Expo", org.ID, place.ID, "arts", "published", []string{"summer"}, time.Now().AddDate(0, 0, 2))
 
 	params := url.Values{}
 	params.Set("limit", "1")

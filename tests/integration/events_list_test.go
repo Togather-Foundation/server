@@ -22,10 +22,11 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 
 	seed := seedEventsListData(t, env)
 
+	today := time.Now().In(time.UTC)
 	filters := url.Values{}
 	filters.Set("city", "Toronto")
-	filters.Set("startDate", "2026-07-01")
-	filters.Set("endDate", "2026-07-31")
+	filters.Set("startDate", today.Format("2006-01-02"))
+	filters.Set("endDate", today.AddDate(0, 1, 0).Format("2006-01-02"))
 	filters.Set("limit", "1")
 
 	first := fetchEventsList(t, env, filters)
@@ -90,9 +91,10 @@ func seedEventsListData(t *testing.T, env *testEnv) listSeedData {
 	eventAName := "Jazz in the Park"
 	eventBName := "Summer Arts Expo"
 
-	_ = insertEventWithOccurrence(t, env, eventAName, orgA.ID, placeA.ID, "music", "published", []string{"jazz", "summer"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
-	_ = insertEventWithOccurrence(t, env, eventBName, orgB.ID, placeB.ID, "arts", "draft", []string{"gallery"}, time.Date(2026, 7, 20, 18, 0, 0, 0, time.UTC))
-	_ = insertEventWithOccurrence(t, env, "Ottawa Winter Fest", orgB.ID, placeC.ID, "culture", "published", []string{"winter"}, time.Date(2026, 8, 1, 20, 0, 0, 0, time.UTC))
+	now := time.Now().UTC()
+	_ = insertEventWithOccurrence(t, env, eventAName, orgA.ID, placeA.ID, "music", "published", []string{"jazz", "summer"}, now.AddDate(0, 0, 1))
+	_ = insertEventWithOccurrence(t, env, eventBName, orgB.ID, placeB.ID, "arts", "draft", []string{"gallery"}, now.AddDate(0, 0, 10))
+	_ = insertEventWithOccurrence(t, env, "Ottawa Winter Fest", orgB.ID, placeC.ID, "culture", "published", []string{"winter"}, now.AddDate(0, 0, 22))
 
 	return listSeedData{
 		EventAName: eventAName,

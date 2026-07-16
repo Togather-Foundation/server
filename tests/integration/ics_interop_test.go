@@ -385,7 +385,7 @@ func TestICSIngestEventSchedule(t *testing.T) {
 
 	// ── 5. List endpoint: verify eventSchedule present on recurring events ─────
 	t.Run("list-endpoint-eventSchedule", func(t *testing.T) {
-		req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events", nil)
+		req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events?startDate=2026-06-01", nil)
 		require.NoError(t, err)
 		req.Header.Set("Accept", "application/ld+json")
 

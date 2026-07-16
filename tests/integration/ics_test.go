@@ -17,7 +17,7 @@ func TestICSFeed(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Now().AddDate(0, 0, 1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events.ics", nil)
 	require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestICSFeedDTSTAMP(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Now().AddDate(0, 0, 1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events.ics", nil)
 	require.NoError(t, err)
@@ -70,7 +70,7 @@ func TestICSFeedPaginationLink(t *testing.T) {
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 
 	for i := 0; i < 5; i++ {
-		_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10+i, 19, 0, 0, 0, time.UTC))
+		_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Now().AddDate(0, 0, 1+i))
 	}
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events.ics?limit=1", nil)
