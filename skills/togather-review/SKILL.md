@@ -28,11 +28,13 @@ name, wrong language).
 
 Run these steps in order. Do not deviate. Do not process items individually.
 
+Every terminal command must be prefixed with `source .env &&`:
+
 ### Step 1: Survey
 
 ```bash
-./server review stats --server ... --key ...
-./server review queue --group-by source --server ... --key ...
+source .env && ./server review stats --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
+source .env && ./server review queue --group-by source --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
 ```
 
 ### Step 2: Batch approve by source (primary strategy)
@@ -41,15 +43,16 @@ For every source that produces real events, batch-approve the entire source
 in one command. The `--source` filter works standalone (no `--name` required):
 
 ```bash
-./server review batch --source "<source-uuid>" --action approve \
-  --notes "Real events, clean data" --server ... --key ... --limit 200
+source .env && ./server review batch --source "<source-uuid>" --action approve \
+  --notes "Real events, clean data" --key "$TOGATHER_ADMIN_API_KEY" \
+  --server "$TOGATHER_BASE_URL" --limit 200
 ```
 
 Combine `--source` + `--warning` for narrower targeting on mixed sources:
 
 ```bash
-./server review batch --source "<uuid>" --warning "missing_description" \
-  --action approve --server ... --key ...
+source .env && ./server review batch --source "<uuid>" --warning "missing_description" \
+  --action approve --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
 ```
 
 ### Step 3: Batch approve remaining patterns by name
@@ -59,15 +62,16 @@ recurring series by name substring. Try the most prominent words first
 (splitting on spaces). Handle unicode apostrophes with U+2019 character:
 
 ```bash
-./server review batch --name "substring" --action approve \
-  --notes "Real recurring event" --server ... --key ...
+source .env && ./server review batch --name "substring" --action approve \
+  --notes "Real recurring event" --key "$TOGATHER_ADMIN_API_KEY" \
+  --server "$TOGATHER_BASE_URL"
 ```
 
 ### Step 4: Verify and report
 
 ```bash
-./server review stats --server ... --key ...
-./server review queue --group-by source --server ... --key ...
+source .env && ./server review stats --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
+source .env && ./server review queue --group-by source --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
 ```
 
 Report the final stats. If items remain, list their names and sources for
@@ -79,15 +83,14 @@ human review — do not process them individually.
   No `./server review reject <id>`. Always use `batch` with `--source` or `--name`.
 - **NEVER dump queue data to a file and read it back.** The CLI `--json` flag
   returns structured output inline. Parse decisions from terminal output directly.
+- **NEVER use `read_file` on `.env` files.** It is blocked by the security
+  scanner. Use `source .env &&` as a prefix to your terminal commands instead.
 - **Batch approve unknown sources too.** When in doubt about a source, batch-approve
   it. Wrong-geography events will be caught by the scraper config, not the review queue.
 - **Missing description is NOT a reason to reject.** Real events with no
   description are better than no events at all.
 - **409 "already approved" errors are harmless.** Overlapping batches may hit
   the same item twice. Continue processing.
-- **NEVER use `read_file` on `.env` files.** It is blocked by the security
-  scanner. Use `source .env` in a terminal to set environment variables,
-  then pass credentials via `--key` and `--server` flags.
 
 ## Reference Files
 
