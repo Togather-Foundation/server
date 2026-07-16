@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Togather Review Pass — Standard sequence for clearing the review queue.
+# Togather Review Pass — Batch-first queue clearing.
 # Usage: cd ~/Documents/art/togather-server && source .env && ./scripts/review-pass.sh
 #
-# Runs a full review pass: stats → source-by-source approval → check remaining.
+# Strategy: survey → batch approve by source → check remaining → report.
 # Flags: pass --dry-run to preview without executing
 #        pass --source <uuid> to only process one source
 
@@ -37,44 +37,18 @@ $SERVER review queue --group-by source
 if [ -n "$LIMIT_SOURCE" ]; then
   echo ""
   echo "=== Processing single source: $LIMIT_SOURCE ==="
-  $SERVER review queue --source "$LIMIT_SOURCE"
-  echo ""
-  echo "Approving all from source $LIMIT_SOURCE..."
   $SERVER review batch --source "$LIMIT_SOURCE" --action approve \
-    --notes "$PASS_NOTES" $BATCH_ARGS
+    --notes "$PASS_NOTES" $BATCH_ARGS --limit 200
   echo ""
   echo "=== Final Stats ==="
   $SERVER review stats
   exit 0
 fi
 
-# Well-known clean sources — batch approve
-KNOWN_SOURCES=(
-  "11f98d04-f875-403f-92ff-d65eccd4dd7f:TSO"
-  "99a16f47-e8f5-421a-98b0-5eeb85434def:National Ballet"
-  "38289172-50f6-4e58-8ab6-dadf75f54d52:Jazz Venue"
-  "9c76893a-3bd3-49de-8a3a-18a402e71b4d:National Geographic Live"
-)
-
-for entry in "${KNOWN_SOURCES[@]}"; do
-  src="${entry%%:*}"
-  name="${entry##*:}"
-  echo ""
-  echo "=== Processing: $name ($src) ==="
-  $SERVER review batch --source "$src" --action approve \
-    --notes "Known-clean source: $name — $PASS_NOTES" $BATCH_ARGS || true
-done
-
-# Check what's remaining
 echo ""
-echo "=== Remaining After Clean Sources ==="
-$SERVER review stats
-
-# Report recurring series groups
-echo ""
-echo "=== Recurring Series Groups ==="
-$SERVER review queue --group-by name 2>/dev/null | head -30
+echo "=== Remaining Items ==="
+$SERVER review queue --group-by source
 
 echo ""
 echo "=== Review pass complete ==="
-echo "Run individual approvals for remaining items (if any)."
+echo "Run batch-by-source for each remaining source group."
