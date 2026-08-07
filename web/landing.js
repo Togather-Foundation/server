@@ -21,6 +21,38 @@
         }
     }
 
+    // Copy the agent prompt to the clipboard. Reads the code block's text
+    // content at click time so the <this-node> placeholder has already been
+    // resolved to the real origin by resolveNodePlaceholders().
+    function setupCopyPrompt() {
+        const button = document.querySelector('[data-action="copy-prompt"]');
+        if (!button) return;
+
+        const codeBlock = button.closest('div') ? button.closest('div').querySelector('pre code') : null;
+        if (!codeBlock) return;
+
+        button.addEventListener('click', async function () {
+            const text = codeBlock.textContent;
+            try {
+                await navigator.clipboard.writeText(text);
+                const original = button.textContent;
+                button.textContent = 'Copied!';
+                setTimeout(function () {
+                    button.textContent = original;
+                }, 1500);
+            } catch (err) {
+                // Fallback for contexts where the Clipboard API is unavailable.
+                const range = document.createRange();
+                range.selectNodeContents(codeBlock);
+                const selection = window.getSelection();
+                selection.removeAllRanges();
+                selection.addRange(range);
+                document.execCommand('copy');
+                selection.removeAllRanges();
+            }
+        });
+    }
+
     // Fetch live server stats: health, version, and real entity counts so a
     // visitor immediately sees proof of life.
     async function loadStats() {
@@ -86,6 +118,7 @@
 
     document.addEventListener('DOMContentLoaded', function () {
         resolveNodePlaceholders();
+        setupCopyPrompt();
         loadStats();
     });
 })();
