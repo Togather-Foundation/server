@@ -33,12 +33,24 @@
         const codeBlock = wrapper.querySelector('pre code');
         if (!codeBlock) return;
 
-        function flash(label) {
+        function flash(label, isSuccess) {
             const original = button.textContent;
             button.textContent = label;
+            if (isSuccess) {
+                button.style.background = '#d4edda';
+                button.style.borderColor = '#28a745';
+                button.style.color = '#155724';
+            } else {
+                button.style.background = '#f8d7da';
+                button.style.borderColor = '#dc3545';
+                button.style.color = '#721c24';
+            }
             button.disabled = true;
             setTimeout(function () {
                 button.textContent = original;
+                button.style.background = '';
+                button.style.borderColor = '';
+                button.style.color = '';
                 button.disabled = false;
             }, 1500);
         }
@@ -71,11 +83,12 @@
             const text = codeBlock.textContent;
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(
-                    function () { flash('Copied!'); },
-                    function () { flash(copyViaTextarea(text) ? 'Copied!' : 'Copy failed'); }
+                    function () { flash('Copied!', true); },
+                    function () { const ok = copyViaTextarea(text); flash(ok ? 'Copied!' : 'Copy failed', ok); }
                 );
             } else {
-                flash(copyViaTextarea(text) ? 'Copied!' : 'Copy failed');
+                const ok = copyViaTextarea(text);
+                flash(ok ? 'Copied!' : 'Copy failed', ok);
             }
         });
     }
