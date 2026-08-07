@@ -8,7 +8,7 @@ Read this file before writing any plan, spec, or task document.
 Every feature flows through a pipeline:
 
 ```
-Discovery → Plan → Spec → Review → Tasks (beads) → Implementation → Close
+Discovery → Plan → Spec → Review → Tasks (kanban) → Implementation → Close
 ```
 
 Specs are the **source of intent**. Code implements what the spec says. If the spec
@@ -22,7 +22,7 @@ specs/
   NNN-feature-name/       # NNN = zero-padded sequence number
     plan.md               # Architecture, phases, dependencies, risks
     spec.md               # Or spec-phaseN.md for phased delivery
-    tasks.md              # Optional — only if NOT using beads for tracking
+    tasks.md              # Optional — only if NOT using kanban for tracking
     research.md           # Optional — exploratory findings
     data-model.md         # Optional — schema/ERD if complex
     checklists/           # Optional — verification checklists
@@ -80,7 +80,7 @@ architecture yet.
 This is where things go wrong if the documents are too large. The failure mode:
 
 ```
-Big plan (1400 lines) → Big spec (1200 lines) → 20 review issues → 12 beads
+Big plan (1400 lines) → Big spec (1200 lines) → 20 review issues → 12 tickets
                                                   ↑
                                           Problems compound at scale
 ```
@@ -93,7 +93,7 @@ Big plan (1400 lines) → Big spec (1200 lines) → 20 review issues → 12 bead
 | Spec (per phase) | ~600 | Phase is too big — split into sub-phases |
 | Task count per spec | 8 | Split the phase |
 
-**The review checkpoint is mandatory.** Never go from spec → beads without review.
+**The review checkpoint is mandatory.** Never go from spec → tickets without review.
 The cost of finding a naming inconsistency during implementation (touching 8 files)
 is 10x the cost of finding it during review (find-replace in one doc).
 
@@ -240,67 +240,57 @@ when a plan has multiple implementation phases.
 - **Non-goals are as important as goals.** Explicitly state what is deferred and to
   which phase. This prevents scope creep during implementation.
 
-### 3. Tasks → Beads
+### 3. Tasks → Kanban Tickets
 
-**Do NOT maintain tasks.md for new features.** Use beads (`bd`) for all task tracking.
-The older specs (001, 003) have `tasks.md` files from before beads was adopted — these
-are historical artifacts.
+**Do NOT maintain tasks.md for new features.** Track implementation tasks as tickets on
+the `togather` kanban board (via the `hermes-kanban-*` MCP tools). The older specs
+(001, 003) have `tasks.md` files from before kanban was adopted — these are historical
+artifacts.
 
 **The spec's Implementation Tasks section is the bridge.** Every task in the spec
-becomes exactly one bead. The spec task gives the bead its title, description, test
-criteria, and acceptance gate. If a task in the spec is too vague to create a bead
-from, the spec isn't ready — go back and add detail.
+becomes exactly one ticket. The spec task gives the ticket its title, description,
+test criteria, and acceptance gate. If a task in the spec is too vague to create a
+ticket from, the spec isn't ready — go back and add detail.
 
-**Verification step: count check.** After creating all beads, verify:
+**Verification step: count check.** After creating all tickets, verify:
 ```bash
 # Count tasks in spec
 grep -c '^### Task' specs/NNN-feature-name/spec-phaseN.md
 
-# Count beads created (check the epic's dependency count)
-bd show <epic-id>
+# Count tickets created for the phase (see the board's per-status counts)
+# hermes-kanban_board_list board=togather
 ```
 These numbers must match. If they don't, a task was missed.
 
-**Workflow for converting spec tasks to beads:**
+**Workflow for converting spec tasks to tickets:**
 
-```bash
-# 1. Create an epic for the feature/phase
-bd create --title="Phase N: <Feature> — <Summary>" \
-  --description="Epic for spec-phaseN.md. <What it delivers>. Spec: specs/NNN-feature-name/spec-phaseN.md" \
-  --type=feature --priority=1
-
-# 2. Create a bead for each task
-bd create --title="<Task title from spec>" \
-  --description="<What + Test + Acceptance from spec>" \
-  --type=task --priority=1
-
-# 3. Set up dependency graph
-bd dep add <downstream-bead> <upstream-bead>
-
-# 4. Make epic depend on all tasks
-bd dep add <epic-bead> <task-bead>   # repeat for each task
-```
+1. Create one ticket per spec task with `hermes-kanban_ticket_create board=togather`,
+   using the spec's What + Test + Acceptance as the ticket body (Goal / Acceptance /
+   File scope / Constraints / Source).
+2. Use `parents` on `ticket_create` to wire a phase gate: the phase ticket is the
+   parent, child tickets promote when it completes.
+3. Always pass `board: "togather"` — the server default board is `hermes-agent`.
 
 **Tips:**
-- Use a subagent (`subagent_type: "basic"`) to create many beads in batch
-- Use a second subagent to wire up dependencies after all beads exist
-- Map the dependency graph from the spec's task ordering before creating beads
-- Include the spec task number in the bead title or description for traceability
+- Use a subagent (`subagent_type: "basic"`) to create many tickets in batch
+- Include the spec task number in the ticket title or description for traceability
+- `kanban_help` is the lifecycle contract; claims are kernel-enforced and completion is
+  review-gated
 
 **When implementation discovers new tasks:**
 
 During implementation, you will discover tasks that the spec didn't anticipate.
 This is normal and expected. Handle them as follows:
 
-1. **Small (< 1 hour)**: Fold into the current bead's scope. Note it in the bead.
-2. **Medium (1-4 hours)**: Create a new bead, add it as a dependency of the epic,
-   and add a brief note to the spec's Implementation Tasks section.
+1. **Small (< 1 hour)**: Fold into the current ticket's scope. Note it in the ticket.
+2. **Medium (1-4 hours)**: Create a new ticket, parent it under the phase gate, and add
+   a brief note to the spec's Implementation Tasks section.
 3. **Large (> 4 hours)**: This is a sign the phase was under-specified. Create the
-   bead, add it to the epic, AND update the spec with a new Task section. Consider
-   whether the phase needs to be split.
+   ticket, parent it under the phase gate, AND update the spec with a new Task
+   section. Consider whether the phase needs to be split.
 
 **Never let discovered work go untracked.** If you notice something that needs doing
-but you're in the middle of another task, create the bead immediately with a
+but you're in the middle of another task, create the ticket immediately with a
 description of what you noticed and why it matters. You can flesh it out later.
 
 ## Review Process
@@ -373,7 +363,7 @@ Common problems that reviews catch:
 - Export the spec to a review-capable LLM (GPT-5+, Claude Opus, etc.)
 - Ask for a structured review with numbered issues
 - Track issues in a scratch file (NOT committed — delete after resolving)
-- Resolve all issues in the spec before creating beads
+- Resolve all issues in the spec before creating tickets
 - Do NOT create `review-feedback.md` files in the repo — these are working artifacts
 
 ### Review Prompting Template
@@ -534,7 +524,7 @@ Specs are living documents. Update them when:
 
 - Implementation deviates from spec (update spec to match reality)
 - A phase is completed (update Status field, add completion notes)
-- New tasks are discovered during implementation (add to spec, create beads)
+- New tasks are discovered during implementation (add to spec, create tickets)
 - Open questions are resolved (move from Open Questions to the relevant section)
 
 **Status values**: `Planning` → `Draft` → `In Review` → `Approved` → `In Progress`

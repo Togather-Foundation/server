@@ -236,7 +236,7 @@ Consistent across all admin pages:
 ## Questions & Support
 
 **For questions or clarifications:**
-- Check existing beads: `bd list --status open`
+- Check open work on the `togather` kanban board (via the hermes-kanban MCP tools)
 - Review backend API contracts: `../api/openapi.yaml`
 - Test backend endpoints directly: `curl -H "Authorization: Bearer $TOKEN" https://staging.toronto.togather.foundation/api/v1/admin/events`
 

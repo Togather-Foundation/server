@@ -26,21 +26,19 @@ You're building features, fixing bugs, or improving the SEL codebase. These docs
 
 ## Development Workflow
 
+Work is tracked on the Hermes kanban board `togather` (see
+[AGENTS.md](../../AGENTS.md) for the full lifecycle).
+
 ```bash
-# 1. Pick work
-bd ready
-
-# 2. Claim a task
-bd update <id> --status in_progress
-
+# 1. Find work on the kanban board `togather` (hermes-kanban MCP tools)
+# 2. Claim a ticket (ticket_claim, ready→running)
 # 3. Implement with tests
 make test
 
 # 4. Run full CI locally
 make ci
 
-# 5. Update bead and push
-bd close <id> --reason "description"
+# 5. Complete the ticket (ticket_complete — review-gated) and push
 git push
 ```
 
@@ -106,4 +104,4 @@ Interested in how this project uses AI agents for development?
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-08-07

@@ -116,19 +116,17 @@ You can work on MCP server in one terminal while working on other features in an
 # Terminal 1 - MCP Server Development
 cd /path/to/togather/server
 git checkout -b 002-mcp-server
-# Work on MCP beads (server-66za, server-b33c, etc.)
+# Claim and work MCP tickets on the togather kanban board
 
 # Terminal 2 - Other Feature Development  
 cd /path/to/togather/server
 git checkout main  # or another feature branch
-# Work on other beads
+# Work on other kanban tickets
 ```
 
 **Key Points:**
-- Each terminal/OpenCode instance tracks its own beads independently
-- Use `bd dolt push` regularly to push bead state to git
+- Task tracking is shared on the `togather` kanban board (hermes-kanban MCP tools), not per-branch
 - The 002-mcp-server branch is additive, so merge conflicts are minimal
-- Beads are tracked per-branch via git commit metadata
 
 ### Getting Started
 
@@ -141,32 +139,29 @@ Use the standalone MCP server binary or enable the `/mcp` endpoint on the main s
 - **MCP Protocol Docs**: https://modelcontextprotocol.io/docs
 - **mcp-go Library**: https://github.com/mark3labs/mcp-go
 
-## Beads Workflow
+## Kanban Workflow
 
-All MCP work is tracked in beads. View MCP-related beads:
+Work is tracked on the `togather` kanban board via the `hermes-kanban-*` MCP tools:
 
 ```bash
-# List all MCP beads
-bd query 'title~"mcp" AND status=open'
+# Orient
+hermes-kanban_board_list board=togather
+hermes-kanban_ticket_list board=togather
 
-# Show bead details
-bd show server-66za
+# Read a ticket
+hermes-kanban_ticket_get board=togather id=<id>
 
-# Check what's ready to work
-bd ready
-
-# Work on a bead
-bd update server-66za --status in_progress
-# ... do work ...
-bd close server-66za --reason "Added mcp-go dependency and verified compatibility"
-bd dolt push
+# Claim before editing (ready→running), comment as you work, complete when done
+hermes-kanban_ticket_claim board=togather id=<id>
+hermes-kanban_ticket_comment board=togather id=<id> body="..."
+hermes-kanban_ticket_complete board=togather id=<id>
 ```
 
 ## Dependencies
 
-### Beads Summary
+### Work Summary
 
-All MCP beads have been completed. See `bd query 'title~"mcp" AND status=closed'` for full history.
+All MCP implementation work has been completed and merged.
 
 ## Testing Strategy
 
@@ -204,7 +199,7 @@ All MCP beads have been completed. See `bd query 'title~"mcp" AND status=closed'
 
 - MCP Protocol: https://modelcontextprotocol.io/docs
 - mcp-go SDK: https://github.com/mark3labs/mcp-go
-- Project beads: `bd list --status open | grep -i mcp`
+- Project board: `hermes-kanban_ticket_list board=togather`
 - Implementation plan: [plan.md](./plan.md)
 
 ---

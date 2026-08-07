@@ -114,7 +114,7 @@ These resources are useful for everyone:
 
 ### SEL Contributor
 1. Read [Development Guide](contributors/development.md)
-2. Pick a task: `bd ready`
+2. Pick a task from the kanban board `togather` (see [AGENTS.md](../AGENTS.md))
 3. Run tests: `make ci`
 4. Follow TDD workflow in [Testing Guide](contributors/testing.md)
 

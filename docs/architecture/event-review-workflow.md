@@ -606,7 +606,8 @@ Runs daily via River (`cleanup_review_queue.go:37`). Three phases:
 
 ## Implementation Tasks
 
-See related beads for implementation details.
+Implementation tasks are tracked on the `togather` kanban board; see the issue
+history for completed work details.
 
 ---
 

@@ -23,7 +23,7 @@ Your scope is strictly: inspect pages, write/update YAML configs, and update doc
 (`docs/`, `configs/sources/README.md`). If you discover a scraper limitation or missing
 feature (e.g. attribute extraction, depth-2 scraping, Shadow DOM traversal), **report it
 as an Issue** in your RESULT output — do not attempt to implement a solution. The
-orchestrator will create beads for code work and delegate to the appropriate agent.
+orchestrator will create kanban tickets for code work and delegate to the appropriate agent.
 
 ## Working environment
 

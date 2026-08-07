@@ -1417,7 +1417,7 @@ identifying which sources need config fixes before a live scrape.
 **When to use it:**
 - Before a staging scrape to know which sources are healthy
 - After modifying multiple configs to verify regressions haven't been introduced
-- When triaging broken sources to create beads or fix-source batches
+- When triaging broken sources to create kanban tickets or fix-source batches
 
 ```bash
 # Capture both stdout (table) and stderr (JSON logs) into separate files

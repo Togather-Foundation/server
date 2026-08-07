@@ -30,7 +30,7 @@ decision record that becomes a future autonomous resolution path.
 | River job queue | Production | 10 job kinds, retry policies, metrics |
 | Health checks | Production | DB, migrations, job queue, JSON-LD contexts |
 | OpenCode commands | Working | `/orchestrate`, `/configure-source`, `/release` |
-| Beads task tracking | Working | Local Dolt DB, persistent across sessions |
+| Kanban task tracking | Working | Hermes kanban board `togather` (shared queue) |
 
 ### What's Missing for Autonomous Operation
 

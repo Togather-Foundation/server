@@ -6,7 +6,7 @@ Go 1.24+ SEL backend (Togather server). PostgreSQL 16+/PostGIS, SQLc, River, net
 
 - Spec driven red/green TDD.
 - Use parallel tools whenever applicable.
-- Use `bd` (beads) for task tracking — not markdown todo lists.
+- Use the kanban board `togather` (via `hermes-kanban-*` MCP tools) for task tracking — not markdown todo lists, not beads.
 - Use `context7` MCP server for external library docs.
 - Act without confirmation unless blocked by missing info or irreversibility.
 - When stuck (cryptic errors, multiple failed approaches): escalate via Task tool with `subagent_type: "diagnose"`.
@@ -170,26 +170,26 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 
 **Testing:** see `tests/AGENTS.md`.
 
-## Beads Workflow
+## Kanban (shared board)
 
-```bash
-bd ready                             # find unblocked work
-bd update <id> --claim               # atomically claim (assignee + in_progress)
-bd close <id> --reason "..."         # close when done
-```
+Project work is tracked on the Hermes kanban board `togather` via the kanban MCP
+tools (`hermes-kanban-*`). Kanban is the shared queue; beads (`bd`) are retired.
 
-Beads state is persisted in a local Dolt SQL database (`.beads/dolt/`). Every `bd` write auto-commits to Dolt — no manual sync or flush is needed.
-
-**This project has no Dolt remote configured.** `bd dolt push` / `bd dolt pull` will fail. That's fine — beads state lives locally and doesn't need to be shared via Dolt.
-
-**Useful commands beyond the basics:**
-- `bd status` — project health (open/closed/blocked counts)
-- `bd backup` — export JSONL backup to `.beads/backup/`
-- `bd remember "insight"` — persistent memory across sessions
-- `bd memories <keyword>` — search remembered insights
-- `bd doctor` — diagnose configuration problems
-
-For full workflow context: `bd prime`.
+- **Always pass `board: "togather"` on every kanban MCP call.** The server default is
+  `hermes-agent`; omitting the board silently lands tickets in the wrong queue.
+- Orient with `board_list`; read with `ticket_list`/`ticket_get`; `kanban_help` is the
+  lifecycle contract.
+- Tickets must be self-contained: **Goal** · **Acceptance** (verification commands +
+  expected output) · **File scope** (exact paths) · **Constraints** (standing rules) ·
+  **Source** (who asked, when, requirement verbatim — never a pointer to a file outside
+  the repo).
+- Workflow: `ticket_create` (lands `ready`; `triage: true` for triage) → `ticket_claim`
+  right before editing (ready→running) → `ticket_comment` as you work → `ticket_complete`
+  when done. Completion is review-gated: the ticket lands `blocked` (review-required)
+  for a human to flip, not `done`.
+- **Claims TTL ~15 min.** Re-claim before `ticket_complete` if yours expired — completion
+  refuses an unclaimed ticket.
+- Never put credentials in ticket bodies — write `***`.
 
 ## Session Close Protocol
 
@@ -197,7 +197,7 @@ Work is NOT complete until docs are updated and `git push` succeeds.
 
 ```bash
 scripts/agent-run.sh make ci-fast     # quality gate (if code changed)
-bd close <id> --reason "..."          # close finished beads
+# close finished kanban tickets: hermes-kanban_ticket_complete board=togather id=<id>
 git pull --rebase
 git push
 git status                            # must show "up to date with origin"
@@ -230,7 +230,7 @@ scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
 
 - Feature branches: always use `--version HEAD`, never omit it
 - New env vars: run `./deploy/scripts/env-audit.sh staging` before deploying
-- Do NOT create beads for deployment tasks
+- Do NOT create kanban tickets for deployment tasks
 
 Docs:
 - `docs/deploy/remote-deployment.md` — how `deploy.sh` works, options, first-time setup

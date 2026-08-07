@@ -27,12 +27,13 @@ and cleanup that the core workflow plugs into phases 3–9.
 - **CI runner:** `scripts/agent-run.sh` wraps all build/test/deploy commands
 - **Code review:** delegate to `@beads-code-reviewer`
 - **Problem diagnosis:** delegate to `@diagnose`
+- **Task tracking:** kanban board `togather` via `hermes-kanban-*` MCP tools (not beads)
 
 ## Phase 3 — Worktree Setup
 
 ```
-WORKTREE=".worktrees/togather-<primary-bead-id>"
-git worktree add -b <type>/<primary-bead-id>-<short-description> "$WORKTREE" main
+WORKTREE=".worktrees/togather-<ticket-id>"
+git worktree add -b <type>/<ticket-id>-<short-description> "$WORKTREE" main
 scripts/worktree-setup.sh "$WORKTREE"
 ```
 

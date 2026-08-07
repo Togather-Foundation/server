@@ -510,7 +510,7 @@ We take security seriously and appreciate responsible disclosure of vulnerabilit
 - **Architecture Documentation**: [architecture.md](./architecture.md) § 7.1 (Security Hardening)
 - **Code Review Report**: `../../CODE_REVIEW.md`
 - **Setup Guide**: `../../SETUP.md` (Security Configuration section)
-- **Issue Tracker**: Run `bd list --type bug --priority 0,1` for active security issues
+- **Issue Tracker**: Active security issues are tracked on the `togather` kanban board (via the hermes-kanban MCP tools); GitHub security advisories apply for the repo itself
 
 ---
 

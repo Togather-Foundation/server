@@ -1,8 +1,8 @@
 # Development Setup
 
-# opencode + beads + spec kit
+# opencode + kanban + spec kit
 
-This setup uses Ubuntu, with Spec kit and beads and the copilot model with opencode and openskills.
+This setup uses Ubuntu, with Spec kit and the Hermes kanban MCP server with opencode and openskills.
 
 Note: Using '.agent/' directory with a symlink to '.claude/' for compatibility.
 
@@ -19,24 +19,10 @@ Note: Using '.agent/' directory with a symlink to '.claude/' for compatibility.
    4. Make symlink for compatibility: `ln -s .agent .claude`
 4. Install Spec Kit
    1. `uv tool install specify-cli --from git+https://github.com/github/spec-kit.git`
-5. Install beads
-   1. `curl -fsSL https://raw.githubusercontent.com/steveyegge/beads/main/scripts/install.sh | bash`
-   2. `bd init`
-   3. `bd doctor --fix`
-      1. Install beads skill manually
-         1. `npx openskills install steveyegge/beads --universal`
-   4. Install opencode-beads
-      1. Add to your OpenCode config (`~/.config/opencode/opencode.json`):
-         1. ```
-            {
-               "plugin": ["opencode-beads"]
-            }
-            ```
-   5. `bd quickstart`
-6. Set up beads for separate sync branch
-   1. 'bd config set sync.branch beads-sync'
-   2. `git branch -c beads-sync`
-   3. `bd hooks install`
+5. Configure the Hermes kanban MCP server (task tracking on the shared `togather` board)
+   1. Add the `hermes-kanban` MCP server to your OpenCode config (`~/.config/opencode/opencode.json` or project `opencode.json`). See the Hermes docs for the current endpoint and auth setup.
+   2. Verify connectivity: list boards and confirm `togather` appears (`hermes-kanban_board_list`).
+   3. Full workflow: `kanban_help` — claims are kernel-enforced, completion is review-gated.
 
 
 Notes for setting up new projects:

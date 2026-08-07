@@ -129,8 +129,8 @@ Useful footer tokens:
 
 | Token | Purpose |
 |-------|---------|
-| `Closes srv-XXXX` | Links to and closes a beads issue |
-| `Refs srv-XXXX` | Links to a beads issue without closing it |
+| `Closes #<gh-issue>` | Links to and closes a GitHub issue |
+| `Refs #<gh-issue>` | Links to a GitHub issue without closing it |
 | `BREAKING CHANGE: ...` | Documents a breaking change |
 | `Co-authored-by: Name <email>` | Credit co-authors |
 

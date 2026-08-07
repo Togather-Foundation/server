@@ -32,7 +32,7 @@ This document provides an architectural overview of the Togather Shared Events L
 The Togather SEL backend follows **Specification Driven Development** with these core principles:
 
 ### Observability Over Opacity
-Everything must be inspectable through CLI interfaces. The system provides bd (beads) for issue tracking, structured logging with zerolog, and explicit SQL queries via SQLc instead of opaque ORMs.
+Everything must be inspectable through CLI interfaces. The system provides a shared kanban board for issue tracking, structured logging with zerolog, and explicit SQL queries via SQLc instead of opaque ORMs.
 
 ### Simplicity Over Cleverness
 Start simple, add complexity only when proven necessary. The architecture uses a single Go service with modular packages rather than microservices. External dependencies are minimized (PostgreSQL + optional acceleration layers).

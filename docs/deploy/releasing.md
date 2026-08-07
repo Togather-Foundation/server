@@ -275,9 +275,7 @@ For detailed rollback procedures, see `docs/deploy/rollback.md`.
 NODE_DOMAIN=$(grep '^NODE_DOMAIN=' .deploy.conf.production | cut -d= -f2)
 curl "https://${NODE_DOMAIN}/version" | jq .
 
-# Close any release-related beads
-bd query 'status=open'
-# bd close <id> --reason "Released in vX.Y.Z"
+# Close any release-related kanban tickets (hermes-kanban MCP tools, board `togather`)
 
 # Push any final state changes
 git push

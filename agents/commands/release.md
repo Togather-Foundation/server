@@ -243,9 +243,8 @@ make test-production-smoke
 ## Step 10: Post-Release
 
 ```bash
-# Update beads: close any release-related issues
-bd query 'title~"release" AND status=open'
-# bd close <id> --reason "Released in v$VERSION"
+# Close any release-related kanban tickets (hermes-kanban MCP tools, board `togather`)
+# hermes-kanban_ticket_list board=togather
 
 # Announce to stakeholders
 ```
