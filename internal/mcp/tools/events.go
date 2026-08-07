@@ -118,6 +118,12 @@ func (t *EventTools) EventsTool() mcp.Tool {
 					"type":        "string",
 					"description": "Pagination cursor from a previous response (alias: after)",
 				},
+				"context": map[string]interface{}{
+					"type":        "string",
+					"description": "JSON-LD @context emission mode for list results. 'item' (default) emits a full @context block on every event so items stay standalone; 'document' emits a single top-level @context scoping all events, roughly halving result size for output-budget constrained clients.",
+					"enum":        []string{"document", "item"},
+					"default":     "item",
+				},
 			},
 		},
 	}
@@ -141,6 +147,7 @@ func (t *EventTools) EventsHandler(ctx context.Context, request mcp.CallToolRequ
 		Region    string `json:"region"`
 		Limit     int    `json:"limit"`
 		Cursor    string `json:"cursor"`
+		Context   string `json:"context"`
 	}{
 		Limit: 50,
 	}
@@ -155,7 +162,7 @@ func (t *EventTools) EventsHandler(ctx context.Context, request mcp.CallToolRequ
 	}
 
 	// Otherwise, list events with filters
-	return t.listEvents(ctx, args.Query, args.StartDate, args.EndDate, args.Location, args.City, args.Region, args.Limit, args.Cursor)
+	return t.listEvents(ctx, args.Query, args.StartDate, args.EndDate, args.Location, args.City, args.Region, args.Limit, args.Cursor, args.Context)
 }
 
 // getEventByID retrieves a single event by ULID.
@@ -241,7 +248,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 
 // listEvents retrieves a list of events with optional filters and pagination.
 // Supports filtering by query text, date range, and location parameters.
-func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, location, city, region string, limit int, cursor string) (*mcp.CallToolResult, error) {
+func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, location, city, region string, limit int, cursor string, contextMode string) (*mcp.CallToolResult, error) {
 	const maxListLimit = 200
 
 	// Enforce limit caps
@@ -251,6 +258,10 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 	if limit > maxListLimit {
 		limit = maxListLimit
 	}
+
+	// Document mode emits a single top-level @context; item mode (default)
+	// keeps a full @context on every item so slices stay standalone.
+	documentMode := strings.EqualFold(strings.TrimSpace(contextMode), "document")
 
 	values := url.Values{}
 	if strings.TrimSpace(query) != "" {
@@ -290,12 +301,15 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		items = append(items, buildListItem(event, t.baseURL, t.placeResolver, t.orgResolver, t.logger))
+		items = append(items, buildListItem(event, t.baseURL, t.placeResolver, t.orgResolver, t.logger, !documentMode))
 	}
 
 	response := map[string]any{
 		"items":       items,
 		"next_cursor": result.NextCursor,
+	}
+	if documentMode {
+		response["@context"] = defaultContext()
 	}
 
 	resultJSON, err := mcp.NewToolResultJSON(response)
@@ -391,11 +405,13 @@ func (t *EventTools) AddEventHandler(ctx context.Context, request mcp.CallToolRe
 	return resultJSON, nil
 }
 
-func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver, logger zerolog.Logger) map[string]any {
+func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver, logger zerolog.Logger, includeContext bool) map[string]any {
 	item := map[string]any{
-		"@context": defaultContext(),
-		"@type":    "Event",
-		"name":     event.Name,
+		"@type": "Event",
+		"name":  event.Name,
+	}
+	if includeContext {
+		item["@context"] = defaultContext()
 	}
 	if uri := buildEventURI(baseURL, event.ULID); uri != "" {
 		item["@id"] = uri

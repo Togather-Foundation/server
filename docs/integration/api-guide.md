@@ -416,6 +416,7 @@ GET /api/v1/events
 | `q` | string | Full-text search query (searches name and description) |
 | `keywords` | string | Comma-separated keywords |
 | `domain` | string | Event domain: `arts`, `sports`, `community`, etc. |
+| `context` | string | JSON-LD context emission mode: `item` (default) or `document`. Use `context=document` to emit a single top-level `@context` scoping all items instead of a full `@context` block per item — roughly halves list response size for clients with fixed output budgets. |
 
 #### Response
 
