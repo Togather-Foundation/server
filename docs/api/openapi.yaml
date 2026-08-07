@@ -2836,6 +2836,9 @@ components:
       in: query
       description: >
         Filter events starting on or before this date (ISO8601, e.g. 2026-06-30).
+        Inclusive of the entire endDate day: events starting any time on that day
+        (up to 23:59:59 in the server timezone) are included. To restrict to a
+        single day, pass the same value for both startDate and endDate.
         Snake_case alias end_date is accepted but triggers a warnings entry in the response.
       schema:
         type: string

@@ -124,7 +124,51 @@ func TestParseFiltersDateSuccess(t *testing.T) {
 	require.NotNil(t, filters.StartDate)
 	require.NotNil(t, filters.EndDate)
 	require.Equal(t, time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), *filters.StartDate)
-	require.Equal(t, time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), *filters.EndDate)
+	// endDate advances to next-day midnight so the SQL bound covers the entire
+	// endDate day (events up to 23:59:59 on 2024-01-02).
+	require.Equal(t, time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC), *filters.EndDate)
+}
+
+func TestParseFilters_EndDateIncludesEntireDay(t *testing.T) {
+	// endDate=2026-08-08 must include events starting any time on that day
+	// (up to 23:59:59), so the stored bound is next-day midnight.
+	values := url.Values{}
+	values.Set("endDate", "2026-08-08")
+
+	filters, _, _, err := ParseFilters(values, nil)
+
+	require.NoError(t, err)
+	require.Nil(t, filters.StartDate)
+	require.NotNil(t, filters.EndDate)
+	require.Equal(t, time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC), *filters.EndDate)
+}
+
+func TestParseFilters_EndDateSameDayAsStartDate(t *testing.T) {
+	// startDate == endDate is a valid same-day range: no error, no collapse.
+	// endDate still advances to next-day midnight so the whole day is included.
+	values := url.Values{}
+	values.Set("startDate", "2026-08-08")
+	values.Set("endDate", "2026-08-08")
+
+	filters, _, _, err := ParseFilters(values, nil)
+
+	require.NoError(t, err)
+	require.NotNil(t, filters.StartDate)
+	require.NotNil(t, filters.EndDate)
+	require.Equal(t, time.Date(2026, 8, 8, 0, 0, 0, 0, time.UTC), *filters.StartDate)
+	require.Equal(t, time.Date(2026, 8, 9, 0, 0, 0, 0, time.UTC), *filters.EndDate)
+}
+
+func TestParseFilters_EndDateDayBeforeStartDate(t *testing.T) {
+	// endDate one day before startDate is still invalid — the day advance must
+	// not mask a genuine endDate < startDate ordering.
+	values := url.Values{}
+	values.Set("startDate", "2026-08-09")
+	values.Set("endDate", "2026-08-08")
+
+	_, _, _, err := ParseFilters(values, nil)
+
+	assertFilterError(t, err, "endDate", "must be on or after startDate")
 }
 
 func TestParseFiltersVenueULIDValidation(t *testing.T) {
