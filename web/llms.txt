@@ -78,6 +78,12 @@ snake_case alias (e.g. start_date, venue_id), the server will accept it and
 apply it, but the response will include a "warnings" array telling you the
 correct canonical name. Use camelCase to suppress warnings.
 
+Unknown query parameters (e.g. lat/lng/radius_km) are IGNORED, not rejected —
+you get 200 with results that were never filtered by them. Check the
+"warnings" array after every call: if a param you sent is listed there, it did
+not filter your results. See /api/v1/openapi.json for the full supported
+parameter list.
+
 Default date behaviour: when neither startDate nor endDate is supplied, the
 server automatically applies startDate=today (server timezone) so that past
 events are excluded. Pass startDate explicitly to override, or pass endDate

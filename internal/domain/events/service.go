@@ -136,7 +136,39 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 	}
 	pagination.After = after
 
+	appendUnknownParamWarnings(values, &warnings)
+
 	return filters, pagination, warnings, nil
+}
+
+// knownFilterParams is the complete set of query parameters the events list
+// endpoint accepts, including snake_case aliases. Any other parameter is
+// silently ignored by the API; surface that so clients don't trust results
+// that were never filtered by their intended param (e.g. a guessed geo param).
+var knownFilterParams = map[string]bool{
+	"startDate": true, "start_date": true,
+	"endDate": true, "end_date": true,
+	"venueId": true, "venue_id": true,
+	"organizerId": true, "organizer_id": true,
+	"state": true, "lifecycle_state": true,
+	"domain": true, "event_domain": true,
+	"city": true, "region": true,
+	"q": true, "search": true,
+	"keywords": true, "limit": true, "after": true,
+}
+
+// appendUnknownParamWarnings adds a warning for every query parameter that is
+// not recognised by the events list endpoint. Recognised parameters are still
+// processed as before; this only surfaces typos and unsupported params (like
+// proximity search) instead of silently dropping them.
+func appendUnknownParamWarnings(values url.Values, warnings *[]string) {
+	for key := range values {
+		if knownFilterParams[key] {
+			continue
+		}
+		*warnings = append(*warnings,
+			fmt.Sprintf("Unrecognised query parameter %q — it was ignored. See /api/v1/openapi.json for supported parameters.", key))
+	}
 }
 
 func parseDate(field string, value string, loc *time.Location) (*time.Time, error) {

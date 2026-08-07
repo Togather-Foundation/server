@@ -68,6 +68,51 @@ func TestParseFiltersDateFormat(t *testing.T) {
 	assertFilterError(t, err, "startDate", "must be ISO8601 date")
 }
 
+func TestParseFiltersWarnsOnUnknownParams(t *testing.T) {
+	values := url.Values{}
+	values.Set("city", "Toronto")
+	values.Set("lat", "43.6656")
+	values.Set("lng", "-79.4113")
+	values.Set("radius_km", "2")
+
+	_, _, warnings, err := ParseFilters(values, nil)
+
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(warnings, " "), "lat")
+	require.Contains(t, strings.Join(warnings, " "), "lng")
+	require.Contains(t, strings.Join(warnings, " "), "radius_km")
+}
+
+func TestParseFiltersNoWarningsForKnownParams(t *testing.T) {
+	validCursor := paginationpkg.EncodeEventCursor(time.Unix(1706886000, 0), "01HYX3KQW7ERTV9XNBM2P8QJZF")
+
+	values := url.Values{}
+	values.Set("startDate", "2024-01-01")
+	values.Set("endDate", "2024-01-31")
+	values.Set("venueId", "01HYX3KQW7ERTV9XNBM2P8QJZF")
+	values.Set("organizerId", "01HYX3KQW7ERTV9XNBM2P8QJZF")
+	values.Set("state", "published")
+	values.Set("domain", "music")
+	values.Set("city", "Toronto")
+	values.Set("region", "ON")
+	values.Set("q", "jazz")
+	values.Set("search", "jazz")
+	values.Set("keywords", "jazz,night")
+	values.Set("limit", "20")
+	values.Set("after", validCursor)
+	values.Set("start_date", "2024-01-02")
+	values.Set("end_date", "2024-01-03")
+	values.Set("venue_id", "01HYX3KQW7ERTV9XNBM2P8QJZF")
+	values.Set("organizer_id", "01HYX3KQW7ERTV9XNBM2P8QJZF")
+	values.Set("lifecycle_state", "published")
+	values.Set("event_domain", "music")
+
+	_, _, warnings, err := ParseFilters(values, nil)
+
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+}
+
 func TestParseFiltersDateSuccess(t *testing.T) {
 	values := url.Values{}
 	values.Set("startDate", "2024-01-01")

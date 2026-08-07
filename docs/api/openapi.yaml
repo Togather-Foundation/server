@@ -3783,9 +3783,12 @@ components:
           items:
             type: string
           description: >
-            Parameter alias warnings. Present when a snake_case alias (e.g. start_date) was
-            used instead of the canonical camelCase name. Each entry names the alias used and
-            the correct parameter name. Omitted when no aliases were detected.
+            Parameter warnings. Present when a snake_case alias (e.g. start_date) was used
+            instead of the canonical camelCase name, OR when an unrecognised query parameter
+            was supplied and ignored (e.g. a guessed proximity param like lat/lng/radius_km).
+            Each entry names the offending parameter. Omitted when nothing was detected.
+            Unrecognised parameters are never rejected — the list is returned unfiltered by
+            them — so check warnings to avoid trusting results that were not filtered as intended.
 
     PlaceListResponse:
       description: Paginated list of places (venues) with cursor-based pagination
