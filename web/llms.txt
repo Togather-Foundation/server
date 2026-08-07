@@ -17,7 +17,7 @@ If your agent runtime supports MCP (Claude Desktop, OpenCode, etc.), connect dir
 for structured tool access — one call returns typed, filtered results with no JSON parsing.
 
 Protocol: Model Context Protocol (MCP), streamable HTTP transport
-Endpoint: /mcp
+Endpoint: <base-url>/mcp
 Auth: API key required (Bearer token)
 Get a free key: /dev/login (GitHub OAuth, instant)
 
@@ -26,10 +26,20 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 > and for accessing the /mcp gateway; it also enables per-agent rate limits and
 > usage stats. Read-only agents can skip keys entirely.
 
-> Setup note for agents: the server does NOT implement OAuth. Register /mcp as a
-> LOCAL MCP server with an `Authorization: Bearer <key>` header. Do not use a
-> claude.ai remote connector — it cannot send that header and will fail with
-> "still unauthorized" (that is expected, not a login problem).
+> Key env var: expected at `$TOGATHER_MCP_API_KEY` (or `SEL_API_KEY`). If unset,
+> create one at /dev/login (GitHub OAuth, instant) and export it or paste it into
+> your config header.
+
+> Setup note for agents: the server does NOT implement OAuth. Register /mcp in
+> your local config file (NOT a claude.ai remote connector — it cannot send a
+> header and will fail with "still unauthorized"). In opencode use `type: "remote"`;
+> in Claude Desktop add a remote server under `mcpServers`. Example:
+>   "togather-sel": { "type": "remote", "url": "https://staging.toronto.togather.foundation/mcp",
+>     "headers": { "Authorization": "Bearer {env:TOGATHER_MCP_API_KEY}" }, "enabled": true }
+> (opencode substitutes `{env:VAR}`; shell `${VAR}` is not interpolated.)
+
+> Session handshake: `initialize` returns an `mcp-session-id` response header —
+> send it back as `Mcp-Session-Id` on every later call (tools/list, tools/call).
 
 ### Available MCP Tools
 
