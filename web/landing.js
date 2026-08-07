@@ -43,34 +43,41 @@
             }, 1500);
         }
 
+        // Hidden textarea + execCommand is the most widely-compatible copy
+        // method; it works in embedded webviews and contexts where the modern
+        // Clipboard API is unavailable or permission-denied.
+        function copyViaTextarea(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.setAttribute('readonly', '');
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            ta.style.top = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            ta.setSelectionRange(0, ta.value.length);
+            let ok = false;
+            try {
+                ok = document.execCommand('copy');
+            } catch (err) {
+                ok = false;
+            }
+            document.body.removeChild(ta);
+            return ok;
+        }
+
         button.addEventListener('click', function () {
             const text = codeBlock.textContent;
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(text).then(
                     function () { flash('Copied!'); },
-                    function () { copyFallback(text); }
+                    function () { flash(copyViaTextarea(text) ? 'Copied!' : 'Copy failed'); }
                 );
             } else {
-                copyFallback(text);
+                flash(copyViaTextarea(text) ? 'Copied!' : 'Copy failed');
             }
         });
-
-        function copyFallback(text) {
-            // Selection-based fallback for contexts where the Clipboard API is
-            // unavailable or permission-denied.
-            try {
-                const range = document.createRange();
-                range.selectNodeContents(codeBlock);
-                const selection = window.getSelection();
-                selection.removeAllRanges();
-                selection.addRange(range);
-                const ok = document.execCommand('copy');
-                selection.removeAllRanges();
-                flash(ok ? 'Copied!' : 'Copy failed');
-            } catch (err) {
-                flash('Copy failed');
-            }
-        }
     }
 
     // Fetch live server stats: health, version, and real entity counts so a
