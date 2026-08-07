@@ -44,6 +44,11 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 - api_keys           — list API keys and usage statistics for the authenticated developer
 - manage_api_key     — create or revoke API keys (requires API key)
 
+MCP tools use snake_case params (query, start_date, end_date, cursor) but also
+accept the REST camelCase aliases (q, startDate, endDate, after) — either
+spelling works, so you never need to rename params when moving between the REST
+API and MCP.
+
 ### MCP Resources
 
 - JSON-LD context for events

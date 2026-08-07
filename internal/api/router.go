@@ -935,6 +935,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	handler := middleware.SecurityHeaders(requireHTTPS)(mux)
 	handler = middleware.CORS(cfg.CORS, logger)(handler)
 	handler = middleware.CorrelationID(logger)(handler)
+	handler = middleware.OpenAPILink(handler)
 	handler = middleware.RequestLogging(logger)(handler)
 	handler = middleware.RateLimit(cfg.RateLimit)(handler)
 	handler = metrics.HTTPMiddleware(handler)

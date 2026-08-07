@@ -87,15 +87,15 @@ func (t *EventTools) EventsTool() mcp.Tool {
 				},
 				"query": map[string]interface{}{
 					"type":        "string",
-					"description": "Search query to filter events by name or description",
+					"description": "Search query to filter events by name or description (alias: q)",
 				},
 				"start_date": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter events starting on or after this date (ISO8601 format: YYYY-MM-DD)",
+					"description": "Filter events starting on or after this date (ISO8601 format: YYYY-MM-DD). Alias: startDate",
 				},
 				"end_date": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter events starting on or before this date (ISO8601 format: YYYY-MM-DD)",
+					"description": "Filter events starting on or before this date (ISO8601 format: YYYY-MM-DD). Alias: endDate",
 				},
 				"location": map[string]interface{}{
 					"type":        "string",
@@ -116,7 +116,7 @@ func (t *EventTools) EventsTool() mcp.Tool {
 				},
 				"cursor": map[string]interface{}{
 					"type":        "string",
-					"description": "Pagination cursor from a previous response",
+					"description": "Pagination cursor from a previous response (alias: after)",
 				},
 			},
 		},
@@ -145,14 +145,8 @@ func (t *EventTools) EventsHandler(ctx context.Context, request mcp.CallToolRequ
 		Limit: 50,
 	}
 
-	if request.Params.Arguments != nil {
-		data, err := json.Marshal(request.Params.Arguments)
-		if err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-		if err := json.Unmarshal(data, &args); err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
+	if err := unmarshalArgs(request, &args); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 	}
 
 	// If id is provided, get single event

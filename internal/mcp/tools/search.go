@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -96,14 +95,8 @@ func (t *SearchTools) SearchHandler(ctx context.Context, request mcp.CallToolReq
 		Limit: defaultSearchLimit,
 	}
 
-	if request.Params.Arguments != nil {
-		data, err := json.Marshal(request.Params.Arguments)
-		if err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-		if err := json.Unmarshal(data, &args); err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
+	if err := unmarshalArgs(request, &args); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 	}
 
 	query := strings.TrimSpace(args.Query)

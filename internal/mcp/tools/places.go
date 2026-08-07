@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/url"
 	"strconv"
@@ -62,15 +61,15 @@ func (t *PlaceTools) PlacesTool() mcp.Tool {
 				},
 				"near_lat": map[string]interface{}{
 					"type":        "number",
-					"description": "Latitude for proximity search (requires near_lon, must be between -90 and 90)",
+					"description": "Latitude for proximity search (requires near_lon, must be between -90 and 90). Alias: nearLat",
 				},
 				"near_lon": map[string]interface{}{
 					"type":        "number",
-					"description": "Longitude for proximity search (requires near_lat, must be between -180 and 180)",
+					"description": "Longitude for proximity search (requires near_lat, must be between -180 and 180). Alias: nearLon",
 				},
 				"radius": map[string]interface{}{
 					"type":        "number",
-					"description": "Search radius in kilometers (default: 10, max: 100)",
+					"description": "Search radius in kilometers (default: 10, max: 100). Alias: radiusKm",
 					"default":     10,
 				},
 				"limit": map[string]interface{}{
@@ -106,14 +105,8 @@ func (t *PlaceTools) PlacesHandler(ctx context.Context, request mcp.CallToolRequ
 		Limit: 50,
 	}
 
-	if request.Params.Arguments != nil {
-		data, err := json.Marshal(request.Params.Arguments)
-		if err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-		if err := json.Unmarshal(data, &args); err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
+	if err := unmarshalArgs(request, &args); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 	}
 
 	// If id is provided, get single place

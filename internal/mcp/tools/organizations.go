@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/url"
 	"strconv"
@@ -90,14 +89,8 @@ func (t *OrganizationTools) OrganizationsHandler(ctx context.Context, request mc
 		Limit: 50,
 	}
 
-	if request.Params.Arguments != nil {
-		data, err := json.Marshal(request.Params.Arguments)
-		if err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
-		if err := json.Unmarshal(data, &args); err != nil {
-			return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
-		}
+	if err := unmarshalArgs(request, &args); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 	}
 
 	// If id is provided, get single organization

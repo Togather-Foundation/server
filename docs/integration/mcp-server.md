@@ -101,6 +101,25 @@ Examples:
 {"id": "01KGSV7H8ZDHTYTV6QKFGMFFMZ"}
 ```
 
+### REST-style parameter aliases
+
+MCP tools use snake_case parameter names, while the REST API uses camelCase.
+To avoid silent no-op filters when carrying names across interfaces, the MCP
+tools **accept both conventions** — REST-style aliases are normalized to their
+snake_case equivalents automatically:
+
+| MCP (snake_case) | REST alias |
+|---|---|
+| `query` | `q` |
+| `start_date` | `startDate` |
+| `end_date` | `endDate` |
+| `cursor` | `after` |
+| `near_lat` | `nearLat` |
+| `near_lon` | `nearLon` |
+| `radius` | `radiusKm` |
+
+When both spellings are supplied, the explicit snake_case value wins.
+
 ## Resources
 
 | Resource | Description |
