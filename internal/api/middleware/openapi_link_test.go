@@ -9,7 +9,7 @@ import (
 )
 
 func TestOpenAPILinkSetsHeaderOnAPIResponses(t *testing.T) {
-	h := OpenAPILink(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := OpenAPILink("http://sel.example.com")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -24,21 +24,26 @@ func TestOpenAPILinkSetsHeaderOnAPIResponses(t *testing.T) {
 	require.Contains(t, link, `type="application/json"`)
 }
 
-func TestOpenAPILinkHTTPS(t *testing.T) {
-	h := OpenAPILink(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// TestOpenAPILinkUsesConfiguredBaseURL verifies the header uses the configured
+// SERVER_BASE_URL (which is https behind the TLS-terminating proxy), not the
+// request scheme.
+func TestOpenAPILinkUsesConfiguredBaseURL(t *testing.T) {
+	h := OpenAPILink("https://staging.toronto.togather.foundation")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "https://sel.example.com/api/v1/events", nil)
+	// Request arrives over plain HTTP internally (proxy terminates TLS).
+	req := httptest.NewRequest(http.MethodGet, "http://staging.internal/api/v1/events", nil)
 	res := httptest.NewRecorder()
 	h.ServeHTTP(res, req)
 
 	link := res.Header().Get("Link")
-	require.Contains(t, link, "<https://sel.example.com/api/v1/openapi.json>")
+	require.Contains(t, link, "<https://staging.toronto.togather.foundation/api/v1/openapi.json>")
+	require.NotContains(t, link, "staging.internal")
 }
 
 func TestOpenAPILinkSkipsNonAPI(t *testing.T) {
-	h := OpenAPILink(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := OpenAPILink("http://sel.example.com")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -54,7 +59,7 @@ func TestOpenAPILinkSkipsNonAPI(t *testing.T) {
 // survives handlers that set their own Link header (e.g. the ICS alternate on
 // /api/v1/events), which previously clobbered it via Header.Set.
 func TestOpenAPILinkCoexistsWithHandlerLink(t *testing.T) {
-	h := OpenAPILink(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := OpenAPILink("http://sel.example.com")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Link", "<http://sel.example.com/api/v1/events.ics>; rel=\"alternate\"; type=\"text/calendar\"")
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -64,9 +69,8 @@ func TestOpenAPILinkCoexistsWithHandlerLink(t *testing.T) {
 	h.ServeHTTP(res, req)
 
 	require.Equal(t, http.StatusOK, res.Code)
-	links := res.Header().Values("Link")
 	joined := ""
-	for _, l := range links {
+	for _, l := range res.Header().Values("Link") {
 		joined += l + "\n"
 	}
 	require.Contains(t, joined, "service-desc")
@@ -76,7 +80,7 @@ func TestOpenAPILinkCoexistsWithHandlerLink(t *testing.T) {
 // TestOpenAPILinkWritePathInjectsHeader covers the implicit-WriteHeader path
 // (handlers that call Write without an explicit WriteHeader).
 func TestOpenAPILinkWritePathInjectsHeader(t *testing.T) {
-	h := OpenAPILink(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := OpenAPILink("http://sel.example.com")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	}))
 
