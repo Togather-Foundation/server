@@ -173,7 +173,7 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 ## Kanban (shared board)
 
 Project work is tracked on the Hermes kanban board `togather` via the kanban MCP
-tools (`hermes-kanban-*`). Kanban is the shared queue; beads (`bd`) are retired.
+tools (`hermes-kanban-*`).
 
 - **Always pass `board: "togather"` on every kanban MCP call.** The server default is
   `hermes-agent`; omitting the board silently lands tickets in the wrong queue.
