@@ -1,6 +1,6 @@
 # MCP Server Integration
 
-This document describes how to run and integrate the Togather MCP server with AI clients.
+This document describes how to connect AI clients to the Togather MCP server.
 
 ## Overview
 
@@ -8,21 +8,28 @@ The MCP server exposes the Togather SEL API via tools, resources, and prompts. I
 
 - **stdio**: Claude Desktop or local agent processes
 - **SSE**: simple web deployments
-- **Streamable HTTP**: production web services
+- **Streamable HTTP**: production web services (this is what `/mcp` uses on the main server)
 
 The MCP server is available as:
 
-- Standalone binary: `cmd/mcp-server`
-- Embeddable package: `internal/mcp`
-- Optional HTTP endpoint: `/mcp` on the main API server (disabled by default)
+- **Embedded endpoint**: `/mcp` on the main API server (this is the recommended and deployed path — see [Authentication](../interop/core-profile-v0.1.md) for node URLs)
+- Standalone binary: `cmd/mcp-server` (for local/stdio setups)
+
+> **Authentication model (read this first):** the server has **no OAuth**. Auth is a
+> static API key in an `Authorization: Bearer <key>` header. Reading event data is
+> **public** (no key) — the key is for writes (`add_event`) and for accessing the
+> `/mcp` gateway (which also enables per-agent rate limits and usage stats).
+>
+> **Register `/mcp` as a *local* MCP server** with a custom header. Do **not** use a
+> claude.ai *remote connector* — remote connectors speak only OAuth and cannot send a
+> static header, so they will fail with "still unauthorized" (that is expected, not a
+> login problem). Get a free key at `/dev/login` (GitHub OAuth, instant).
 
 ## Configuration
 
 Environment variables are shared with the main server configuration, plus MCP-specific settings:
 
 ```
-MCP_SERVER_NAME="Togather SEL MCP Server"
-MCP_SERVER_VERSION="1.0.0"
 MCP_TRANSPORT=stdio|sse|http
 PORT=8080
 HOST=0.0.0.0
@@ -31,30 +38,25 @@ MCP_HTTP_ENABLED=false
 
 ## Running the MCP Server
 
-### stdio (default)
+### Embedded in the main server (recommended)
+
+Set `MCP_HTTP_ENABLED=true` to expose `/mcp` on the main API server. The endpoint is protected by API key auth and agent-tier rate limiting:
+
+```
+MCP_HTTP_ENABLED=true
+```
+
+### Standalone binary
 
 ```
 ./mcp-server
 ```
 
-### SSE
+For stdio, run it directly. For SSE/HTTP, set the transport and port:
 
 ```
 MCP_TRANSPORT=sse PORT=8080 ./mcp-server
-```
-
-### Streamable HTTP
-
-```
 MCP_TRANSPORT=http PORT=8080 ./mcp-server
-```
-
-## Embedding MCP in the Main Server
-
-Set `MCP_HTTP_ENABLED=true` to expose `/mcp` on the main API server. The endpoint is protected by API key auth and agent tier rate limiting.
-
-```
-MCP_HTTP_ENABLED=true
 ```
 
 ## Authentication and Rate Limiting
@@ -65,21 +67,23 @@ All MCP HTTP and SSE requests require an API key in the `Authorization` header:
 Authorization: Bearer <api-key>
 ```
 
-Rate limiting uses the agent tier limits from `RateLimitConfig`.
+Rate limiting uses the agent tier limits from `RateLimitConfig`. Get a key at `/dev/login` (instant, GitHub OAuth) or by email invitation. If an unauthenticated request returns `401`, the response includes a `WWW-Authenticate: Bearer` header advertising the scheme.
 
 ## Tools
 
-The MCP server provides 6 tools for interacting with events, places, and organizations:
+The MCP server provides 9 tools:
 
 | Tool | Description |
 |------|-------------|
 | `events` | List events with filters and pagination, OR get a single event by ULID (if `id` parameter provided) |
-| `add_event` | Create an event from JSON-LD |
-| `places` | List places with filters and pagination, OR get a single place by ULID (if `id` parameter provided) |
-| `add_place` | Create a place from JSON-LD |
-| `organizations` | List organizations with filters, OR get a single organization by ULID (if `id` parameter provided) |
-| `add_organization` | Create an organization from JSON-LD |
 | `search` | Cross-entity search across events/places/orgs |
+| `places` | List places with filters and pagination, OR get a single place by ULID (if `id` parameter provided) |
+| `organizations` | List organizations with filters, OR get a single organization by ULID (if `id` parameter provided) |
+| `add_event` | Create an event from JSON-LD (requires API key) |
+| `geocode_address` | Geocode an address or place name to coordinates |
+| `reverse_geocode` | Reverse geocode coordinates to a human-readable address |
+| `api_keys` | List API keys and usage statistics for the authenticated developer |
+| `manage_api_key` | Create or revoke API keys (requires API key) |
 
 ### Unified List/Get Operations
 
@@ -231,7 +235,7 @@ curl -X POST http://localhost:8080/mcp \
   }'
 ```
 
-#### Call list_events tool
+#### Call the events tool
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
@@ -241,7 +245,7 @@ curl -X POST http://localhost:8080/mcp \
     "id": 3,
     "method": "tools/call",
     "params": {
-      "name": "list_events",
+      "name": "events",
       "arguments": {
         "limit": 5,
         "include_past": false
@@ -276,7 +280,7 @@ curl -X POST http://localhost:8080/mcp \
     "id": 4,
     "method": "tools/call",
     "params": {
-      "name": "get_event",
+      "name": "events",
       "arguments": {
         "id": "01HZXY..."
       }
@@ -328,7 +332,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 2026-02-06T10:15:30Z INFO  database_connected pool_size=10 max_conns=25
 2026-02-06T10:15:30Z INFO  mcp_initialized tools=9 resources=5 prompts=3
 2026-02-06T10:15:45Z INFO  request method=initialize client=curl-test duration_ms=12
-2026-02-06T10:15:50Z INFO  request method=tools/call tool=list_events duration_ms=45 results=5
+2026-02-06T10:15:50Z INFO  request method=tools/call tool=events duration_ms=45 results=5
 ```
 
 ### Error Cases
@@ -345,7 +349,7 @@ echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":
 
 #### Tool execution error
 ```
-2026-02-06T10:22:30Z ERROR tool_call_failed tool=get_event id=01HZXY... error="event not found" duration_ms=8
+2026-02-06T10:22:30Z ERROR tool_call_failed tool=events id=01HZXY... error="event not found" duration_ms=8
 ```
 
 #### Database connection error
@@ -430,11 +434,11 @@ curl -X POST http://localhost:8080/mcp \
 Use the `tools/list` method first to get available tools and their schemas, then call each tool with minimal valid arguments:
 
 ```bash
-# list_events with no filters
-{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_events","arguments":{}}}
+# events with no filters
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"events","arguments":{}}}
 
-# get_event (replace with valid ULID)
-{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_event","arguments":{"id":"01HZXY..."}}}
+# get a single event (replace with valid ULID)
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"events","arguments":{"id":"01HZXY..."}}}
 
 # search across all entities
 {"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"search","arguments":{"query":"meetup","limit":5}}}
@@ -503,4 +507,4 @@ If Claude Desktop integration isn't working:
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-08-07

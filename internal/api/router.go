@@ -467,6 +467,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux := http.NewServeMux()
 	// Landing page at web root (server-4i67)
 	mux.Handle("/", web.IndexHandler())
+	mux.Handle("/landing.js", web.LandingJSHandler())
+	// Well-known endpoints (RFC 8615). Known ones are registered explicitly;
+	// anything else under /.well-known/ returns 404 rather than falling through
+	// to the SPA catch-all, so OAuth/well-known clients can detect "not
+	// available" instead of parsing an HTML page as JSON.
+	mux.Handle("/.well-known/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	mux.Handle("/.well-known/sel-profile", http.HandlerFunc(wellKnownHandler.SELProfile))
 	mux.Handle("/robots.txt", web.RobotsTxtHandler())
 	mux.Handle("/sitemap.xml", web.SitemapHandler())
 	mux.Handle("/llms.txt", web.LLMsTxtHandler())
@@ -479,7 +488,6 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/api/v1/openapi.yaml", OpenAPIYAMLHandler()) // YAML format (server-v7yn)
 	mux.Handle("/api/docs/", web.APIDocsHandler())           // Scalar API documentation UI (server-6lnc)
 	mux.Handle("/api/docs", web.APIDocsHandler())            // Scalar API documentation UI (server-6lnc)
-	mux.Handle("/.well-known/sel-profile", http.HandlerFunc(wellKnownHandler.SELProfile))
 
 	// Prometheus metrics endpoint (FR-022)
 	mux.Handle("/metrics", promhttp.HandlerFor(

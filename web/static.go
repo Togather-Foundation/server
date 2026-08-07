@@ -14,6 +14,27 @@ var sitemapXML []byte
 //go:embed llms.txt
 var llmsTxt []byte
 
+//go:embed landing.js
+var landingJS []byte
+
+// LandingJSHandler serves the landing page's external JavaScript.
+// It must be an external file (not inline) to satisfy the CSP
+// `script-src 'self'` policy — inline scripts are blocked.
+func LandingJSHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=86400") // Cache for 1 day
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(landingJS) // Error is ignored as WriteHeader already sent status
+	})
+}
+
 // LLMsTxtHandler serves the llms.txt file for LLM and AI agent discovery.
 func LLMsTxtHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

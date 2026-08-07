@@ -53,3 +53,33 @@ func TestWellKnownSELProfile(t *testing.T) {
 	require.True(t, ok, "updated should be a string")
 	assert.Regexp(t, `^\d{4}-\d{2}-\d{2}$`, updated, "updated should be in YYYY-MM-DD format")
 }
+
+// TestWellKnownUnknownPath404 verifies that unknown /.well-known/* paths return 404
+// instead of the SPA landing page. OAuth/well-known clients (e.g. MCP connectors
+// probing for /.well-known/oauth-authorization-server) must be able to detect "not
+// available" rather than parsing an HTML page as JSON.
+func TestWellKnownUnknownPath404(t *testing.T) {
+	env := setupTestEnv(t)
+
+	paths := []string{
+		"/.well-known/oauth-authorization-server",
+		"/.well-known/oauth-protected-resource",
+		"/.well-known/does-not-exist",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, env.Server.URL+path, nil)
+			require.NoError(t, err)
+
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode,
+				"unregistered .well-known path should 404, not fall through to the SPA catch-all")
+			assert.NotContains(t, resp.Header.Get("Content-Type"), "text/html",
+				"a 404 for .well-known must not serve the HTML landing page")
+		})
+	}
+}

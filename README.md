@@ -129,15 +129,29 @@ The SEL server exposes a [Model Context Protocol (MCP)](https://modelcontextprot
 
 Get a free API key at `/dev/login` (GitHub OAuth, instant).
 
+> **Why a key?** Reading is public — `GET /api/v1/events`, places, organizations,
+> and the change feed need no key. The key is only for writes (`POST /api/v1/events`)
+> and for accessing the `/mcp` gateway; it also enables per-agent rate limits and
+> usage stats. Read-only agents can skip keys entirely.
+
 ### Available Tools
 
 | Tool | Description |
 |---|---|
 | `events` | List events with filters (date, location, keyword, category) or get a single event by ULID |
-| `add_event` | Submit a new event from JSON-LD (requires API key) |
+| `search` | Full-text search across events, places, and organizations |
 | `places` | List venues/locations with filters or get a single place by ULID |
 | `organizations` | List event organizers with filters or get a single organization by ULID |
-| `search` | Full-text search across events, places, and organizations |
+| `add_event` | Submit a new event from JSON-LD (requires API key) |
+| `geocode_address` | Geocode an address or place name to coordinates |
+| `reverse_geocode` | Reverse geocode coordinates to a human-readable address |
+| `api_keys` | List API keys and usage statistics for the authenticated developer |
+| `manage_api_key` | Create or revoke API keys (requires API key) |
+
+> **Setup note for agents:** this server has **no OAuth**. Register `/mcp` as a **local**
+> MCP server with an `Authorization: Bearer <key>` header. A claude.ai *remote connector*
+> cannot send that header and will fail with "still unauthorized" — that is expected,
+> not a login problem.
 
 ### Claude Desktop Configuration
 

@@ -68,19 +68,18 @@ internal/api/router.go        # OPTIONAL: Embed MCP at /mcp
 
 ## Features
 
-### Tools (10 total)
+### Tools (9 total)
 | Tool | Description | Status |
 |------|-------------|--------|
-| `list_events` | Search/filter events | ✅ Implemented |
-| `get_event` | Get single event | ✅ Implemented |
-| `create_event` | Create new event | ✅ Implemented |
-| `list_places` | Search/filter places | ✅ Implemented |
-| `get_place` | Get single place | ✅ Implemented |
-| `create_place` | Create new place | ✅ Implemented |
-| `list_organizations` | Search/filter orgs | ✅ Implemented |
-| `get_organization` | Get single org | ✅ Implemented |
-| `create_organization` | Create new org | ✅ Implemented |
-| `search` | Cross-entity search | ✅ Implemented |
+| `events` | Search/filter events, or get a single event by ULID | ✅ Implemented |
+| `search` | Cross-entity search across events, places, orgs | ✅ Implemented |
+| `places` | Search/filter places, or get a single place by ULID | ✅ Implemented |
+| `organizations` | Search/filter orgs, or get a single org by ULID | ✅ Implemented |
+| `add_event` | Create new event from JSON-LD | ✅ Implemented |
+| `geocode_address` | Geocode an address/place name to coordinates | ✅ Implemented |
+| `reverse_geocode` | Reverse geocode coordinates to an address | ✅ Implemented |
+| `api_keys` | List API keys and usage stats for the developer | ✅ Implemented |
+| `manage_api_key` | Create or revoke API keys | ✅ Implemented |
 
 ### Resources (5 total)
 - `context://sel-event` - Event JSON-LD context

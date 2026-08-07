@@ -38,7 +38,7 @@
             {
                 "@type": "SoftwareApplication",
                 "name": "Togather MCP Server",
-                "description": "Model Context Protocol (MCP) server providing AI agents with structured tool access to local event data. Tools: events, add_event, places, organizations, search.",
+                "description": "Model Context Protocol (MCP) server providing AI agents with structured tool access to local event data. Tools: events, search, places, organizations, add_event, geocode_address, reverse_geocode, api_keys, manage_api_key.",
                 "applicationCategory": "DeveloperApplication",
                 "url": "https://togather.foundation/",
                 "offers": {
@@ -245,12 +245,55 @@
         <h1>Shared Events Library</h1>
         <p class="subtitle">Toronto Togather</p>
         
+        <section style="background: #eef7ff; border: 1px solid #b6d7f0; border-radius: 8px; padding: 1.25rem 1.5rem; margin-bottom: 2rem;">
+            <h2 style="margin-top: 0; border-bottom: none; color: #0a4a7a; font-size: 1.1rem;">NOTE FOR HUMANS</h2>
+            <p style="margin: 0 0 0.5rem; color: #333;">
+                Point your AI agent at this page to get started using Togather. Paste this prompt into your agent:
+            </p>
+            <pre style="background: #fff; border: 1px solid #b6d7f0; border-radius: 6px; padding: 0.75rem 1rem; overflow-x: auto; font-size: 0.85rem; line-height: 1.5;"><code>Read the Shared Events Library (SEL) server at this website's URL and set up
+Toronto event discovery access for me via the MCP server.
+
+Context: reading events is PUBLIC — no key needed for GET /api/v1/events,
+places, organizations, or the change feed. The API key is only for submitting
+events (writes) and for accessing the /mcp gateway (it also enables per-agent
+rate limits and usage stats).
+
+1. Read /llms.txt and this page's MCP section for setup instructions.
+2. Register the MCP server LOCALLY with an Authorization header (the server has
+   NO OAuth, so do NOT use a claude.ai remote connector — remote connectors
+   cannot send the required Authorization: Bearer header):
+     - Endpoint: https://&lt;this-node&gt;/mcp
+     - Transport: streamable HTTP
+     - Header: Authorization: Bearer &lt;SEL_API_KEY&gt;
+3. If I have no API key yet, tell me to sign in at /dev/login (GitHub OAuth,
+   instant) and create one. Verify the key BEFORE writing any config — expect
+   HTTP 200; a 401 means the key is wrong or lacks MCP scope:
+     curl -s -o /dev/null -w "HTTP %{http_code}\n" \
+       -X POST https://&lt;this-node&gt;/mcp \
+       -H "Authorization: Bearer $SEL_API_KEY" \
+       -H 'Content-Type: application/json' \
+       -H 'Accept: application/json, text/event-stream' \
+       -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "protocolVersion":"2025-06-18","capabilities":{},
+            "clientInfo":{"name":"setup-check","version":"1"}}}'
+4. Confirm the nine MCP tools are loaded: events, search, places,
+   organizations, add_event, geocode_address, reverse_geocode, api_keys,
+   manage_api_key.
+5. Report back one line: "MCP connected — N tools available" plus which tools
+   you can use.</code></pre>
+            <p style="margin: 0.5rem 0 0; font-size: 0.9rem; color: #555;">
+                This node: <span id="node-url">this site</span> ·
+                Key signup: <a href="/dev/login">/dev/login</a> · Full details in the
+                <a href="https://github.com/Togather-Foundation/server/blob/main/docs/integration/mcp-server.md">MCP guide</a>.
+            </p>
+        </section>
+        
         <p style="margin-bottom: 2rem; font-size: 1.1rem; line-height: 1.7; color: #333;">
             <a href="https://togather.foundation" style="color: #0066cc; text-decoration: none; font-weight: 500;">Togather</a> is a collaboration for the future of events data. We are making a data commons for open events ecosystems.
         </p>
         
         <section>
-            <h2>Getting Started</h2>
+            <h2 id="getting-started">Getting Started</h2>
             <p style="margin-bottom: 1rem; line-height: 1.7; color: #555;">
                 The SEL API provides read access to public event data without authentication. 
                 To submit events, you'll need an API key.
@@ -276,7 +319,9 @@
             </p>
             <ul>
                 <li><strong>MCP Endpoint (preferred):</strong> <code>/mcp</code> (streamable HTTP, API key required — get one free at <a href="/dev/login">/dev/login</a>)</li>
-                <li><strong>MCP Tools:</strong> <code>events</code>, <code>add_event</code>, <code>places</code>, <code>organizations</code>, <code>search</code></li>
+                <li><strong>Why a key?</strong> Reading is public (no key). The key covers <em>writes</em> (<code>POST /api/v1/events</code>) and gates the <code>/mcp</code> gateway — it also enables per-agent rate limits and usage stats. Reads never require it.</li>
+                <li><strong>Register locally:</strong> this server has <strong>no OAuth</strong>, so register <code>/mcp</code> as a <em>local</em> MCP server with an <code>Authorization: Bearer &lt;key&gt;</code> header. A claude.ai <em>remote connector</em> cannot send that header and will fail with "still unauthorized" — not a login problem.</li>
+                <li><strong>MCP Tools:</strong> <code>events</code>, <code>search</code>, <code>places</code>, <code>organizations</code>, <code>add_event</code>, <code>geocode_address</code>, <code>reverse_geocode</code>, <code>api_keys</code>, <code>manage_api_key</code></li>
                 <li><strong>No MCP? Use REST directly</strong> — filter server-side to avoid large payloads:<br>
                     <code>GET /api/v1/events?search=open+source&amp;start_date=2026-03-01&amp;limit=10</code></li>
                 <li><strong>Full Integration Guide:</strong> <a href="/api/docs">Interactive API Docs</a> and <a href="https://github.com/Togather-Foundation/server/blob/main/docs/integration/mcp-server.md">MCP Server guide</a></li>
@@ -335,6 +380,14 @@
                 <h3>Live Server Stats</h3>
                 <div id="stats-content">
                     <div class="stat-row">
+                        <span class="stat-label">Events:</span>
+                        <span class="stat-value" id="event-count">Loading...</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Upcoming:</span>
+                        <span class="stat-value" id="upcoming-count">Loading...</span>
+                    </div>
+                    <div class="stat-row">
                         <span class="stat-label">Status:</span>
                         <span class="stat-value" id="status">Loading...</span>
                     </div>
@@ -360,42 +413,6 @@
         </footer>
     </div>
     
-    <script>
-        // Fetch live server stats
-        (async function() {
-            try {
-                // Fetch health status
-                const healthRes = await fetch('/health');
-                const health = await healthRes.json();
-                
-                const statusEl = document.getElementById('status');
-                if (health.status === 'healthy') {
-                    statusEl.textContent = 'Healthy';
-                    statusEl.className = 'stat-value status-healthy';
-                } else if (health.status === 'degraded') {
-                    statusEl.textContent = 'Degraded';
-                    statusEl.className = 'stat-value status-degraded';
-                } else {
-                    statusEl.textContent = 'Error';
-                    statusEl.className = 'stat-value status-error';
-                }
-                
-                // Fetch version info
-                const versionRes = await fetch('/version');
-                const version = await versionRes.json();
-                
-                const versionEl = document.getElementById('version');
-                versionEl.textContent = version.git_commit ? 
-                    `${version.version} (${version.git_commit.substring(0, 7)})` : 
-                    version.version;
-                
-            } catch (error) {
-                console.error('Failed to fetch server stats:', error);
-                document.getElementById('status').textContent = 'Unavailable';
-                document.getElementById('status').className = 'stat-value status-error';
-                document.getElementById('version').textContent = 'Unavailable';
-            }
-        })();
-    </script>
+    <script src="/landing.js"></script>
 </body>
 </html>

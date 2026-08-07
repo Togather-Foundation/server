@@ -21,14 +21,28 @@ Endpoint: /mcp
 Auth: API key required (Bearer token)
 Get a free key: /dev/login (GitHub OAuth, instant)
 
+> Why a key? Reading is public — GET /api/v1/events, places, organizations, and
+> the change feed need no key. The key is only for writes (POST /api/v1/events)
+> and for accessing the /mcp gateway; it also enables per-agent rate limits and
+> usage stats. Read-only agents can skip keys entirely.
+
+> Setup note for agents: the server does NOT implement OAuth. Register /mcp as a
+> LOCAL MCP server with an `Authorization: Bearer <key>` header. Do not use a
+> claude.ai remote connector — it cannot send that header and will fail with
+> "still unauthorized" (that is expected, not a login problem).
+
 ### Available MCP Tools
 
 - events             — list events with filters (date, location, keyword, category) OR get a
                        single event by ULID (returns full JSON-LD)
-- add_event          — submit a new event from JSON-LD (requires API key)
+- search             — full-text search across events, places, and organizations
 - places             — list venues/locations with filters OR get a single place by ULID
 - organizations      — list event organizers with filters OR get a single organization by ULID
-- search             — full-text search across events, places, and organizations
+- add_event          — submit a new event from JSON-LD (requires API key)
+- geocode_address    — geocode an address or place name to coordinates
+- reverse_geocode    — reverse geocode coordinates to a human-readable address
+- api_keys           — list API keys and usage statistics for the authenticated developer
+- manage_api_key     — create or revoke API keys (requires API key)
 
 ### MCP Resources
 

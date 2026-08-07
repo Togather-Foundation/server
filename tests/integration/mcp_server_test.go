@@ -198,6 +198,8 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "Request without API key should be rejected")
+	require.Equal(t, "Bearer", resp.Header.Get("WWW-Authenticate"),
+		"MCP 401 should advertise the Bearer scheme so OAuth-capable clients detect it")
 
 	// Test 2: Request with empty Authorization header
 	req2, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(`{"jsonrpc": "2.0", "method": "initialize", "id": 1}`))
@@ -210,6 +212,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 	defer func() { _ = resp2.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp2.StatusCode, "Request with empty Authorization header should be rejected")
+	require.Equal(t, "Bearer", resp2.Header.Get("WWW-Authenticate"))
 
 	// Test 3: Request with malformed Authorization header (no Bearer prefix)
 	req3, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(`{"jsonrpc": "2.0", "method": "initialize", "id": 1}`))
@@ -222,6 +225,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 	defer func() { _ = resp3.Body.Close() }()
 
 	require.Equal(t, http.StatusUnauthorized, resp3.StatusCode, "Request with malformed Authorization should be rejected")
+	require.Equal(t, "Bearer", resp3.Header.Get("WWW-Authenticate"))
 }
 
 // TestMCPAuthValidKey verifies that MCP HTTP requests with a valid API key succeed

@@ -7,9 +7,20 @@
 
 ## Getting Started in 4 Steps
 
-### 1. Get an Invitation
+> **Why do you need a key at all?** Reading events is **public** — no key required for
+> `GET /api/v1/events`, places, organizations, or the change feed. The API key is an
+> **identity + write credential**: it lets you submit events (so the commons stays
+> accountable for who wrote what), gates the `/mcp` agent gateway, and enables
+> per-developer rate limits and usage stats. If you only need to *read*, skip straight
+> to the [REST API](api-guide.md) — no signup.
 
-Contact an admin to request developer access:
+### 1. Get Developer Access
+
+**Option A — Self-service (instant):** sign in with GitHub at
+`/dev/login`. Your developer account is created automatically, then create a key
+at `/dev/api-keys`.
+
+**Option B — Email invitation:** contact an admin to request access:
 - Email: [info@togather.foundation](mailto:info@togather.foundation)
 - Provide: Your name, email, and intended use case
 
@@ -18,7 +29,7 @@ The admin will send you an invitation via the CLI:
 server developer invite your-email@example.com --name "Your Name"
 ```
 
-### 2. Accept Your Invitation
+### 2. Accept Your Invitation (email path only)
 
 1. Check your email for the invitation (valid for 7 days)
 2. Click the invitation link
@@ -270,6 +281,7 @@ Currently, password reset is handled by admins. Contact [info@togather.foundatio
 
 ## Next Steps
 
+- **AI agents:** [mcp-server.md](mcp-server.md) — connect via MCP (`/mcp`), no scraping
 - **Complete API Reference:** [api-guide.md](api-guide.md)
 - **Authentication Details:** [authentication.md](authentication.md#developer-self-service)
 - **Building Your Own Scraper:** [building-scrapers.md](building-scrapers.md)
@@ -289,4 +301,4 @@ Currently, password reset is handled by admins. Contact [info@togather.foundatio
 
 ---
 
-**Last Updated:** 2026-02-12
+**Last Updated:** 2026-08-07

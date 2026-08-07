@@ -127,6 +127,7 @@ func TestIndexHTMLStructure(t *testing.T) {
 	// Check for essential content
 	requiredStrings := []string{
 		"Shared Events Library",
+		"NOTE FOR HUMANS",
 		"For Coding Agents",
 		"For Humans",
 		"For Bots",
@@ -150,14 +151,14 @@ func TestIndexHTMLStructure(t *testing.T) {
 		}
 	}
 
-	// Check for live stats JavaScript
+	// Check for live stats JavaScript (external file — inline scripts violate CSP)
 	if !strings.Contains(bodyStr, "/health") {
 		t.Error("HTML body missing /health endpoint reference")
 	}
 	if !strings.Contains(bodyStr, "/version") {
 		t.Error("HTML body missing /version endpoint reference")
 	}
-	if !strings.Contains(bodyStr, "fetch") {
-		t.Error("HTML body missing fetch API call for live stats")
+	if !strings.Contains(bodyStr, `src="/landing.js"`) {
+		t.Error("HTML body missing external landing.js script reference")
 	}
 }

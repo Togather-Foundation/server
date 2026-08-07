@@ -149,13 +149,20 @@ const agentKey contextKeyAgent = "agentKey"
 func AgentAuth(store auth.APIKeyStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Advertise the expected auth scheme on 401 so MCP/OAuth-capable clients
+			// can detect it instead of assuming OAuth is available. This server has no
+			// OAuth — authentication is a static API key in a Bearer header.
+			writeUnauthorized := func(err error) {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Unauthorized", err, "")
+			}
 			if store == nil {
-				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Unauthorized", problem.ErrUnauthorized, "")
+				writeUnauthorized(problem.ErrUnauthorized)
 				return
 			}
 			key, err := auth.ValidateAPIKey(r.Context(), store, r.Header.Get("Authorization"))
 			if err != nil {
-				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Unauthorized", err, "")
+				writeUnauthorized(err)
 				return
 			}
 			ctx := context.WithValue(r.Context(), agentKey, key)
