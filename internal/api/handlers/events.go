@@ -74,10 +74,37 @@ func (h *EventsHandler) WithOrgResolver(resolver EventOrgResolver) *EventsHandle
 }
 
 type listResponse struct {
-	Items      any      `json:"items"` // Accepts any slice type for JSON encoding
+	Context    any      `json:"@context,omitempty"` // Document-level JSON-LD context (context=document mode)
+	Items      any      `json:"items"`              // Accepts any slice type for JSON encoding
 	NextCursor string   `json:"next_cursor"`
 	Total      int64    `json:"total,omitempty"`    // Optional: total count for filtered results
 	Warnings   []string `json:"warnings,omitempty"` // Alias warnings from query param parsing
+}
+
+// listContextMode controls where the JSON-LD @context is emitted in list responses.
+type listContextMode int
+
+const (
+	// contextPerItem is the default: each item carries its own @context so that
+	// consumers can slice items out of the array and still interpret them.
+	contextPerItem listContextMode = iota
+	// contextDocument emits a single document-level @context scoping all items,
+	// shrinking collection responses for clients (e.g. MCP tools) with fixed
+	// output budgets. Enabled via ?context=document.
+	contextDocument
+)
+
+// parseListContextMode reads the ?context=document|item query parameter.
+// Missing or unrecognized values fall back to the default per-item mode so
+// existing clients see no change.
+func parseListContextMode(r *http.Request) listContextMode {
+	if r == nil {
+		return contextPerItem
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("context")), "document") {
+		return contextDocument
+	}
+	return contextPerItem
 }
 
 func icsAlternateLink(baseURL, path string) string {
@@ -106,10 +133,13 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contextValue := loadDefaultContext()
+	contextMode := parseListContextMode(r)
 	items := make([]*schema.EventSummary, 0, len(result.Events))
 	for _, event := range result.Events {
 		item := schema.NewEventSummary(event.Name)
-		item.Context = contextValue
+		if contextMode == contextPerItem {
+			item.Context = contextValue
+		}
 		item.ID = schema.BuildEventURI(h.BaseURL, event.ULID)
 		item.Description = event.Description
 		item.Keywords = event.Keywords
@@ -143,7 +173,11 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Link", icsAlternateLink(h.BaseURL, "/api/v1/events.ics"))
-	writeJSON(w, http.StatusOK, listResponse{Items: items, NextCursor: result.NextCursor, Warnings: warnings}, contentTypeFromRequest(r))
+	resp := listResponse{Items: items, NextCursor: result.NextCursor, Warnings: warnings}
+	if contextMode == contextDocument {
+		resp.Context = contextValue
+	}
+	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
 }
 
 func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {

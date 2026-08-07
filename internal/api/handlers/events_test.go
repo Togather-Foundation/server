@@ -321,6 +321,154 @@ func TestEventsHandlerListSuccess(t *testing.T) {
 	require.Contains(t, link, ".ics")
 }
 
+// TestEventsHandlerListContextDocumentMode verifies that ?context=document emits
+// a single document-level @context (scoping all items) and omits the per-item
+// @context blocks — the compact form for MCP/agent clients with fixed output
+// budgets.
+func TestEventsHandlerListContextDocumentMode(t *testing.T) {
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			return events.ListResult{
+				Events:     []events.Event{{Name: "Jazz Fest"}, {Name: "Art Show"}},
+				NextCursor: "next",
+			}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?context=document", nil)
+	res := httptest.NewRecorder()
+
+	h.List(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	link := res.Header().Get("Link")
+	require.Contains(t, link, `rel="alternate"`)
+	require.Contains(t, link, `type="text/calendar"`)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+
+	ctxVal, ok := payload["@context"]
+	require.True(t, ok, "document mode must emit a top-level @context")
+	require.NotEmpty(t, ctxVal, "top-level @context must be non-empty")
+
+	items, ok := payload["items"].([]any)
+	require.True(t, ok, "items must be an array")
+	require.Len(t, items, 2)
+	for i, raw := range items {
+		m, ok := raw.(map[string]any)
+		require.True(t, ok, "items[%d] must be an object", i)
+		_, hasCtx := m["@context"]
+		require.False(t, hasCtx, "document mode must omit per-item @context on items[%d]", i)
+	}
+	require.Equal(t, "next", payload["next_cursor"])
+}
+
+// TestEventsHandlerListContextDocumentModeCaseInsensitive verifies the context
+// param is matched case-insensitively (e.g. ?context=Document).
+func TestEventsHandlerListContextDocumentModeCaseInsensitive(t *testing.T) {
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			return events.ListResult{Events: []events.Event{{Name: "Jazz Fest"}}}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?context=Document", nil)
+	res := httptest.NewRecorder()
+
+	h.List(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	_, hasTopCtx := payload["@context"]
+	require.True(t, hasTopCtx, "case-insensitive document mode must emit top-level @context")
+}
+
+// TestEventsHandlerListContextItemModeIsBackwardCompatible pins the default and
+// explicit ?context=item behaviour: each item carries its own @context and no
+// document-level @context is emitted, so consumers that slice items out of the
+// array keep working exactly as before.
+func TestEventsHandlerListContextItemModeIsBackwardCompatible(t *testing.T) {
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			return events.ListResult{
+				Events:     []events.Event{{Name: "Jazz Fest"}, {Name: "Art Show"}},
+				NextCursor: "next",
+			}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+
+	for _, tc := range []struct {
+		name  string
+		query string
+	}{
+		{name: "no param", query: "/api/v1/events"},
+		{name: "explicit item", query: "/api/v1/events?context=item"},
+		{name: "garbage value", query: "/api/v1/events?context=bogus"},
+		{name: "blank value", query: "/api/v1/events?context=%20"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, tc.query, nil)
+			res := httptest.NewRecorder()
+			h.List(res, req)
+
+			require.Equal(t, http.StatusOK, res.Code)
+
+			var payload map[string]any
+			require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+
+			_, hasTopCtx := payload["@context"]
+			require.False(t, hasTopCtx, "item mode must not emit a top-level @context")
+
+			items, ok := payload["items"].([]any)
+			require.True(t, ok, "items must be an array")
+			require.Len(t, items, 2)
+			for i, raw := range items {
+				m, ok := raw.(map[string]any)
+				require.True(t, ok, "items[%d] must be an object", i)
+				require.NotEmpty(t, m["@context"], "item mode must keep per-item @context on items[%d]", i)
+			}
+		})
+	}
+}
+
+// TestEventsHandlerListDocumentModeIsSmaller verifies that ?context=document
+// actually shrinks the response by emitting the ~1KB @context block once instead
+// of once per item — the regression this ticket exists for.
+func TestEventsHandlerListDocumentModeIsSmaller(t *testing.T) {
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			eventsList := make([]events.Event, 10)
+			for i := range eventsList {
+				eventsList[i] = events.Event{Name: "Event"}
+			}
+			return events.ListResult{Events: eventsList}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+
+	fetch := func(query string) []byte {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, query, nil)
+		res := httptest.NewRecorder()
+		h.List(res, req)
+		require.Equal(t, http.StatusOK, res.Code)
+		return res.Body.Bytes()
+	}
+
+	itemMode := fetch("/api/v1/events")
+	documentMode := fetch("/api/v1/events?context=document")
+
+	require.Lessf(t, len(documentMode), len(itemMode),
+		"document mode (%d bytes) should be smaller than item mode (%d bytes)", len(documentMode), len(itemMode))
+}
+
 func TestEventsHandlerListValidationError(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {

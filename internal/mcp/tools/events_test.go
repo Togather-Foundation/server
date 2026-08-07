@@ -491,7 +491,7 @@ func TestBuildListItem(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildListItem(tt.event, tt.baseURL, nil, nil, zerolog.Nop())
+			result := buildListItem(tt.event, tt.baseURL, nil, nil, zerolog.Nop(), true)
 
 			if result["@type"] != "Event" {
 				t.Errorf("expected @type Event, got %v", result["@type"])
@@ -502,6 +502,23 @@ func TestBuildListItem(t *testing.T) {
 			if tt.wantID != "" && result["@id"] != tt.wantID {
 				t.Errorf("expected @id %q, got %v", tt.wantID, result["@id"])
 			}
+			if _, hasCtx := result["@context"]; !hasCtx {
+				t.Error("expected @context on item in includeContext mode")
+			}
 		})
+	}
+}
+
+// TestBuildListItemOmitsContextInDocumentMode verifies that buildListItem with
+// includeContext=false emits no per-item @context (the compact form used by the
+// events tool's ?context=document mode).
+func TestBuildListItemOmitsContextInDocumentMode(t *testing.T) {
+	result := buildListItem(events.Event{ULID: "01HX1234567890ABCDEFGHJKMN", Name: "Test Event"}, "https://test.example.com", nil, nil, zerolog.Nop(), false)
+
+	if _, hasCtx := result["@context"]; hasCtx {
+		t.Error("expected no per-item @context in document mode")
+	}
+	if result["@type"] != "Event" {
+		t.Errorf("expected @type Event, got %v", result["@type"])
 	}
 }

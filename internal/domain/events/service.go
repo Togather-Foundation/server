@@ -163,6 +163,10 @@ var knownFilterParams = map[string]bool{
 	"city": true, "region": true,
 	"q": true, "search": true,
 	"keywords": true, "limit": true, "after": true,
+	// "context" is a pure serialization hint (list @context emission mode) consumed
+	// by the HTTP handler, not a filter. It is allowlisted here so clients don't
+	// get a spurious "unrecognised parameter" warning.
+	"context": true,
 }
 
 // appendUnknownParamWarnings adds a warning for every query parameter that is

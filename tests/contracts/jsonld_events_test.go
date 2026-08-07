@@ -37,6 +37,30 @@ func TestJSONLDEventListAndDetailFraming(t *testing.T) {
 	require.NotEmpty(t, first["@context"])
 	require.NotEmpty(t, first["@type"])
 
+	// ?context=document must emit a single top-level @context scoping all items
+	// and omit the per-item @context blocks (compact form for output-budget
+	// constrained clients such as MCP tools).
+	docListReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events?context=document", nil)
+	require.NoError(t, err)
+	docListReq.Header.Set("Accept", "application/ld+json")
+	docListResp, err := env.Server.Client().Do(docListReq)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = docListResp.Body.Close() })
+	require.Equal(t, http.StatusOK, docListResp.StatusCode)
+
+	var docListPayload struct {
+		Context any              `json:"@context"`
+		Items   []map[string]any `json:"items"`
+	}
+	require.NoError(t, json.NewDecoder(docListResp.Body).Decode(&docListPayload))
+	require.NotEmpty(t, docListPayload.Context, "document mode must emit top-level @context")
+	require.NotEmpty(t, docListPayload.Items)
+	for i, item := range docListPayload.Items {
+		_, hasCtx := item["@context"]
+		require.False(t, hasCtx, "document mode must omit per-item @context on items[%d]", i)
+		require.NotEmpty(t, item["@type"])
+	}
+
 	detailReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+eventULID, nil)
 	require.NoError(t, err)
 	detailReq.Header.Set("Accept", "application/ld+json")

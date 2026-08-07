@@ -186,7 +186,7 @@ func (t *SearchTools) searchEvents(ctx context.Context, query string, limit int)
 	}
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		item := buildListItem(event, t.baseURL, t.placesService, t.orgService, t.logger)
+		item := buildListItem(event, t.baseURL, t.placesService, t.orgService, t.logger, true)
 		item["type"] = "event"
 		items = append(items, item)
 	}

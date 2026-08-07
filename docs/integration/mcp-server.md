@@ -289,6 +289,12 @@ curl -X POST http://localhost:8080/mcp \
 }
 ```
 
+> **Output-budget tip:** the events tool can be passed `context: "document"`.
+> That emits a single top-level `@context` scoping every item instead of a full
+> `@context` block on each item, roughly halving the response — handy when a
+> large page would otherwise exceed the MCP tool-output limit. Individual items
+> can be re-standalized by merging the document-level `@context` back in.
+
 #### Get a specific event
 ```bash
 curl -X POST http://localhost:8080/mcp \

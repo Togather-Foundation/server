@@ -188,6 +188,7 @@ paths:
         - $ref: '#/components/parameters/keywords'
         - $ref: '#/components/parameters/after'
         - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/context'
       responses:
         '200':
           description: Paginated list of events
@@ -2921,6 +2922,26 @@ components:
         maximum: 200
         default: 50
 
+    context:
+      name: context
+      in: query
+      description: |
+        JSON-LD @context emission mode for the list response.
+
+        - `item` (default): each item in `items` carries its own `@context` block,
+          so consumers can slice individual items out of the array and still
+          interpret them as standalone JSON-LD.
+        - `document`: a single `@context` is emitted once at the top level of the
+          document, scoping every member in `items`. This omits the per-item
+          `@context` blocks and roughly halves collection response size — useful
+          for clients with fixed output budgets (e.g. MCP/agent tool results).
+          To reconstruct standalone JSON-LD items, combine the document-level
+          `@context` with any sliced item.
+      schema:
+        type: string
+        enum: [document, item]
+        default: item
+
   schemas:
     ConsolidateResponse:
       type: object
@@ -3741,7 +3762,10 @@ components:
               items:
                 type: string
             - type: object
-          description: JSON-LD context.
+          description: >
+            JSON-LD context. Present on every item in the default `?context=item`
+            list mode. Omitted per-item when `?context=document` is used — the
+            single document-level `@context` on the response then scopes the item.
         '@id':
           type: string
           format: uri
@@ -3775,6 +3799,20 @@ components:
       type: object
       required: [items]
       properties:
+        '@context':
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+            - type: object
+          description: >
+            Document-level JSON-LD context emitted only by the public
+            `GET /api/v1/events` list endpoint when `?context=document` is
+            requested. Scopes every member of `items`; per-item `@context`
+            blocks are omitted in that mode. Absent otherwise (default `item`
+            mode and other endpoints that reuse this schema, which never emit a
+            document-level context).
         items:
           type: array
           items:
