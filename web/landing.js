@@ -28,29 +28,49 @@
         const button = document.querySelector('[data-action="copy-prompt"]');
         if (!button) return;
 
-        const codeBlock = button.closest('div') ? button.closest('div').querySelector('pre code') : null;
+        const wrapper = button.closest('div');
+        if (!wrapper) return;
+        const codeBlock = wrapper.querySelector('pre code');
         if (!codeBlock) return;
 
-        button.addEventListener('click', async function () {
+        function flash(label) {
+            const original = button.textContent;
+            button.textContent = label;
+            button.disabled = true;
+            setTimeout(function () {
+                button.textContent = original;
+                button.disabled = false;
+            }, 1500);
+        }
+
+        button.addEventListener('click', function () {
             const text = codeBlock.textContent;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(
+                    function () { flash('Copied!'); },
+                    function () { copyFallback(text); }
+                );
+            } else {
+                copyFallback(text);
+            }
+        });
+
+        function copyFallback(text) {
+            // Selection-based fallback for contexts where the Clipboard API is
+            // unavailable or permission-denied.
             try {
-                await navigator.clipboard.writeText(text);
-                const original = button.textContent;
-                button.textContent = 'Copied!';
-                setTimeout(function () {
-                    button.textContent = original;
-                }, 1500);
-            } catch (err) {
-                // Fallback for contexts where the Clipboard API is unavailable.
                 const range = document.createRange();
                 range.selectNodeContents(codeBlock);
                 const selection = window.getSelection();
                 selection.removeAllRanges();
                 selection.addRange(range);
-                document.execCommand('copy');
+                const ok = document.execCommand('copy');
                 selection.removeAllRanges();
+                flash(ok ? 'Copied!' : 'Copy failed');
+            } catch (err) {
+                flash('Copy failed');
             }
-        });
+        }
     }
 
     // Fetch live server stats: health, version, and real entity counts so a
