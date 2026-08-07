@@ -187,14 +187,18 @@ tools (`hermes-kanban-*`).
   lifecycle contract.
 - Tickets must be self-contained: **Goal** · **Acceptance** (verification commands +
   expected output) · **File scope** (exact paths) · **Constraints** (standing rules) ·
-  **Source** (repo: `Togather-Foundation/server`, who asked, when, requirement verbatim —
-  never a pointer to a file outside the repo).
+  **Source** (repo, who asked, when, requirement verbatim — never a pointer to a file outside the repo).
 - Work on a **feature branch**, never `main`: `git checkout -b <type>/<ticket-id>-<desc>`.
   The human merges to main during review; the agent does not self-merge.
 - Workflow: `ticket_create` (lands `ready`; `triage: true` for triage) → `ticket_claim`
   right before editing (ready→running) → `ticket_comment` as you work → push → record the
   commit SHA in a ticket comment → `ticket_complete`. Completion is review-gated: the
-  ticket lands `blocked` (review-required) for a human to flip, not `done`.
+  ticket lands `blocked` (review-required) for review, not `done`.
+- **Wait for the review** — completing review-gated work leaves the ticket `blocked`. Poll
+  `ticket_events` (long-poll: pass the last seen event id, returns on new events) or
+  `ticket_get` until it leaves `blocked`: `done` → the review passed → merge your branch to
+  main (the reviewer never merges); `ready` → REQUEST CHANGES → re-claim, fix, re-complete;
+  still `blocked` → ESCALATED → surface to the human; do not re-loop.
 - **Push BEFORE `ticket_complete`.** The review gate reads the pushed commit. After
   pushing, comment the repo + branch + commit SHA + changed files on the ticket so the
   reviewer can resolve it. A ticket in review with no commit ref is unreviewable.
