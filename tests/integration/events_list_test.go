@@ -115,6 +115,31 @@ func TestEventsListEndDateIncludesEntireDay(t *testing.T) {
 		"endDate must include the entire endDate day and nothing beyond it")
 }
 
+// TestEventsListOpenAPILinkHeader verifies the RFC 8631 service-desc Link
+// header coexists with the ICS alternate Link header on the real events route.
+// The events handler sets its own Link via Header.Set, which previously
+// clobbered the middleware's service-desc Link (Togather-Foundation/server#16).
+func TestEventsListOpenAPILinkHeader(t *testing.T) {
+	env := setupTestEnv(t)
+
+	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events?limit=1", nil)
+	require.NoError(t, err)
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	joined := ""
+	for _, l := range resp.Header.Values("Link") {
+		joined += l + "\n"
+	}
+	require.Contains(t, joined, "rel=\"service-desc\"", "service-desc Link should be present on /api/v1/events")
+	require.Contains(t, joined, "/api/v1/openapi.json", "service-desc Link should point at the OpenAPI spec")
+	require.Contains(t, joined, "rel=\"alternate\"", "the handler's ICS alternate Link should survive")
+}
+
 type listSeedData struct {
 	EventAName string
 	EventBName string
