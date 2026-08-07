@@ -75,7 +75,8 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 	}
 	// endDate is inclusive of the entire endDate day (events starting any time
 	// on that day). Advance to next-day midnight so the SQL bound
-	// (start_time <= endDate) covers the whole day, not just the 00:00:00 instant.
+	// (start_time < endDate) covers the whole day as a half-open interval,
+	// excluding events that start exactly at the following day's midnight.
 	if endDate != nil {
 		advanced := endDate.AddDate(0, 0, 1)
 		endDate = &advanced

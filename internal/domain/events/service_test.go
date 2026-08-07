@@ -171,6 +171,46 @@ func TestParseFilters_EndDateDayBeforeStartDate(t *testing.T) {
 	assertFilterError(t, err, "endDate", "must be on or after startDate")
 }
 
+func TestParseFilters_EndDateAdvancesAcrossDST(t *testing.T) {
+	loc, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name    string
+		endDate string
+		want    time.Time // next-day midnight in America/Toronto
+	}{
+		{
+			name:    "spring forward",
+			endDate: "2024-03-10",
+			want:    time.Date(2024, 3, 11, 0, 0, 0, 0, loc), // EDT (UTC-4)
+		},
+		{
+			name:    "fall back",
+			endDate: "2024-11-03",
+			want:    time.Date(2024, 11, 4, 0, 0, 0, 0, loc), // EST (UTC-5)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values := url.Values{}
+			values.Set("endDate", tt.endDate)
+
+			filters, _, _, err := ParseFilters(values, loc)
+
+			require.NoError(t, err)
+			require.NotNil(t, filters.EndDate)
+			require.True(t, filters.EndDate.Equal(tt.want),
+				"endDate %v should equal %v (instant across DST)", *filters.EndDate, tt.want)
+			_, gotOffset := filters.EndDate.Zone()
+			_, wantOffset := tt.want.Zone()
+			require.Equal(t, wantOffset, gotOffset,
+				"endDate must be next-day midnight in the server timezone, not UTC")
+		})
+	}
+}
+
 func TestParseFiltersVenueULIDValidation(t *testing.T) {
 	values := url.Values{}
 	values.Set("venueId", "not-a-ulid")

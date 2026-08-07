@@ -90,8 +90,8 @@ Each item is a typed schema.org object (Event, Place, or Organization) with `@ty
 |-----------|------|-------------|---------|
 | `limit` | Integer | Max items per page (default 50, max 200) | `?limit=100` |
 | `after` | String | Opaque pagination cursor | `?after=MTczODg5...` |
-| `startDate` | Date | Filter events starting from date | `?startDate=2025-07-01` |
-| `endDate` | Date | Filter events starting before date | `?endDate=2025-07-31` |
+| `startDate` | Date | Filter events starting on or after this date | `?startDate=2025-07-01` |
+| `endDate` | Date | Filter events starting on or before this date (inclusive of the entire endDate day) | `?endDate=2025-07-31` |
 | `city` | String | Filter by place city | `?city=Toronto` |
 | `region` | String | Filter by place region | `?region=ON` |
 | `venueId` | ULID | Filter by venue ULID | `?venueId=01HYX4...` |

@@ -147,7 +147,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
   LEFT JOIN event_series es ON es.id = e.series_id
   WHERE e.deleted_at IS NULL
     AND ($1::timestamptz IS NULL OR o.start_time >= $1::timestamptz)
-    AND ($2::timestamptz IS NULL OR o.start_time <= $2::timestamptz)
+    AND ($2::timestamptz IS NULL OR o.start_time < $2::timestamptz)
     AND ($3 = '' OR p.address_locality ILIKE '%' || $3 || '%' ESCAPE '\')
     AND ($4 = '' OR p.address_region ILIKE '%' || $4 || '%' ESCAPE '\')
     AND ($5 = '' OR p.ulid = $5)

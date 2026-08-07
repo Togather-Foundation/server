@@ -406,8 +406,8 @@ GET /api/v1/events
 |-----------|------|-------------|
 | `limit` | integer | Number of results (default: 100, max: 1000) |
 | `after` | string | Cursor for pagination |
-| `startDate` | ISO 8601 | Filter events starting after this date |
-| `endDate` | ISO 8601 | Filter events ending before this date |
+| `startDate` | ISO 8601 | Filter events starting on or after this date |
+| `endDate` | ISO 8601 | Filter events starting on or before this date (inclusive of the entire endDate day) |
 | `city` | string | Filter by city (addressLocality) |
 | `region` | string | Filter by region (addressRegion) |
 | `venueULID` | ULID | Filter by specific venue |

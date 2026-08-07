@@ -72,6 +72,49 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 	require.ElementsMatch(t, []string{seed.EventAName}, eventNames(keywordResp.Items))
 }
 
+// TestEventsListEndDateIncludesEntireDay is the end-to-end regression guard for
+// GitHub issue #11: a bare endDate previously resolved to midnight and was used
+// as an inclusive upper bound, silently dropping every event later in the day.
+// endDate must include events starting any time on the endDate day, and must
+// exclude events starting exactly at the following day's midnight (the range is
+// a half-open interval [startDate, endDate+1day)).
+func TestEventsListEndDateIncludesEntireDay(t *testing.T) {
+	env := setupTestEnv(t)
+
+	loc, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+
+	org := insertOrganization(t, env, "Toronto Arts Org")
+	place := insertPlace(t, env, "Centennial Park", "Toronto")
+
+	// endDay: a calendar day well in the future so the startDate=today default
+	// can never interfere with the explicit startDate/endDate we pass.
+	now := time.Now().In(loc)
+	endDay := time.Date(now.Year(), now.Month(), now.Day()+7, 0, 0, 0, 0, loc)
+
+	// 23:30 local on endDay — the core #11 symptom (was silently dropped pre-fix).
+	late := "Late Night Jazz"
+	_ = insertEventWithOccurrence(t, env, late, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(endDay.Year(), endDay.Month(), endDay.Day(), 23, 30, 0, 0, loc))
+
+	// Exactly next-day midnight — must be excluded (strict half-open bound).
+	next := "Next Midnight Event"
+	_ = insertEventWithOccurrence(t, env, next, org.ID, place.ID, "culture", "published", []string{}, endDay.AddDate(0, 0, 1))
+
+	// 23:00 the day before endDay — must be excluded by startDate=endDay.
+	earlier := "Earlier Day Event"
+	_ = insertEventWithOccurrence(t, env, earlier, org.ID, place.ID, "sports", "published", []string{}, endDay.Add(-1*time.Hour))
+
+	day := endDay.Format("2006-01-02")
+	filters := url.Values{}
+	filters.Set("startDate", day)
+	filters.Set("endDate", day)
+	filters.Set("limit", "50")
+
+	resp := fetchEventsList(t, env, filters)
+	require.ElementsMatch(t, []string{late}, eventNames(resp.Items),
+		"endDate must include the entire endDate day and nothing beyond it")
+}
+
 type listSeedData struct {
 	EventAName string
 	EventBName string
