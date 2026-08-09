@@ -119,7 +119,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 	}
 	pagination.Limit = limit
 
-	after := strings.TrimSpace(values.Get("after"))
+	after := strings.TrimSpace(domain.ResolveAlias(values, "after", "cursor", &warnings))
 	if after != "" {
 		// Validate cursor format by attempting to decode it
 		_, err := paginationpkg.DecodeEventCursor(after)

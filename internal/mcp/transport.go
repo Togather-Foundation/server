@@ -352,10 +352,12 @@ func wrapMCPHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitC
 
 	wrapped := handler
 	if authStore != nil {
-		wrapped = middleware.AgentAuth(authStore)(wrapped)
+		// Auth-or-continue: anonymous sessions reach the MCP server where
+		// per-tool authorization (public read-only tools vs write/account tools)
+		// is enforced. A present-but-invalid key still gets a 401.
+		wrapped = middleware.AuthOrContinue(authStore)(wrapped)
 	}
 
-	wrapped = middleware.WithRateLimitTierHandler(middleware.TierAgent)(wrapped)
 	wrapped = middleware.RateLimit(rateLimitCfg)(wrapped)
 	return wrapped, nil
 }

@@ -3,12 +3,14 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -151,7 +153,11 @@ func decodeToolText(t *testing.T, result *mcpTypes.CallToolResult) map[string]an
 	return payload
 }
 
-// TestMCPAuthUnauthorized verifies that MCP HTTP requests without an API key are rejected
+// TestMCPAuthUnauthorized verifies the anonymous MCP surface: anonymous
+// sessions may initialize and call the public read-only tools, but write/account
+// tools are denied with a JSON-RPC error (not an HTTP 401, since the server
+// accepts the request and enforces per-tool authorization). A present-but-invalid
+// key still gets an HTTP 401.
 func TestMCPAuthUnauthorized(t *testing.T) {
 	env := setupTestEnv(t)
 
@@ -188,7 +194,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 	testServer := httptest.NewServer(wrappedHandler)
 	defer testServer.Close()
 
-	// Test 1: Request with no Authorization header
+	// Test 1: Request with no Authorization header — initialize succeeds anonymously
 	req, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(`{"jsonrpc": "2.0", "method": "initialize", "id": 1}`))
 	require.NoError(t, err)
 	req.Header.Set("Content-Type", "application/json")
@@ -197,11 +203,9 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
-	require.Equal(t, http.StatusUnauthorized, resp.StatusCode, "Request without API key should be rejected")
-	require.Equal(t, "Bearer", resp.Header.Get("WWW-Authenticate"),
-		"MCP 401 should advertise the Bearer scheme so OAuth-capable clients detect it")
+	require.Equal(t, http.StatusOK, resp.StatusCode, "Anonymous initialize should succeed (read-only MCP surface is public)")
 
-	// Test 2: Request with empty Authorization header
+	// Test 2: Empty Authorization header is treated as anonymous — succeeds
 	req2, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(`{"jsonrpc": "2.0", "method": "initialize", "id": 1}`))
 	require.NoError(t, err)
 	req2.Header.Set("Content-Type", "application/json")
@@ -211,10 +215,9 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = resp2.Body.Close() }()
 
-	require.Equal(t, http.StatusUnauthorized, resp2.StatusCode, "Request with empty Authorization header should be rejected")
-	require.Equal(t, "Bearer", resp2.Header.Get("WWW-Authenticate"))
+	require.Equal(t, http.StatusOK, resp2.StatusCode, "Empty Authorization header is treated as anonymous")
 
-	// Test 3: Request with malformed Authorization header (no Bearer prefix)
+	// Test 3: Malformed Authorization header (no Bearer prefix) still gets 401
 	req3, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(`{"jsonrpc": "2.0", "method": "initialize", "id": 1}`))
 	require.NoError(t, err)
 	req3.Header.Set("Content-Type", "application/json")
@@ -226,6 +229,34 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, resp3.StatusCode, "Request with malformed Authorization should be rejected")
 	require.Equal(t, "Bearer", resp3.Header.Get("WWW-Authenticate"))
+
+	// Test 4: Anonymous write-tool call returns a JSON-RPC error (not HTTP 401).
+	// Streamable HTTP requires an initialized session; capture the session id from
+	// the initialize handshake and reuse it for the tools/call request.
+	sessReq, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(`{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}, "id": 1}`))
+	require.NoError(t, err)
+	sessReq.Header.Set("Content-Type", "application/json")
+
+	sessResp, err := http.DefaultClient.Do(sessReq)
+	require.NoError(t, err)
+	defer func() { _ = sessResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, sessResp.StatusCode)
+	sessionID := sessResp.Header.Get("Mcp-Session-Id")
+	require.NotEmpty(t, sessionID, "initialize should return a session id")
+
+	req4, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(`{"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "add_event", "arguments": {}}, "id": 2}`))
+	require.NoError(t, err)
+	req4.Header.Set("Content-Type", "application/json")
+	req4.Header.Set("Mcp-Session-Id", sessionID)
+
+	resp4, err := http.DefaultClient.Do(req4)
+	require.NoError(t, err)
+	defer func() { _ = resp4.Body.Close() }()
+
+	require.Equal(t, http.StatusOK, resp4.StatusCode, "Anonymous write-tool call is accepted at HTTP layer")
+	body, err := io.ReadAll(resp4.Body)
+	require.NoError(t, err)
+	require.Contains(t, string(body), "requires an API key", "anonymous write tool should be denied with a JSON-RPC error")
 }
 
 // TestMCPAuthValidKey verifies that MCP HTTP requests with a valid API key succeed
@@ -436,7 +467,7 @@ func TestMCPCreateEvent(t *testing.T) {
 	cli := setupMCPClient(t, env)
 	defer func() { _ = cli.Close() }()
 
-	ctx := context.Background()
+	ctx := agentCtx()
 
 	t.Run("success", func(t *testing.T) {
 		eventPayload := map[string]any{
@@ -989,6 +1020,19 @@ func TestMCPSearch(t *testing.T) {
 }
 
 // setupMCPClient creates and initializes an MCP client for testing.
+// agentCtx returns a context carrying an authenticated agent key, as the HTTP
+// AuthOrContinue middleware would stamp for a valid Bearer key. In-process MCP
+// calls that invoke write/account tools (add_event, api_keys, manage_api_key)
+// must use it.
+func agentCtx() context.Context {
+	return auth.ContextWithAgentKey(context.Background(), &auth.APIKey{ID: "test-agent-key", Name: "test-agent"})
+}
+
+// setupMCPClient builds an in-process MCP client wired to the same services the
+// HTTP /mcp endpoint uses. Read-only tools are callable anonymously; write and
+// account tools require an authenticated agent key in the context, so tests that
+// call add_event/api_keys/manage_api_key must pass agentCtx() instead of
+// context.Background().
 func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 	t.Helper()
 
@@ -1209,7 +1253,7 @@ func TestMCPToolValidation(t *testing.T) {
 	cli := setupMCPClient(t, env)
 	defer func() { _ = cli.Close() }()
 
-	ctx := context.Background()
+	ctx := agentCtx()
 
 	// Test get_event with invalid ULID
 	t.Run("events_invalid_ulid", func(t *testing.T) {

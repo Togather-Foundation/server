@@ -50,7 +50,7 @@ func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.U
 
 // contextWithAgentKey adds an API key to the context (for testing)
 func contextWithAgentKey(ctx context.Context, key *auth.APIKey) context.Context {
-	return context.WithValue(ctx, agentKey, key)
+	return auth.ContextWithAgentKey(ctx, key)
 }
 
 func TestUsageTracking_Success(t *testing.T) {

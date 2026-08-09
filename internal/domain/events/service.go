@@ -134,7 +134,7 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 	}
 	pagination.Limit = limit
 
-	after := strings.TrimSpace(values.Get("after"))
+	after := strings.TrimSpace(domain.ResolveAlias(values, "after", "cursor", &warnings))
 	if after != "" {
 		// Validate cursor format by attempting to decode it
 		_, err := paginationpkg.DecodeEventCursor(after)
@@ -162,7 +162,7 @@ var knownFilterParams = map[string]bool{
 	"domain": true, "event_domain": true,
 	"city": true, "region": true,
 	"q": true, "search": true,
-	"keywords": true, "limit": true, "after": true,
+	"keywords": true, "limit": true, "after": true, "cursor": true,
 	// "context" is a pure serialization hint (list @context emission mode) consumed
 	// by the HTTP handler, not a filter. It is allowlisted here so clients don't
 	// get a spurious "unrecognised parameter" warning.

@@ -2,8 +2,12 @@ package mcp
 
 import (
 	"context"
+	"fmt"
+	"sort"
+	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -12,6 +16,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/mcp/prompts"
 	"github.com/Togather-Foundation/server/internal/mcp/resources"
 	"github.com/Togather-Foundation/server/internal/mcp/tools"
+	"github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 	"github.com/rs/zerolog"
 )
@@ -91,6 +96,18 @@ type Config struct {
 	OpenAPIPath string
 }
 
+// publicTools are callable without an API key, mirroring the public read
+// surface of the REST API (GET /api/v1/events, /places, /organizations need no
+// key). Everything else (add_event, api_keys, manage_api_key) requires a key.
+var publicTools = map[string]bool{
+	"events":          true,
+	"places":          true,
+	"organizations":   true,
+	"search":          true,
+	"geocode_address": true,
+	"reverse_geocode": true,
+}
+
 // NewServer creates a new MCP server with the given services.
 // It initializes the server with all capabilities enabled:
 // - Tools: Execute operations on events, places, and organizations
@@ -124,6 +141,31 @@ func NewServer(
 		mcpserver.WithPromptCapabilities(true),         // Enable prompts with listChanged notifications
 		mcpserver.WithRecovery(),                       // Add panic recovery middleware
 		mcpserver.WithInstructions("MCP server for Togather Shared Events Library (SEL) - query and interact with events, places, and organizations"),
+		// Enforce per-tool authorization: read-only tools (publicTools) are
+		// callable by anyone, including anonymous sessions; write/account tools
+		// require an authenticated agent key in the request context. This mirrors
+		// the public read surface of the REST API. Note: WithToolFilter only
+		// affects tools/list visibility — enforcement is the handler middleware.
+		mcpserver.WithToolFilter(func(ctx context.Context, tools []mcp.Tool) []mcp.Tool {
+			if auth.AgentKeyFromContext(ctx) != nil {
+				return tools
+			}
+			filtered := make([]mcp.Tool, 0, len(tools))
+			for _, tool := range tools {
+				if publicTools[tool.Name] {
+					filtered = append(filtered, tool)
+				}
+			}
+			return filtered
+		}),
+		mcpserver.WithToolHandlerMiddleware(func(next mcpserver.ToolHandlerFunc) mcpserver.ToolHandlerFunc {
+			return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				if err := toolRequiresKey(request.Params.Name, ctx); err != nil {
+					return nil, err
+				}
+				return next(ctx, request)
+			}
+		}),
 	)
 
 	srv := &Server{
@@ -285,6 +327,26 @@ func (s *Server) registerPrompts() {
 // This should be called when the server is no longer needed.
 func (s *Server) Shutdown(ctx context.Context) error {
 	// Currently no cleanup needed, but this provides a hook for future
-	// resource cleanup (connections, subscriptions, etc.)
+	// resource cleanup (subscriptions, etc.)
+	return nil
+}
+
+// publicToolNames returns the sorted names of tools callable without an API key.
+func publicToolNames() []string {
+	names := make([]string, 0, len(publicTools))
+	for name := range publicTools {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// toolRequiresKey returns an error when an anonymous session tries to call a
+// tool that is not in the public allowlist. Authenticated sessions (agent key
+// present in ctx) may call any tool.
+func toolRequiresKey(toolName string, ctx context.Context) error {
+	if !publicTools[toolName] && auth.AgentKeyFromContext(ctx) == nil {
+		return fmt.Errorf("tool %q requires an API key (anonymous MCP sessions may only call %s)", toolName, strings.Join(publicToolNames(), ", "))
+	}
 	return nil
 }

@@ -58,6 +58,11 @@ func (t *SearchTools) SearchTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "search",
 		Description: "Search events, places, and organizations with a single query. Returns a merged JSON array with type tags.",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "Search events, places, and organizations",
+			ReadOnlyHint:    mcp.ToBoolPtr(true),
+			DestructiveHint: mcp.ToBoolPtr(false),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{

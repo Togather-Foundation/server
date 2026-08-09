@@ -32,6 +32,11 @@ func (t *DeveloperTools) APIKeysTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "api_keys",
 		Description: "List all API keys for the authenticated developer OR get detailed usage statistics for a specific key. If 'key_id' is provided, returns usage stats with daily breakdown. Otherwise, returns all keys with summary usage (today, 7d, 30d). Does not return actual key values (they cannot be retrieved after creation).",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "List API keys or get usage statistics",
+			ReadOnlyHint:    mcp.ToBoolPtr(true),
+			DestructiveHint: mcp.ToBoolPtr(false),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{
@@ -229,6 +234,11 @@ func (t *DeveloperTools) ManageAPIKeyTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "manage_api_key",
 		Description: "Create or revoke API keys for the authenticated developer. Use action='create' to generate a new key (returns the key value which can only be seen once) or action='revoke' to deactivate an existing key. All keys are created with role='agent' and subject to max_keys limit (default 5).",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "Create or revoke API keys",
+			ReadOnlyHint:    mcp.ToBoolPtr(false),
+			DestructiveHint: mcp.ToBoolPtr(true),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{

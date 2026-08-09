@@ -78,6 +78,11 @@ func (t *EventTools) EventsTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "events",
 		Description: "List events with optional filters, or get a specific event by ULID. If 'id' is provided, returns a single JSON-LD formatted event. Otherwise, returns a JSON array of events matching the filter criteria.",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "List or get events",
+			ReadOnlyHint:    mcp.ToBoolPtr(true),
+			DestructiveHint: mcp.ToBoolPtr(false),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{
@@ -325,6 +330,11 @@ func (t *EventTools) AddEventTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "add_event",
 		Description: "Create a new event. Accepts a JSON-LD event object and returns the created event with its assigned ID.",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "Create a new event",
+			ReadOnlyHint:    mcp.ToBoolPtr(false),
+			DestructiveHint: mcp.ToBoolPtr(false),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{
