@@ -382,3 +382,25 @@ func TestUsageTracking_ClientIP_UntrustedHeaderIgnored(t *testing.T) {
 	assert.Equal(t, netip.MustParseAddr("192.168.1.100"), repo.ipCalls[0].ip,
 		"should ignore X-Forwarded-For from untrusted source")
 }
+
+func TestUsageResponseWriter_Flush(t *testing.T) {
+	rr := httptest.NewRecorder()
+	w := &usageResponseWriter{ResponseWriter: rr}
+	assert.NotPanics(t, func() { w.Flush() }, "Flush should not panic on non-flusher")
+}
+
+type flusherRecorder struct {
+	*httptest.ResponseRecorder
+	flushed bool
+}
+
+func (f *flusherRecorder) Flush() {
+	f.flushed = true
+}
+
+func TestUsageResponseWriter_Flush_WithFlusher(t *testing.T) {
+	fr := &flusherRecorder{ResponseRecorder: httptest.NewRecorder()}
+	w := &usageResponseWriter{ResponseWriter: fr}
+	w.Flush()
+	assert.True(t, fr.flushed, "Flush should delegate to underlying http.Flusher")
+}
