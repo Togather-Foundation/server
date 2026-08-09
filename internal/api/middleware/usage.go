@@ -1,7 +1,9 @@
 package middleware
 
 import (
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/google/uuid"
@@ -59,9 +61,29 @@ func UsageTracking(recorder *developers.UsageRecorder, logger zerolog.Logger) fu
 			// Call the next handler
 			next.ServeHTTP(wrapped, r)
 
+			clientIP := clientIP(r)
+
 			// Record usage after the handler completes
 			isError := wrapped.statusCode >= 400
-			recorder.RecordRequest(apiKeyID, isError)
+			recorder.RecordRequest(apiKeyID, clientIP, isError)
 		})
 	}
+}
+
+func clientIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		idx := strings.IndexByte(forwarded, ',')
+		if idx == -1 {
+			return strings.TrimSpace(forwarded)
+		}
+		return strings.TrimSpace(forwarded[:idx])
+	}
+	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
+		return strings.TrimSpace(realIP)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

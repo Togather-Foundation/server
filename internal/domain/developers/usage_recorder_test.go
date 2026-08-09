@@ -2,6 +2,7 @@ package developers
 
 import (
 	"context"
+	"net/netip"
 	"sync"
 	"testing"
 	"time"
@@ -45,6 +46,16 @@ func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.U
 	return nil
 }
 
+func (m *mockUsageRepo) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.failErr != nil {
+		return m.failErr
+	}
+	return nil
+}
+
 func (m *mockUsageRepo) getCalls() []usageCall {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -59,9 +70,9 @@ func TestUsageRecorder_RecordRequest(t *testing.T) {
 	apiKeyID := uuid.New()
 
 	// Record several requests
-	recorder.RecordRequest(apiKeyID, false) // success
-	recorder.RecordRequest(apiKeyID, false) // success
-	recorder.RecordRequest(apiKeyID, true)  // error
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // success
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // success
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", true)  // error
 
 	// Check in-memory buffer
 	size, requests, errors := recorder.Stats()
@@ -78,8 +89,8 @@ func TestUsageRecorder_ManualFlush(t *testing.T) {
 	apiKeyID := uuid.New()
 
 	// Record some usage
-	recorder.RecordRequest(apiKeyID, false)
-	recorder.RecordRequest(apiKeyID, true)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", false)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", true)
 
 	// Flush manually
 	recorder.flush()
@@ -118,8 +129,8 @@ func TestUsageRecorder_PeriodicFlush(t *testing.T) {
 	}()
 
 	// Record some usage
-	recorder.RecordRequest(apiKeyID, false)
-	recorder.RecordRequest(apiKeyID, true)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", false)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", true)
 
 	// Wait for periodic flush (30 seconds is too long for tests, so we manually flush)
 	recorder.flush()
@@ -139,7 +150,7 @@ func TestUsageRecorder_SizeBasedFlush(t *testing.T) {
 	// Record usage for multiple keys to exceed buffer size
 	for i := 0; i < 5; i++ {
 		apiKeyID := uuid.New()
-		recorder.RecordRequest(apiKeyID, false)
+		recorder.RecordRequest(apiKeyID, "1.2.3.4", false)
 	}
 
 	// Give the async flush a moment to complete
@@ -169,7 +180,7 @@ func TestUsageRecorder_ConcurrentAccess(t *testing.T) {
 				keyID = apiKeyID2
 			}
 			isError := n%10 == 0
-			recorder.RecordRequest(keyID, isError)
+			recorder.RecordRequest(keyID, "1.2.3.4", isError)
 		}(i)
 	}
 
@@ -191,8 +202,8 @@ func TestUsageRecorder_GracefulShutdown(t *testing.T) {
 	apiKeyID := uuid.New()
 
 	// Record some usage
-	recorder.RecordRequest(apiKeyID, false)
-	recorder.RecordRequest(apiKeyID, true)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", false)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", true)
 
 	// Close should flush remaining buffer and block until complete
 	err := recorder.Close()
@@ -248,8 +259,8 @@ func TestUsageRecorder_MultipleAPIKeys(t *testing.T) {
 
 	// Record usage for each key
 	for _, key := range keys {
-		recorder.RecordRequest(key, false)
-		recorder.RecordRequest(key, true)
+		recorder.RecordRequest(key, "1.2.3.4", false)
+		recorder.RecordRequest(key, "1.2.3.4", true)
 	}
 
 	// Flush
@@ -289,17 +300,17 @@ func TestUsageRecorder_ErrorCategorization(t *testing.T) {
 
 	// Test various status codes through error flag
 	// 2xx/3xx → isError=false
-	recorder.RecordRequest(apiKeyID, false) // 200
-	recorder.RecordRequest(apiKeyID, false) // 201
-	recorder.RecordRequest(apiKeyID, false) // 204
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // 200
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // 201
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // 204
 
 	// 4xx → isError=true
-	recorder.RecordRequest(apiKeyID, true) // 400
-	recorder.RecordRequest(apiKeyID, true) // 404
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", true) // 400
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", true) // 404
 
 	// 5xx → isError=true
-	recorder.RecordRequest(apiKeyID, true) // 500
-	recorder.RecordRequest(apiKeyID, true) // 503
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", true) // 500
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", true) // 503
 
 	// Check stats
 	size, requests, errors := recorder.Stats()

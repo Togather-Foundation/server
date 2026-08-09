@@ -33,6 +33,14 @@ type ApiKeyUsage struct {
 	ErrorCount   int64       `json:"error_count"`
 }
 
+type ApiKeyUsageIp struct {
+	ApiKeyID     pgtype.UUID `json:"api_key_id"`
+	Date         pgtype.Date `json:"date"`
+	Ip           netip.Addr  `json:"ip"`
+	RequestCount int64       `json:"request_count"`
+	ErrorCount   int64       `json:"error_count"`
+}
+
 // Stores results of batch event ingestion jobs
 type BatchIngestionResult struct {
 	// Unique identifier for the batch job (PRIMARY KEY provides implicit index for lookups)

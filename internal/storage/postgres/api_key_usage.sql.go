@@ -7,6 +7,7 @@ package postgres
 
 import (
 	"context"
+	"net/netip"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -73,6 +74,67 @@ func (q *Queries) GetAPIKeyUsageTotal(ctx context.Context, arg GetAPIKeyUsageTot
 	return i, err
 }
 
+const getDailyUsageReportData = `-- name: GetDailyUsageReportData :many
+SELECT k.id AS api_key_id, k.name AS key_name, k.prefix AS key_prefix,
+       d.id AS developer_id, d.name AS developer_name, d.email AS developer_email,
+       u.date, u.ip, u.request_count, u.error_count
+FROM api_key_usage_ips u
+JOIN api_keys k ON k.id = u.api_key_id
+JOIN developers d ON d.id = k.developer_id
+WHERE u.date >= $1 AND u.date <= $2
+  AND k.developer_id IS NOT NULL
+ORDER BY u.date, u.request_count DESC
+`
+
+type GetDailyUsageReportDataParams struct {
+	Date   pgtype.Date `json:"date"`
+	Date_2 pgtype.Date `json:"date_2"`
+}
+
+type GetDailyUsageReportDataRow struct {
+	ApiKeyID       pgtype.UUID `json:"api_key_id"`
+	KeyName        string      `json:"key_name"`
+	KeyPrefix      string      `json:"key_prefix"`
+	DeveloperID    pgtype.UUID `json:"developer_id"`
+	DeveloperName  string      `json:"developer_name"`
+	DeveloperEmail string      `json:"developer_email"`
+	Date           pgtype.Date `json:"date"`
+	Ip             netip.Addr  `json:"ip"`
+	RequestCount   int64       `json:"request_count"`
+	ErrorCount     int64       `json:"error_count"`
+}
+
+func (q *Queries) GetDailyUsageReportData(ctx context.Context, arg GetDailyUsageReportDataParams) ([]GetDailyUsageReportDataRow, error) {
+	rows, err := q.db.Query(ctx, getDailyUsageReportData, arg.Date, arg.Date_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetDailyUsageReportDataRow{}
+	for rows.Next() {
+		var i GetDailyUsageReportDataRow
+		if err := rows.Scan(
+			&i.ApiKeyID,
+			&i.KeyName,
+			&i.KeyPrefix,
+			&i.DeveloperID,
+			&i.DeveloperName,
+			&i.DeveloperEmail,
+			&i.Date,
+			&i.Ip,
+			&i.RequestCount,
+			&i.ErrorCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDeveloperUsageTotal = `-- name: GetDeveloperUsageTotal :one
 SELECT COALESCE(SUM(u.request_count), 0)::bigint AS total_requests,
        COALESCE(SUM(u.error_count), 0)::bigint AS total_errors
@@ -120,6 +182,33 @@ func (q *Queries) UpsertAPIKeyUsage(ctx context.Context, arg UpsertAPIKeyUsagePa
 	_, err := q.db.Exec(ctx, upsertAPIKeyUsage,
 		arg.ApiKeyID,
 		arg.Date,
+		arg.RequestCount,
+		arg.ErrorCount,
+	)
+	return err
+}
+
+const upsertAPIKeyUsageIP = `-- name: UpsertAPIKeyUsageIP :exec
+INSERT INTO api_key_usage_ips (api_key_id, date, ip, request_count, error_count)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (api_key_id, date, ip) DO UPDATE SET
+    request_count = api_key_usage_ips.request_count + EXCLUDED.request_count,
+    error_count = api_key_usage_ips.error_count + EXCLUDED.error_count
+`
+
+type UpsertAPIKeyUsageIPParams struct {
+	ApiKeyID     pgtype.UUID `json:"api_key_id"`
+	Date         pgtype.Date `json:"date"`
+	Ip           netip.Addr  `json:"ip"`
+	RequestCount int64       `json:"request_count"`
+	ErrorCount   int64       `json:"error_count"`
+}
+
+func (q *Queries) UpsertAPIKeyUsageIP(ctx context.Context, arg UpsertAPIKeyUsageIPParams) error {
+	_, err := q.db.Exec(ctx, upsertAPIKeyUsageIP,
+		arg.ApiKeyID,
+		arg.Date,
+		arg.Ip,
 		arg.RequestCount,
 		arg.ErrorCount,
 	)

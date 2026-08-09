@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"sync"
 	"testing"
 	"time"
@@ -45,6 +46,10 @@ func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.U
 		requestCount: requestCount,
 		errorCount:   errorCount,
 	})
+	return nil
+}
+
+func (m *mockUsageRepo) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error {
 	return nil
 }
 

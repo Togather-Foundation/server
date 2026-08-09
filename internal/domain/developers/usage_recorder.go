@@ -2,6 +2,7 @@ package developers
 
 import (
 	"context"
+	"net/netip"
 	"sync"
 	"time"
 
@@ -12,29 +13,29 @@ import (
 )
 
 const (
-	// FlushInterval is how often the usage buffer is flushed to the database
 	FlushInterval = 30 * time.Second
 
-	// MaxBufferSize is the maximum number of API keys in the buffer before forcing a flush
 	MaxBufferSize = 100
 )
 
-// UsageRepository defines the interface for persisting usage data
 type UsageRepository interface {
 	UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount int64) error
+	UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error
 }
 
-// usageDelta tracks accumulated request and error counts for a single API key
+type usageKey struct {
+	apiKeyID uuid.UUID
+	ip       string
+}
+
 type usageDelta struct {
 	requests int64
 	errors   int64
 }
 
-// UsageRecorder buffers API key usage metrics in memory and periodically flushes them to the database.
-// It's safe for concurrent use.
 type UsageRecorder struct {
 	mu           sync.Mutex
-	counts       map[uuid.UUID]*usageDelta
+	counts       map[usageKey]*usageDelta
 	repo         UsageRepository
 	ticker       *time.Ticker
 	done         chan struct{}
@@ -46,13 +47,11 @@ type UsageRecorder struct {
 	started      bool
 }
 
-// NewUsageRecorder creates a new UsageRecorder instance.
-// Call Start() to begin the background flush goroutine.
 func NewUsageRecorder(repo UsageRepository, logger zerolog.Logger, cfg config.DeveloperConfig) *UsageRecorder {
 	cfg = cfg.WithDefaults()
 	flushTimeout := time.Duration(cfg.UsageFlushTimeoutSeconds) * time.Second
 	return &UsageRecorder{
-		counts:       make(map[uuid.UUID]*usageDelta),
+		counts:       make(map[usageKey]*usageDelta),
 		repo:         repo,
 		maxSize:      MaxBufferSize,
 		flushTimeout: flushTimeout,
@@ -61,13 +60,11 @@ func NewUsageRecorder(repo UsageRepository, logger zerolog.Logger, cfg config.De
 	}
 }
 
-// Start begins the background goroutine that periodically flushes buffered usage to the database.
-// It's safe to call Start multiple times (subsequent calls are no-ops).
 func (r *UsageRecorder) Start() {
 	r.mu.Lock()
 	if r.ticker != nil {
 		r.mu.Unlock()
-		return // already started
+		return
 	}
 	r.ticker = time.NewTicker(FlushInterval)
 	r.started = true
@@ -78,7 +75,6 @@ func (r *UsageRecorder) Start() {
 	r.logger.Info().Dur("interval", FlushInterval).Msg("usage recorder started")
 }
 
-// flushLoop runs in a background goroutine and flushes the buffer on a timer or when done is closed
 func (r *UsageRecorder) flushLoop() {
 	defer r.wg.Done()
 	for {
@@ -86,23 +82,21 @@ func (r *UsageRecorder) flushLoop() {
 		case <-r.ticker.C:
 			r.flush()
 		case <-r.done:
-			r.flush() // final flush on shutdown
+			r.flush()
 			return
 		}
 	}
 }
 
-// RecordRequest increments the usage counters for the given API key.
-// isError should be true for HTTP 4xx/5xx responses.
-// This method is safe for concurrent use.
-func (r *UsageRecorder) RecordRequest(apiKeyID uuid.UUID, isError bool) {
+func (r *UsageRecorder) RecordRequest(apiKeyID uuid.UUID, clientIP string, isError bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	delta, ok := r.counts[apiKeyID]
+	k := usageKey{apiKeyID: apiKeyID, ip: clientIP}
+	delta, ok := r.counts[k]
 	if !ok {
 		delta = &usageDelta{}
-		r.counts[apiKeyID] = delta
+		r.counts[k] = delta
 	}
 
 	delta.requests++
@@ -110,19 +104,14 @@ func (r *UsageRecorder) RecordRequest(apiKeyID uuid.UUID, isError bool) {
 		delta.errors++
 	}
 
-	// Check if buffer size exceeded and trigger flush if needed
 	if len(r.counts) >= r.maxSize {
 		r.logger.Debug().Int("size", len(r.counts)).Msg("buffer size limit reached, triggering flush")
-		// Swap the buffer under the lock to avoid race condition
 		snapshot := r.counts
-		r.counts = make(map[uuid.UUID]*usageDelta)
-		// Spawn goroutine with the swapped buffer (no lock needed)
+		r.counts = make(map[usageKey]*usageDelta)
 		go r.flushSnapshot(snapshot)
 	}
 }
 
-// flush writes all buffered usage data to the database and clears the buffer.
-// This method acquires the lock, swaps the buffer, and delegates to flushSnapshot.
 func (r *UsageRecorder) flush() {
 	r.mu.Lock()
 	if len(r.counts) == 0 {
@@ -130,22 +119,18 @@ func (r *UsageRecorder) flush() {
 		return
 	}
 
-	// Swap the buffer to minimize lock hold time
 	snapshot := r.counts
-	r.counts = make(map[uuid.UUID]*usageDelta)
+	r.counts = make(map[usageKey]*usageDelta)
 	r.mu.Unlock()
 
 	r.flushSnapshot(snapshot)
 }
 
-// flushSnapshot writes the given usage snapshot to the database without acquiring the lock.
-// This allows callers to swap the buffer before calling, avoiding lock contention.
-func (r *UsageRecorder) flushSnapshot(snapshot map[uuid.UUID]*usageDelta) {
+func (r *UsageRecorder) flushSnapshot(snapshot map[usageKey]*usageDelta) {
 	if len(snapshot) == 0 {
 		return
 	}
 
-	// Use background context since the original request context is gone
 	ctx, cancel := context.WithTimeout(context.Background(), r.flushTimeout)
 	defer cancel()
 
@@ -153,15 +138,55 @@ func (r *UsageRecorder) flushSnapshot(snapshot map[uuid.UUID]*usageDelta) {
 	flushed := 0
 	failed := 0
 
-	for keyID, delta := range snapshot {
-		// Convert uuid.UUID to pgtype.UUID
+	keyAgg := make(map[uuid.UUID]*usageDelta)
+
+	for k, delta := range snapshot {
 		var pgUUID pgtype.UUID
-		if err := pgUUID.Scan(keyID.String()); err != nil {
+		if err := pgUUID.Scan(k.apiKeyID.String()); err != nil {
 			r.logger.Error().
 				Err(err).
-				Str("api_key_id", keyID.String()).
+				Str("api_key_id", k.apiKeyID.String()).
 				Msg("failed to convert UUID")
 			failed++
+			continue
+		}
+
+		if k.ip != "" {
+			ip, err := netip.ParseAddr(k.ip)
+			if err != nil {
+				r.logger.Debug().
+					Str("ip", k.ip).
+					Msg("skipping invalid IP for per-IP usage upsert")
+			} else {
+				if err := r.repo.UpsertAPIKeyUsageIP(ctx, pgUUID, now, ip, delta.requests, delta.errors); err != nil {
+					r.logger.Error().
+						Err(err).
+						Str("api_key_id", k.apiKeyID.String()).
+						Str("ip", k.ip).
+						Int64("requests", delta.requests).
+						Int64("errors", delta.errors).
+						Msg("failed to upsert per-IP usage")
+					failed++
+					continue
+				}
+			}
+		}
+
+		agg, ok := keyAgg[k.apiKeyID]
+		if !ok {
+			agg = &usageDelta{}
+			keyAgg[k.apiKeyID] = agg
+		}
+		agg.requests += delta.requests
+		agg.errors += delta.errors
+
+		flushed++
+	}
+
+	for keyID, delta := range keyAgg {
+		var pgUUID pgtype.UUID
+		if err := pgUUID.Scan(keyID.String()); err != nil {
+			r.logger.Error().Err(err).Str("api_key_id", keyID.String()).Msg("failed to convert UUID for aggregate")
 			continue
 		}
 
@@ -171,11 +196,8 @@ func (r *UsageRecorder) flushSnapshot(snapshot map[uuid.UUID]*usageDelta) {
 				Str("api_key_id", keyID.String()).
 				Int64("requests", delta.requests).
 				Int64("errors", delta.errors).
-				Msg("failed to upsert usage")
-			failed++
-			continue
+				Msg("failed to upsert aggregate usage")
 		}
-		flushed++
 	}
 
 	if flushed > 0 || failed > 0 {
@@ -186,8 +208,6 @@ func (r *UsageRecorder) flushSnapshot(snapshot map[uuid.UUID]*usageDelta) {
 	}
 }
 
-// Close gracefully shuts down the usage recorder, flushing any remaining buffered data.
-// If Start() was called, it blocks until the flush loop exits. It's safe to call Close multiple times.
 func (r *UsageRecorder) Close() error {
 	r.shutdown.Do(func() {
 		r.mu.Lock()
@@ -199,9 +219,8 @@ func (r *UsageRecorder) Close() error {
 
 		if wasStarted {
 			close(r.done)
-			r.wg.Wait() // Wait for flush loop to exit after final flush
+			r.wg.Wait()
 		} else {
-			// If not started, just do a synchronous flush
 			r.flush()
 		}
 
@@ -210,7 +229,6 @@ func (r *UsageRecorder) Close() error {
 	return nil
 }
 
-// Stats returns the current buffer statistics (for testing/debugging)
 func (r *UsageRecorder) Stats() (bufferSize int, totalRequests int64, totalErrors int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

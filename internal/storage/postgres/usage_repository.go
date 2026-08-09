@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -96,6 +97,24 @@ func (r *UsageRepository) GetDeveloperUsageTotal(ctx context.Context, developerI
 		return 0, 0, fmt.Errorf("get developer usage total: %w", err)
 	}
 	return result.TotalRequests, result.TotalErrors, nil
+}
+
+// UpsertAPIKeyUsageIP upserts per-IP usage stats for an API key on a given date
+func (r *UsageRepository) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error {
+	q := r.queryer()
+
+	params := UpsertAPIKeyUsageIPParams{
+		ApiKeyID:     apiKeyID,
+		Date:         pgtype.Date{Time: date, Valid: true},
+		Ip:           ip,
+		RequestCount: requestCount,
+		ErrorCount:   errorCount,
+	}
+
+	if err := q.UpsertAPIKeyUsageIP(ctx, params); err != nil {
+		return fmt.Errorf("upsert api key usage ip: %w", err)
+	}
+	return nil
 }
 
 // WithTx returns a new repository instance that will use the provided transaction

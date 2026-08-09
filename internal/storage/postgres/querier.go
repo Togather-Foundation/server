@@ -140,6 +140,7 @@ type Querier interface {
 	// Gets the canonical (winning) field value based on conflict resolution rules
 	// Priority: trust_level DESC, confidence DESC, observed_at DESC
 	GetCanonicalFieldValue(ctx context.Context, arg GetCanonicalFieldValueParams) (GetCanonicalFieldValueRow, error)
+	GetDailyUsageReportData(ctx context.Context, arg GetDailyUsageReportDataParams) ([]GetDailyUsageReportDataRow, error)
 	GetDeveloperByEmail(ctx context.Context, email string) (Developer, error)
 	GetDeveloperByGitHubID(ctx context.Context, githubID pgtype.Int8) (Developer, error)
 	GetDeveloperByID(ctx context.Context, id pgtype.UUID) (Developer, error)
@@ -363,6 +364,7 @@ type Querier interface {
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	// SQLc queries for API key usage tracking.
 	UpsertAPIKeyUsage(ctx context.Context, arg UpsertAPIKeyUsageParams) error
+	UpsertAPIKeyUsageIP(ctx context.Context, arg UpsertAPIKeyUsageIPParams) error
 	// Insert or update an entity identifier (sameAs link)
 	UpsertEntityIdentifier(ctx context.Context, arg UpsertEntityIdentifierParams) (EntityIdentifier, error)
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
