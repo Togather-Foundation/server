@@ -532,7 +532,12 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 			)
 
 			mcpRaw := mcp.NewStreamableHTTPHandler(mcpServer.MCPServer())
-			mcpWrapped := apiKeyAuth(usageTracking(rateLimitAgent(mcpRaw)))
+			// Auth-or-continue: anonymous sessions may call the public read-only
+			// tools; write/account tools (add_event, api_keys, manage_api_key) are
+			// enforced per-tool inside the MCP server. A present-but-invalid key
+			// still gets 401. AuthOrContinue sets the rate-limit tier itself
+			// (TierPublic anonymous, TierAgent with a valid key).
+			mcpWrapped := middleware.AuthOrContinue(repo.Auth().APIKeys())(usageTracking(mcpRaw))
 			mux.Handle("/mcp", mcpWrapped)
 		}
 	}
