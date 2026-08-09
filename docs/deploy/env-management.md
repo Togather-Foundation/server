@@ -41,6 +41,12 @@ Deployment fails without these three:
 | `JWT_SECRET` | JWT signing key (generate: `openssl rand -base64 32`) |
 | `ADMIN_PASSWORD` | Admin account password |
 
+## Optional Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DAILY_REPORT_EXCLUDE_IPS` | `-` | Comma-separated list of IP addresses to exclude from the daily usage report endpoint (`GET /api/v1/admin/reports/daily-usage`). Typically set to the server owner's own IPs. |
+
 ---
 
 ## Variable Precedence

@@ -433,6 +433,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create Admin Geocoding handler (srv-qq7o1)
 	adminGeocodingHandler := handlers.NewAdminGeocodingHandler(pool, riverClient, slogLogger, cfg.Environment)
 
+	// Create Admin Report handler
+	adminReportHandler := handlers.NewAdminReportHandler(queries, cfg.Reporting, loc, cfg.Environment, logger.With().Str("component", "admin_reports").Logger())
+
 	// Create Federation handlers (T111)
 	changeFeedRepo := postgres.NewChangeFeedRepository(queries)
 	changeFeedService := federation.NewChangeFeedService(changeFeedRepo, logger, cfg.Server.BaseURL)
@@ -497,6 +500,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		},
 	))
 
+	// Middleware setup
+	apiKeyRepo := repo.Auth().APIKeys()
+	apiKeyAuth := middleware.AgentAuth(apiKeyRepo)
+	rateLimitPublic := middleware.WithRateLimitTierHandler(middleware.TierPublic)
+	rateLimitAgent := middleware.WithRateLimitTierHandler(middleware.TierAgent)
+	usageTracking := middleware.UsageTracking(usageRecorder, logger, cfg.RateLimit.TrustedProxyCIDRs)
+
 	// MCP endpoint (optional, disabled by default)
 	if os.Getenv("MCP_HTTP_ENABLED") == "true" {
 		transportCfg, err := mcp.LoadTransportConfig()
@@ -521,25 +531,11 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 				logger,
 			)
 
-			mcpHandler, err := mcp.WrapHandler(
-				mcp.NewStreamableHTTPHandler(mcpServer.MCPServer()),
-				repo.Auth().APIKeys(),
-				cfg.RateLimit,
-			)
-			if err != nil {
-				logger.Warn().Err(err).Msg("failed to wrap MCP handler; MCP endpoint disabled")
-			} else {
-				mux.Handle("/mcp", mcpHandler)
-			}
+			mcpRaw := mcp.NewStreamableHTTPHandler(mcpServer.MCPServer())
+			mcpWrapped := apiKeyAuth(usageTracking(rateLimitAgent(mcpRaw)))
+			mux.Handle("/mcp", mcpWrapped)
 		}
 	}
-
-	// Middleware setup
-	apiKeyRepo := repo.Auth().APIKeys()
-	apiKeyAuth := middleware.AgentAuth(apiKeyRepo)
-	rateLimitPublic := middleware.WithRateLimitTierHandler(middleware.TierPublic)
-	rateLimitAgent := middleware.WithRateLimitTierHandler(middleware.TierAgent)
-	usageTracking := middleware.UsageTracking(usageRecorder, logger)
 
 	// Apply rate limiting to public read endpoints
 	publicEvents := rateLimitPublic(http.HandlerFunc(eventsHandler.List))
@@ -602,7 +598,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("/api/v1/admin/logout", http.HandlerFunc(adminAuthHandler.Logout))
 
 	// Token exchange endpoint - exchanges an admin API key for a short-lived JWT
-	tokenExchange := apiKeyAuth(rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(tokenHandler.Exchange))))
+	tokenExchange := apiKeyAuth(usageTracking(rateLimitLogin(middleware.AdminRequestSize()(http.HandlerFunc(tokenHandler.Exchange)))))
 	mux.Handle("POST /api/v1/auth/token", tokenExchange)
 
 	// Admin event management endpoints (requires JWT auth)
@@ -751,6 +747,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		http.MethodPut:    adminUpdateDeveloper,
 		http.MethodDelete: adminDeactivateDeveloper,
 	}))
+
+	// Admin daily usage report endpoint
+	adminDailyUsage := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminReportHandler.DailyUsage))))
+	mux.Handle("GET /api/v1/admin/reports/daily-usage", adminDailyUsage)
 
 	// Admin scraper source management (srv-5127b)
 	adminScraperListSources := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminScraperHandler.ListSources))))

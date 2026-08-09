@@ -28,6 +28,7 @@ type Config struct {
 	Artsdata           ArtsdataConfig
 	Scraper            ScraperConfig
 	Developer          DeveloperConfig
+	Reporting          ReportingConfig
 	Users              UsersConfig
 	GeographicBoundary GeographicBoundaryConfig
 	DefaultTimezone    string
@@ -345,6 +346,20 @@ type DeveloperConfig struct {
 	UsageFlushTimeoutSeconds int
 }
 
+// ReportingConfig holds tunables for the admin daily-usage report endpoint.
+type ReportingConfig struct {
+	// DailyReportExcludeIPs is a comma-separated list of IPs that are excluded from
+	// the daily usage report (typically the server owner's own IPs).
+	// Environment variable: DAILY_REPORT_EXCLUDE_IPS (default: "")
+	DailyReportExcludeIPs string
+}
+
+// WithDefaults returns a copy of ReportingConfig with zero-values replaced
+// by their production defaults.
+func (r ReportingConfig) WithDefaults() ReportingConfig {
+	return r
+}
+
 // WithDefaults returns a copy of UsersConfig with zero-values replaced by
 // their production defaults.  Call this in service constructors so that tests
 // that use UsersConfig{} continue to behave correctly.
@@ -570,6 +585,9 @@ func Load() (Config, error) {
 			PasswordMinLength:        getEnvInt("DEVELOPER_PASSWORD_MIN_LENGTH", 8),
 			PasswordMaxLength:        getEnvInt("DEVELOPER_PASSWORD_MAX_LENGTH", 128),
 			UsageFlushTimeoutSeconds: getEnvInt("DEVELOPER_USAGE_FLUSH_TIMEOUT_SECONDS", 10),
+		},
+		Reporting: ReportingConfig{
+			DailyReportExcludeIPs: getEnv("DAILY_REPORT_EXCLUDE_IPS", ""),
 		},
 		Users: UsersConfig{
 			PasswordMinLength: getEnvInt("USERS_PASSWORD_MIN_LENGTH", 12),

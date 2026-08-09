@@ -65,6 +65,10 @@ var openapiConfigEntries = []struct {
 		envVar:     "VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS",
 		wantSubstr: "VALIDATION_AMBIGUOUS_DATE_MAX_FUTURE_DAYS",
 	},
+	{
+		envVar:     "DAILY_REPORT_EXCLUDE_IPS",
+		wantSubstr: "DAILY_REPORT_EXCLUDE_IPS",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable
