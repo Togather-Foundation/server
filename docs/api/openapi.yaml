@@ -1662,7 +1662,9 @@ paths:
         Returns API-key usage statistics for a date range, summarizing request and error
         counts aggregated by API key and client IP. Owner-associated traffic is excluded
         via the DAILY_REPORT_EXCLUDE_IPS env var (configurable via DAILY_REPORT_EXCLUDE_IPS, default empty)
-        or the optional exclude_ips query parameter.
+        or the optional exclude_ips query parameter. Only data recorded since the
+        deployment of per-IP tracking (api_key_usage_ips table) is included; this
+        report is forward-looking.
       security:
         - bearerAuth: []
       parameters:

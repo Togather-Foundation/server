@@ -26,6 +26,12 @@ func (w *usageResponseWriter) Write(p []byte) (int, error) {
 	return w.ResponseWriter.Write(p)
 }
 
+func (w *usageResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
 // UsageTracking records API key usage (request counts and error counts) to the usage recorder.
 // It must be placed after AgentAuth middleware in the chain so that API key info is available in context.
 func UsageTracking(recorder *developers.UsageRecorder, logger zerolog.Logger, trustedProxyCIDRs []string) func(http.Handler) http.Handler {
