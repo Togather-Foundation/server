@@ -1,9 +1,7 @@
 package middleware
 
 import (
-	"net"
 	"net/http"
-	"strings"
 
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/google/uuid"
@@ -30,7 +28,7 @@ func (w *usageResponseWriter) Write(p []byte) (int, error) {
 
 // UsageTracking records API key usage (request counts and error counts) to the usage recorder.
 // It must be placed after AgentAuth middleware in the chain so that API key info is available in context.
-func UsageTracking(recorder *developers.UsageRecorder, logger zerolog.Logger) func(http.Handler) http.Handler {
+func UsageTracking(recorder *developers.UsageRecorder, logger zerolog.Logger, trustedProxyCIDRs []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Extract API key from context (set by AgentAuth middleware)
@@ -61,29 +59,11 @@ func UsageTracking(recorder *developers.UsageRecorder, logger zerolog.Logger) fu
 			// Call the next handler
 			next.ServeHTTP(wrapped, r)
 
-			clientIP := clientIP(r)
+			clientIP := clientKey(r, trustedProxyCIDRs)
 
 			// Record usage after the handler completes
 			isError := wrapped.statusCode >= 400
 			recorder.RecordRequest(apiKeyID, clientIP, isError)
 		})
 	}
-}
-
-func clientIP(r *http.Request) string {
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		idx := strings.IndexByte(forwarded, ',')
-		if idx == -1 {
-			return strings.TrimSpace(forwarded)
-		}
-		return strings.TrimSpace(forwarded[:idx])
-	}
-	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-		return strings.TrimSpace(realIP)
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return host
 }

@@ -505,7 +505,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	apiKeyAuth := middleware.AgentAuth(apiKeyRepo)
 	rateLimitPublic := middleware.WithRateLimitTierHandler(middleware.TierPublic)
 	rateLimitAgent := middleware.WithRateLimitTierHandler(middleware.TierAgent)
-	usageTracking := middleware.UsageTracking(usageRecorder, logger)
+	usageTracking := middleware.UsageTracking(usageRecorder, logger, cfg.RateLimit.TrustedProxyCIDRs)
 
 	// MCP endpoint (optional, disabled by default)
 	if os.Getenv("MCP_HTTP_ENABLED") == "true" {

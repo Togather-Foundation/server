@@ -197,6 +197,7 @@ func (r *UsageRecorder) flushSnapshot(snapshot map[usageKey]*usageDelta) {
 				Int64("requests", delta.requests).
 				Int64("errors", delta.errors).
 				Msg("failed to upsert aggregate usage")
+			failed++
 		}
 	}
 

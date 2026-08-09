@@ -22,7 +22,15 @@ import (
 type mockUsageRepo struct {
 	mu      sync.Mutex
 	calls   []usageCall
+	ipCalls []usageIPCall
 	failErr error
+}
+
+type usageIPCall struct {
+	apiKeyID     pgtype.UUID
+	ip           netip.Addr
+	requestCount int64
+	errorCount   int64
 }
 
 type usageCall struct {
@@ -50,6 +58,19 @@ func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.U
 }
 
 func (m *mockUsageRepo) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.failErr != nil {
+		return m.failErr
+	}
+
+	m.ipCalls = append(m.ipCalls, usageIPCall{
+		apiKeyID:     apiKeyID,
+		ip:           ip,
+		requestCount: requestCount,
+		errorCount:   errorCount,
+	})
 	return nil
 }
 
@@ -76,7 +97,7 @@ func TestUsageTracking_Success(t *testing.T) {
 		_, _ = w.Write([]byte("success"))
 	})
 
-	middleware := UsageTracking(recorder, logger)
+	middleware := UsageTracking(recorder, logger, nil)
 	wrapped := middleware(handler)
 
 	// Create request with API key in context
@@ -114,7 +135,7 @@ func TestUsageTracking_Error(t *testing.T) {
 		_, _ = w.Write([]byte("error"))
 	})
 
-	middleware := UsageTracking(recorder, logger)
+	middleware := UsageTracking(recorder, logger, nil)
 	wrapped := middleware(handler)
 
 	req := httptest.NewRequest("GET", "/test", nil)
@@ -141,7 +162,7 @@ func TestUsageTracking_NoAPIKey(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	middleware := UsageTracking(recorder, logger)
+	middleware := UsageTracking(recorder, logger, nil)
 	wrapped := middleware(handler)
 
 	// Request without API key in context
@@ -172,7 +193,7 @@ func TestUsageTracking_InvalidUUID(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	middleware := UsageTracking(recorder, logger)
+	middleware := UsageTracking(recorder, logger, nil)
 	wrapped := middleware(handler)
 
 	req := httptest.NewRequest("GET", "/test", nil)
@@ -222,7 +243,7 @@ func TestUsageTracking_MultipleStatusCodes(t *testing.T) {
 				w.WriteHeader(tt.status)
 			})
 
-			middleware := UsageTracking(recorder, logger)
+			middleware := UsageTracking(recorder, logger, nil)
 			wrapped := middleware(handler)
 
 			req := httptest.NewRequest("GET", "/test", nil)
@@ -258,7 +279,7 @@ func TestUsageTracking_ImplicitStatusOK(t *testing.T) {
 		_, _ = w.Write([]byte("success"))
 	})
 
-	middleware := UsageTracking(recorder, logger)
+	middleware := UsageTracking(recorder, logger, nil)
 	wrapped := middleware(handler)
 
 	req := httptest.NewRequest("GET", "/test", nil)
@@ -270,4 +291,94 @@ func TestUsageTracking_ImplicitStatusOK(t *testing.T) {
 	_, requests, errors := recorder.Stats()
 	assert.Equal(t, int64(1), requests)
 	assert.Equal(t, int64(0), errors, "implicit 200 should not be error")
+}
+
+func TestUsageTracking_ClientIP_TrustedProxy(t *testing.T) {
+	logger := zerolog.Nop()
+	repo := &mockUsageRepo{}
+	recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
+
+	apiKeyID := uuid.New()
+	apiKey := &auth.APIKey{ID: apiKeyID.String(), Name: "test-key"}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := UsageTracking(recorder, logger, []string{"10.0.0.0/8"})
+	wrapped := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.RemoteAddr = "10.0.0.1:12345"
+	req.Header.Set("X-Forwarded-For", "203.0.113.45")
+	req = req.WithContext(contextWithAgentKey(req.Context(), apiKey))
+	rec := httptest.NewRecorder()
+
+	wrapped.ServeHTTP(rec, req)
+	_ = recorder.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Len(t, repo.ipCalls, 1)
+	assert.Equal(t, netip.MustParseAddr("203.0.113.45"), repo.ipCalls[0].ip)
+}
+
+func TestUsageTracking_ClientIP_Direct(t *testing.T) {
+	logger := zerolog.Nop()
+	repo := &mockUsageRepo{}
+	recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
+
+	apiKeyID := uuid.New()
+	apiKey := &auth.APIKey{ID: apiKeyID.String(), Name: "test-key"}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := UsageTracking(recorder, logger, nil)
+	wrapped := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.RemoteAddr = "192.168.1.100:12345"
+	req = req.WithContext(contextWithAgentKey(req.Context(), apiKey))
+	rec := httptest.NewRecorder()
+
+	wrapped.ServeHTTP(rec, req)
+	_ = recorder.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Len(t, repo.ipCalls, 1)
+	assert.Equal(t, netip.MustParseAddr("192.168.1.100"), repo.ipCalls[0].ip)
+}
+
+func TestUsageTracking_ClientIP_UntrustedHeaderIgnored(t *testing.T) {
+	logger := zerolog.Nop()
+	repo := &mockUsageRepo{}
+	recorder := developers.NewUsageRecorder(repo, logger, config.DeveloperConfig{UsageFlushTimeoutSeconds: 10})
+
+	apiKeyID := uuid.New()
+	apiKey := &auth.APIKey{ID: apiKeyID.String(), Name: "test-key"}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := UsageTracking(recorder, logger, nil)
+	wrapped := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.RemoteAddr = "192.168.1.100:12345"
+	req.Header.Set("X-Forwarded-For", "10.0.0.1")
+	req = req.WithContext(contextWithAgentKey(req.Context(), apiKey))
+	rec := httptest.NewRecorder()
+
+	wrapped.ServeHTTP(rec, req)
+	_ = recorder.Close()
+	time.Sleep(50 * time.Millisecond)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Len(t, repo.ipCalls, 1)
+	assert.Equal(t, netip.MustParseAddr("192.168.1.100"), repo.ipCalls[0].ip,
+		"should ignore X-Forwarded-For from untrusted source")
 }
