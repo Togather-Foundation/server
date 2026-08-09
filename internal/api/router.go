@@ -531,16 +531,14 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 				logger,
 			)
 
-			mcpHandler, err := mcp.WrapHandler(
-				mcp.NewStreamableHTTPHandler(mcpServer.MCPServer()),
-				repo.Auth().APIKeys(),
-				cfg.RateLimit,
-			)
-			if err != nil {
-				logger.Warn().Err(err).Msg("failed to wrap MCP handler; MCP endpoint disabled")
-			} else {
-				mux.Handle("/mcp", usageTracking(mcpHandler))
-			}
+			mcpRaw := mcp.NewStreamableHTTPHandler(mcpServer.MCPServer())
+			// Build middleware chain inside-out so the execution order is:
+			// RateLimit → TierAgent → usageTracking → AgentAuth → mcp handler
+			mcpWrapped := apiKeyAuth(mcpRaw)
+			mcpWrapped = usageTracking(mcpWrapped)
+			mcpWrapped = rateLimitAgent(mcpWrapped)
+			mcpWrapped = middleware.RateLimit(cfg.RateLimit)(mcpWrapped)
+			mux.Handle("/mcp", mcpWrapped)
 		}
 	}
 
