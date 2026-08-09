@@ -2907,6 +2907,9 @@ components:
       description: |
         Opaque cursor for pagination (obtained from previous response's `next_cursor`).
         Cursors are base64url-encoded strings - treat as opaque, do not parse or modify.
+        `cursor` is accepted as an alias for `after` (with a `warnings` entry noting
+        the canonical name). The MCP `events`/`places`/`organizations` tools expose this
+        value as `cursor`, so REST callers can pass the MCP parameter name directly.
         Example: `MTcwNjg4NjAwMDAwMDAwMDAwMDowMUhZWDNLUVc3RVJUV jlYTkJNMlA4UUpaRg`
       schema:
         type: string

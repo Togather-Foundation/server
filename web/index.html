@@ -57,7 +57,7 @@
                     "target": {
                         "@type": "EntryPoint",
                         "urlTemplate": "/mcp",
-                        "description": "MCP streamable HTTP endpoint. Requires API key (Bearer token). Get free key at /dev/login."
+                        "description": "MCP streamable HTTP endpoint. Read-only tools are public (no key). Write/account tools (add_event, api_keys, manage_api_key) require an API key (Bearer token) — get one free at /dev/login."
                     }
                 }
             }
@@ -294,14 +294,15 @@
                 Connect directly via the <a href="https://modelcontextprotocol.io">Model Context Protocol (MCP)</a> for structured tool access to events, places, and organizations — one call, no scraping, no JSON parsing.
             </p>
             <ul>
-                <li><strong>MCP Endpoint (preferred):</strong> <code>&lt;base-url&gt;/mcp</code> (streamable HTTP, API key required — get one free at <a href="/dev/login">/dev/login</a>)</li>
-                <li><strong>Why a key?</strong> Reading is public (no key). The key covers <em>writes</em> (<code>POST /api/v1/events</code>) and gates the <code>/mcp</code> gateway — it also enables per-agent rate limits and usage stats. Reads never require it.</li>
+                <li><strong>MCP Endpoint (preferred):</strong> <code>&lt;base-url&gt;/mcp</code> (streamable HTTP). <strong>Read-only tools are public — no API key needed.</strong> Anonymous sessions can call <code>events</code>, <code>search</code>, <code>places</code>, <code>organizations</code>, <code>geocode_address</code>, <code>reverse_geocode</code>.</li>
+                <li><strong>When you need a key:</strong> only for the <em>write/account</em> tools — <code>add_event</code>, <code>api_keys</code>, <code>manage_api_key</code>. A key also enables per-agent rate limits and usage stats. Get one free at <a href="/dev/login">/dev/login</a>.</li>
+                <li><strong>No key? Connect anyway.</strong> Point your agent at <code>&lt;base-url&gt;/mcp</code> without any header — it will discover the 6 public tools. If you try a write tool without a key, you'll get a clear <code>tool "add_event" requires an API key</code> error.</li>
                 <li><strong>Key env var:</strong> expected at <code>$TOGATHER_MCP_API_KEY</code> (or <code>SEL_API_KEY</code>). If unset, create one at <a href="/dev/login">/dev/login</a> (GitHub OAuth, instant) and export it or paste it into your config header.</li>
                 <li><strong>Register in your local config file</strong> (not a claude.ai remote connector — that can't send a header and will fail with "still unauthorized"). This server has <strong>no OAuth</strong>. In opencode use <code>type: "remote"</code>; in Claude Desktop add a remote server under <code>mcpServers</code>.<br>
                     <code>"togather-sel": { "type": "remote", "url": "https://staging.toronto.togather.foundation/mcp", "headers": { "Authorization": "Bearer {env:TOGATHER_MCP_API_KEY}" }, "enabled": true }</code><br>
-                    <span style="font-size: 0.9rem;">opencode substitutes <code>{env:VAR}</code>; shell <code>${VAR}</code> is not interpolated.</span></li>
+                    <span style="font-size: 0.9rem;">Read-only users can omit the <code>headers</code> line entirely. opencode substitutes <code>{env:VAR}</code>; shell <code>${VAR}</code> is not interpolated.</span></li>
                 <li><strong>Session handshake:</strong> <code>initialize</code> returns an <code>mcp-session-id</code> response header — send it back as <code>Mcp-Session-Id</code> on every later call (<code>tools/list</code>, <code>tools/call</code>).</li>
-                <li><strong>MCP Tools:</strong> <code>events</code>, <code>search</code>, <code>places</code>, <code>organizations</code>, <code>add_event</code>, <code>geocode_address</code>, <code>reverse_geocode</code>, <code>api_keys</code>, <code>manage_api_key</code></li>
+                <li><strong>MCP Tools:</strong> <em>public</em> — <code>events</code>, <code>search</code>, <code>places</code>, <code>organizations</code>, <code>geocode_address</code>, <code>reverse_geocode</code> · <em>require key</em> — <code>add_event</code>, <code>api_keys</code>, <code>manage_api_key</code></li>
                 <li><strong>No MCP? Use REST directly</strong> — filter server-side to avoid large payloads:<br>
                     <code>GET /api/v1/events?search=open+source&amp;start_date=2026-03-01&amp;limit=10</code></li>
                 <li><strong>Full Integration Guide:</strong> <a href="/api/docs">Interactive API Docs</a> and <a href="https://github.com/Togather-Foundation/server/blob/main/docs/integration/mcp-server.md">MCP Server guide</a></li>

@@ -48,6 +48,11 @@ func (t *OrganizationTools) OrganizationsTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "organizations",
 		Description: "List organizations with optional filters, or get a specific organization by ULID. If 'id' is provided, returns a single JSON-LD formatted organization. Otherwise, returns a JSON array of organizations matching the filter criteria.",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "List or get organizations",
+			ReadOnlyHint:    mcp.ToBoolPtr(true),
+			DestructiveHint: mcp.ToBoolPtr(false),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{

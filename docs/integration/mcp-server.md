@@ -16,14 +16,18 @@ The MCP server is available as:
 - Standalone binary: `cmd/mcp-server` (for local/stdio setups)
 
 > **Authentication model (read this first):** the server has **no OAuth**. Auth is a
-> static API key in an `Authorization: Bearer <key>` header. Reading event data is
-> **public** (no key) — the key is for writes (`add_event`) and for accessing the
-> `/mcp` gateway (which also enables per-agent rate limits and usage stats).
+> static API key in an `Authorization: Bearer <key>` header. **The read-only tools are
+> public — no key needed.** The six read tools (`events`, `places`, `organizations`,
+> `search`, `geocode_address`, `reverse_geocode`) work anonymously, exactly like the
+> public REST read endpoints. The key is only required for the write/account tools
+> (`add_event`, `api_keys`, `manage_api_key`) and it enables per-agent rate limits and
+> usage stats.
 >
 > **Register `/mcp` as a *local* MCP server** with a custom header. Do **not** use a
 > claude.ai *remote connector* — remote connectors speak only OAuth and cannot send a
 > static header, so they will fail with "still unauthorized" (that is expected, not a
-> login problem). Get a free key at `/dev/login` (GitHub OAuth, instant).
+> login problem). Get a free key at `/dev/login` (GitHub OAuth, instant) for the write
+> tools.
 
 ## Configuration
 
@@ -40,7 +44,8 @@ MCP_HTTP_ENABLED=false
 
 ### Embedded in the main server (recommended)
 
-Set `MCP_HTTP_ENABLED=true` to expose `/mcp` on the main API server. The endpoint is protected by API key auth and agent-tier rate limiting:
+Set `MCP_HTTP_ENABLED=true` to expose `/mcp` on the main API server. Read-only tools
+are public; write/account tools require an API key and are rate-limited at the agent tier:
 
 ```
 MCP_HTTP_ENABLED=true
@@ -61,29 +66,47 @@ MCP_TRANSPORT=http PORT=8080 ./mcp-server
 
 ## Authentication and Rate Limiting
 
-All MCP HTTP and SSE requests require an API key in the `Authorization` header:
+The **read-only tools are public** — anonymous sessions may call `events`, `places`,
+`organizations`, `search`, `geocode_address`, and `reverse_geocode` without any header.
+Anonymous requests are rate-limited at the public tier (IP-keyed).
+
+The **write/account tools** (`add_event`, `api_keys`, `manage_api_key`) require an API
+key in the `Authorization` header:
 
 ```
 Authorization: Bearer <api-key>
 ```
 
-Rate limiting uses the agent tier limits from `RateLimitConfig`. Get a key at `/dev/login` (instant, GitHub OAuth) or by email invitation. If an unauthenticated request returns `401`, the response includes a `WWW-Authenticate: Bearer` header advertising the scheme.
+They are rate-limited at the agent tier from `RateLimitConfig`. Get a key at `/dev/login`
+(instant, GitHub OAuth) or by email invitation.
+
+Behavior on the wire:
+
+- **Anonymous + read tool** → 200, results returned.
+- **Anonymous + write tool** → the request is accepted (HTTP 200) but returns a JSON-RPC
+  error: `tool "add_event" requires an API key (...)`. This is a per-tool denial, not an
+  HTTP 401 — the server intentionally keeps one endpoint for both surfaces.
+- **Invalid key** (present but wrong) → HTTP `401` with `WWW-Authenticate: Bearer`.
+- **`tools/list`** shows 6 tools anonymously and all 9 with a valid key.
+
+Every tool also carries MCP tool annotations (`title`, `readOnlyHint`/`destructiveHint`)
+so conformant clients know which tools are safe to call without a confirmation prompt.
 
 ## Tools
 
 The MCP server provides 9 tools:
 
-| Tool | Description |
-|------|-------------|
-| `events` | List events with filters and pagination, OR get a single event by ULID (if `id` parameter provided) |
-| `search` | Cross-entity search across events/places/orgs |
-| `places` | List places with filters and pagination, OR get a single place by ULID (if `id` parameter provided) |
-| `organizations` | List organizations with filters, OR get a single organization by ULID (if `id` parameter provided) |
-| `add_event` | Create an event from JSON-LD (requires API key) |
-| `geocode_address` | Geocode an address or place name to coordinates |
-| `reverse_geocode` | Reverse geocode coordinates to a human-readable address |
-| `api_keys` | List API keys and usage statistics for the authenticated developer |
-| `manage_api_key` | Create or revoke API keys (requires API key) |
+| Tool | Auth | Description |
+|------|------|-------------|
+| `events` | public | List events with filters and pagination, OR get a single event by ULID (if `id` parameter provided) |
+| `search` | public | Cross-entity search across events/places/orgs |
+| `places` | public | List places with filters and pagination, OR get a single place by ULID (if `id` parameter provided) |
+| `organizations` | public | List organizations with filters, OR get a single organization by ULID (if `id` parameter provided) |
+| `geocode_address` | public | Geocode an address or place name to coordinates |
+| `reverse_geocode` | public | Reverse geocode coordinates to a human-readable address |
+| `add_event` | **API key** | Create an event from JSON-LD (requires API key) |
+| `api_keys` | **API key** | List API keys and usage statistics for the authenticated developer |
+| `manage_api_key` | **API key** | Create or revoke API keys (requires API key) |
 
 ### Unified List/Get Operations
 
@@ -162,13 +185,21 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - **Solution**: Set `LOG_OUTPUT=stderr` or redirect logs: `./mcp-server 2>mcp.log`
 - **Verification**: Check Claude Desktop logs at `~/Library/Logs/Claude/mcp-server-togather.log`
 
-#### HTTP/SSE returns 401 Unauthorized
-- **Cause**: Missing or invalid API key
-- **Solution**: Include Bearer token in Authorization header:
+#### Write tool denied with "requires an API key"
+- **Cause**: Anonymous session tried to call a write/account tool (`add_event`,
+  `api_keys`, `manage_api_key`). Read-only tools work without a key.
+- **Solution**: Add the Bearer token to the Authorization header:
   ```bash
   curl -H "Authorization: Bearer YOUR_API_KEY" https://localhost:8080/mcp
   ```
 - **Verification**: Check if API key exists: `psql $DATABASE_URL -c "SELECT key_prefix FROM api_keys LIMIT 1;"`
+
+#### HTTP/SSE returns 401 Unauthorized
+- **Cause**: An Authorization header was present but the key is missing or invalid.
+  (Anonymous requests are allowed — a 401 here means you sent a bad credential, which
+  is never silently downgraded.)
+- **Solution**: Provide a valid key, or omit the header entirely to use the public
+  read-only surface.
 
 #### `/mcp` endpoint returns 404
 - **Cause**: MCP HTTP endpoint not enabled
@@ -444,13 +475,17 @@ The `data` field follows RFC 7807 (Problem Details) for structured error informa
 ### Validate Authentication
 
 ```bash
-# Test with invalid key (should return 401)
+# Read-only tools work without a key (public)
 curl -X POST http://localhost:8080/mcp \
-  -H "Authorization: Bearer invalid" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 
-# Test without auth header (should return 401)
+# Write tools need a key (JSON-RPC error, not 401, when anonymous)
 curl -X POST http://localhost:8080/mcp \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add_event","arguments":{}}}'
+
+# Test with invalid key (present but wrong → HTTP 401)
+curl -X POST http://localhost:8080/mcp \
+  -H "Authorization: Bearer invalid" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
@@ -532,4 +567,4 @@ If Claude Desktop integration isn't working:
 
 ---
 
-**Last Updated:** 2026-08-07
+**Last Updated:** 2026-08-09

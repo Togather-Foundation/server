@@ -41,6 +41,11 @@ func (t *GeocodingTools) GeocodeAddressTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "geocode_address",
 		Description: "Geocode an address or place name to geographic coordinates (latitude/longitude). Uses OpenStreetMap Nominatim with caching. Returns coordinates and a human-readable display name.",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "Geocode an address to coordinates",
+			ReadOnlyHint:    mcp.ToBoolPtr(true),
+			DestructiveHint: mcp.ToBoolPtr(false),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{
@@ -115,6 +120,11 @@ func (t *GeocodingTools) ReverseGeocodeTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "reverse_geocode",
 		Description: "Reverse geocode geographic coordinates to a human-readable address. Converts latitude/longitude to an address with structured components (road, city, state, etc.). Uses OpenStreetMap Nominatim with caching.",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "Reverse geocode coordinates to an address",
+			ReadOnlyHint:    mcp.ToBoolPtr(true),
+			DestructiveHint: mcp.ToBoolPtr(false),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{

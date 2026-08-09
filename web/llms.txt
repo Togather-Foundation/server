@@ -18,13 +18,16 @@ for structured tool access — one call returns typed, filtered results with no 
 
 Protocol: Model Context Protocol (MCP), streamable HTTP transport
 Endpoint: <base-url>/mcp
-Auth: API key required (Bearer token)
+Auth: Read-only tools are PUBLIC (no key). Write/account tools (add_event, api_keys,
+      manage_api_key) require an API key (Bearer token).
 Get a free key: /dev/login (GitHub OAuth, instant)
 
-> Why a key? Reading is public — GET /api/v1/events, places, organizations, and
-> the change feed need no key. The key is only for writes (POST /api/v1/events)
-> and for accessing the /mcp gateway; it also enables per-agent rate limits and
-> usage stats. Read-only agents can skip keys entirely.
+> Why a key? Reading is public — GET /api/v1/events, places, organizations, the
+> change feed, AND the read-only MCP tools all need no key. The key is only for
+> writes (POST /api/v1/events) and the MCP write/account tools; it also enables
+> per-agent rate limits and usage stats. Read-only agents can skip keys entirely —
+> an anonymous MCP session can call events, places, organizations, search,
+> geocode_address, and reverse_geocode.
 
 > Key env var: expected at `$TOGATHER_MCP_API_KEY` (or `SEL_API_KEY`). If unset,
 > create one at /dev/login (GitHub OAuth, instant) and export it or paste it into
@@ -36,6 +39,8 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 > in Claude Desktop add a remote server under `mcpServers`. Example:
 >   "togather-sel": { "type": "remote", "url": "https://staging.toronto.togather.foundation/mcp",
 >     "headers": { "Authorization": "Bearer {env:TOGATHER_MCP_API_KEY}" }, "enabled": true }
+> Read-only agents can omit the `headers` line entirely — the 6 public tools work
+> without a key.
 > (opencode substitutes `{env:VAR}`; shell `${VAR}` is not interpolated.)
 
 > Session handshake: `initialize` returns an `mcp-session-id` response header —
@@ -44,20 +49,21 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 ### Available MCP Tools
 
 - events             — list events with filters (date, location, keyword, category) OR get a
-                       single event by ULID (returns full JSON-LD)
-- search             — full-text search across events, places, and organizations
-- places             — list venues/locations with filters OR get a single place by ULID
-- organizations      — list event organizers with filters OR get a single organization by ULID
+                       single event by ULID (returns full JSON-LD) [public, no key]
+- search             — full-text search across events, places, and organizations [public]
+- places             — list venues/locations with filters OR get a single place by ULID [public]
+- organizations      — list event organizers with filters OR get a single organization by ULID [public]
+- geocode_address    — geocode an address or place name to coordinates [public]
+- reverse_geocode    — reverse geocode coordinates to a human-readable address [public]
 - add_event          — submit a new event from JSON-LD (requires API key)
-- geocode_address    — geocode an address or place name to coordinates
-- reverse_geocode    — reverse geocode coordinates to a human-readable address
-- api_keys           — list API keys and usage statistics for the authenticated developer
+- api_keys           — list API keys and usage statistics for the authenticated developer (requires API key)
 - manage_api_key     — create or revoke API keys (requires API key)
 
 MCP tools use snake_case params (query, start_date, end_date, cursor) but also
 accept the REST camelCase aliases (q, startDate, endDate, after) — either
 spelling works, so you never need to rename params when moving between the REST
-API and MCP.
+API and MCP. Anonymous sessions see only the 6 public tools in tools/list; a
+valid key reveals all 9.
 
 ### MCP Resources
 
@@ -113,7 +119,8 @@ alone to request a historical range.
 - state             — lifecycle state filter                 (alias: lifecycle_state)
 - domain            — event domain filter                    (alias: event_domain)
 - limit             — max results (default 50, max 200)
-- after             — pagination cursor (from previous response next_cursor)
+- after             — pagination cursor (from previous response next_cursor); `cursor` is
+                      accepted as an alias (with a warnings entry) so the MCP param name works on REST too
 
 ### Response shape (JSON-LD — field names are Schema.org, not REST conventions)
 

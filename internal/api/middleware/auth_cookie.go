@@ -142,10 +142,6 @@ func JWTAuth(manager *auth.JWTManager, env string) func(http.Handler) http.Handl
 	}
 }
 
-type contextKeyAgent string
-
-const agentKey contextKeyAgent = "agentKey"
-
 func AgentAuth(store auth.APIKeyStore) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -165,24 +161,51 @@ func AgentAuth(store auth.APIKeyStore) func(http.Handler) http.Handler {
 				writeUnauthorized(err)
 				return
 			}
-			ctx := context.WithValue(r.Context(), agentKey, key)
+			ctx := auth.ContextWithAgentKey(r.Context(), key)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// AuthOrContinue authenticates the request when a Bearer key is supplied, but
+// lets anonymous requests through. A valid key is stamped into the context
+// (TierAgent rate limit); an absent header continues anonymously (TierPublic).
+// A present-but-invalid key still gets a 401 — anonymous access is never
+// granted when a credential was attempted and failed.
+func AuthOrContinue(store auth.APIKeyStore) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeUnauthorized := func(err error) {
+				w.Header().Set("WWW-Authenticate", "Bearer")
+				problem.Write(w, r, http.StatusUnauthorized, "https://sel.events/problems/unauthorized", "Unauthorized", err, "")
+			}
+			if strings.TrimSpace(r.Header.Get("Authorization")) == "" {
+				ctx := WithRateLimitTier(r.Context(), TierPublic)
+				next.ServeHTTP(w, r.WithContext(ctx))
+				return
+			}
+			if store == nil {
+				writeUnauthorized(problem.ErrUnauthorized)
+				return
+			}
+			key, err := auth.ValidateAPIKey(r.Context(), store, r.Header.Get("Authorization"))
+			if err != nil {
+				writeUnauthorized(err)
+				return
+			}
+			ctx := auth.ContextWithAgentKey(r.Context(), key)
+			ctx = WithRateLimitTier(ctx, TierAgent)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
 func AgentKey(r *http.Request) *auth.APIKey {
-	if r == nil {
-		return nil
-	}
-	if key, ok := r.Context().Value(agentKey).(*auth.APIKey); ok {
-		return key
-	}
-	return nil
+	return auth.AgentKeyFromContext(r.Context())
 }
 
 func ContextWithAgentKey(ctx context.Context, key *auth.APIKey) context.Context {
-	return context.WithValue(ctx, agentKey, key)
+	return auth.ContextWithAgentKey(ctx, key)
 }
 
 // isDeveloperToken checks if a JWT token contains a "type": "developer" claim

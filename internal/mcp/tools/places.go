@@ -48,6 +48,11 @@ func (t *PlaceTools) PlacesTool() mcp.Tool {
 	return mcp.Tool{
 		Name:        "places",
 		Description: "List places with optional filters, or get a specific place by ULID. If 'id' is provided, returns a single JSON-LD formatted place. Otherwise, returns a JSON array of places matching the filter criteria. Supports proximity search via near_lat, near_lon, and radius parameters.",
+		Annotations: mcp.ToolAnnotation{
+			Title:           "List or get places",
+			ReadOnlyHint:    mcp.ToBoolPtr(true),
+			DestructiveHint: mcp.ToBoolPtr(false),
+		},
 		InputSchema: mcp.ToolInputSchema{
 			Type: "object",
 			Properties: map[string]interface{}{

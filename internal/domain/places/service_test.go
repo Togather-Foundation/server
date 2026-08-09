@@ -3,6 +3,7 @@ package places
 import (
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +125,47 @@ func TestParseFiltersAfterCursorValidation(t *testing.T) {
 	t.Run("invalid cursor - too short", func(t *testing.T) {
 		values := url.Values{}
 		values.Set("after", "123")
+
+		_, _, _, err := ParseFilters(values, nil)
+
+		assertFilterError(t, err, "after", "must be a valid cursor")
+	})
+}
+
+func TestParseFiltersCursorAlias(t *testing.T) {
+	validCursor := paginationpkg.EncodeEventCursor(time.Unix(1706886000, 0), "01HYX3KQW7ERTV9XNBM2P8QJZF")
+
+	t.Run("cursor alias sets pagination.After and warns", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("cursor", validCursor)
+
+		_, pagination, warnings, err := ParseFilters(values, nil)
+
+		require.NoError(t, err)
+		require.Equal(t, validCursor, pagination.After)
+		joined := strings.Join(warnings, " ")
+		require.Contains(t, joined, "cursor")
+		require.Contains(t, joined, "after")
+	})
+
+	t.Run("canonical after wins over cursor with no alias warning", func(t *testing.T) {
+		other := paginationpkg.EncodeEventCursor(time.Unix(1706886001, 0), "01HYX3KQW7ERTV9XNBM2P8QJZF")
+		values := url.Values{}
+		values.Set("after", validCursor)
+		values.Set("cursor", other)
+
+		_, pagination, warnings, err := ParseFilters(values, nil)
+
+		require.NoError(t, err)
+		require.Equal(t, validCursor, pagination.After)
+		for _, w := range warnings {
+			require.NotContains(t, w, "cursor")
+		}
+	})
+
+	t.Run("invalid cursor via alias errors", func(t *testing.T) {
+		values := url.Values{}
+		values.Set("cursor", "not-a-valid-cursor")
 
 		_, _, _, err := ParseFilters(values, nil)
 
