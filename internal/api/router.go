@@ -479,6 +479,20 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		http.NotFound(w, r)
 	}))
 	mux.Handle("/.well-known/sel-profile", http.HandlerFunc(wellKnownHandler.SELProfile))
+	// OAuth stub routes: SEL is a resource server only and does not implement an
+	// authorization server (no discovery, no IdP). These must 404 rather than
+	// fall through to the SPA catch-all, so a conformant MCP client that
+	// mistakenly triggers an OAuth flow fails immediately and legibly instead of
+	// silently hanging on a 200 text/html landing page (OAUTH-03).
+	mux.Handle("/authorize", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	mux.Handle("/token", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	mux.Handle("/register", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
 	mux.Handle("/robots.txt", web.RobotsTxtHandler())
 	mux.Handle("/sitemap.xml", web.SitemapHandler())
 	mux.Handle("/llms.txt", web.LLMsTxtHandler())
