@@ -408,8 +408,8 @@ GET /api/v1/events
 | `after` | string | Cursor for pagination |
 | `startDate` | ISO 8601 | Filter events starting on or after this date |
 | `endDate` | ISO 8601 | Filter events starting on or before this date (inclusive of the entire endDate day) |
-| `city` | string | Filter by city (addressLocality) |
-| `region` | string | Filter by region (addressRegion) |
+| `city` | string | Requested city/locality. Each node is single-scope: a city within the node's configured localities (configs/boundary.yaml) matches the whole node, one outside it matches nothing. Not matched against per-event addressLocality. Ignored when the node configures no localities. |
+| `region` | string | Requested region/state, interpreted against the node's configured regions the same way as `city`; ignored when the node configures no regions. |
 | `venueULID` | ULID | Filter by specific venue |
 | `organizerULID` | ULID | Filter by specific organizer |
 | `lifecycleState` | string | Filter by state: `draft`, `published`, `deleted` |

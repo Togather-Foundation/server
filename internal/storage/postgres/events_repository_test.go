@@ -32,7 +32,6 @@ func TestEventRepositoryListFiltersAndPagination(t *testing.T) {
 	_ = insertEvent(t, ctx, pool, "Ottawa Winter Fest", "Snow fun", orgB, placeC, "culture", "published", []string{"winter"}, startC)
 
 	filters := events.Filters{
-		City:           "Toronto",
 		StartDate:      timePtr(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)),
 		EndDate:        timePtr(time.Date(2026, 7, 31, 23, 59, 0, 0, time.UTC)),
 		LifecycleState: "published",

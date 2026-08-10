@@ -174,12 +174,22 @@ paths:
         For iCalendar output use `GET /api/v1/events.ics` (same filter params).
         A `Link: rel=alternate; type=text/calendar` header is included in the response
         pointing to the corresponding ICS feed URL.
+
+        Each SEL node serves one configured geographic boundary (see
+        GEOGRAPHIC_BOUNDARY_CONFIG_FILE, default configs/boundary.yaml). The `city`
+        and `region` filters are interpreted against that boundary, not against
+        per-event addressLocality data: a requested city/region within the node's
+        configured localities/regions matches the whole node (all events are
+        returned); one outside it matches nothing; a dimension the node does not
+        configure is not filtered. When both are omitted, the node's configured
+        scope applies.
       tags: [Events]
       security: []
       parameters:
         - $ref: '#/components/parameters/startDate'
         - $ref: '#/components/parameters/endDate'
         - $ref: '#/components/parameters/city'
+        - $ref: '#/components/parameters/region'
         - $ref: '#/components/parameters/venueId'
         - $ref: '#/components/parameters/organizerId'
         - $ref: '#/components/parameters/lifecycleState'
@@ -355,12 +365,15 @@ paths:
         Query events with optional filters and return as an iCalendar (ICS) feed.
         Same filter parameters as the JSON list endpoint.
         Returns a valid VCALENDAR even when no events match (empty feed).
+        `city` and `region` are interpreted against the node's configured
+        geographic boundary as described on the JSON list endpoint.
       tags: [Events]
       security: []
       parameters:
         - $ref: '#/components/parameters/startDate'
         - $ref: '#/components/parameters/endDate'
         - $ref: '#/components/parameters/city'
+        - $ref: '#/components/parameters/region'
         - $ref: '#/components/parameters/venueId'
         - $ref: '#/components/parameters/organizerId'
         - $ref: '#/components/parameters/lifecycleState'
@@ -2950,7 +2963,14 @@ components:
     city:
       name: city
       in: query
-      description: Filter by city/locality
+      description: Filter by city/locality.
+      schema:
+        type: string
+
+    region:
+      name: region
+      in: query
+      description: Filter by region/state.
       schema:
         type: string
 

@@ -9,20 +9,80 @@ import (
 	"time"
 
 	paginationpkg "github.com/Togather-Foundation/server/internal/api/pagination"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 )
 
 type Service struct {
-	repo Repository
+	repo              Repository
+	geoBoundaryConfig config.GeographicBoundaryConfig
 }
 
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
 }
 
+// WithGeographicBoundaryConfig sets the node's configured geographic scope and
+// returns the service for chaining. The boundary determines how city/region
+// filters are interpreted: a requested city/region within the node's scope
+// matches the whole node; one outside matches nothing.
+func (s *Service) WithGeographicBoundaryConfig(cfg config.GeographicBoundaryConfig) *Service {
+	s.geoBoundaryConfig = cfg.WithDefaults()
+	return s
+}
+
 func (s *Service) List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error) {
+	if !s.locationWithinNode(filters) {
+		return ListResult{}, nil
+	}
 	return s.repo.List(ctx, filters, pagination)
+}
+
+// locationWithinNode reports whether the requested city/region falls within the
+// node's configured geographic boundary. City/region are NOT matched against
+// address_locality data (frequently null or mis-parsed); instead the node is
+// single-scope, so a requested location inside the configured boundary matches
+// the whole node and one outside matches nothing. A dimension the node does not
+// configure (no localities and/or no regions) is not filtered; with no boundary
+// at all, any location request matches.
+func (s *Service) locationWithinNode(filters Filters) bool {
+	if len(s.geoBoundaryConfig.Regions) == 0 && len(s.geoBoundaryConfig.Localities) == 0 {
+		return true
+	}
+	if filters.City != "" && !s.localityAllowed(filters.City) {
+		return false
+	}
+	if filters.Region != "" && !s.regionAllowed(filters.Region) {
+		return false
+	}
+	return true
+}
+
+func (s *Service) localityAllowed(city string) bool {
+	if len(s.geoBoundaryConfig.Localities) == 0 {
+		return true
+	}
+	norm := normalizeLocationName(city)
+	for _, l := range s.geoBoundaryConfig.Localities {
+		if normalizeLocationName(l) == norm {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Service) regionAllowed(region string) bool {
+	if len(s.geoBoundaryConfig.Regions) == 0 {
+		return true
+	}
+	norm := normalizeLocationName(region)
+	for _, r := range s.geoBoundaryConfig.Regions {
+		if normalizeLocationName(r) == norm {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) GetByULID(ctx context.Context, ulid string) (*Event, error) {

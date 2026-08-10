@@ -73,7 +73,7 @@ func run() error {
 	}
 
 	// Initialize domain services
-	eventsService := events.NewService(repo.Events())
+	eventsService := events.NewService(repo.Events()).WithGeographicBoundaryConfig(cfg.Base.GeographicBoundary)
 	ingestService := events.NewIngestService(repo.Events(), cfg.Base.Server.BaseURL, cfg.Base.DefaultTimezone, cfg.Base.Validation, logger)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())

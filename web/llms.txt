@@ -49,7 +49,8 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 ### Available MCP Tools
 
 - events             — list events with filters (date, location, keyword, category) OR get a
-                       single event by ULID (returns full JSON-LD) [public, no key]
+                       single event by ULID (full JSON-LD, including url/description/endDate
+                       for provenance checking) [public, no key]
 - search             — full-text search across events, places, and organizations [public]
 - places             — list venues/locations with filters OR get a single place by ULID [public]
 - organizations      — list event organizers with filters OR get a single organization by ULID [public]
@@ -114,6 +115,10 @@ alone to request a historical range.
 - keywords          — comma-separated keyword tags
 - startDate         — ISO 8601 date, e.g. 2026-03-01  (alias: start_date)
 - endDate           — ISO 8601 date, e.g. 2026-03-31  (alias: end_date)
+- city              — requested city; a city within this node's geographic boundary
+                      matches the whole node, one outside it matches nothing (NOT matched
+                      against per-event addressLocality)
+- region            — requested region/state; same boundary semantics as city
 - venueId           — ULID of the venue/place to filter by  (alias: venue_id)
 - organizerId       — ULID of the organizer to filter by    (alias: organizer_id)
 - state             — lifecycle state filter                 (alias: lifecycle_state)

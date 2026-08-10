@@ -104,15 +104,15 @@ func (t *EventTools) EventsTool() mcp.Tool {
 				},
 				"location": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter by location (city or region name)",
+					"description": "Requested location (city or region name). This node is single-scope: a location within the node's configured geographic boundary matches the whole node, one outside it matches nothing; dimensions the node does not configure are not filtered.",
 				},
 				"city": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter by city name",
+					"description": "Requested city name. Interpreted against the node's configured localities: within them matches the whole node, outside them matches nothing. Ignored when the node configures no localities.",
 				},
 				"region": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter by region name",
+					"description": "Requested region name. Interpreted against the node's configured regions: within them matches the whole node, outside them matches nothing. Ignored when the node configures no regions.",
 				},
 				"limit": map[string]interface{}{
 					"type":        "integer",
@@ -458,6 +458,17 @@ func buildEventPayload(ctx context.Context, event *events.Event, baseURL string,
 
 	if len(event.Occurrences) > 0 {
 		payload["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
+		if event.Occurrences[0].EndTime != nil {
+			payload["endDate"] = event.Occurrences[0].EndTime.Format(time.RFC3339)
+		}
+	}
+
+	if event.Description != "" {
+		payload["description"] = event.Description
+	}
+
+	if event.PublicURL != "" {
+		payload["url"] = event.PublicURL
 	}
 
 	location := resolveEventLocation(ctx, *event, baseURL, placeRes, logger)

@@ -24,11 +24,12 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 
 	today := time.Now().In(time.UTC)
 	filters := url.Values{}
-	filters.Set("city", "Toronto")
 	filters.Set("startDate", today.Format("2006-01-02"))
 	filters.Set("endDate", today.AddDate(0, 1, 0).Format("2006-01-02"))
 	filters.Set("limit", "1")
 
+	// city= is a no-op on a single-city node, so all three seeded events are in
+	// the window (Toronto + Ottawa venues) and pagination walks all of them.
 	first := fetchEventsList(t, env, filters)
 	require.Len(t, first.Items, 1)
 	require.NotEmpty(t, first.NextCursor)
@@ -39,7 +40,12 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 	require.Len(t, second.Items, 1)
 	require.NotEqual(t, first.Items[0], second.Items[0])
 	require.Equal(t, seed.EventBName, eventName(second.Items[0]))
-	require.Empty(t, second.NextCursor)
+
+	filters.Set("after", second.NextCursor)
+	third := fetchEventsList(t, env, filters)
+	require.Len(t, third.Items, 1)
+	require.Equal(t, "Ottawa Winter Fest", eventName(third.Items[0]))
+	require.Empty(t, third.NextCursor)
 
 	filters = url.Values{}
 	filters.Set("venueId", seed.PlaceAULID)
@@ -70,6 +76,34 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 	filters.Set("keywords", "jazz")
 	keywordResp := fetchEventsList(t, env, filters)
 	require.ElementsMatch(t, []string{seed.EventAName}, eventNames(keywordResp.Items))
+}
+
+// TestEventsListCityFilterDoesNotExclude is the regression guard for #19: the
+// deployment is single-city (staging.toronto.togather.foundation is all Toronto),
+// so the `city` query parameter must NOT affect which events are returned.
+// Previously it filtered on p.address_locality, silently dropping events whose
+// venue had a null or mis-parsed addressLocality (up to ~74% of the catalogue).
+func TestEventsListCityFilterDoesNotExclude(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "City Arts Org")
+	placeToronto := insertPlace(t, env, "Centennial Park", "Toronto")
+	placeOttawa := insertPlace(t, env, "Ottawa Arena", "Ottawa")
+
+	now := time.Now().UTC()
+	_ = insertEventWithOccurrence(t, env, "Toronto Night", org.ID, placeToronto.ID, "music", "published", nil, now.AddDate(0, 0, 1))
+	_ = insertEventWithOccurrence(t, env, "Ottawa Night", org.ID, placeOttawa.ID, "culture", "published", nil, now.AddDate(0, 0, 2))
+
+	filters := url.Values{}
+	filters.Set("city", "Toronto")
+	filters.Set("startDate", now.Format("2006-01-02"))
+	filters.Set("endDate", now.AddDate(0, 1, 0).Format("2006-01-02"))
+
+	payload := fetchEventsList(t, env, filters)
+
+	names := eventNames(payload.Items)
+	require.ElementsMatch(t, []string{"Toronto Night", "Ottawa Night"}, names,
+		"city= must not exclude events; the node is single-city, so every event belongs to it")
 }
 
 // TestEventsListEndDateIncludesEntireDay is the end-to-end regression guard for
