@@ -116,6 +116,10 @@ COPY --from=builder /build/docs/api /app/docs/api
 # Copy scraper source configs for 'server scrape sync' command
 COPY --from=builder /build/configs/sources /app/configs/sources
 
+# Copy geographic boundary config (node's city/region scope; loaded via
+# GEOGRAPHIC_BOUNDARY_CONFIG_FILE, default configs/boundary.yaml)
+COPY --from=builder /build/configs/boundary.yaml /app/configs/boundary.yaml
+
 # Set ownership to non-root user
 RUN chown -R togather:togather /app
 
