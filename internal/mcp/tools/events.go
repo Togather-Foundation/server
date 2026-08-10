@@ -104,15 +104,15 @@ func (t *EventTools) EventsTool() mcp.Tool {
 				},
 				"location": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter by location (city or region name)",
+					"description": "Requested location (city or region name). This node is single-scope: a location within the node's configured geographic boundary matches the whole node, one outside it matches nothing; dimensions the node does not configure are not filtered.",
 				},
 				"city": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter by city name",
+					"description": "Requested city name. Interpreted against the node's configured localities: within them matches the whole node, outside them matches nothing. Ignored when the node configures no localities.",
 				},
 				"region": map[string]interface{}{
 					"type":        "string",
-					"description": "Filter by region name",
+					"description": "Requested region name. Interpreted against the node's configured regions: within them matches the whole node, outside them matches nothing. Ignored when the node configures no regions.",
 				},
 				"limit": map[string]interface{}{
 					"type":        "integer",

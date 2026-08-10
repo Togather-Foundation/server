@@ -115,6 +115,10 @@ alone to request a historical range.
 - keywords          — comma-separated keyword tags
 - startDate         — ISO 8601 date, e.g. 2026-03-01  (alias: start_date)
 - endDate           — ISO 8601 date, e.g. 2026-03-31  (alias: end_date)
+- city              — requested city; a city within this node's geographic boundary
+                      matches the whole node, one outside it matches nothing (NOT matched
+                      against per-event addressLocality)
+- region            — requested region/state; same boundary semantics as city
 - venueId           — ULID of the venue/place to filter by  (alias: venue_id)
 - organizerId       — ULID of the organizer to filter by    (alias: organizer_id)
 - state             — lifecycle state filter                 (alias: lifecycle_state)

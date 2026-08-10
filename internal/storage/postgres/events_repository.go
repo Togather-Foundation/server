@@ -109,8 +109,6 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 	}
 
 	// Escape ILIKE patterns to prevent SQL injection
-	escapedCity := escapeILIKEPattern(filters.City)
-	escapedRegion := escapeILIKEPattern(filters.Region)
 	escapedQuery := escapeILIKEPattern(filters.Query)
 
 	rows, err := queryer.Query(ctx, `
@@ -148,28 +146,24 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
   WHERE e.deleted_at IS NULL
     AND ($1::timestamptz IS NULL OR o.start_time >= $1::timestamptz)
     AND ($2::timestamptz IS NULL OR o.start_time < $2::timestamptz)
-    AND ($3 = '' OR p.address_locality ILIKE '%' || $3 || '%' ESCAPE '\')
-    AND ($4 = '' OR p.address_region ILIKE '%' || $4 || '%' ESCAPE '\')
-    AND ($5 = '' OR p.ulid = $5)
-    AND ($6 = '' OR org.ulid = $6)
-    AND ($7 = '' OR e.lifecycle_state = $7)
-    AND ($8 = '' OR e.event_domain = $8)
-    AND ($9 = '' OR (e.name ILIKE '%' || $9 || '%' ESCAPE '\' OR e.description ILIKE '%' || $9 || '%' ESCAPE '\'))
-    AND (coalesce(cardinality($10::text[]), 0) = 0 OR e.keywords && $10::text[])
+    AND ($3 = '' OR p.ulid = $3)
+    AND ($4 = '' OR org.ulid = $4)
+    AND ($5 = '' OR e.lifecycle_state = $5)
+    AND ($6 = '' OR e.event_domain = $6)
+    AND ($7 = '' OR (e.name ILIKE '%' || $7 || '%' ESCAPE '\' OR e.description ILIKE '%' || $7 || '%' ESCAPE '\'))
+    AND (coalesce(cardinality($8::text[]), 0) = 0 OR e.keywords && $8::text[])
     AND (
-      $11::timestamptz IS NULL OR
-      o.start_time > $11::timestamptz OR
-      (o.start_time = $11::timestamptz AND e.ulid > $12)
+      $9::timestamptz IS NULL OR
+      o.start_time > $9::timestamptz OR
+      (o.start_time = $9::timestamptz AND e.ulid > $10)
     )
   ) filtered
  WHERE row_num = 1
  ORDER BY start_time ASC, ulid ASC
- LIMIT $13
+ LIMIT $11
  `,
 		filters.StartDate,
 		filters.EndDate,
-		escapedCity,
-		escapedRegion,
 		filters.VenueULID,
 		filters.OrganizerULID,
 		filters.LifecycleState,

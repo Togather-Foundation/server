@@ -9,6 +9,7 @@ import (
 	"time"
 
 	paginationpkg "github.com/Togather-Foundation/server/internal/api/pagination"
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -440,13 +441,129 @@ func TestService_List(t *testing.T) {
 	repo := NewMockRepository()
 	svc := NewService(repo)
 
-	filters := Filters{City: "Vancouver"}
+	filters := Filters{}
 	pagination := Pagination{Limit: 10}
 
 	result, err := svc.List(ctx, filters, pagination)
 	require.NoError(t, err)
 	require.Empty(t, result.Events)
 	require.Empty(t, result.NextCursor)
+}
+
+// TestService_ListCityBoundary validates that the city/region filters are
+// interpreted against the node's configured geographic boundary, not against
+// address_locality data. A requested city/region within the node's boundary
+// returns all events (the node is single-scope); one outside returns nothing.
+// Regression for #19: previously the SQL filtered on p.address_locality,
+// silently dropping events whose venue had a null or mis-parsed locality.
+func TestService_ListCityBoundary(t *testing.T) {
+	ctx := context.Background()
+
+	boundary := config.GeographicBoundaryConfig{
+		Regions:    []string{"Ontario"},
+		Localities: []string{"Toronto", "Mississauga", "North York"},
+	}
+
+	repo := NewMockRepository()
+	repo.AddEvent(&Event{ULID: "01HX1234567890ABCDEFGHJKMN", Name: "In Scope"})
+	svc := NewService(repo).WithGeographicBoundaryConfig(boundary)
+
+	t.Run("city within node boundary returns all events", func(t *testing.T) {
+		result, err := svc.List(ctx, Filters{City: "Toronto"}, Pagination{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, result.Events, 1)
+	})
+
+	t.Run("region within node boundary returns all events", func(t *testing.T) {
+		result, err := svc.List(ctx, Filters{Region: "Ontario"}, Pagination{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, result.Events, 1)
+	})
+
+	t.Run("city outside node boundary returns empty", func(t *testing.T) {
+		result, err := svc.List(ctx, Filters{City: "Ottawa"}, Pagination{Limit: 10})
+		require.NoError(t, err)
+		require.Empty(t, result.Events)
+	})
+
+	t.Run("no location input returns all events (node scope)", func(t *testing.T) {
+		result, err := svc.List(ctx, Filters{}, Pagination{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, result.Events, 1)
+	})
+}
+
+// TestService_ListCityBoundaryNoConfig verifies that a node with no geographic
+// boundary configured treats city/region as a no-op (no filtering), so existing
+// deployments without a boundary.yaml keep working.
+func TestService_ListCityBoundaryNoConfig(t *testing.T) {
+	ctx := context.Background()
+
+	repo := NewMockRepository()
+	repo.AddEvent(&Event{ULID: "01HX1234567890ABCDEFGHJKMN", Name: "In Scope"})
+	svc := NewService(repo) // no WithGeographicBoundaryConfig
+
+	result, err := svc.List(ctx, Filters{City: "Toronto"}, Pagination{Limit: 10})
+	require.NoError(t, err)
+	require.Len(t, result.Events, 1)
+}
+
+// TestService_ListCityBoundaryEdgeCases pins the mixed-dimension and partial-
+// config semantics of the node-boundary check: an unconfigured dimension is not
+// filtered; both filters set requires BOTH to pass; normalization handles case
+// and surrounding whitespace.
+func TestService_ListCityBoundaryEdgeCases(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name     string
+		boundary config.GeographicBoundaryConfig
+		filters  Filters
+		wantLen  int // number of events expected (1 = in scope, 0 = filtered out)
+	}{
+		{
+			name:     "localities-only boundary ignores region filter",
+			boundary: config.GeographicBoundaryConfig{Localities: []string{"Toronto"}},
+			filters:  Filters{Region: "Quebec"},
+			wantLen:  1,
+		},
+		{
+			name:     "regions-only boundary ignores city filter",
+			boundary: config.GeographicBoundaryConfig{Regions: []string{"Ontario"}},
+			filters:  Filters{City: "Montreal"},
+			wantLen:  1,
+		},
+		{
+			name:     "both filters within boundary",
+			boundary: config.GeographicBoundaryConfig{Regions: []string{"Ontario"}, Localities: []string{"Toronto"}},
+			filters:  Filters{City: "Toronto", Region: "Ontario"},
+			wantLen:  1,
+		},
+		{
+			name:     "city outside rejects even when region within",
+			boundary: config.GeographicBoundaryConfig{Regions: []string{"Ontario"}, Localities: []string{"Toronto"}},
+			filters:  Filters{City: "Ottawa", Region: "Ontario"},
+			wantLen:  0,
+		},
+		{
+			name:     "normalized city matches (case + whitespace)",
+			boundary: config.GeographicBoundaryConfig{Localities: []string{"Toronto"}},
+			filters:  Filters{City: "  TORONTO  "},
+			wantLen:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := NewMockRepository()
+			repo.AddEvent(&Event{ULID: "01HX1234567890ABCDEFGHJKMN", Name: "In Scope"})
+			svc := NewService(repo).WithGeographicBoundaryConfig(tt.boundary)
+
+			result, err := svc.List(ctx, tt.filters, Pagination{Limit: 10})
+			require.NoError(t, err)
+			require.Len(t, result.Events, tt.wantLen)
+		})
+	}
 }
 
 func TestService_GetByULID(t *testing.T) {
