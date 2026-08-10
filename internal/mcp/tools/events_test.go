@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
@@ -520,5 +521,58 @@ func TestBuildListItemOmitsContextInDocumentMode(t *testing.T) {
 	}
 	if result["@type"] != "Event" {
 		t.Errorf("expected @type Event, got %v", result["@type"])
+	}
+}
+
+// TestBuildEventPayloadIncludesProvenanceFields is the regression guard for
+// #18: the MCP events(id) detail response must expose the same provenance
+// fields the REST detail endpoint does — url, description, endDate — so MCP
+// clients can verify an event's source without an N+1 REST fetch.
+func TestBuildEventPayloadIncludesProvenanceFields(t *testing.T) {
+	end := time.Date(2026, 7, 10, 21, 0, 0, 0, time.UTC)
+	event := &events.Event{
+		ULID:        "01HX1234567890ABCDEFGHJKMN",
+		Name:        "Provenance Test",
+		Description: "A test event with a resolvable source URL",
+		PublicURL:   "https://www.meetup.com/example/events/123",
+		Occurrences: []events.Occurrence{
+			{
+				StartTime: time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC),
+				EndTime:   &end,
+			},
+		},
+	}
+
+	payload := buildEventPayload(context.Background(), event, "https://test.example.com", nil, nil, zerolog.Nop())
+
+	if got, ok := payload["url"]; !ok || got != event.PublicURL {
+		t.Errorf("expected url %q, got %v (present=%v)", event.PublicURL, got, ok)
+	}
+	if got, ok := payload["description"]; !ok || got != event.Description {
+		t.Errorf("expected description %q, got %v (present=%v)", event.Description, got, ok)
+	}
+	if got, ok := payload["endDate"]; !ok || got != end.Format(time.RFC3339) {
+		t.Errorf("expected endDate %q, got %v (present=%v)", end.Format(time.RFC3339), got, ok)
+	}
+}
+
+// TestBuildEventPayloadOmitsEmptyOptionalFields verifies that url/description/
+// endDate are omitted when absent, matching the REST detail handler's
+// omitempty semantics rather than emitting empty strings.
+func TestBuildEventPayloadOmitsEmptyOptionalFields(t *testing.T) {
+	event := &events.Event{
+		ULID: "01HX1234567890ABCDEFGHJKMN",
+		Name: "Minimal Event",
+		Occurrences: []events.Occurrence{
+			{StartTime: time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)},
+		},
+	}
+
+	payload := buildEventPayload(context.Background(), event, "https://test.example.com", nil, nil, zerolog.Nop())
+
+	for _, field := range []string{"url", "description", "endDate"} {
+		if _, present := payload[field]; present {
+			t.Errorf("expected %q to be omitted when empty, but it was present: %v", field, payload[field])
+		}
 	}
 }

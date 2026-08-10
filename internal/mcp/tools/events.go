@@ -458,6 +458,17 @@ func buildEventPayload(ctx context.Context, event *events.Event, baseURL string,
 
 	if len(event.Occurrences) > 0 {
 		payload["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
+		if event.Occurrences[0].EndTime != nil {
+			payload["endDate"] = event.Occurrences[0].EndTime.Format(time.RFC3339)
+		}
+	}
+
+	if event.Description != "" {
+		payload["description"] = event.Description
+	}
+
+	if event.PublicURL != "" {
+		payload["url"] = event.PublicURL
 	}
 
 	location := resolveEventLocation(ctx, *event, baseURL, placeRes, logger)
