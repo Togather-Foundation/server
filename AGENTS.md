@@ -189,7 +189,7 @@ tools (`hermes-kanban-*`).
   expected output) · **File scope** (exact paths) · **Constraints** (standing rules) ·
   **Source** (repo, who asked, when, requirement verbatim — never a pointer to a file outside the repo).
 - Work on a **feature branch**, never `main`: `git checkout -b <type>/<ticket-id>-<desc>`.
-  The human merges to main during review; the agent does not self-merge.
+  The agent merges to main once kanban review has passed (see below); no human merge step.
 - Workflow: `ticket_create` (lands `ready`; `triage: true` for triage) → `ticket_claim`
   right before editing (ready→running) → `ticket_comment` as you work → push → record the
   commit SHA in a ticket comment → `ticket_complete`. Completion is review-gated: the
@@ -197,7 +197,8 @@ tools (`hermes-kanban-*`).
 - **Wait for the review** — completing review-gated work leaves the ticket `blocked`. Poll
   `ticket_events` (long-poll: pass the last seen event id, returns on new events) or
   `ticket_get` until it leaves `blocked`: `done` → the review passed → merge your branch to
-  main (the reviewer never merges); `ready` → REQUEST CHANGES → re-claim, fix, re-complete;
+  main (the reviewer never merges, and the agent merges once the branch is cleared);
+  `ready` → REQUEST CHANGES → re-claim, fix, re-complete;
   still `blocked` → ESCALATED → surface to the human; do not re-loop.
 - **Push BEFORE `ticket_complete`.** The review gate reads the pushed commit. After
   pushing, comment the repo + branch + commit SHA + changed files on the ticket so the
