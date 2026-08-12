@@ -1,0 +1,12 @@
+name: 1rg-space
+# 1RG Community Space — arts/culture collective in Toronto
+# Platform: Luma.co calendar with JSON-LD structured data
+# Organization match: 1RG (ULID unknown — API unavailable)
+# Extracted 12 upcoming events with full start/end times, venue, and event URLs
+url: https://luma.com/1rg-calendar
+tier: 0
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
