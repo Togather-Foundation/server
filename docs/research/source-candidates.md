@@ -18,7 +18,7 @@ Test command per candidate:
 
 | Name | URL (listing) | Platform | Est. tier | Est. events | Notes |
 |------|---------------|----------|-----------|-------------|-------|
-| Scotiabank Arena | `https://www.scotiabankarena.com/events` | carbonhouse (MLSE) | 1 | ~20+ | Server-rendered HTML, Ticketmaster deep links. High volume. |
+| Scotiabank Arena | `https://www.scotiabankarena.com/events` | carbonhouse (MLSE) | 1 | ~20+ | Server-rendered HTML, Ticketmaster deep links. High volume. **DONE 2026-08-15** — config `scotiabank-arena.yaml` (Tier 1, 9 events, dates correct; no times on listing, no sitemap/JSON-LD — times stay midnight). |
 | History Toronto | `https://www.historytoronto.com/events` | carbonhouse (Live Nation) | 1 | ~8 | Same platform as Scotiabank Arena. |
 | The Rex Jazz Bar | `https://www.therex.ca` | Squarespace | 1 | ~10–15 | Active venue (2–3 shows/day). Squarespace events module. |
 | Yuk Yuk's Toronto | `https://www.yukyuks.com/toronto` | Laravel custom | 1 | ~10/mo | Server-rendered. Unlocks 27+ city pages same template. |

@@ -1,0 +1,22 @@
+name: "scotiabank-arena"
+# Tier 1 (static HTML). Carbonhouse platform (same as history-toronto) — server-rendered,
+# 9 events on listing at time of test (2026-08-15), grows as dates approach.
+# div.eventItem containers; h3.title a = name + URL; div.date = full date text
+# (ranges like "Aug 15 - 16, 2026", weekday prefixes like "Tuesday / Aug 18, 2026").
+# No pagination on listing; category filters exist (concerts/hockey/basketball) but
+# default view is unscraped-by-category. Mixed-use arena: concerts, sports, comedy.
+# Organization match: API unavailable during config (no SEL server URL on this box).
+url: "https://www.scotiabankarena.com/events"
+tier: 1
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+# Mixed-use arena (music + sports + comedy) — general beats mislabeling sports as music
+domain: general
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div.eventItem"
+  name: "h3.title a"
+  start_date: "div.date"
+  url: "h3.title a"
