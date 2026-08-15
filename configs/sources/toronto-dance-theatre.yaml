@@ -1,0 +1,35 @@
+name: "toronto-dance-theatre"
+# BLOCKED (seasonal lull) — 2026-08-15. WordPress custom theme (no Tribe plugin).
+#
+# What was tried:
+# - Tier 1 on /whats-on/ (the real listing; /events/ is a 404): div.event-item cards
+#   carry names + URLs but NO dates anywhere on the page. Dry-run: 6 events found,
+#   all dropped at normalisation ("raw event has no startDate") → would-submit=0.
+# - Detail pages (/events/<slug>/): dates exist only as free text inside
+#   h2.datetime (e.g. "Thu Aug 6, 8:00 PM"), and EVERY currently published date is
+#   in the past as of 2026-08-15 (butterfly Aug 6, collision Aug 9, magic-mixing
+#   Apr 18, room-upstairs May 2). Current-season pages (songs-for-bones-flesh-sweat,
+#   make-banana-cry, the-room-upstairs, layers-of-kin) publish NO dates at all.
+# - No Event JSON-LD (Yoast WebPage schema only), no iCal feed (?ical=1 returns the
+#   homepage), no Tribe events calendar, no REST/GraphQL API. ThunderTix links on
+#   two pages are SummerWorks ticketing, not TDT's own listing.
+# - events-sitemap.xml has 82 URLs spanning 2021–2026 (historical archive); first
+#   scrape would ingest years of stale events, and current-season pages yield no dates.
+#
+# Revisit: after the 2026/27 season is announced with dates (site is between seasons;
+# 2025/26 ended Aug 9, 2026/27 season page does not exist yet). Recommended shape then:
+# tarragon-theatre-style sitemap config (events-sitemap.xml + filter_pattern to the
+# current season's slugs) with detail-page date extraction from .listing-date-info.
+# Organization match: API unavailable
+url: "https://tdt.org/whats-on/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "div.event-item"
+  name: ".title a"
+  url: ".title a"

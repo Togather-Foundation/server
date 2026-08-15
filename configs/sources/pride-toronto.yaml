@@ -1,0 +1,30 @@
+name: "pride-toronto"
+# Pride Toronto events listing. WordPress + Elementor + JetEngine.
+# Events grid = div.jet-listing-grid__items (data-nav contains #load_more_btn);
+# a second grid on the same page lists Zone Festival performers (no dates) —
+# event_list scoped via the data-nav attribute to exclude artist cards.
+# Date split across 3 .date_start blocks: date+time range ("Thu, Aug 06 ·",
+# "7:30PM", "-12:00AM" — end time carries a leading hyphen).
+# Listing page server-renders only 4 events; the rest load via JetEngine
+# AJAX load-more (JS) — full volume needs the Tier 2/headless pass.
+# No Event JSON-LD on listing or detail pages (Yoast WebPage only); WP REST
+# exposes no event-date meta; /events/feed/ is a post RSS (pubDate != event
+# date). URL pagination (/events/page/2/) duplicates the same 4 events.
+# Organization match: API unavailable
+url: "https://www.pridetoronto.com/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: culture
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.jet-listing-grid__items[data-nav*='load_more_btn'] div.jet-listing-grid__item"
+  name: "h2.elementor-heading-title"
+  url: "a.jet-engine-listing-overlay-link"
+  image: "img"
+  date_selectors:
+    - "div.date_start:has(.fa-calendar) span.jet-listing-dynamic-field__content"
+    - "div.date_start:has(.fa-calendar) + div.date_start span.jet-listing-dynamic-field__content"
+    - "div.date_start:has(.fa-calendar) + div.date_start + div.date_start span.jet-listing-dynamic-field__content"

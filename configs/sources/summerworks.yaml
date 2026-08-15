@@ -1,0 +1,81 @@
+name: "summerworks"
+# SummerWorks Performance Festival (Toronto, theatre/performance). Custom WordPress theme.
+# Platform signals: WordPress + The Events Calendar (Tribe) plugin installed, BUT the
+# Tribe calendar is EMPTY (0 events via /events/, ?ical=1, and /wp-json/tribe/events/v1/).
+# Festival shows are a custom `show` post type: no JSON-LD on listing or detail pages,
+# post type not exposed via WP REST API. The programming listing page
+# (2026-summerworks-festival-programming/) has show names + URLs but NO dates.
+# Dates live only on /show/<slug>/ detail pages (.schedule .time rows,
+# e.g. "MON AUG 10, 8:00 PM" — year-less, weekday prefix; year inferred by scraper).
+# Path: Tier 1 CSS extraction on the 38 current-festival /show/ detail pages listed
+# on the programming page (urls: list). Multi-row date extraction consolidates each
+# show's performance dates into one event with multiple occurrences.
+# NOTE (annual maintenance): this urls: list is the CURRENT festival (2026). When the
+# next festival's programming is published, refresh the URL list from the new
+# programming page. Alternative considered: the show post-type sitemap
+# (wp-sitemap-posts-show-1.xml) auto-discovers new shows, but it contains 284 shows
+# from all years; archived shows with year-less dates would infer the current year and
+# create ghost events (verified: 710 raw / 266 would-submit on first run). urls: is
+# precise and clean.
+# Organization match: API unavailable
+# Known quirk: location selector extracts the "Venue" label prefix too
+# (e.g. "Venue Delta Upsilon Fraternity") — the venue name is a bare text node after
+# <br>, no wrapping element to select. Same class as rom.yaml duplicated-text; ingest
+# normalization handles it. Quality warnings: none (0 on dry-run).
+url: "https://summerworks.ca/2026-summerworks-festival-programming/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general
+domain: arts
+enabled: true
+max_pages: 1
+urls:
+  - "https://summerworks.ca/show/opening-night-rave/"
+  - "https://summerworks.ca/show/closing-time-at-factory/"
+  - "https://summerworks.ca/show/blood-brothers/"
+  - "https://summerworks.ca/show/body-story/"
+  - "https://summerworks.ca/show/the-butterfly-who-flew-into-the-rave/"
+  - "https://summerworks.ca/show/collision-project/"
+  - "https://summerworks.ca/show/collision-project-spin-and-click/"
+  - "https://summerworks.ca/show/dance-talks/"
+  - "https://summerworks.ca/show/date-of-performance-2/"
+  - "https://summerworks.ca/show/elders-journey-in-reverse/"
+  - "https://summerworks.ca/show/every-day-of-peace-in-the-last-hundred-years/"
+  - "https://summerworks.ca/show/fat-fables-community-workshop/"
+  - "https://summerworks.ca/show/festivals-are-scary-river-walk-by-the-lake/"
+  - "https://summerworks.ca/show/free-touch-2/"
+  - "https://summerworks.ca/show/free-touch-staging-presence/"
+  - "https://summerworks.ca/show/golden-rez-dog/"
+  - "https://summerworks.ca/show/gpo-box-no-211/"
+  - "https://summerworks.ca/show/half-of-the-moon/"
+  - "https://summerworks.ca/show/hello-sunshine/"
+  - "https://summerworks.ca/show/heritage-building-in-prime-location/"
+  - "https://summerworks.ca/show/little-white-room/"
+  - "https://summerworks.ca/show/nobody/"
+  - "https://summerworks.ca/show/our-other-organ/"
+  - "https://summerworks.ca/show/provisions/"
+  - "https://summerworks.ca/show/retina-maneuver/"
+  - "https://summerworks.ca/show/rot-hat-2/"
+  - "https://summerworks.ca/show/secret-ingredients/"
+  - "https://summerworks.ca/show/soft-squishy-things/"
+  - "https://summerworks.ca/show/summerworks-at-union-lemon-bucket-orchestra/"
+  - "https://summerworks.ca/show/sustainable-art-working-crossing-cultures/"
+  - "https://summerworks.ca/show/switching-regents-jam-n-toast/"
+  - "https://summerworks.ca/show/tandava/"
+  - "https://summerworks.ca/show/tools-for-cowards-masterclass-with-laura-taler/"
+  - "https://summerworks.ca/show/under-pressure-navigating-stress-in-the-creative-world/"
+  - "https://summerworks.ca/show/the-upheld-present/"
+  - "https://summerworks.ca/show/we-move-together-or-not-at-all/"
+  - "https://summerworks.ca/show/working-on-my-night-moves/"
+  - "https://summerworks.ca/show/writing-to-home-a-spoken-word-workshop-for-beginners/"
+selectors:
+  event_list: "html"
+  name: ".show-info h1"
+  url: "link[rel='canonical']"
+  location: ".venue p"
+  # No <time> elements — each .time row is one performance ("MON AUG 10, 8:00 PM").
+  # Multi-row extraction -> consolidated into one event with multiple occurrences.
+  date_selectors:
+    - ".schedule .time p"

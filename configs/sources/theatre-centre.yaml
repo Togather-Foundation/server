@@ -1,0 +1,29 @@
+name: "theatre-centre"
+# The Theatre Centre (https://theatrecentre.org) — WordPress + Elementor with
+# JetEngine custom "event" post type. Listing at /whats-on/ renders server-side
+# (Tier 1 static HTML, no JSON-LD). Each card: h5 title link, calendar icon =
+# start date, clock icon = end date, map-pin icon = venue space. Dates only —
+# no times of day anywhere on listing or detail pages (all_midnight expected).
+# Pagination is a JS click load-more (data-nav type=click) — Tier 1 captures
+# page 1 (6 events, ordered by opening-date ASC); remaining events unreachable
+# without headless. Homepage (candidate URL) also lists events but /whats-on/
+# is the canonical listing.
+# Organization match: API unavailable
+selectors:
+  event_list: "div.jet-listing-grid__item"
+  name: "h5 a"
+  url: "h5 a"
+  location: "i.fa-map-pin + div.jet-listing-dynamic-field__content"
+  # No <time> elements and no single date field: calendar icon holds start
+  # date ("Aug 6, 2026 -"), clock icon holds end date ("Aug 16, 2026").
+  date_selectors:
+    - "i.fa-calendar-alt + div.jet-listing-dynamic-field__content"
+    - "i.fa-clock-o + div.jet-listing-dynamic-field__content"
+url: "https://theatrecentre.org/whats-on/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 1

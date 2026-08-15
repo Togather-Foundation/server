@@ -1,0 +1,26 @@
+name: "liberty-village-bia"
+# Tier 1 (Colly CSS selectors). Squarespace native event block (eventlist-event).
+# Platform: Squarespace (alligator-owl-sypj template); listing page has LocalBusiness/WebSite
+# JSON-LD only — no Event JSON-LD, no ICS feed links on the list page, so Tier 0 not usable.
+# 14 eventlist-event articles on the page (2 upcoming + past archive; Squarespace renders
+# past events when few are upcoming). Selectors follow the music-toronto.yaml Squarespace pattern.
+# Organization match: API unavailable (SEL server URL not set on this worker box)
+url: "https://libertyvillagebia.com/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: community
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.eventlist-event"
+  name: "h1.eventlist-title"
+  url: "a.eventlist-title-link"
+  # Squarespace: date in time.event-date, start/end times in separate <time> elements.
+  # 7/14 events carry times; the rest (multiday CNE/Indy, test events) are date-only.
+  # partial_match warnings on #2/#3 are expected — those events genuinely have no times.
+  date_selectors:
+    - "time.event-date"                   # "Thursday, September 17, 2026"
+    - "time.event-time-localized-start"   # "4:00 p.m." → start time
+    - "time.event-time-localized-end"     # "11:00 p.m." → end time

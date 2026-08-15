@@ -20,26 +20,26 @@ Test command per candidate:
 |------|---------------|----------|-----------|-------------|-------|
 | Scotiabank Arena | `https://www.scotiabankarena.com/events` | carbonhouse (MLSE) | 1 | ~20+ | Server-rendered HTML, Ticketmaster deep links. High volume. **DONE 2026-08-15** — config `scotiabank-arena.yaml` (Tier 1, 9 events, dates correct; no times on listing, no sitemap/JSON-LD — times stay midnight). |
 | History Toronto | `https://www.historytoronto.com/events` | carbonhouse (Live Nation) | 1 | ~8 | Same platform as Scotiabank Arena. |
-| The Rex Jazz Bar | `https://www.therex.ca` | Squarespace | 1 | ~10–15 | Active venue (2–3 shows/day). Squarespace events module. |
-| Yuk Yuk's Toronto | `https://www.yukyuks.com/toronto` | Laravel custom | 1 | ~10/mo | Server-rendered. Unlocks 27+ city pages same template. |
-| Paradise Theatre | `https://paradiseonbloor.com/home/` | WordPress | 0 | ~2/day | JSON-LD `ScreeningEvent`. Also `/live-events/`. |
-| SummerWorks | `https://summerworks.ca` | WP + The Events Calendar | 0 | 27+ | WP REST API + JSON-LD. Immediate win. |
-| Pride Toronto | `https://pridetoronto.com/events/` | WP + Elementor | 0–1 | 100+ | Events RSS feed at `/events/feed/`. |
+| The Rex Jazz Bar | `https://www.therex.ca` | Squarespace | 1 | ~10–15 | Active venue (2–3 shows/day). Squarespace events module. **DONE 2026-08-15** — config `the-rex.yaml` (Tier 1, 102 events, real datetimes; no site-wide ICS feed, Tier 0 unavailable) |
+| Yuk Yuk's Toronto | `https://www.yukyuks.com/toronto` | Laravel custom | 1 | ~10/mo | Server-rendered. Unlocks 27+ city pages same template. **DONE 2026-08-15** — config `yuk-yuks-toronto.yaml` (Tier 1, 10 events, dates verified against site REST API) |
+| Paradise Theatre | `https://paradiseonbloor.com/home/` | WordPress | 0 | ~2/day | JSON-LD `ScreeningEvent`. Also `/live-events/`. **DONE 2026-08-15** — config `paradise-theatre.yaml` (Tier 1 on /live-events/, 5 events; /home/ films not Tier-1 viable — dates JS-populated) |
+| SummerWorks | `https://summerworks.ca` | WP + The Events Calendar | 0 | 27+ | WP REST API + JSON-LD. Immediate win. **DONE 2026-08-15** — config `summerworks.yaml` (Tier 1, 38 events; Tribe calendar empty despite plugin, so no Tier 0) |
+| Pride Toronto | `https://pridetoronto.com/events/` | WP + Elementor | 0–1 | 100+ | Events RSS feed at `/events/feed/`. **DONE 2026-08-15** — config `pride-toronto.yaml` (Tier 1, 4 events, JetEngine grid scoped via data-nav; RSS not a supported extraction method) |
 | TIFA (Festival of Authors) | `https://festivalofauthors.ca` | WordPress | 0–1 | ~80+ | Yoast JSON-LD + RSS + `/wp-json/`. |
 | AGO Events | `https://ago.ca/events/browse` | Drupal 11 | 0–1 | 50+ | Drupal JSON:API at `/jsonapi/`. |
-| Toronto Fringe | `https://fringetoronto.com` | Drupal 10 | 1 | ~150 | June–July festival. CSS scrapable. |
-| The Power Plant | `https://thepowerplant.org/whats-on/` | WordPress | 0 | ~10–15 | Major gallery, known gap. |
-| Bata Shoe Museum | `https://batashoemuseum.ca` | WordPress | 0 | ~5–8 | Exhibitions + workshops. |
-| The Theatre Centre | `https://theatrecentre.org` | WordPress | 0 | ~3–5 | Hub — captures resident co. events. |
-| Nightwood Theatre | `https://nightwoodtheatre.net` | WordPress | 0 | ~4–6 | Major feminist theatre. |
-| Toronto Dance Theatre | `https://tdt.org` | Custom | 1 | ~2–4 | Contemporary dance. |
-| Liberty Village BIA | `https://libertyvillagebia.com/events/` | Squarespace | 0 | ~8 | Per-event ICS links. |
-| Downtown Yonge BIA | `https://downtownyonge.com/events/` | WordPress | 1 | ~14+ | Rich dated listings. |
-| UofT University College | `https://www.uc.utoronto.ca/about-connect-us-events` | Drupal | 1 | 12+ | Public lectures. |
-| Toronto Field Naturalists | `https://torontofieldnaturalists.org/events/` | WordPress | 1 | seasonal | Nature walks. |
-| Istituto Italiano di Cultura | `https://iictoronto.esteri.it/en/gli_eventi/calendario/` | Italian gov CMS | 1 | ~2 | Clean HTML. |
-| Caribana / Toronto Carnival | `https://caribanatoronto.com/events` | Custom | 1 | ~40 | Structured listing. |
-| CNE (The Ex) | `https://theex.com/schedule/` | WordPress | 1 | 100+ | Aug–Sep schedule page. |
+| Toronto Fringe | `https://fringetoronto.com` | Drupal 10 | 1 | ~150 | June–July festival. CSS scrapable. **BLOCKED 2026-08-15** — config `fringe-toronto.yaml` (disabled): Cloudflare 403 wall, off-season (festival ended 2026-07-12, next 2027), in-season cards carry no dates. Needs headless pass + re-check June 2027 |
+| The Power Plant | `https://thepowerplant.org/whats-on/` | WordPress | 0 | ~10–15 | Major gallery, known gap. **DONE 2026-08-15** — config `the-power-plant.yaml` (Tier 1, 6 events; Next.js+Strapi, no JSON-LD on listing) |
+| Bata Shoe Museum | `https://batashoemuseum.ca` | WordPress | 0 | ~5–8 | Exhibitions + workshops. **DONE 2026-08-15** — config `bata-shoe-museum.yaml` (Tier 0 ICS at /events/?ical=1, 3 events) |
+| The Theatre Centre | `https://theatrecentre.org` | WordPress | 0 | ~3–5 | Hub — captures resident co. events. **DONE 2026-08-15** — config `theatre-centre.yaml` (Tier 1, 6 events) |
+| Nightwood Theatre | `https://nightwoodtheatre.net` | WordPress | 0 | ~4–6 | Major feminist theatre. **DONE 2026-08-15** — config `nightwood-theatre.yaml` (Tier 1, 4 events, sitemap path on season overview) |
+| Toronto Dance Theatre | `https://tdt.org` | Custom | 1 | ~2–4 | Contemporary dance. **BLOCKED 2026-08-15** — config `toronto-dance-theatre.yaml` (disabled): between seasons, listing cards have no dates. Revisit when 2026/27 season announced |
+| Liberty Village BIA | `https://libertyvillagebia.com/events/` | Squarespace | 0 | ~8 | Per-event ICS links. **DONE 2026-08-15** — config `liberty-village-bia.yaml` (Tier 1, 14 events, Squarespace native block) |
+| Downtown Yonge BIA | `https://downtownyonge.com/events/` | WordPress | 1 | ~14+ | Rich dated listings. **DONE 2026-08-15** — config `downtown-yonge-bia.yaml` (Tier 1, 10 events, WordPress+Divi) |
+| UofT University College | `https://www.uc.utoronto.ca/about-connect-us-events` | Drupal | 1 | 12+ | Public lectures. **BLOCKED 2026-08-15** — config `uc-utoronto.yaml` (disabled): Cloudflare managed challenge. Needs headless/undetected pass |
+| Toronto Field Naturalists | `https://torontofieldnaturalists.org/events/` | WordPress | 1 | seasonal | Nature walks. **DONE 2026-08-15** — config `toronto-field-naturalists.yaml` (Tier 0 ICS, Google Calendar embed, 21 events) |
+| Istituto Italiano di Cultura | `https://iictoronto.esteri.it/en/gli_eventi/calendario/` | Italian gov CMS | 1 | ~2 | Clean HTML. **BLOCKED 2026-08-15** — config `istituto-italiano-di-cultura.yaml` (disabled): both dates concatenate in one span (svg separator not handled by date parser). Needs engine fix (svg-as-separator) |
+| Caribana / Toronto Carnival | `https://caribanatoronto.com/events` | Custom | 1 | ~40 | Structured listing. **DONE 2026-08-15** — config `caribanatoronto.yaml` (Tier 1, 29 events) |
+| CNE (The Ex) | `https://theex.com/schedule/` | WordPress | 1 | 100+ | Aug–Sep schedule page. **BLOCKED 2026-08-15** — config `the-ex.yaml` (disabled): React SPA schedule; public REST API is per-day only and numeric timestamps unreadable by T3 field_map. Needs T3 date-range support |
 
 ## Tier 2 / headless candidates
 

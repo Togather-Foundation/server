@@ -1,0 +1,26 @@
+name: "downtown-yonge-bia"
+# WordPress + Divi (v4.27.4) static HTML. /events/ lists the BIA's own programme
+# series (14 cards; 10 parse to start dates, 4 skipped at normalisation: 3 use
+# multi-date lists like "June 25, July 21, September 8", 1 is "date coming soon").
+# Dates are season ranges (e.g. "June 2026 - September 2026") — parser yields the
+# range start, month-only dates become the 15th. No <time> elements on page, so
+# all_midnight warning is data-inherent (dates only, no times published).
+# The full dated calendar (/events-calendar) is a cross-origin Cruncho iframe
+# (downtown-yonge.cruncho.co — Destination Toronto platform, Next.js SPA). Events
+# load client-side; no event URLs in their sitemap (only /place/ pages); public
+# API route not discoverable without a browser. Needs the opencode/headless pass
+# for full dated coverage (Tier 2 iframe or Cruncho API reverse-engineering).
+# Organization match: API unavailable
+url: "https://downtownyonge.com/events/"
+tier: 1
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+domain: community
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.et_pb_column_1_3"
+  name: "h3[data-slug='series_title']"
+  start_date: "div.et_pb_text_inner p strong"
+  url: "a[href*='page_id']"

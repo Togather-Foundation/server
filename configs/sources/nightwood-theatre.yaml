@@ -1,0 +1,41 @@
+name: "nightwood-theatre"
+# Nightwood Theatre (Toronto) — Canada's flagship feminist theatre since 1979, 877 Yonge St.
+# Platform: WordPress + Elementor. The season-overview listing page (2026-2027-season-overview)
+# has all 4 shows but dates live in sibling <p> elements outside the title containers
+# (container-scoped selectors can't reach them), so sitemap-based scraping is used:
+# discover the 4 show detail pages from the Yoast page-sitemap, scrape each page,
+# extract title (first h4) + run-date range (en-dash + year discriminator; handles <b> and <strong>).
+# Detail pages: /to-a-flame/, /groundswell-festival-2026/, /fall-on-your-knees-parts-i-ii/,
+# /jajas-african-hair-braiding/. Each page = 1 event (the show's run; 4 shows in 2026-27 season).
+# NOTE: groundswell page has 3 h4s (title + "Schedule" + "Meet the ... Team") — name selector
+# excludes those two via :not(:contains(...)). To a Flame page has a "Mask-Mandatory Show – ..."
+# note containing en-dash + a date — excluded because it lacks a 4-digit year.
+# NOTE: filter_pattern must be updated each season as new show pages are added.
+# NOTE: no self-link inside <article> (canonical link is in <head>, outside the scoped container),
+# so events carry no URL — dedup falls back to stable hash of name+startDate+source.
+# NOTE: all_midnight (T00:00:00) is expected — theatre runs have no single start time;
+# detail pages list recurring weekly times ("Tuesdays – Saturdays at 7:30 pm") which are
+# not single datetimes.
+# Organization match: API unavailable
+url: "https://nightwoodtheatre.net/2026-2027-season-overview/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: theatre → arts
+domain: arts
+enabled: true
+max_pages: 3
+sitemap:
+  url: "https://www.nightwoodtheatre.net/page-sitemap.xml"
+  filter_pattern: "/(to-a-flame|groundswell-festival-2026|fall-on-your-knees-parts-i-ii|jajas-african-hair-braiding)/"
+  max_urls: 50
+selectors:
+  event_list: "article"
+  name: "h4:not(:contains(Schedule)):not(:contains(Team))"
+  date_selectors:
+    # Run-date range (e.g. "September 22 – October 04, 2026") in <b> (3 shows) or <strong> (groundswell).
+    # :contains("20") matches the 4-digit year, excluding the venue <b>/<strong> on jajas
+    # ("...Baillie Theatre" has an en-dash but no year) and the "Mask-Mandatory Show – ..." note.
+    # NOTE: cascadia requires QUOTED numeric literal for :contains — unquoted (e.g. :contains(20)) matches nothing.
+    - 'b:contains("20"), strong:contains("20")'

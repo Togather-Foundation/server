@@ -1,0 +1,29 @@
+name: "caribanatoronto"
+# Custom platform (own /res/css, /res/js, /de/cache/apps asset paths; no known
+# CMS signals — not WP/Next/Wix). Static HTML listing, fully server-rendered.
+# Tier 1. 29 event cards on /events (matches "40+ events" marketing copy minus
+# sold-out/removed items). Card structure: section.item > div.content with
+# h3 > a (name/url) and ul.legend li items (pin=location, cal=date,
+# time=times). Dates are "Saturday, July 31, 2027" text in <strong> — no
+# <time> elements, so date parsed from text. Only 4/29 cards publish a time
+# (e.g. The Grand Parade "8:00 AM - 8:00 PM"); others are date-only →
+# all_midnight warning is data-inherent, not a selector bug. No JSON-LD on the
+# listing page.
+# Org lookup: SEL server URL not set on this box — API unavailable.
+# Organization match: API unavailable
+url: "https://www.caribanatoronto.com/events"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: culture
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "section.item"
+  name: "h3 a"
+  url: "h3 a"
+  location: "li:has(img[src*='pin_b']) strong"
+  date_selectors:
+    - "li:has(img[src*='cal_b']) strong"
+    - "li:has(img[src*='time_b'])"

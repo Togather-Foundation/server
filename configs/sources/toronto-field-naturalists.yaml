@@ -1,0 +1,20 @@
+name: "toronto-field-naturalists"
+# Toronto Field Naturalists — community nature-walk group
+# Platform: WordPress (understrap theme) + Google Calendar embed.
+# The /about-tfn/events-calendar/ page renders a Google Calendar iframe (calendar ID
+# 74ab3974b2e53ed52a99f74e5b751a8f2bf050f48d3f9874bfbe02c370429b4a@group.calendar.google.com).
+# No Tribe Events (the ?ical=1 probe returns HTML, not ICS). No JSON-LD, no event DOM.
+# The calendar's public basic.ics feed is a genuine ICS feed -> Tier 0, extraction_method: ics.
+# Feed calendar name: "TFN Public Events". 161 events total; ~21 upcoming as of 2026-08-15.
+# NOTE: feed contains members-only events (DESCRIPTION "Members only" / "For members only");
+# the public calendar is the only machine-readable listing — members-only entries kept as-is.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://calendar.google.com/calendar/ical/74ab3974b2e53ed52a99f74e5b751a8f2bf050f48d3f9874bfbe02c370429b4a@group.calendar.google.com/public/basic.ics"
+tier: 0
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: community
+timezone: "America/Toronto"
+enabled: true
+extraction_method: "ics"

@@ -1,0 +1,32 @@
+name: "drake-hotel"
+# The Drake Hotel events listing — WordPress custom theme (thedraketheme).
+# Tier 1 static HTML: 400KB server-rendered page, no JS needed.
+# Candidate intel said "Tier 3 / RSS feed" but RSS (?feed=rss2) returns 404 and
+# the WP REST /wp-json/wp/v2/event endpoint exposes only publish dates (acf empty) —
+# neither is viable. Tier 1 listing it is; dates are abbreviated ("Sat. Aug. 15",
+# year-less, time-less) so inferYear resolves the year. all_midnight warning
+# expected/acceptable: listing cards carry no time (times only on detail pages;
+# follow_event_urls is Tier 0-only, and this site has no event JSON-LD).
+# event_list uses :has(a[href*='/event/']) to filter out ~35 restaurant/menu cards
+# that share the same grid (they have no /event/ href).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://www.thedrake.ca/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: Drake Underground + Sky Yard = music venue; listing mixes music,
+# food + drink, and wellness — music is the primary draw.
+domain: music
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.c-tile-info:has(a[href*='/event/'])"
+  name: "h2.u-typo-h5"
+  start_date: "li.u-typo-label-tiny"
+  location: "li.u-typo-label-tiny:nth-of-type(2)"
+  description_selectors:
+    - "p.c-tile-info_description"
+  url: "a[href*='/event/']"
+  image: "img.c-image_img"
+  pagination: "li.c-pagination_item.-next a"

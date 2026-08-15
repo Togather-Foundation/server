@@ -1,0 +1,52 @@
+name: "istituto-italiano-di-cultura"
+# Istituto Italiano di Cultura di Toronto (Italian MAECI gov CMS — WordPress)
+# https://iictoronto.esteri.it/en/gli_eventi/calendario/
+#
+# Platform: WordPress (sedi-tema Bootstrap theme, no Tribe, no JSON-LD, no ICS).
+# Tier 1 static HTML — verified via plain curl (200, ~64KB, events server-rendered).
+# Detail pages are freeform HTML (no structured dates), so listing selectors only.
+#
+# STATUS: BLOCKED (enabled: false) — see date blocker below.
+#
+# Date blocker (2026-08-15, verified):
+# - Each card's date block is ONE <span> (2nd child of .category-top) containing
+#   BOTH dates as bare text nodes: "Thu Aug 06 2026<svg>…</svg>Wed Aug 19 2026".
+#   The svg icon between them contributes no text, so CSS extraction always
+#   concatenates to "Thu Aug 06 2026Wed Aug 19 2026".
+# - No <time>/datetime attributes anywhere; no JSON-LD on listing OR detail pages;
+#   no ICS feed; WP REST API exposes only freeform page content (no date meta).
+# - go-dateparser rejects every combined form ("…2026Wed…", even with a space);
+#   the smart assembler's range splitter only handles dash ranges ("Feb 3 - Mar 8")
+#   and the pipe convention only splits on literal "|" characters — neither can
+#   split a text blob with no separator. All 3 events drop at normalisation
+#   (would-submit=0, verified via --source-file --dry-run).
+# - Italian version (it/gli_eventi/calendario/) has identical structure
+#   ("Gio 06 Ago 2026Mer 19 Ago 2026").
+#
+# REQUIRED ENHANCEMENT (report as Issue, do not implement here):
+#   Treat svg/use icon elements as a date-text separator (like <br>) in
+#   selectionTextBR — ideally emitting a pipe ("Thu Aug 06 2026|Wed Aug 19 2026")
+#   so the smart assembler's pipe pre-process splits it into two parts and the
+#   start/end dates both parse. A plain space is NOT sufficient (go-dateparser
+#   rejects "Thu Aug 06 2026 Wed Aug 19 2026").
+#
+# Organization match: API unavailable
+url: "https://iictoronto.esteri.it/en/gli_eventi/calendario/"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: culture
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "div.card-wrapper"
+  name: "h5.card-title a"
+  url: "h5.card-title a"
+  description_selectors:
+    - "p.card-text"
+  image: ".img-wrapper img"
+  # Both dates live in the second span of .category-top; cards 1-2 have an empty
+  # class on that span (card 0 has class "data"), so target by position.
+  date_selectors:
+    - ".category-top span:nth-of-type(2)"

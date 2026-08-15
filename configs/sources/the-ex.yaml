@@ -1,0 +1,58 @@
+name: "the-ex"
+# CNE (The Ex) — Canadian National Exhibition, Toronto. https://theex.com/
+# Platform: WordPress (custom 'cne' theme) + React schedule SPA.
+# Schedule page (https://theex.com/schedule/) is fully JS-rendered: the static
+# HTML contains ZERO event containers (only nav menus). The React app fetches
+# events from a public REST API:
+#   GET https://www.theex.com/wp-json/cne/v1/events?day=YYYYMMDD
+# Response: bare JSON array of events {id, title, url, times, sortDate,
+# type, locationSlug, locationName, image, focalPoint, duration}.
+#
+# STATUS: BLOCKED (config written disabled) — see Issues in the task result.
+#  1. The events API is strictly per-day: `day=YYYYMMDD` is REQUIRED (400
+#     without it; `day=all`/month/range params all rejected). The fair runs
+#     2026-08-21..2026-09-07 (18 days), so full capture needs 18 requests.
+#     The Tier 3 REST extractor fetches exactly ONE static endpoint (+ optional
+#     `next_field` pagination); `urls:` multi-entry is NOT honored by tier 3
+#     (only tiers 0-2 iterate GetURLs), and sitemap is explicitly rejected for
+#     tier 3. There is no way to enumerate the 18 days with the current scraper.
+#  2. Even for a single day, start_date cannot be extracted: the only datetime
+#     field `sortDate` is a JSON NUMBER (unix ts) and the REST field_map
+#     resolver only reads string leaves (resolveNestedString .(string) assert),
+#     so it maps to "". `times` is time-of-day text ("5:00 pm") with no date —
+#     the date lives only in the query param, which the extractor cannot inject
+#     into event fields. A single-day config therefore yields 0 valid events.
+#  3. No Tier 0 path: zero JSON-LD blocks on the schedule page AND on detail
+#     pages (checked attraction detail), no iCal (/?ical=1 returns HTML), no
+#     Tribe/Events Calendar. `performance` CPT exists in wp/v2 but its `date`
+#     field is the post publication date, not the event date.
+#  4. Tier 2 headless is NOT available on this worker box, and would only
+#     render the DEFAULT day's events anyway (the widget loads one day per
+#     XHR on date click), so even a headless pass needs 18 navigations/clicks.
+#
+# Recommendation: add Tier 3 REST date-range/param-iteration support (e.g.
+# `day_start`/`day_end` or a URL param template) to the scraper, then flip this
+# config's endpoint to the per-day pattern and enable. The field_map below is
+# the correct shape once dates can be assembled (date from the requested day +
+# time from `times`).
+# Organization match: API unavailable
+url: "https://theex.com/schedule/"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: culture (large annual fair/festival — music, food, rides,
+# exhibits; no single arts/music/community label fits better)
+domain: culture
+enabled: false
+rest:
+  endpoint: "https://www.theex.com/wp-json/cne/v1/events?day=20260821"
+  # Bare array mode — response is a JSON array at root level.
+  results_field: "."
+  field_map:
+    name: "title"
+    # start_date: "sortDate"  # numeric unix ts — NOT extractable (string-only resolver)
+    # start_date: "times"     # "5:00 pm" — time-of-day only, no date component
+    url: "url"
+    location: "locationName"
+    image: "image"

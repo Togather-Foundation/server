@@ -1,0 +1,29 @@
+name: "the-rex"
+# The Rex Jazz Bar — Toronto jazz club (Queen St W), 2-3 shows/day.
+# Platform: Squarespace native event block. Listing at /events is static HTML
+# (Tier 1); 102 upcoming events on first scrape (2026-08-15).
+# Selectors mirror configs/sources/music-toronto.yaml (same Squarespace block).
+# Date and show times are in SEPARATE <time> elements, so date_selectors is used:
+#   time.event-date                  -> "Friday, August 14, 2026" (date)
+#   time.event-time-localized-start  -> "5:00 p.m." (start time)
+#   time.event-time-localized-end    -> "7:00 p.m." (end time)
+# Listing ?format=ical returns HTML, not an ICS feed — no Tier 0 path.
+# Detail pages carry JSON-LD Event but static HTML selectors are simpler/robust.
+# Organization match: API unavailable
+url: "https://www.therex.ca/events"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: music — jazz venue
+domain: music
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.eventlist-event"
+  name: "h1.eventlist-title"
+  url: "a.eventlist-column-thumbnail"
+  date_selectors:
+    - "time.event-date"                     # e.g. "Friday, August 14, 2026"
+    - "time.event-time-localized-start"     # e.g. "5:00 p.m."
+    - "time.event-time-localized-end"       # e.g. "7:00 p.m." -> endDate

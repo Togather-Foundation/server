@@ -1,0 +1,39 @@
+name: "yuk-yuks-toronto"
+# Yuk Yuk's Toronto — Laravel custom (Vite build assets, Tailwind), server-rendered listing.
+# Tier 1 static HTML. Cloudflare proxy present (nonce-mangled script types) but no challenge wall;
+# plain curl/Colly works.
+#
+# Date extraction notes (2026-08-15):
+# - Card date block is split: weekday div ("FRI - SAT"), day-range div ("14 - 15"), month div ("Aug"),
+#   and per-performance time spans ("08:00 PM - FRI"). No <time> elements, no JSON-LD.
+# - Year lives in a sibling <div data-year=... data-month=...> marker OUTSIDE the card; the smart
+#   date assembler infers the year (current year, bump if >30 days past) — correct for current-month listings.
+# - Multi-day shows (FRI-SAT) extract as multiple rows; the assembler pairs the first date fragment with
+#   the first time (start) — end date may be off for multi-day cards. Monitored.
+# - Site API POST /api/frontend/v1/venue/events returns clean JSON (event_date_summary with ISO datetimes),
+#   but the Tier 3 REST extractor only does GET + static results_field — reported as Issue (T3 potential).
+# - Listing is current-month only (server-rendered); Load More / month nav is JS. max_pages=1.
+# Organization match: API unavailable
+url: "https://www.yukyuks.com/toronto"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 1
+default_location:
+  name: "Yuk Yuk's Comedy Club"
+  street_address: "224 Richmond St W"
+  address_locality: "Toronto"
+selectors:
+  event_list: "div.my-7"
+  name: "div.font-bold.uppercase"
+  url: "a[href*='/toronto/show/']"
+  # No <time> elements — date is split across day/month divs + time spans.
+  # NOTE: month div selector deliberately omitted — "Aug" alone parses as a full
+  # date (today) via go-dateparser, producing a spurious second date and bogus
+  # end dates. Bare day numbers resolve via current-month + inferYear instead.
+  date_selectors:
+    - "div.font-bold.text-5xl"                                  # e.g. "14 - 15" or "15"
+    - "span.text-xl"                                            # e.g. "08:00 PM - FRI"

@@ -1,7 +1,8 @@
 # Disabled Scraper Sources — Status and Fix Paths
 
-**Last reviewed:** 2026-04-17  
+**Last reviewed:** 2026-08-15  
 **Audit bead:** `srv-mo1xw` (review all disabled sources) — re-inspected the disabled source set, deep-dived REST APIs, discovered new viable paths  
+**2026-08-15 additions:** GTA source-candidate pass — 5 new sources blocked with verified root causes (see §10)
 **Previous audits:** 2026-03-05 (`srv-2oipr`, `srv-n8qi1`, `srv-mwy3y`)  
 **Rod stealth/network-idle flags added:** 2026-03-05 (`srv-n8qi1`, closed)  
 **Cross-origin iframe extraction added:** 2026-03-05 (`srv-mwy3y`, closed) — adds `headless.iframe:` config block; unblocks reel-asian and lula-lounge  
@@ -340,6 +341,26 @@ All 48 other sources submit successfully. These 6 are documented limitations tha
 require P3 engine work to resolve:
 - `srv-054rj` — regex date extraction for narrative text (would help koffler-arts)
 - `srv-qxj09` — Tier 1 follow_event_urls (would help tafelmusik)
+
+---
+
+## 10. 2026-08-15 GTA candidate pass — new blocked sources
+
+From the GTA source-candidate pass (docs/research/source-candidates.md, worker-validated
+2026-08-15). Configs written and committed disabled with full root-cause analysis in the
+YAML comments. Ordered by fix feasibility:
+
+| Source | Config | Verdict | Root cause | Fix path |
+|--------|--------|---------|------------|----------|
+| the-ex (CNE) | `the-ex.yaml` | blocked | React SPA schedule; public REST API (`/wp-json/cne/v1/events?day=YYYYMMDD`) is strictly per-day (18 days for the fair), `sortDate` is a numeric unix ts the REST field_map can't read (string-only resolver), and Tier 3 has no date-range/param-iteration support | Engine work: add Tier 3 date-range/param-template support (`day_start`/`day_end` or URL param template), then flip config to per-day pattern. Field map shape already correct |
+| istituto-italiano-di-cultura | `istituto-italiano-di-cultura.yaml` | blocked | Date block is one `<span>` with two dates as bare text ("Thu Aug 06 2026Wed Aug 19 2026") — svg icon between them contributes no text, so extraction concatenates; date parser rejects the blob; no JSON-LD/ICS/REST anywhere | Engine work: treat svg/use icon elements as a date-text separator (like `<br>`) emitting a pipe so the smart assembler's pipe split works. Reported as Issue |
+| toronto-dance-theatre | `toronto-dance-theatre.yaml` | blocked | Seasonal lull (2025/26 season ended Aug 9; 2026/27 not announced). Listing cards have no dates; detail-page dates are free text, all in the past | Revisit when 2026/27 season announced; recommended shape: tarragon-theatre-style sitemap config + detail-page date extraction |
+| fringe-toronto | `fringe-toronto.yaml` | blocked | Cloudflare 403 wall on the only listing; off-season (festival ended 2026-07-12, "see you in 2027"); even in-season cards carry no dates (detail-page-only, ordinal text) | Needs headless/undetected (opencode) pass + detail-page date extraction; re-check in June 2027 |
+| uc-utoronto | `uc-utoronto.yaml` | blocked | Cloudflare managed challenge (fingerprint-based) — plain curl gets 200/92KB but scraper UA is challenged | Needs headless/undetected (opencode) pass |
+
+Note: `srv-hi014` (T3 REST tier) being fully landed would unblock **burdock-brewery**
+(Showpass API confirmed), **workman-arts**, **lula-lounge** (Eventbrite API) AND **the-ex**
+(per-day CNE API) — the last needs the date-range extension on top.
 
 ---
 

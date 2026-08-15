@@ -1,0 +1,26 @@
+name: "paradise-theatre"
+# Paradise Theatre (Bloor St W, Toronto) — live events listing.
+# Custom WordPress theme (nightjarprod hosting); static HTML, Tier 1.
+# Cards: div.show-details; name+url in h2.show-title a.title; date in
+# .selected-date span ("Wed,  Aug 19"); time in a.showtime ("7:00 pm").
+# No <time> elements — uses date_selectors (smart date assembler).
+# Note: /home/ (now-playing films) has showtimes but dates are JS-populated
+# (data-date empty in static HTML) — not viable Tier 1; live events page chosen.
+# Organization match: API unavailable
+url: "https://paradiseonbloor.com/live-events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: theatre/movie venue → arts
+domain: arts
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "div.show-details"
+  name: "h2.show-title a.title"
+  url: "h2.show-title a.title"
+  image: "div.show-poster img"
+  date_selectors:
+    - ".selected-date span"   # "Wed,  Aug 19" (date only, no <time> element)
+    - "a.showtime"            # "7:00 pm" (time only)

@@ -1,0 +1,42 @@
+name: "fringe-toronto"
+# Toronto Fringe Festival — Drupal 10 site, seasonal June-July festival.
+# STATUS: BLOCKED (enabled: false). Three stacked blockers, verified 2026-08-15:
+#   1. Cloudflare wall: the only event listing (https://fringetoronto.com/fringe/shows)
+#      returns 403 + JS challenge (data-cf-beacon, cdn-cgi/challenge-platform) to
+#      non-browser clients. `./server scrape inspect` confirms Status: 403, no event
+#      containers. Needs the headless/undetected (opencode) pass to validate.
+#   2. Off-season: festival ran 2026-06-30..07-12; homepage says "see you in 2027!".
+#      No upcoming events anywhere on the site right now — RSS empty, JSON:API 404,
+#      sitemap.xml 404, Festival Hub (/fringe/patio) gone, Next Stage paused.
+#   3. Structural (even in-season): listing cards carry NO date fields — no <time>,
+#      no date text on cards. Dates exist only on detail pages (/fringe/show/<slug>)
+#      as ordinal text in a Performances table ("2nd July", "6:15pm", no year), one
+#      row per performance. Date extraction would fail (all_midnight) without a
+#      follow_event_urls / detail-page pass; multi-performance shows need session
+#      handling.
+# Selectors below recovered from Wayback capture 2025-07-12 (106 show-cards) — they
+# match the in-season static HTML structure but were NOT validated live (403).
+# Robots.txt carries Cloudflare content-signals: search=yes, ai-train=no,
+# use=reference — flag for human review before enabling (license field below).
+# Organization match: API unavailable
+url: "https://fringetoronto.com/fringe/shows"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: false
+max_pages: 3
+selectors:
+  event_list: "article.card.show-card"
+  name: "header h2"
+  url: "p.more-link a"
+  location: "dl.card-info.show-info dd"
+  description_selectors:
+    - "div.main > p"
+  image: "img"
+  # No dates on listing cards; detail-page Performances table uses ordinal text.
+  # Re-enable only after headless pass validates dates + Cloudflare.
+  # date_selectors:
+  #   - "table.full-width tbody tr td:nth-child(2)"   # "2nd July" (no year)
+  #   - "table.full-width tbody tr td:nth-child(3)"   # "6:15pm"

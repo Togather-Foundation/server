@@ -1,0 +1,43 @@
+name: "the-power-plant"
+# The Power Plant Contemporary Art Gallery (Toronto) — Next.js + Strapi CMS + MUI.
+# Listing page is server-rendered static HTML (Tier 1). 6 cards: current exhibitions
+# (Now On View), upcoming exhibitions, and one gala event (Power Ball).
+# Tier 0 JSON-LD: NOT available on listing page (0 ld+json blocks). Detail pages DO
+# carry full schema.org Event JSON-LD (ISO dates), but follow_event_urls only enriches
+# already-found events — it does not discover URLs, so Tier 0 on the listing yields 0.
+# Tier 3 REST: public Strapi API (api.thepowerplant.org/api/events) ignores filters
+# unless $ syntax, and pagination is page-number based (extractor needs URL-based next);
+# a hardcoded $gte date would go stale in ~5 weeks. Meilisearch POST /api/search works
+# but REST extractor is GET-only. Tier 1 is the robust self-maintaining path.
+# Date text is a range ("APR 25 – SEP 07 2026") — the smart date assembler splits it
+# into start (opening) + end (closing) dates.
+# Organization match: API unavailable
+url: "https://www.thepowerplant.org/whats-on"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+# event_domain: arts (contemporary art gallery)
+domain: arts
+enabled: true
+max_pages: 1
+# Exhibitions run for months — legitimately long-duration, avoid false multi-session split.
+skip_multi_session_check: true
+# All exhibitions/events take place at the gallery itself.
+default_location:
+  name: "The Power Plant Contemporary Art Gallery"
+  street_address: "231 Queens Quay West"
+  address_locality: "Toronto"
+  address_region: "ON"
+  postal_code: "M5J 2G8"
+  address_country: "CA"
+selectors:
+  event_list: "a[href*='/whats-on/exhibitions/'], a[href*='/whats-on/calendar/']"
+  name: "h4"
+  # Date text is a range ("APR 25 – SEP 07 2026"); date_selectors (not start_date)
+  # preserves the range split so endDate = closing date. Legacy start_date path
+  # discards the end half of the range.
+  date_selectors:
+    - "div.content-card-data p:last-child"
+  # url: card IS the anchor (whole card is a link); no descendant <a> to extract href from.
+  # InterAccess-style limitation — events will have empty URLs. See Issues.
