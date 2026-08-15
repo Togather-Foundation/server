@@ -1,0 +1,12 @@
+name: "bata-shoe-museum"
+# Tier 0 (ICS). WordPress + Tribe Events Calendar — confirmed working iCal feed
+# at /events/?ical=1 (2026-08-15). 11KB feed, real VCALENDAR events.
+# Organization match: API unavailable during config (no SEL server URL on this box).
+url: "https://batashoemuseum.ca/events/?ical=1"
+extraction_method: ics
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: culture
+timezone: "America/Toronto"
+enabled: true
