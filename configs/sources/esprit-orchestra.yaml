@@ -1,0 +1,44 @@
+name: "esprit-orchestra"
+# STATUS: blocked — documented blocker (2026-08-15).
+#
+# Platform: Squarespace (Fluid Engine), hand-rolled content blocks. NOT the
+# native Squarespace event block (no eventlist-* classes), no JSON-LD Event,
+# no ICS feed, no per-event detail pages anywhere on the domain (sitemap sweep
+# of 285 URLs). Tickets route externally to rcmusic.com (Tessitura TNEW).
+#
+# What works: /current-season exposes 4 real concerts for the 2026/2027 season
+# (FAST, BIG, RICH, BOLD), each a `div.fe-block:has(h3):has(h4)` with the name
+# in h3. Selectors below extract 4/4 events with non-empty names.
+#
+# Blocker: each h4 is a single text node "SUNDAY, November 29, 2026<br>Koerner
+# HalL" — date and venue are fused in one element with no wrapper around the
+# date text. go-dateparser rejects the extracted string "SUNDAY, November 29,
+# 2026 Koerner HalL" (venue suffix breaks parsing; verified with the exact
+# go-dateparser version/configuration the scraper uses). The selector engine's
+# `::attr` syntax only handles attributes, not text-node splitting, so the date
+# cannot be isolated. All 4 events fail normalisation (0 submittable).
+#
+# Fix paths (not implementable here — code work):
+#  1. Scraper feature: split a selector's text on <br> (date|venue pipe support
+#     already exists in assembleDateTimeParts — a br-to-pipe option in
+#     selectionTextBR would unblock this and similar Squarespace sites).
+#  2. Strategic: RCM (rcmusic.com) runs Tessitura TNEW ("tps-" classes) — a
+#     public REST source covering Esprit + all Koerner Hall presenters, same
+#     pattern as the mhrth.com TNEW investigation (t_88b37fea). Out of scope
+#     here (config URL must be the venue's own page, not a third-party box
+#     office).
+# Organization match: API unavailable
+url: "https://espritorchestra.com/current-season"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: music
+enabled: false
+max_pages: 1
+# Selectors are validated (4 events, names OK) but date extraction is blocked —
+# see header comment. Keep enabled: false until the date-splitting issue lands.
+selectors:
+  event_list: "div.fe-block:has(h3):has(h4)"
+  name: "h3"
+  start_date: "h4"

@@ -1,0 +1,25 @@
+name: "musical-stage-company"
+# The Musical Stage Company — Canada's leading charitable musical theatre company.
+# Platform: WordPress classic theme (custom "musical-stage" theme) + Yoast SEO v28 + Gravity Forms.
+# Tier: 1 static HTML (81KB server-rendered). Selectors proven: 2 cards extracted from /on-stage/.
+# BLOCKER (2026-08-15): only 1 upcoming production (UNCOVERED: THE 20TH ANNIVERSARY,
+# Nov 10-12 2026, Koerner Hall) + 1 in-development item (Cowboy Tempest Cabaret, no dates).
+# Dates live in prose inside the card <p> — no <time> elements, no JSON-LD Event, no ICS,
+# no ticketing platform (tickets on sale Sept 2026). 2 events < 3 required => cannot enable.
+# Re-check after the 2026-27 season is announced (Sept 2026); selectors below are ready.
+# Organization match: API unavailable
+url: "https://musicalstagecompany.com/on-stage/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# Musical theatre company => theatre => arts (not a music venue; events are theatrical performances)
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "article.listing-post"
+  name: "div.title a"
+  url: "div.title a"
+  # No start_date: cards have no date element; dates are prose ("...from November 10 - 12, 2026")
+  # inside the description <p>, which the date parser cannot normalize.

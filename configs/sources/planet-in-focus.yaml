@@ -1,0 +1,46 @@
+name: "planet-in-focus"
+# Planet In Focus (Toronto) — Canada's largest environmental film festival,
+# founded 1999; runs an annual festival each October plus year-round
+# co-presentations (Hot Docs, TIFF, Images Festival).
+# Platform: WordPress 6.7.7 classic theme + WPBakery (Visual Composer) page
+# builder + Yoast SEO. No Tribe Events Calendar, no Event JSON-LD (only the
+# Yoast schema graph), no ICS/iCal, no sitemap.xml (Yoast sitemap_index.xml
+# exists but contains no events feed).
+# Tier: 1 static HTML (all content server-rendered; no JS needed).
+#
+# BLOCKER (2026-08-15): venue is between festival seasons.
+# - The 2026 festival (Oct 2026) has submissions open (#PIF26) but NO lineup
+#   page published yet — sitemap page-sitemap.xml contains only up to
+#   /2025-festival-lineup/ (the Oct 2025 program, all past).
+# - The only events listing surface /year-round/events/ is a static WPBakery
+#   archive of PAST co-presentations (2021-2026): 11 cards, but only 3 carry
+#   dates, and those are prose without year ("Friday, April 10th"). Event URLs
+#   point to external partner box offices (hotdocs.ca, tiff.net,
+#   imagesfestival.com, instagram.com) — NOT PIF's own pages — so enabling
+#   would ingest stale partner events (or fail the >=3 dated-event minimum).
+# - Ticketing backend https://www.goelevent.com/planetinfocus/e/Search
+#   (Elevent platform) renders "There are no upcoming events."
+# ENABLE when the 2026 lineup page is published (expected ~Sept/Oct 2026,
+# URL pattern /2026-festival-lineup/ — h3 headers carry "Tuesday, October 21
+# // 6:30pm" style day+time; year must come from page context, so validate
+# dates carefully, possibly with date_selectors).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://planetinfocus.org/year-round/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: environmental film festival -> arts (repo convention: film
+# festivals hot-docs, inside-out, images-festival all use arts)
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "div.wpb_column.vc_column_container.vc_col-sm-4"
+  name: "h3"
+  # NOTE: first <b> in each card is the partner/venue label ("HotDocs 2023",
+  # "TIFF Cinematheque"), not the event date; only 3 of 11 cards contain a
+  # real date (prose, no year, no time). Selectors below are structurally
+  # validated but NOT fit for production until the next season posts dates.
+  start_date: "p"
+  url: "a[href]"

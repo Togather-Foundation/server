@@ -1,0 +1,64 @@
+name: "uoft-faculty-of-music"
+# UofT Faculty of Music (Toronto). Drupal 10 site (theme utmusic), Pantheon-hosted.
+# Tier 1 static HTML. BLOCKED — see KNOWN LIMITATIONS below.
+#
+# Platform findings (2026-08-15):
+# - The homepage IS the events listing: /events 301-redirects to https://music.utoronto.ca.
+# - 6 upcoming event cards in div.m-listing-item--events-condensed (Sep 19-28, 2026 recitals).
+# - No JSON-LD on listing or detail pages, no ICS feed, no JSON:API (404), no REST export
+#   (406 "only supports HTML"), no <time> elements, no itemprop microdata anywhere.
+# - /research-creation/events exists but uses the same card structure (past events).
+# - sitemap.xml is CURRENT (lastmod 2026-08-14, includes today's events) but all 948 event
+#   URLs are slug-only (no dates in URL) and ordered oldest-first: the current events sit at
+#   indices 939-947, behind ~930 historical (2024-2025) URLs. No past-event filter exists in
+#   the CSS normalization path, so a sitemap config would submit hundreds of stale events.
+#
+# KNOWN LIMITATIONS (why this is blocked, not written):
+# 1. Listing cards carry month+day only, NO YEAR (e.g. "Sep 19"). The date assembler
+#    cannot merge the fragments: month ("Sep") parses as today's date (Sep 15) and day
+#    ("19") as the current month's 19th (Aug 19) → garbage datetimes. The whole cell
+#    text "Sep September 19" (incl. visually-hidden duplicate month) fails to parse.
+# 2. Month cell has Drupal hidden-span duplication: <span aria-hidden="true">Sep</span> +
+#    <span class="u-visually--hidden">September</span>. Extracting the cell yields
+#    "Sep September" — unparseable. No hidden-span stripping exists in the extractor
+#    (same class of issue as rom.yaml's name duplication, but dates are worse).
+# 3. Detail pages (https://music.utoronto.ca/event/<slug>) DO have clean full dates
+#    ("September 26, 2026" in .o-hero-media__info-date, "4:30pm - 6:00pm" in
+#    .o-hero-media__info-time) — but they are unreachable from Tier 1: follow_event_urls
+#    is Tier 0 JSON-LD only, and Tier 1 has no depth-2 event-URL crawling (same blocker
+#    as tarragon-theatre before its sitemap config — but tarragon's sitemap slugs carried
+#    season markers; UofT Music's slugs carry no date/season info to filter on).
+#
+# Working selectors for a future pass (names/URLs/locations/times all extract cleanly):
+#   event_list: div.m-listing-item--events-condensed
+#   name:       div.m-listing-item--events-condensed__title a
+#   url:        div.m-listing-item--events-condensed__title a
+#   location:   div.m-listing-item--events-condensed__tags > div.m-listing-item--events-condensed__tags-single:nth-child(2)
+#   (time lives in tags-single:nth-child(1) as "7:30pm - 9:00pm")
+#
+# Suggested next approaches (in order of value):
+#   a) depth-2 event-URL crawl (scrape listing for /event/ URLs, then detail pages) —
+#      would unlock clean dates for ~all 6+ current events; feature gap, needs .go work.
+#   b) date_selectors fragment-join (month+day → "Sep 19" + inferred year) — smaller
+#      feature; would make the listing directly viable.
+#   c) headless pass (not available on this box) — would not help: no JS-rendered dates.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://music.utoronto.ca"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: music
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "div.m-listing-item--events-condensed"
+  name: "div.m-listing-item--events-condensed__title a"
+  url: "div.m-listing-item--events-condensed__title a"
+  location: "div.m-listing-item--events-condensed__tags > div.m-listing-item--events-condensed__tags-single:nth-child(2)"
+  # No <time> elements; month/day are split across cells and the assembler cannot
+  # merge them. Uncomment + fix when fragment-join (suggestion b) lands:
+  # date_selectors:
+  #   - "div.m-listing-item--events-condensed__event-date-month span[aria-hidden='true']"
+  #   - "div.m-listing-item--events-condensed__event-date-day"
+  #   - "div.m-listing-item--events-condensed__tags > div.m-listing-item--events-condensed__tags-single:nth-child(1)"

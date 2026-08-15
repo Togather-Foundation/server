@@ -1,0 +1,40 @@
+name: "shakespeare-in-the-ruff"
+# Shakespeare in the Ruff (Toronto outdoor theatre, Withrow Park) — WordPress
+# (Salient theme + WPBakery) with All in One SEO. Classic theme, all content
+# server-rendered. NO JSON-LD Event schema (only AIOSEO Organization/WebPage/
+# WebSite boilerplate), NO ICS/iCal, NO Tribe Events Calendar, NO ticketing
+# platform embed (Showpass/Eventbrite/Showclix/Tessitura all absent), and
+# wp-json/v2/types exposes NO custom event post type (page/post/attachment only).
+# Tier: 1 static HTML (no JS rendering needed — headless would not help).
+#
+# BLOCKER (2026-08-15): the company produces ONE mainstage show per summer.
+# Homepage = the current production (PASTORAL, Aug 15-30 2026) as a single prose
+# block: "Previews: August 15 and 16 / Opening: August 18 / Run: August 18 - 30"
+# inside plain <p> tags — no <time> elements, no repeating event container.
+# ./server scrape inspect found ZERO candidate event containers (only nav menu
+# items). /productions/ is a 2021-2024 archive (all past runs, no way to filter
+# to current via URL); special-events-at-pastoral / build-a-bard-2026 /
+# workshops are one-off prose pages (mostly stale). Nothing on the site yields
+# >= 3 events with non-empty names AND parseable dates — enabling would fail
+# the 3-event minimum outright. The smart date assembler cannot parse prose
+# date ranges like "August 18 – 30, Tuesday through Sunday".
+# ENABLE when the venue posts structured event data (JSON-LD/ICS) or a real
+# dated events listing with repeatable containers.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://shakespeareintheruff.com"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: outdoor Shakespeare theatre company -> arts
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  # No viable event_list: inspect found no repeating event container.
+  # Kept for future retry — homepage main-content wrapper if a dated listing appears.
+  event_list: "main"
+  name: "h1"
+  # start_date NOT viable: dates are prose inside <p> tags (e.g. "Run: August 18
+  # – 30, Tuesday through Sunday"); no <time> element, no separate date node.
+  # url: ""  # no per-event detail links on the homepage (single production page)

@@ -1,0 +1,31 @@
+name: "the-word-on-the-street"
+# WordPress 7.0.4 + Elementor + EventON events plugin (server-rendered event list).
+# URL: toronto.thewordonthestreet.ca/event-directory/annual-festival/2026-festival/
+# STATUS: BLOCKED (2026-08-15) — the listing page currently serves the 2025 program
+# (65 events, all dated 2025-09-27/28, marked past_event in the HTML). The 2026
+# program (37th annual festival, Sept 26-27 2026, David Pecaut Square) is actively
+# being published — the RSS feed (feed/?post_type=ajde_events) shows 10 new events
+# added 2026-08-13 and their detail pages carry valid JSON-LD with 2026-09-27 start
+# dates. The EventON list on this page has NOT been updated to the 2026 program yet.
+# Selectors below are validated against the current EventON card structure and will
+# extract the 2026 events once the listing updates. Flip enabled: true then; dates
+# assemble from day+month+time text with year inference (current year = 2026, which
+# is the correct year for the upcoming program). Note: /events/ listing and EventON
+# taxonomy archives are JS/AJAX-rendered ("No Events" in static HTML) — not usable
+# without a headless pass; the listing page is the only server-rendered event list.
+# Organization match: API unavailable
+url: "https://toronto.thewordonthestreet.ca/event-directory/annual-festival/2026-festival/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: false
+max_pages: 3
+selectors:
+  event_list: "div.eventon_list_event"
+  name: ".evcal_event_title"
+  url: ".evo_event_schema a[itemprop='url']"
+  date_selectors:
+    - ".evo_start"
+    - ".evo_end .time"

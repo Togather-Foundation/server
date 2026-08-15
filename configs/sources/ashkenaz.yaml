@@ -1,0 +1,35 @@
+name: "ashkenaz"
+# Ashkenaz Festival (Toronto) — biennial festival of Jewish music and culture.
+# WordPress 7.0.4 + Elementor + Dynamic Content for Elementor (DCE) + Yoast SEO.
+# Tier 1 static confirmed. Full 2026 program lives on /ashkenaz-2026/:
+# 32 event cards under the DCE grid div[data-id='a36570b'] (second grid on page).
+# Card structure: h5 = date text ("Aug 30", anchored), h2#1 = time text ("7:00 pm"),
+# h2#2 = event name (anchored to detail page). No <time> elements, no JSON-LD Event
+# (Yoast emits only WebPage/Organization), no ICS feed (/events/?ical=1 returns HTML),
+# no Tribe Events. WP REST API (/wp-json/wp/v2/event) exposes title+link but NO event
+# dates (acf: [] empty) — Tier 3 rejected for missing dates.
+# First DCE grid on the page (div[data-id='a083e21']) is a 5-card teaser with
+# year-less "August-31" dates and no times, duplicating 5 mainstage events — excluded
+# via the grid-scoped event_list. The Kensington card also carries a "Free" h2 price
+# tag; the time selector [data-dce-title-color] h2:not(:has(a)) skips it.
+# LIMITATION: event_list depends on Elementor data-id="a36570b" — a site rebuild may
+# rotate that hash and break the selector (standard DCE/Elementor fragility).
+# Pedestrian Sunday card has date-only (no time) — assembler produces date-only event.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://ashkenaz.ca/ashkenaz-2026/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: festival of Jewish music — most program events are concerts (category-music)
+domain: music
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "[data-id='a36570b'] article"
+  name: "h2 a"
+  url: "h2 a"
+  # No <time> elements — date + time live in separate heading elements:
+  date_selectors:
+    - "h5"                              # date text, e.g. "Aug 30" / "Sep 6"
+    - "[data-dce-title-color] h2:not(:has(a))"  # time text, e.g. "7:00 pm" (skips "Free" price h2)

@@ -1,0 +1,20 @@
+name: "citadel-compagnie"
+# Citadel + Compagnie — contemporary dance company (Toronto). WordPress custom theme + WP Rocket (static server-rendered HTML).
+# Listing: /citadel-live-2026-27/ — season page. NOTE: URL embeds the season (2026-27); needs annual update like coc/national-ballet.
+# Cards: article.event-listing-block__item inside section.event-listing-block. Date format "Month D – D, YYYY" (en-dash range, no times).
+# Homepage JSON-LD is WebPage/Organization only; event detail pages carry no schema.org Event — Tier 1 CSS was the right call.
+# Organization match: API unavailable
+url: "https://www.citadelcie.com/citadel-live-2026-27/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.event-listing-block__item"
+  name: "h3.event-listing__title"
+  start_date: "span.event-listing__dates"
+  url: "a[href*='/event/']"
+  image: "picture img"

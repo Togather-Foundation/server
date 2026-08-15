@@ -1,0 +1,24 @@
+name: "arraymusic"
+# WordPress (Customizr theme + Nimble Builder page builder) with Smart Post Show
+# plugin grid. Event cards: div.sp-pcp-content-padding; title+url in h2.sp-pcp-title a;
+# date/time as plain text in div.sp_pcp_ctf-event_date_time (e.g. "January 31, 2026 @ 7:30 pm ET")
+# → date_selectors (no <time> elements). No JSON-LD, no Tribe/ICS, detail pages have no
+# structured data. Tier 1 static HTML.
+# NOTE: pages currently list the finished 25|26 season (2025-11 → 2026-06); the 26|27
+# season pages are stubs — grid refreshes when the new season posts go live.
+# Organization match: API unavailable
+url: "https://www.arraymusic.ca/current-season/season-by-series/array-productions/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: music (new-music ensemble, Array Space venue, Toronto)
+domain: music
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.sp-pcp-content-padding"
+  name: "h2.sp-pcp-title a"
+  url: "h2.sp-pcp-title a"
+  date_selectors:
+    - "div.sp_pcp_ctf-event_date_time"

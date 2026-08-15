@@ -1,0 +1,32 @@
+name: "fall-for-dance-north"
+# Fall for Dance North (Toronto dance festival, Oct 15-25 2026).
+# Custom static HTML site (no WP/Wix/Webflow/DatoCMS signals; GTM + Meta Pixel only).
+# Tier 1 confirmed: /2026-festival-guide lists 8 show cards as <a class="test post">
+# anchors wrapping div.postbox (p.title = name, p.sub = date text, div.txtbox = desc).
+# No JSON-LD, no ICS feed, no sitemap.xml (404), no robots.txt (404).
+# Ticketing via Ticketmaster (am.ticketmaster.com/tolive/...) — not scraped.
+# KNOWN LIMITATIONS:
+# - URL empty: card IS the anchor (no descendant <a> to extract href from; ChildAttr
+#   matches descendants only) — same limitation as interaccess.yaml / the-power-plant.yaml.
+#   EventID falls back to stable hash of name+startDate+source, so dedup still works.
+# - all_midnight: listing cards carry dates only, no show times (times exist only on
+#   detail pages, which are unreachable without URLs) — expected, same as drake-hotel.
+# - 3 of 8 shows (LEGENDS, HEAR THE DANCE, NIGHT SHIFT) fail date extraction:
+#   their p.sub is a 3-date comma+ampersand list ("Oct 15, 16 & 17") which
+#   go-dateparser rejects; 2-date lists ("Oct 17 & 18") parse fine.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://www.ffdnorth.com/2026-festival-guide"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "a.test.post"
+  name: "p.title"
+  start_date: "p.sub"
+  # url: card IS the anchor (whole card is a link); no descendant <a> to extract href from.
+  description_selectors:
+    - "div.txtbox"

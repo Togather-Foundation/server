@@ -1,0 +1,27 @@
+name: "steps-public-art"
+# STEPS Public Art (Toronto public art organization) — WordPress + Divi child
+# theme, Yoast SEO. No JSON-LD Event (Yoast graph only), no Tribe, no ICS,
+# no ticketing platform embed — plain static HTML, Tier 1.
+# Listing: /events/ has two Divi rows: et_pb_row_1 = "Upcoming Events"
+# (li > strong:date + a:eventbrite), et_pb_row_2 = "Past Online Events"
+# (mix of YouTube recordings and old Eventbrite links — stale, excluded
+# deliberately because the scraper has no past-event filter).
+# Selector et_pb_row_1 is Divi's auto-numbered module class — fragile if the
+# page structure is edited; re-inspect if events stop being found.
+# NOTE: past events in et_pb_row_2 (including recorded panels on YouTube)
+# are intentionally NOT scraped.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://stepspublicart.org/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: public art org -> arts
+domain: arts
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.et_pb_row_1 ul li"
+  name: "a"
+  start_date: "strong"
+  url: "a"

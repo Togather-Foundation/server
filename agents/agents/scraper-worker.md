@@ -71,7 +71,7 @@ Cross-reference with `docs/integration/event-platforms.md` (Recognition Cheatshe
 - `__NEXT_DATA__` → Next.js → **Tier 0** preferred
 - `graphql.datocms.com` in source → DatoCMS → **Tier 3** GraphQL
 - `showpass.com` link or `showpass-widget` → Showpass → **Tier 3** REST
-- `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite → **Tier 2** (no public API; scrape organizer page)
+- `eventbrite.com/o/` or `eventbrite.ca/o/` link → Eventbrite → **Tier 3** (public organizer-profile JSON API, no auth — see Eventbrite block below)
 - `geteventviewer.com` or `ticketspotapp.com` iframe → Ticket Spot (Wix embed) → **Tier 2** with `iframe:` config block
 - `elevent-cdn.azureedge.net` iframe → Elevent → **Tier 2** with `iframe:` config block
 - `data-wf-site` → Webflow → **Tier 1** static
@@ -97,12 +97,24 @@ signals (Wix, Shopify, WordPress), take the T3 REST path.
 if you see `showclix.com` links or `eventsbucket` in network requests. The response
 is a bare JSON array (use `results_field: "."`).
 
-**Eventbrite is NOT a T3 candidate.** Eventbrite's API requires OAuth and is not
-publicly readable. If you detect Eventbrite links/embeds, use **T2 headless** — either
-scrape the venue's own events page (if it renders event data in its own DOM) or scrape
-the Eventbrite organizer page directly (`eventbrite.ca/o/<org-slug>-<org-id>`). The
-organizer page is server-rendered and lists all upcoming events. Use `undetected: true`
-if Cloudflare blocks it. See `docs/integration/event-platforms.md` section 16.
+**Eventbrite — use the public organizer-profile JSON API (T3 REST, discovered 2026-08-15).**
+Eventbrite's official REST API (`eventbriteapi.com/v3/`) requires OAuth, BUT the Next.js
+organizer pages (`eventbrite.ca/o/<org-slug>-<org-id>`) are backed by an unauthenticated
+JSON endpoint used by the organizer-profile frontend:
+
+```
+https://www.eventbrite.ca/organizer-profile/api/organizers/<ORG_ID>/events/?page=1&pageSize=200
+```
+
+Response: `{"events":[{...}], "hasMore": bool, "total": int}` with name, url,
+start_date, start_time, end_date, end_time, timezone, image, primary_venue.name.
+Works with the scraper's own UA (verified HTTP 200); no Cloudflare, no cookies, no OAuth.
+`<ORG_ID>` is the numeric suffix of the /o/ slug. Config: tier 3, results_field `events`,
+field_map per `configs/sources/eventbrite-lula-lounge.yaml` (the canonical pattern example).
+**Known limitation:** API splits start_date/start_time → REST field_map can't combine them,
+all events land at T00:00:00 (all_midnight warning); dates/names/URLs/venues are correct.
+Do NOT use T2 headless for Eventbrite /o/ pages — the T3 REST path beats it.
+See `docs/integration/event-platforms.md` section 17.
 
 **Tier 0 path** (JSON-LD or iCal feed detected): skip to Step 7 and write a tier: 0 config — no CSS selectors needed.
 
@@ -126,8 +138,9 @@ detected): find the venue/org ID from page source links. Search the full page so
 (not just the first 8KB) for platform URLs — e.g. `curl -sL "<URL>" | grep -i 'showpass'`.
 Refer to `docs/integration/event-platforms.md` for the platform profile (API endpoint
 pattern, response shape, field_map values, how to find the venue/org ID). Skip to
-Step 7 and write a tier: 3 rest config. **Note:** Eventbrite does NOT qualify — use
-T2 headless to scrape the organizer page instead (see signals above).
+Step 7 and write a tier: 3 rest config. **Note:** Eventbrite now DOES qualify —
+use the unauthenticated organizer-profile JSON API (see Eventbrite signal above), not
+T2 headless.
 
 **Tier 1/2 path**: continue with Steps 1–8 below.
 
@@ -626,7 +639,8 @@ If you started down the T1/T2 CSS path and hit obstacles, pivot to T3 REST befor
 - Calendar widget uses non-standard DOM (day numbers as siblings, not children of event cards)
 - The venue uses a known API platform (Showclix, Showpass, Eventbrite*, etc.)
 
-*Eventbrite does NOT qualify for T3 — its API requires OAuth. Use T2 to scrape the organizer page.
+*Eventbrite DOES qualify for T3 (since 2026-08-15) — the organizer-profile JSON API
+(`/organizer-profile/api/organizers/<id>/events/`) needs no OAuth. See the Eventbrite block in Step 0.
 
 ### How to find the API
 

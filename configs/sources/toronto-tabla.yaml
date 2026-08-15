@@ -1,0 +1,35 @@
+name: "toronto-tabla"
+# Toronto Tabla Ensemble (torontotabla.com) — WordPress 7.0.4 + Astra theme +
+# Elementor page builder, behind Cloudflare. Tier: 1 static HTML (all event
+# content is server-rendered; inspect returned full DOM, no JS needed).
+#
+# BLOCKER (2026-08-15): the /events/ page's "Upcoming Events" section is a
+# plain <ul> of 6 titles with NO dates, NO detail-page links, NO locations —
+# the page itself states "All dates are to be announced." Verified across the
+# whole site:
+#   - No JSON-LD blocks, no ICS/iCal feed, no Tribe Events Calendar (0 hits)
+#   - WordPress sitemap: only 8 pages + 1 calendar CPT URL (/calendar/class-
+#     schedule/ = an empty August 2026 calendar grid, no event entries)
+#   - RSS feed contains only a leftover "Hello world!" post
+#   - Eventbrite organizer (toronto-tabla-ensemble-2283349339) returns 0
+#     upcoming events (total: 0) — matches the site's "TBA" state
+# The 6 names extract cleanly (div.elementor-widget-text-editor ul li, 6/6)
+# but every event would be dropped at normalization for missing startDate.
+# ENABLE when TTE posts dated events (same selectors should still work).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://torontotabla.com/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: tabla/world-music ensemble -> music
+domain: music
+enabled: false
+max_pages: 1
+selectors:
+  # "Upcoming Events" list lives in an Elementor text-editor widget; scope to
+  # the widget's data-id to avoid other <li> lists on the page (nav, footer):
+  event_list: "div.elementor-widget-text-editor ul li"
+  name: "span"
+  # NO start_date/url/location selectors — none exist on this listing.
+  # Events cannot be normalized without a start date; see BLOCKER above.

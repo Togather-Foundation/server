@@ -1,0 +1,25 @@
+name: "festival-of-authors"
+# TIFA (Toronto International Festival of Authors) — WordPress (Yoast SEO, bootscore-child theme), Tier 1 static HTML.
+# Listing: /tifa-presents/ (TIFA Presents series, 8 upcoming events, server-rendered div.col-12.col-md-6.col-lg-4.mb-4 cards).
+# No Event JSON-LD (Yoast only WebPage), no Tribe, no <time> elements, no year in dates ("Thursday, September 17 at 7:30pm")
+# → start_date selector feeds the smart date assembler, which infers the current year (correct for upcoming events; past events would misdate — see Issues).
+# Homepage div.homepage-event cards also work (4 events, same yearless format) but /tifa-presents/ lists more.
+# /events/ 301-redirects to /flagship-fall-festival/ (site changed since candidate research); wp-json is 403 (Cloudflare);
+# /schedule/ is a stale 2025 pixel-positioned grid (not scrapable); event-sitemap.xml has 322 URLs incl. years of past events (avoid).
+# Plain "Mozilla/5.0" UA gets 403; full Chrome UA string gets 200 — scraper's own UA worked in tests (see Issues).
+# Organization match: API unavailable
+url: "https://festivalofauthors.ca/tifa-presents/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: literary festival → arts
+domain: arts
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.col-12.col-md-6.col-lg-4.mb-4"
+  name: "p.fe-title"
+  start_date: "p.fe-datetime"
+  location: "p.fe-authors"
+  url: "a[href*='/event/']"

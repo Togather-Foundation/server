@@ -1,0 +1,54 @@
+name: "al-green-theatre"
+# Tier 3 REST — Miles Nadal JCC Amilia-backed proxy (Al Green Theatre)
+#
+# PATTERN DISCOVERED 2026-08-15: https://www.mnjcc.org/agt is a Webflow promo
+# page whose event cards are Webflow "code components" (FEDERATION submodule
+# ProgramOccurrence/ProgramListing) that hydrate client-side from a public
+# JSON proxy maintained by the JCC:
+#
+#   https://jcc-nadal-proxy-staging-5bdbdd58c6aa.herokuapp.com/proxy/programs
+#
+# The site's own code components call exactly this endpoint (verified in the
+# shipped bundle __federation_expose_ProgramListing.js). No auth, no cookies,
+# no Cloudflare. The Al Green Theatre tab section uses programId=119001 +
+# category="The Al Green Theatre Presents" (omitting the category returns all
+# 46 JCC programs across 4 categories — out of scope for this source).
+#
+# Response: {"Items":[{Name, StartDate, EndDate, Url, Description,
+# PictureUrl, ScheduleSummary, Occurrences:[{Start,End,...}], ...}]} — 29
+# activities, each with REAL item-level RFC3339 start/end datetimes (first/last
+# occurrence of the series), a ticket URL on app.amilia.com, and a rich-text
+# Description. Field_map reads flat keys, so the nested Occurrences array is
+# unused (same engine limitation as mhrth-tnew: dot-notation cannot index
+# arrays); item-level dates are real so nothing is lost.
+#
+# KNOWN LIMITATIONS / RISKS:
+# 1. The proxy hostname contains "staging" — the production host
+#    (jcc-nadal-proxy.herokuapp.com) 404s ("No such app"). The staging app is
+#    what the LIVE site actually calls, so it IS the production data path
+#    today, but it could sleep on Heroku free tier or be re-deployed/changed
+#    without notice. If the endpoint starts failing, re-verify the hostname in
+#    the site's __federation_expose_ProgramListing.js bundle.
+# 2. Some items are VIRTUAL variants (e.g. "VIRTUAL: You Really Got Me") —
+#    kept intentionally; they are Al Green Theatre programming.
+# 3. Only 5/29 items carry PictureUrl; Description is HTML rich-text.
+# Organization match: API unavailable (SEL server not running on this box)
+url: "https://www.mnjcc.org/agt"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+timezone: "America/Toronto"
+enabled: true
+max_pages: 1
+rest:
+  endpoint: "https://jcc-nadal-proxy-staging-5bdbdd58c6aa.herokuapp.com/proxy/programs?lang=en&org=miles-nadal-jcc&programId=119001&category=The%20Al%20Green%20Theatre%20Presents"
+  results_field: "Items"
+  field_map:
+    name: "Name"
+    start_date: "StartDate"
+    end_date: "EndDate"
+    url: "Url"
+    image: "PictureUrl"
+    description: "Description"

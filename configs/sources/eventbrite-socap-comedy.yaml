@@ -1,0 +1,26 @@
+name: "eventbrite-socap-comedy"
+# Eventbrite organizer-page pattern — see eventbrite-lula-lounge.yaml for the
+# full pattern documentation (STRATEGIC, t_cdc42532).
+#
+# org_id: 6898984189 (SoCap Comedy Theatre / The Social Capital Theatre)
+# Organization match: API unavailable (SEL server not running)
+url: "https://www.eventbrite.ca/o/socap-comedy-theatre-6898984189"
+tier: 3
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+domain: arts
+timezone: "America/Toronto"
+enabled: true
+max_pages: 1
+rest:
+  endpoint: "https://www.eventbrite.ca/organizer-profile/api/organizers/6898984189/events/?page=1&pageSize=200"
+  results_field: "events"
+  field_map:
+    name: "name"
+    start_date: "start_date"
+    end_date: "end_date"
+    url: "url"
+    location: "primary_venue.name"
+    image: "image.url"
+    description: "summary"

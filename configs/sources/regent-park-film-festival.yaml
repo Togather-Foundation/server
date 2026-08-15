@@ -1,0 +1,59 @@
+name: "regent-park-film-festival"
+# Regent Park Film Festival (RPFF) — Toronto's longest-running free community
+# film festival. Annual festival in November + year-round screenings (Under the
+# Stars summer series, School Program, workshops). Candidate from
+# source-candidates-v2.md quick-win list (2026-08-15).
+#
+# PLATFORM: WordPress (Genesis child theme "rpff-main-20") with a custom post
+# type `rpff-event` (taxonomy `event-type`). NO JSON-LD Event, NO ICS/iCal feed
+# (the /feed/?post_type=rpff-event RSS carries only pubDate, no event dates),
+# NO Tribe Events Calendar, NO REST exposure (wp-json returns rest_no_route for
+# the CPT — verified 2026-08-15). Tier 1 static HTML.
+#
+# BLOCKER (2026-08-15): OFF-SEASON — zero upcoming events on the site.
+#   - The annual festival page still advertises Nov 27-30, 2025 (last year's
+#     edition); the November 2026 festival has not been announced yet.
+#   - The most recent published rpff-events are the Under the Stars 2026 series
+#     (The Tower July 8, My Father's Shadow July 22, Fancy Dance July 29, 2026)
+#     — all already past as of this inspection.
+#   - The only scrapeable event surface is the sitemap
+#     (wp-sitemap-posts-rpff-event-1.xml, 34 URLs spanning 2019-2026), a
+#     historical archive with NO way to filter to current events by URL, and the
+#     scraper has NO past-event filter (same blocker as outside-the-march.yaml:
+#     verified internal/scraper normalize.go — inferYear only). Enabling now
+#     would ingest ~34 stale events (2019-2026) into the review queue.
+#   - Listing pages (home, /uts2026/, /festival/) are Gutenberg prose with
+#     buttons — no repeating event container to scrape directly.
+#
+# ENABLE WHEN: the site posts its next season with upcoming events (November
+# 2026 festival lineup or next screening series) AND the date extraction is
+# fixed. Verified 2026-08-15 with --source-file dry-run: h1.entry-title extracts
+# names correctly, but ALL 34 events are skipped at normalization with
+# "raw event has no startDate" — the only date surface is the p.event-meta text
+# blob "When: July 8, 2026 | Pre-show at 7:30pm | Movie at sundown Where: ...",
+# and go-dateparser rejects the "When:"/"Where:" prose labels; there are no
+# <time> elements, no <a> self-link (sitemap mode supplies the event URL).
+# Needs either a scraper feature (strip prose labels / regex-extract the date
+# portion from date_selectors text) or the site adding <time datetime>.
+# Sitemap lastmod present → the freshness filter will skip unchanged detail
+# pages on re-runs once enabled.
+#
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://rpff.ca/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: community film festival -> culture
+domain: culture
+enabled: false
+sitemap:
+  url: "https://rpff.ca/wp-sitemap-posts-rpff-event-1.xml"
+  filter_pattern: "/events/.+"
+  max_urls: 60
+  rate_limit_ms: 500
+selectors:
+  event_list: "article.entry"
+  name: "h1.entry-title"
+  start_date: "p.event-meta"
+  # url: no descendant <a> self-link on detail pages; sitemap mode supplies the URL.

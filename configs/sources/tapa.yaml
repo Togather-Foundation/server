@@ -1,0 +1,52 @@
+name: "tapa"
+# TAPA = Toronto Alliance for the Performing Arts (industry association for
+# Toronto's performing arts sector — awards, advocacy, PD, industry listings).
+# Platform: WordPress + WPBakery (js_composer 8.7.2) + WPEX theme + Jetpack,
+# with The Events Calendar (Tribe) plugin installed on /industry/calendar/ and
+# the "Content Control" membership plugin gating the main events area.
+#
+# BLOCKER (2026-08-15): no publicly scrapeable event feed.
+# - Public Tribe calendar (https://tapa.ca/industry/calendar/ and /calendar/)
+#   renders the tribe-events-widget but shows "There are no upcoming events at
+#   this time." — ZERO upcoming events in the public calendar.
+# - The real events surface is members-only: /events/ and /my-tapa/events/
+#   both redirect to the WordPress login (Content Control gate); ?ical=1 on
+#   /events/ also returns the login page. No Tribe REST API (wp-json/tribe/
+#   events/v1/events = 404). No JSON-LD on any public page.
+# - Only public event-like content is TAPA Industry Listings
+#   (https://tapa.ca/industry/listings/): 36 items mixing auditions, workshops/
+#   classes, employment, and calls-for-submissions (jobs are NOT events).
+#   Cards expose only the WordPress publication date ("Published 2 days ago",
+#   no <time datetime> element); event dates exist only as free-text prose on
+#   detail pages (e.g. "Workshops begin Monday, September 21, 2026, from 6:30
+#   to 9:30 pm"). Mixed content types + publication-date-as-date would pollute
+#   the review queue.
+# - TAPA Trade Series (/industry/pd/tapa-trade-series/) is stale: 2025-26
+#   season page, its only dated item (First Aid course Sep 8-9 2025) is past.
+# - Homepage "Toronto Show Listings" button links OUT to
+#   destinationtoronto.cruncho.co (third-party platform) — not TAPA's data.
+#
+# ENABLE when: the public Tribe calendar on /industry/calendar/ shows >=3
+# upcoming events. Preferred tier is 0 (Tribe emits per-event JSON-LD; see
+# event-platforms.md section 2). Fallback tier 1 Tribe list-view selectors:
+#   event_list: "article.tribe-events-calendar-list__event"
+#   name: "h3.tribe-events-calendar-list__event-title a"
+#   start_date: "time.tribe-events-calendar-list__event-datetime"
+#   url: "h3.tribe-events-calendar-list__event-title a"
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://tapa.ca/industry/calendar/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: performing-arts industry association -> arts
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  # Placeholder selectors — nothing to validate against until the public
+  # calendar has events. See ENABLE note above for the Tribe selectors.
+  event_list: "article.tribe-events-calendar-list__event"
+  name: "h3.tribe-events-calendar-list__event-title a"
+  start_date: "time.tribe-events-calendar-list__event-datetime"
+  url: "h3.tribe-events-calendar-list__event-title a"

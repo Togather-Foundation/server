@@ -1,0 +1,46 @@
+name: "daniels-spectrum"
+# Tier 3 REST — ArtHubs Salesforce-listings Supabase edge function (discovered 2026-08-15)
+#
+# PATTERN: danielsspectrum.ca/whats-on#EventsCalendar embeds a custom listings
+# widget (directory.arthubs.ca/widgets/listings-grid.js) that fetches event
+# data from an unauthenticated Supabase edge function:
+#
+#   https://lmjaawrbiqexfpurozlb.supabase.co/functions/v1/salesforce-listings?category=Events&building=Daniels%20Spectrum&limit=100&sort=date-asc
+#
+# Response: {"listings":[{...}], "hasMore": bool} — each listing carries title,
+# startDate/endDate ("2026-08-18T19:30:00.000+0000" — Salesforce format with
+# +0000 offset, no colon), image, excerpt, description, presentedBy,
+# moreInfoUrl, bookedSpace (room), building. Verified with the scraper's own
+# UA (Togather-SEL-Scraper/0.1): HTTP 200, no auth, no Cloudflare. 5 upcoming
+# events (hasMore=false) as of 2026-08-15.
+#
+# Detail pages (https://www.danielsspectrum.ca/listing-detail?listingId=<id>)
+# are JS-rendered Duda pages — url_template points there for dedup/identity,
+# but scraping relies on the REST feed.
+#
+# Date format note: startDate uses "+0000" (no colon) — not RFC3339. If
+# quality warnings show date parse failures, dates need a scraper-side format
+# fix (see Issues in completion summary).
+#
+# Organization match: API unavailable (SEL server not running on this box)
+url: "https://danielsspectrum.ca/whats-on"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# Community cultural hub in Regent Park — arts-based orgs, performances, exhibitions
+domain: arts
+enabled: true
+max_pages: 1
+rest:
+  endpoint: "https://lmjaawrbiqexfpurozlb.supabase.co/functions/v1/salesforce-listings?category=Events&building=Daniels%20Spectrum&limit=100&sort=date-asc"
+  results_field: "listings"
+  field_map:
+    name: "title"
+    start_date: "startDate"
+    end_date: "endDate"
+    image: "image"
+    location: "building"
+    description: "excerpt"
+  # canonical per-event URL (widget builds detailUrl + "?listingId=" + id)
+  url_template: "https://www.danielsspectrum.ca/listing-detail?listingId={{.id}}"

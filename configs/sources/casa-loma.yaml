@@ -1,0 +1,31 @@
+name: "casa-loma"
+# Casa Loma (historic castle/heritage site, Liberty Entertainment Group)
+#
+# PLATFORM (2026-08-15): casaloma.ca is WordPress + Divi with a WonderPlugin 3D
+# carousel on /events/ — 16 static cards with titles + links ONLY, zero dates,
+# no JSON-LD Event, no ICS. Detail pages (/project/<slug>/) have prose date
+# ranges but no <time> elements and no Event schema. Not a usable event source
+# by itself.
+#
+# REAL DATA SOURCE: Casa Loma sells tickets through TicketWeb (ticketweb.ca).
+# The venue page https://www.ticketweb.ca/venue/casa-loma-toronto-on/203154
+# server-renders a JSON-LD Event array (17 events: General Admission, Dressing
+# the Abbey Exhibit, Summer Series concerts) with clean URLs and ISO startDate.
+# Verified working with the scraper's own UA (Togather-SEL-Scraper/0.1) — HTTP
+# 200, no Akamai challenge (generic UAs DO get blocked; the scraper UA is fine).
+#
+# SOURCE COVERAGE: the venue page shows a rolling ~1-week window (checked
+# 2026-08-15: Aug 15–22). Daily schedule keeps the window rolling. The per-org
+# pages (org/249753 Summer Series → through Sep 7; org/388363 Abbey) show
+# longer horizons but are program-specific; pagination on TicketWeb is
+# Angular hash-links (href="#N" + ng-click) which the scraper cannot follow,
+# so max coverage is the venue page's current window. See Issues.
+#
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://www.ticketweb.ca/venue/casa-loma-toronto-on/203154"
+tier: 0
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: arts
+enabled: true

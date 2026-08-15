@@ -1,0 +1,28 @@
+name: "prologue"
+# Prologue Performing Arts (prologue.org) — BLOCKED, no scrapeable event source.
+# Platform: WordPress 7.0.4 + Divi theme + WP Rocket + Yoast SEO.
+# Tier would be: 1 (static HTML) — but no event data exists to scrape.
+# Findings (2026-08-15):
+#   - No events calendar: /events/, /calendar/, /whats-on/, /performances/ all 404.
+#   - No JSON-LD Event schema, no ICS/iCal feed, no Tribe Events, no Eventbrite/Showpass links.
+#   - "schedule" CPT is stale 2023 test data (placeholder slugs "class-title-N"), lastmod 2023-07-18.
+#   - "artist" CPT is a catalog of bookable touring programs (title + description only, no dates/venues).
+#   - Site markets school/community touring (performances booked into schools, not public ticketed shows);
+#     the only public virtual performance page found is a past one-off (Nov 2025) behind a signup form.
+#   - ./server scrape inspect: no candidate event containers found (Divi marketing page).
+# Needs: a public events page, or the org's booking calendar surfaced with dates. Revisit if they add one.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://prologue.org"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: arts (performing arts experiences for children/youth — music, theatre, dance)
+domain: arts
+enabled: false
+max_pages: 3
+selectors:
+  event_list: "PLACEHOLDER"
+  name: "PLACEHOLDER"
+  start_date: "PLACEHOLDER"
+  url: "PLACEHOLDER"

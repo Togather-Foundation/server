@@ -1,0 +1,67 @@
+name: "mayworks"
+# Mayworks Festival of Working People and the Arts (Toronto, annual May festival).
+# Custom WordPress + Divi theme with Search Filter Pro on the listing page.
+# Platform signals: et_pb_* Divi classes, wp-content/uploads, xmlrpc.php; no
+# JSON-LD Event schema anywhere (homepage/festival listing/detail pages), no
+# Tribe/Events Calendar, no ICS feed. WP REST /wp-json/v2 exposes the `project`
+# post type but event dates live in post-meta (_sfm_event_start_date) NOT exposed
+# via REST — no Tier 3 path.
+# Path: Tier 1 CSS extraction on the 26 current-festival /project/<slug>/ detail
+# pages listed on /2026-festival/ (urls: list). The listing page itself carries
+# year-less dates ("May 21"); with the festival in the past (>30 days), inferYear
+# rolls them to NEXT year (verified: 24/26 events dated 2027-05/06 on listing
+# dry-run) — ghost events. Detail pages have year-bearing dates + times
+# ("Saturday May 30, 2026 5:45pm", "May 7-31, 2026" for exhibitions), so urls:
+# is the correct path (same pattern as summerworks.yaml).
+# NOTE (annual maintenance): urls: list is the CURRENT festival (2026). When the
+# next festival's programming is published, refresh the URL list from the new
+# /2027-festival/ listing. New events added to the listing mid-year must be added
+# to this list manually.
+# EXCLUDED: /project/rendition/ and /project/holding-the-line/ — all their date
+# blocks are year-less ("May 2 – 30", "May 1–31" with no 4-digit year), so
+# inferYear rolls them to 2027 → phantom events. The other 24 detail pages all
+# carry year-bearing dates. Re-add if those pages gain year-bearing dates.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://mayworks.ca/2026-festival/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: culture (community-based arts/labour festival)
+domain: culture
+enabled: true
+max_pages: 1
+urls:
+  - "https://mayworks.ca/project/screening-sugar-island-fall/"
+  - "https://mayworks.ca/project/art-build/"
+  - "https://mayworks.ca/project/eritrean-and-ethiopian-workers-meet-up/"
+  - "https://mayworks.ca/project/screening-landlines-brampton/"
+  - "https://mayworks.ca/project/fanons-legacy/"
+  - "https://mayworks.ca/project/lmina/"
+  - "https://mayworks.ca/project/sambizanga/"
+  - "https://mayworks.ca/project/true-chronicles/"
+  - "https://mayworks.ca/project/confronting-the-resurgent-right/"
+  - "https://mayworks.ca/project/the-porter/"
+  - "https://mayworks.ca/project/artist-talk-rendition/"
+  - "https://mayworks.ca/project/sugar-island/"
+  - "https://mayworks.ca/project/screening-landlines/"
+  - "https://mayworks.ca/project/with-hassan-in-gaza/"
+  - "https://mayworks.ca/project/carabao/"
+  - "https://mayworks.ca/project/play-reading-carabao/"
+  - "https://mayworks.ca/project/true-north/"
+  - "https://mayworks.ca/project/operations/"
+  - "https://mayworks.ca/project/operations-opening/"
+  - "https://mayworks.ca/project/every-worker-should-have-equal-labour-rights-exhibition/"
+  - "https://mayworks.ca/project/equal-labour-rights-opening/"
+  - "https://mayworks.ca/project/2026-mayworks-festival-launch/"
+  - "https://mayworks.ca/project/and-for-you-flours-and-flowers/"
+  - "https://mayworks.ca/project/know-problem/"
+selectors:
+  event_list: "html"
+  name: "div.et_pb_text_0 .et_pb_text_inner h1, div.et_pb_text_0 .et_pb_text_inner h2"
+  url: "link[rel='canonical']"
+  # No <time> elements; the date h3 sits at a variable Divi module index
+  # (et_pb_text_1..3) across pages. Grab-bag: feed all h3s, smart assembler
+  # classifies fragments and picks the date+time (verified on all 26 pages).
+  date_selectors:
+    - "div.et_pb_text_inner h3"

@@ -1,0 +1,43 @@
+name: "article-11"
+# ARTICLE 11 (Indigenous activist arts company — theatre/film/installation,
+# Tkaronto + touring) — WordPress (Gutenberg block editor + classic-theme
+# front end, "newp" theme), query-string permalinks (?p=, ?page_id=), no
+# sitemap, no robots.txt, Vimeo plugin for video embeds.
+# No structured event data anywhere: no JSON-LD Event (homepage has 0
+# application/ld+json blocks), no ICS/iCal, no Tribe Events Calendar, no
+# custom event post type (REST /wp/v2/types returns only post/page/
+# attachment/nav_menu_item/wp_block/wp_template). WP REST API is open.
+# Event surface: homepage is a NEWS blog (10 cards/page, ?paged=2..4).
+# Cards contain title + excerpt + thumbnail ONLY — no <time> element, no
+# date node at all (validated: event_list "article.post" + name
+# "h3.entry-title a" extract 10 names, StartDate empty for all 10).
+# Posts are press/news about PAST productions (Deer Woman, RECKONING,
+# Rise Red River); newest post 2024-06-07 — feed dormant >1yr. The
+# production pages ("coming soon… fireWORKS", "Road to HASALALA DANXALAX
+# — COMING IN 2025") contain year-only prose, no concrete dates.
+# BLOCKER (2026-08-15): zero dated event data. Enabling would fail the
+# date-quality bar (date_selector_never_matched) and, even with a
+# date_selectors hack, would ingest news-post publication dates as fake
+# event dates. Headless/Tier 2 would NOT help — page is fully
+# server-rendered static HTML; there is no JS-rendered event widget.
+# ENABLE when the org posts a real dated events listing or adds
+# structured event data (Tribe/JSON-LD/ICS); selectors below are the
+# validated options for a future Tier 1 retry.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "http://article11.ca"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: Indigenous activist arts company (theatre/film/installation) -> arts
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "article.post"
+  name: "h3.entry-title a"
+  url: "h3.entry-title a"
+  # start_date: NONE VIABLE — cards have no <time> element and no date node
+  # (validated: --start-date "time" matched 0/10 events; date_selectors
+  # would also find nothing to assemble). Dates exist only as year-level
+  # prose on production pages. Do not enable without a dated listing.

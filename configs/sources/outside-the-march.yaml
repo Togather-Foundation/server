@@ -1,0 +1,43 @@
+name: "outside-the-march"
+# Outside The March (Toronto immersive theatre company) — WordPress classic
+# theme ("otm"/Bones), Yoast SEO. No JSON-LD Event, no ICS/iCal, no Tribe
+# Events Calendar, no ticketing platform embed (Medusa page links OUT to
+# tickets.youngcentre.ca = Soulpepper's Tessitura storefront; external link
+# only, not an embed).
+# Tier: 1 static HTML (all content server-rendered; no JS needed).
+#
+# BLOCKER (2026-08-15): venue is between seasons. The canonical "what's on"
+# surface /production-stage/live-experiences/ lists only 2 experiences —
+# Medusa (run June 19 - July 12, 2026, already ended) and Call Me By My
+# Cousin's Name (Feb 2 - 28, 2027, ~6 months out) — below the >=3 event
+# threshold. The 43-URL experiences sitemap contains every production since
+# ~2015 (uniform /the-experiences/<slug>/ pattern, no season marker, no way
+# to filter to current shows via URL). The scraper has NO past-event filter
+# (verified internal/scraper normalize.go — inferYear only), and the archive
+# listing exposes only WordPress publication dates ("Posted Oct 16, 2025"),
+# not event dates (event dates exist only as free-text ranges like
+# "June 19 — July 12 2026" in .production-dates li on detail pages).
+# Enabling now would either fail the 3-event minimum (live page) or ingest
+# ~40 stale shows with publication-date-as-start-date into the review queue.
+# ENABLE when the venue posts its next season with >=3 upcoming experiences
+# on /production-stage/live-experiences/ (selectors below are validated).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://outsidethemarch.ca/production-stage/live-experiences/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: immersive theatre company -> arts
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "article"
+  name: ".entry-title a"
+  # NOTE: listing shows only WordPress publication date (time.updated),
+  # NOT the event date. Real dates live on detail pages as free text in
+  # .production-dates li (e.g. "June 19 — July 12 2026") — not extractable
+  # from this listing surface. Consider date_selectors + sitemap detail-page
+  # scraping (tarragon-theatre.yaml pattern) when a season is announced.
+  start_date: "time.updated"
+  url: ".entry-title a"

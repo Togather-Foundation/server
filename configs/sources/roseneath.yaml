@@ -1,0 +1,42 @@
+name: "roseneath"
+# Roseneath Theatre (Toronto) — youth theatre, 651 Dufferin St (school tours + camps).
+# Platform: Wix Thunderbolt OOI. Tier 1 static — Wix pre-renders ~1MB HTML per page
+# (beaches-jazz precedent), so no headless needed for the camps table.
+#
+# SCOPE DECISION (read before editing): This config scrapes the CAMPS page, not the
+# season/shows pages. The theatre's SHOWS (2026-27: Taking Care of Maman, Billy & Bink,
+# Roadkill) are NOT scrapable to quality:
+#   - Season overview page (2026-27-season): show cards are poster images with NO text
+#     title in the card (title only in <title>/og:title/nav aria-current); dates are
+#     month-level prose ("On Tour March 2027") that the fuzzy parser cannot resolve
+#     (2/3 cards dropped with "raw event has no startDate").
+#   - Show detail pages: no JSON-LD, no <time> elements, no ICS; titles only in
+#     <title>/nav; dates absent (maman) or month-level (roadkill "April 2027").
+#   - No ticketing backend (books by phone/email — no Showpass/Eventbrite/etc.).
+#   - Headless (Tier 2) not available on this box.
+# The camps table is the only structured, dated event data on the site (14 rows:
+# summer/PA-day camps + D&D long campaigns through Dec 2026, year inferred correctly).
+#
+# NOTE: time column ("10:00-15:30") is intentionally NOT scraped — the date assembler
+# assigns the range END (15:30) as the start time. Date-only yields all_midnight, which
+# is expected for multi-day programs (nightwood-theatre precedent). See Issues.
+#
+# NOTE: D&D long-campaign rows appear duplicated in the table (one row per DM/campaign
+# variant, identical name+dates) — dedup falls back to name+startDate hash, so the 4
+# duplicate pairs collapse to 10 unique events at submission.
+# Organization match: API unavailable
+url: "https://www.roseneath.ca/camps"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: camps/education programming → education (shows would be arts if ever scraped)
+domain: education
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "tr.wixui-table__row"
+  name: "td:nth-child(1)"
+  # dates column only ("August 17 - 21", "Friday Nov 20", "Sept 26 - Dec 12") — no <time> elements
+  date_selectors:
+    - "td:nth-child(3)"

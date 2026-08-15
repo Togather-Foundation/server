@@ -1,0 +1,47 @@
+name: "hand-eye-society"
+# Hand Eye Society (Toronto nonprofit for independent games, art & creative
+# technology) — WordPress with Avada/Fusion Builder theme. The /event/ archive
+# is a BLOG CATEGORY listing (post type = standard `post`, category = "event"),
+# NOT a structured events post type — confirmed via /wp-json/wp/v2/types (no
+# event post type exists). No JSON-LD (0 application/ld+json blocks on archive
+# OR detail pages), no ICS/iCal, no Tribe Events Calendar, no ticketing embed.
+# Tier: 1 static HTML (all content server-rendered; no JS needed).
+#
+# BLOCKER (2026-08-15): the only machine-readable dates on the archive cards
+# are WordPress POST PUBLICATION dates, not event dates (e.g. Hand Eye Society
+# Ball posted Oct 17 2025 for a Nov 1 2025 event; imagineNATIVE tour stop
+# posted May 25 2026 for a June 3-7 2026 event; SuperFESTival posted Sept 22
+# 2025 for a Nov 1-7 2025 event). Real event dates exist ONLY as free-text
+# prose inside description paragraphs ("From June 30–July 12, 2026", "returns
+# November 1–7, 2025"). date_selectors on the description paragraph were tried
+# — the smart date assembler cannot parse prose, all extracted StartDates were
+# empty. Enabling with the post-date as start_date would ingest ~10 stale
+# announcements with publication-date-as-start-date into the review queue
+# (same blocker class as outside-the-march.yaml).
+#
+# FUTURE PATH: the org's ticketing surface is Eventbrite
+# (https://www.eventbrite.ca/o/the-hand-eye-society-15539055266, org id
+# 15539055266). The public organizer-profile JSON API
+# (https://www.eventbrite.ca/organizer-profile/api/organizers/15539055266/events/?page=1&pageSize=200)
+# returns REAL dates via tier 3 REST (eventbrite-lula-lounge.yaml pattern) —
+# verified org id + name, but currently 0 upcoming events (offseason, 2026-08).
+# ENABLE a tier-3 eventbrite config here when the org posts upcoming events,
+# OR re-evaluate the /event/ archive if the site adds structured event data.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://handeyesociety.com/event/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: games-as-art nonprofit (festivals, workshops, community tours) -> culture
+domain: culture
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "article.fusion-post-large"
+  name: "h2.entry-title.fusion-post-title a"
+  url: "h2.entry-title.fusion-post-title a"
+  # NO start_date: the visible card date is the post publication date, not the
+  # event date. Real dates are prose-only inside .fusion-post-content-container
+  # p (not parseable by date_selectors — verified empty StartDates 2026-08-15).
+  # Do NOT enable with a publication-date selector.

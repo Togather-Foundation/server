@@ -1,6 +1,8 @@
 name: "music-toronto"
-# Tier 1 (Colly CSS selectors). Squarespace event listing, 35 events confirmed 2026-02-21.
-# Selectors validated with `server scrape test`.
+# Tier 1 (Colly CSS selectors). Squarespace event listing. Config pre-existed
+# (validated 2026-02-21, 35 events); re-validated 2026-08-15: 13 events, and
+# date_selectors added to fix all_midnight (times now extracted).
+# Organization match: API unavailable
 url: "https://musictorontoconcerts.com/concerts/"
 tier: 1
 schedule: "daily"
@@ -20,5 +22,10 @@ default_location:
 selectors:
   event_list: "article.eventlist-event"
   name: "h1.eventlist-title"
-  start_date: "time.event-date"
   url: "a.eventlist-column-thumbnail"
+  # date_selectors take priority over start_date/end_date; the Squarespace
+  # event block splits date and times into separate <time> elements.
+  date_selectors:
+    - "time.event-date"
+    - "time.event-time-localized-start"
+    - "time.event-time-localized-end"

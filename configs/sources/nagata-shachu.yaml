@@ -1,0 +1,38 @@
+name: "nagata-shachu"
+# Nagata Shachu — Toronto taiko ensemble (performing arts). WordPress 6.8.8,
+# "Shuffle" Edge theme (edgt-core 1.2.1), custom `event` post type.
+# BLOCKED (2026-08-15): site currently publishes only 2 events (Toronto Wellness
+# Festival Sep 26 2026, Multicultural Festival of Elmira Sep 19 2026) — below the
+# >= 3 event acceptance threshold. Verified via /events/ archive (2 articles, no
+# pagination, /events/page/2/ = 404), wp-sitemap-posts-event-1.xml (2 URLs),
+# /feed/?post_type=event (2 items), and /upcoming/ (links to the same 2).
+# No Tribe/JSON-LD/ICS; WP REST API does not expose the event post type.
+# Listing cards (.edgtf-post-info-date) are EMPTY — dates exist ONLY on detail
+# pages (.edgtf-event-details-time, e.g. "September 26, 2026 8:00 pm" text, no
+# <time> element). So a listing-based config yields zero dates; the viable shape
+# is this detail-page urls: list. When the org posts 3+ events, refresh the
+# urls: list from https://nagatashachu.com/wp-sitemap-posts-event-1.xml and flip
+# enabled: true.
+# Organization match: API unavailable
+# Known quirk: location text may concatenate adjacent nodes ("Gibson Park, WElmira").
+url: "https://nagatashachu.com/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: arts, music, culture, sports, community, education, general
+domain: arts
+enabled: false
+max_pages: 1
+urls:
+  - "https://nagatashachu.com/events/toronto-wellness-festival/"
+  - "https://nagatashachu.com/events/multicultural-festival-of-elmira/"
+selectors:
+  event_list: "html"
+  name: "h1"
+  url: "link[rel='canonical']"
+  location: ".edgtf-event-details-location span:last-child"
+  # No <time> elements — date text lives in the Details block
+  # ("September 26, 2026 8:00 pm"), second span after the "Time:" label.
+  date_selectors:
+    - ".edgtf-event-details-time span:last-child"

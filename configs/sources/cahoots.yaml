@@ -1,0 +1,29 @@
+name: "cahoots"
+# Cahoots Theatre Company (Toronto) — Webflow site (data-wf-site), Tier 1 static HTML.
+# No JSON-LD, no ICS, no ticketing platform embed (no Showpass/Eventbrite/Ticketmaster found).
+# Event surface: /community/events lists workshop/community event cards (.upcoming-events__item).
+# BLOCKER (2026-08-15): venue is between seasons — all 8 /production/* pages show
+# run-complete states, the /programming/on-stage listing says "We have no productions
+# currently on stage!", and all 4 community event cards are past-dated (newest May 9, 2026).
+# The scraper has no past-event filter (verified internal/scraper — inferYear only), so
+# enabling now would ingest stale events with placeholder CTA URLs (cahoots.ca homepage,
+# google forms, apple.com, whatsapp.com) into the review queue. ENABLE when the venue
+# announces its next season / posts upcoming events; selectors below are validated.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://www.cahoots.ca/community/events"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: ".upcoming-events__item"
+  name: ".event-card__title"
+  start_date: ".event-card__date-segment"
+  # end_date NOT set: the second .event-card__date-segment (range end) did not extract
+  # with nth-of-type(2) during validation; the smart assembler leaves EndDate empty.
+  url: ".event-card__cta-wrapper a"
+  description_selectors:
+    - ".event-card__description"

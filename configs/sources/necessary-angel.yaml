@@ -1,0 +1,31 @@
+name: "necessary-angel"
+# Necessary Angel Theatre Co. (Toronto) — Squarespace site (custom design; NOT native
+# Squarespace event blocks: no eventlist-* classes, no ?format=ical ICS, no summary-item).
+# No Event JSON-LD anywhere (only WebSite/Organization/LocalBusiness boilerplate);
+# no /events page (404); no Showpass/Eventbrite/other ticketing embed.
+# Event surface: homepage "2026/27 Season" cards (THE WOODS, MACHINAL, ANTHROPOLIS, NA LAB)
+# + one production page per show. Dates are PROSE inside the card <h3> ("On Stage March 25 -
+# April 25, 2027", "on stage June 2026") — no <time> element, no separate date node, so the
+# smart date assembler cannot parse them (StartDate comes back as raw h3 text).
+# BLOCKER (2026-08-15): theatre produces 1-2 shows/season; homepage yields only 2 cards with
+# clean names (THE WOODS, MACHINAL) and zero parseable dates; ANTHROPOLIS is "in development"
+# with no dates; NA LAB cards have no dates. Fails the >= 3 events with non-empty names AND
+# the date-quality bar (date_selector would match prose blobs, not dates). Headless/Tier 2
+# would not help — the page is static; there is no JS-rendered event widget. ENABLE when the
+# venue posts structured event data (JSON-LD/ICS) or a real dated events listing; selectors
+# below are the best validated options for a future Tier 1 retry.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://www.necessaryangel.com"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "div.col.sqs-col-7.span-7"
+  name: "h3 em"
+  # start_date NOT viable: dates are prose inside the card <h3> (h3 strong grabs
+  # title + company names + date range as one blob; the date assembler cannot parse it).
+  # url: "a.sqs-block-button-element"  # "Learn more" buttons on the season cards (worked in validation)

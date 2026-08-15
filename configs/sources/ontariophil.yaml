@@ -1,0 +1,25 @@
+name: "ontariophil"
+# Webflow static HTML (data-wf-site) — Tier 1, no JSON-LD/ICS.
+# Listing: /concert-season.html — season program blocks (div.program-container).
+# Each block: h1.program-heading (series label), h4.program-date (date • time | venue),
+# h3.program-header (show title), div.program-text (description), ticket link.
+# Note: some program-date blocks contain MULTIPLE performances (2 dates in one block,
+# e.g. "Friday, November 13 2026 • 7:30pm | PC Ho Theatre ... Sunday, November 15 2026 • 3pm | Regent Theatre").
+# URL is season-specific (2026-2027) — update annually when the new season publishes.
+# Organization match: API unavailable
+url: "https://www.ontariophil.ca/concert-season.html"
+tier: 1
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+domain: music
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.program-container"
+  name: "h3.program-header"
+  start_date: "h4.program-date"
+  url: "a.button-pice-info"
+  description_selectors:
+    - "div.program-text"
+  image: "img.about-image"

@@ -1,0 +1,43 @@
+name: "theatre-direct"
+# Theatre Direct Canada (Toronto theatre-for-young-audiences company) —
+# WordPress classic theme + Elementor page builder (hfe-widgets-style =
+# Header Footer Elementor; 600+ elementor-* classes on homepage).
+# No JSON-LD Event blocks (0 on homepage, season page, and all show pages),
+# no ICS/iCal (feed/ is a stale 2019 WordPress post feed; events.ics and
+# events/feed redirect to home), no Tribe/The Events Calendar (no
+# tribe-events classes, no /wp-json/tribe/events/v1 REST — 404), no
+# <time> elements anywhere. /events/, /calendar/ etc. all redirect to home.
+# Tier: 1 static HTML (all content server-rendered; no JS needed) — but
+# there is no event container structure to scrape.
+#
+# BLOCKER (2026-08-15): venue is between seasons. There is no events
+# listing page: /season-49/ is the Artistic Director's statement (prose),
+# and each show lives on its own /season-49/<show>/ page where dates are
+# free-text inside Elementor text-editor widgets (e.g. "February 13 – 
+# Educator and Student day at Theatre Direct" with no year, no <time>,
+# no ticket structure beyond external Zeffy links). All dated
+# performances are in the past: Guardians of the Gods Feb 10-15 2026,
+# Finding Home Apr 28-May 9 2026, The Archive of Missing Things May 20-23
+# 2026, Let's Play Ball camp weeks Jul-Aug 2026 (Week 4 Aug 17-20 2026 is
+# the only upcoming item, 1 event). School bookings run Oct 2025-May 2026
+# (closed). The scraper has no past-event filter; enabling now would
+# either fail the 3-event minimum or ingest stale shows with
+# inferYear-guessed dates into the review queue.
+# ENABLE when Theatre Direct posts its next season with >=3 upcoming
+# dated events on a scrapable surface (selectors below are placeholders —
+# revisit with inspect at that time).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://theatredirect.ca"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: theatre company -> arts
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "article"
+  name: "h1"
+  start_date: "time"
+  url: "a"

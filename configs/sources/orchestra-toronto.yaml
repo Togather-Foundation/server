@@ -1,0 +1,35 @@
+name: "orchestra-toronto"
+# Tier 1 (Colly CSS selectors). Squarespace site (template fuchsia-grouse-zrx7).
+# BLOCKED 2026-08-15 — date parsing limitation, NOT a selector issue.
+# Extracted date text per event (from p span.sqsrte-text-color--black) is:
+#   "Sunday, November 1, 2026 at 3:00PM Pre-Concert Chat at 2:15PM"
+# The span mixes the concert datetime with "Pre-Concert Chat at HH:MM" on one
+# line after a <br>. The smart date assembler (go-dateparser dps.Parse) rejects
+# the combined string ("unknown format"); dps.Search WOULD find the date, but
+# parseFuzzy uses dps.Parse. No config-level text-strip exists. Would need a
+# scraper feature (text-node selection / prefix strip / Search-based parse) or
+# a Tier 2 headless pass that removes the chat text node before extraction.
+# Name+URL extraction works (6 events, all non-empty names); dates fail
+# normalisation -> 0 submittable. Verified: no JSON-LD Event (WebSite +
+# LocalBusiness only), no <time> elements, no ICS feed (?format=ical returns
+# HTML), no data-* date attributes, no structured dates in SQUARESPACE_CONTEXT.
+# CAVEAT: season URL needs annual update (like coc / national-ballet).
+# Organization match: API unavailable
+url: "https://www.orchestratoronto.ca/season-2026-2027-concerts"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# Orchestra concerts -> music domain
+domain: music
+enabled: false
+max_pages: 1
+timezone: "America/Toronto"
+selectors:
+  event_list: "section[data-section-theme='white']"
+  name: "h1"
+  url: "a[href*='/concert-']"
+  # Date+time is plain text inside the black span; works for name/url but the
+  # combined "date + Pre-Concert Chat at HH:MM" text fails date normalisation.
+  date_selectors:
+    - "p span.sqsrte-text-color--black"

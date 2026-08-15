@@ -53,61 +53,61 @@ organizer pages; [SP] = Showpass; [retry] = round-1 re-test.
 | Citadel + Compagnie | `https://www.citadelcie.com/` | WordPress | 1 | ~6 | JSON-LD; /event/. [Artsdata] |
 | BCurrent Performing Arts | `https://www.bcurrent.ca/` | Squarespace | 1 | ~5 | /events + /shows + /whats-on. [Artsdata] |
 | Fall for Dance North | `https://www.ffdnorth.com` | Static | 1 | ~8 | Festival; static but structured. [Artsdata] |
-| Toronto Jazz Orchestra | `https://thetjo.com` | Static + JSON-LD | 1 | ~12 | /events + /shows. [Artsdata] |
-| Sinfonia Toronto | `https://www.sinfoniatoronto.com` | Static | 1 | ~6 | JSON-LD-ish; concert series. [Artsdata] |
-| Toronto Choral Society | `https://www.torontochoralsociety.org` | WordPress + Tribe | 1 | ~6 | Tribe signals. [Artsdata] |
-| Orchestra Toronto | `https://orchestratoronto.ca/` | WordPress | 1 | ~6 | JSON-LD; /tickets. [Artsdata] |
-| Ontario Philharmonic | `https://www.ontariophil.ca` | Static | 1 | ~6 | /season. [Artsdata] |
-| Toronto Youth Wind Orchestra | `https://tywo.ca/` | WordPress | 1 | ~8 | WordPress. [Artsdata] |
-| Toronto Alliance for the Performing Arts | `https://tapa.ca` | WordPress + Tribe | 1 | ~10 | Umbrella org — captures member events + industry. [Artsdata] |
+| Toronto Jazz Orchestra | `https://thetjo.com` | Static + JSON-LD | 1 | ~12 | /events + /shows. [Artsdata] || BLOCKED `toronto-jazz-orchestra` 11ev BandZoogle, 0 submittable?
+| Sinfonia Toronto | `https://www.sinfoniatoronto.com` | Static | 1 | ~6 | JSON-LD-ish; concert series. [Artsdata] || DONE `sinfonia-toronto` 7ev Google Sites Tier 1
+| Toronto Choral Society | `https://www.torontochoralsociety.org` | WordPress + Tribe | 1 | ~6 | Tribe signals. [Artsdata] || DONE `toronto-choral-society` 4ev Squarespace Tier 1
+| Orchestra Toronto | `https://orchestratoronto.ca/` | WordPress | 1 | ~6 | JSON-LD; /tickets. [Artsdata] || BLOCKED `orchestra-toronto` 0ev Squarespace 0 submittable
+| Ontario Philharmonic | `https://www.ontariophil.ca` | Static | 1 | ~6 | /season. [Artsdata] || DONE `ontariophil` 7ev Webflow Tier 1
+| Toronto Youth Wind Orchestra | `https://tywo.ca/` | WordPress | 1 | ~8 | WordPress. [Artsdata] || BLOCKED `toronto-youth-wind-orchestra` 0ev WP+Divi no data
+| Toronto Alliance for the Performing Arts | `https://tapa.ca` | WordPress + Tribe | 1 | ~10 | Umbrella org — captures member events + industry. [Artsdata] || BLOCKED `tapa` 0ev membership-gated
 | Luminato Festival | `https://luminatofestival.com` | Squarespace | 1 | ~30 | June festival. [Artsdata] |
 | Small World Music | `https://smallworldmusic.com` | Static + JSON-LD | 1 | ~10 | /events; world music presenter. [Artsdata] |
-| Daniels Spectrum | `https://danielsspectrum.ca/` | Static + JSON-LD | 1 | ~8 | /whats-on; Regent Park arts hub. [Artsdata place] |
-| Al Green Theatre | `https://www.mnjcc.org/agt` | Static | 1 | ~6 | /schedule; Miles Nadal JCC venue. [Artsdata place] |
-| Jackman Performance Centre | `https://jackmanperformance.ca/` | WordPress | 1 | ~6 | /events. [Artsdata place] |
-| Yonge-Dundas Square | `http://www.ydsquare.ca/` | WordPress | 1 | ~12 | /calendar + /whats-on; public square events. [Artsdata place] |
-| Article 11 | `http://article11.ca` | WordPress | 1 | ~4 | Literary events. [Artsdata] |
-| UofT Faculty of Music | `https://www.music.utoronto.ca` | Drupal | 1 | ~15 | /events; university concert series. [Artsdata] |
-| Arraymusic | `https://arraymusic.com` | WordPress | 1 | ~10 | New-music series; /events + /season. [TAC] |
-| Ashkenaz Foundation | `https://ashkenaz.ca` | WordPress | 1 | ~15 | Klezmer fest + year-round. [TAC] |
-| Ballet Creole | `https://balletcreole.org` | WordPress | 1 | ~8 | Dance co. [TAC] |
-| Breakthroughs Film Festival | `https://breakthroughsfilmfestival.com` | WordPress | 1 | ~8 | June festival. [TAC] |
+| Daniels Spectrum | `https://danielsspectrum.ca/` | Static + JSON-LD | 1 | ~8 | /whats-on; Regent Park arts hub. [Artsdata place] || DONE `daniels-spectrum` 5ev T3 REST Supabase
+| Al Green Theatre | `https://www.mnjcc.org/agt` | Static | 1 | ~6 | /schedule; Miles Nadal JCC venue. [Artsdata place] || DONE `al-green-theatre` 29ev T3 REST Amilia
+| Jackman Performance Centre | `https://jackmanperformance.ca/` | WordPress | 1 | ~6 | /events. [Artsdata place] || BLOCKED `jackman-performance-centre` 1ev ICS, only 1 upcoming
+| Yonge-Dundas Square | `http://www.ydsquare.ca/` | WordPress | 1 | ~12 | /calendar + /whats-on; public square events. [Artsdata place] || DONE `sankofa-square` 86ev Squarespace Tier 0, rebranded Sankofa
+| Article 11 | `http://article11.ca` | WordPress | 1 | ~4 | Literary events. [Artsdata] || BLOCKED `article-11` 0ev no event data
+| UofT Faculty of Music | `https://www.music.utoronto.ca` | Drupal | 1 | ~15 | /events; university concert series. [Artsdata] || BLOCKED `uoft-faculty-of-music` 0ev Drupal, 0 submittable
+| Arraymusic | `https://arraymusic.com` | WordPress | 1 | ~10 | New-music series; /events + /season. [TAC] || DONE `arraymusic` 5ev WP Tier 1
+| Ashkenaz Foundation | `https://ashkenaz.ca` | WordPress | 1 | ~15 | Klezmer fest + year-round. [TAC] || DONE `ashkenaz` 32ev WP Tier 1
+| Ballet Creole | `https://balletcreole.org` | WordPress | 1 | ~8 | Dance co. [TAC] || BLOCKED `ballet-creole` 1ev dormant
+| Breakthroughs Film Festival | `https://breakthroughsfilmfestival.com` | WordPress | 1 | ~8 | June festival. [TAC] || BLOCKED `breakthroughs-film-festival` 0ev no 2026 data yet
 | Charles Street Video | `https://charlesstreetvideo.com` | WordPress | 1 | ~6 | Media arts centre; /events. [TAC] |
-| Corpus | `https://corpus.ca` | WordPress | 1 | ~8 | Dance; /calendar + /whats-on. [TAC] |
-| Hand Eye Society | `https://handeyesociety.com` | WordPress + Eventbrite | 1 | ~10 | Games/arcade events; /event/ + eventbrite links. [TAC] |
+| Corpus | `https://corpus.ca` | WordPress | 1 | ~8 | Dance; /calendar + /whats-on. [TAC] || DONE `corpus` 9ev WP Tier 1
+| Hand Eye Society | `https://handeyesociety.com` | WordPress + Eventbrite | 1 | ~10 | Games/arcade events; /event/ + eventbrite links. [TAC] || BLOCKED `hand-eye-society` 0ev no event CPT
 | Hot Docs | `https://hotdocs.ca` | Static + JSON-LD | 1 | ~15 | Major doc festival + year-round screenings. [TAC] |
 | imagineNATIVE | `https://imaginenative.org` | WordPress | 1 | ~12 | Indigenous media arts festival. [TAC] |
 | InterAccess | `https://interaccess.org` | Static | 1 | ~8 | Media arts centre; /events + /season. [TAC] |
 | Koffler Centre of the Arts | `https://kofflerarts.org` | Static | 1 | ~10 | /calendar. [TAC] |
 | Mammalian Diving Reflex | `https://mammalian.ca` | WordPress + Vue | 1 | ~10 | Social-practice theatre; /calendar. [TAC] |
-| Mayworks Festival | `https://mayworks.ca` | WordPress | 1 | ~12 | Labour arts festival. [TAC] |
-| Music Toronto | `https://music-toronto.com` | Squarespace | 1 | ~12 | Chamber concert series. [TAC] |
-| Nagata Shachu | `https://nagatashachu.com` | WordPress | 1 | ~8 | Taiko; /events. [TAC] |
-| New Music Concerts | `https://newmusicconcerts.com` | WordPress | 1 | ~8 | /season + /tickets. [TAC] |
-| Nia Centre for the Arts | `https://niacentre.org` | WordPress + Vue | 1 | ~10 | Black arts centre; /events. [TAC] |
+| Mayworks Festival | `https://mayworks.ca` | WordPress | 1 | ~12 | Labour arts festival. [TAC] | | DONE `mayworks` 26ghost→detail-fix enabled
+| Music Toronto | `https://music-toronto.com` | Squarespace | 1 | ~12 | Chamber concert series. [TAC] || SKIPPED `music-toronto` 13ev config exists, re-validated
+| Nagata Shachu | `https://nagatashachu.com` | WordPress | 1 | ~8 | Taiko; /events. [TAC] || BLOCKED `nagata-shachu` 2ev below threshold
+| New Music Concerts | `https://newmusicconcerts.com` | WordPress | 1 | ~8 | /season + /tickets. [TAC] || BLOCKED `new-music-concerts` 4ev date parse
+| Nia Centre for the Arts | `https://niacentre.org` | WordPress + Vue | 1 | ~10 | Black arts centre; /events. [TAC] || DONE `nia-centre` 8ev WP Tier 1
 | Opera Atelier | `https://operaatelier.com` | WordPress | 1 | ~10 | /shows + /whats-on. [TAC] |
-| Planet in Focus | `https://planetinfocus.org` | WordPress + Vue | 1 | ~8 | Enviro film festival. [TAC] |
-| Prologue to the Performing Arts | `https://prologue.org` | WordPress | 1 | ~10 | Touring children's shows. [TAC] |
-| Regent Park Film Festival | `https://regentparkfilmfestival.com` | WordPress | 1 | ~8 | [TAC] |
-| Shakespeare in the Ruff | `https://shakespeareintheruff.com` | WordPress | 1 | ~10 | Summer outdoor theatre. [TAC] |
-| Soundstreams | `https://soundstreams.ca` | WordPress | 1 | ~10 | New-music presenter; /events + /season. [TAC] |
-| Steps Public Art | `https://stepspublicart.org` | WordPress | 1 | ~8 | /events. [TAC] |
-| Tangled Art + Disability | `https://tangledarts.org` | WordPress | 1 | ~8 | /events + /whats-on. [TAC] |
-| Theatre Direct Canada | `https://theatredirect.ca` | WordPress | 1 | ~8 | /season; youth theatre. [TAC] |
-| The Musical Stage Company | `https://musicalstagecompany.com` | WordPress | 1 | ~10 | /shows. [TAC] |
-| The Word On The Street | `https://thewordonthestreet.ca` | WordPress | 1 | ~8 | Book fest. [TAC] |
-| Toronto Blues Society | `https://torontobluessociety.com` | WordPress + Tribe | 1 | ~10 | /events + /season. [OAC music] |
-| Toronto Tabla Ensemble | `https://torontotabla.com/events/` | WordPress | 1 | ~8 | [OAC music] |
+| Planet in Focus | `https://planetinfocus.org` | WordPress + Vue | 1 | ~8 | Enviro film festival. [TAC] || BLOCKED `planet-in-focus` 0ev between seasons
+| Prologue to the Performing Arts | `https://prologue.org` | WordPress | 1 | ~10 | Touring children's shows. [TAC] || BLOCKED `prologue` 0ev no calendar
+| Regent Park Film Festival | `https://regentparkfilmfestival.com` | WordPress | 1 | ~8 | [TAC] || BLOCKED `regent-park-film-festival` 0ev 0 submittable
+| Shakespeare in the Ruff | `https://shakespeareintheruff.com` | WordPress | 1 | ~10 | Summer outdoor theatre. [TAC] || BLOCKED `shakespeare-in-the-ruff` 0ev no event data
+| Soundstreams | `https://soundstreams.ca` | WordPress | 1 | ~10 | New-music presenter; /events + /season. [TAC] || DONE `soundstreams` 4ev WP Tier 1
+| Steps Public Art | `https://stepspublicart.org` | WordPress | 1 | ~8 | /events. [TAC] || DONE `steps-public-art` 4ev WP+Divi Tier 1
+| Tangled Art + Disability | `https://tangledarts.org` | WordPress | 1 | ~8 | /events + /whats-on. [TAC] || DONE `tangled-arts` 3ev WP Tier 1
+| Theatre Direct Canada | `https://theatredirect.ca` | WordPress | 1 | ~8 | /season; youth theatre. [TAC] | | BLOCKED `theatre-direct` no-ICS
+| The Musical Stage Company | `https://musicalstagecompany.com` | WordPress | 1 | ~10 | /shows. [TAC] || BLOCKED `musical-stage-company` 2ev 0 submittable
+| The Word On The Street | `https://thewordonthestreet.ca` | WordPress | 1 | ~8 | Book fest. [TAC] || BLOCKED `the-word-on-the-street` 65ev 2025 past program
+| Toronto Blues Society | `https://torontobluessociety.com` | WordPress + Tribe | 1 | ~10 | /events + /season. [OAC music] || DONE `toronto-blues-society` 397ev Tier 0 JSON-LD
+| Toronto Tabla Ensemble | `https://torontotabla.com/events/` | WordPress | 1 | ~8 | [OAC music] || BLOCKED `toronto-tabla` 0ev Cloudflare, prose dates
 | Wavelength | `https://wavelengthmusic.ca` | WordPress | 1 | ~12 | Indie music series; /event/ + /events. [OAC music] |
-| Esprit Orchestra | `https://espritorchestra.com` | Squarespace | 1 | ~6 | [OAC music] |
-| Against the Grain Theatre | `https://atgtheatre.com` | WordPress | 1 | ~6 | Experimental opera. [OAC music] |
-| Hannaford Street Silver Band | `https://hssb.ca` | WordPress | 1 | ~8 | [OAC music] |
+| Esprit Orchestra | `https://espritorchestra.com` | Squarespace | 1 | ~6 | [OAC music] || BLOCKED `esprit-orchestra` 4ev Squarespace hand-rolled
+| Against the Grain Theatre | `https://atgtheatre.com` | WordPress | 1 | ~6 | Experimental opera. [OAC music] || BLOCKED `atgtheatre` 0ev no dates in listing
+| Hannaford Street Silver Band | `https://hssb.ca` | WordPress | 1 | ~8 | [OAC music] || BLOCKED `hannaford-street-silver-band` 2ev prose dates
 | Lula Lounge | `https://www.lula.ca/calendar` | Wix + Eventbrite | 1 | ~40 | World-music venue; /calendar + eventbrite links. [EB] |
-| The Bentway | `https://www.thebentway.ca` | WordPress | 1 | ~15 | Public space under Gardiner; /whats-on + /event/. [EB] |
-| Toronto Railway Museum | `https://torontorailwaymuseum.com` | WordPress + Tribe | 1 | ~10 | /events + /season. [EB] |
-| Casa Loma | `https://casaloma.ca/events/` | WordPress + Vue | 1 | ~15 | [retry] |
-| Toronto Zoo | `https://www.torontozoo.com/events` | Static | 1 | ~15 | [retry] |
-| Native Earth Performing Arts | `https://nativeearth.ca/shows/all-shows/` | Squarespace | 1 | ~8 | [retry] |
+| The Bentway | `https://www.thebentway.ca` | WordPress | 1 | ~15 | Public space under Gardiner; /whats-on + /event/. [EB] | | DONE `the-bentway` 3ev enabled
+| Toronto Railway Museum | `https://torontorailwaymuseum.com` | WordPress + Tribe | 1 | ~10 | /events + /season. [EB] || DONE `toronto-railway-museum` 3ev Tier 0 JSON-LD
+| Casa Loma | `https://casaloma.ca/events/` | WordPress + Vue | 1 | ~15 | [retry] | | DONE `casa-loma` 17ev JSON-LD enabled
+| Toronto Zoo | `https://www.torontozoo.com/events` | Static | 1 | ~15 | [retry] || BLOCKED `toronto-zoo` 0ev bare text nodes
+| Native Earth Performing Arts | `https://nativeearth.ca/shows/all-shows/` | Squarespace | 1 | ~8 | [retry] || DONE `native-earth` 39ev Squarespace Tier 1
 
 ## Tier 2 / headless candidates
 
@@ -125,24 +125,24 @@ organizer pages; [SP] = Showpass; [retry] = round-1 re-test.
 | ProArteDanza | `https://www.proartedanza.com` | Wix + React | ~6 | [retry] |
 | CCDT | `https://ccdt.org` | Wix + Eventbrite | ~6 | Contemporary dance; eventbrite links. [retry] |
 | The Mod Club (Axis Club successor) | `https://www.themodclub.com` | Next.js + JSON-LD | ~15 | theaxisclub.com now redirects here; /events + /event/ + /shows. [retry] |
-| Lee's Palace | `https://www.leespalace.com` | Webflow (static render) | ~15 | /events + /event/ + /tickets; Webflow emits static HTML — may actually be Tier 1. [retry] |
+| Lee's Palace | `https://www.leespalace.com` | Webflow (static render) | ~15 | /events + /event/ + /tickets; Webflow emits static HTML — may actually be Tier 1. [retry] || DONE `leespalace` 64ev Webflow Tier 1
 
 ## Tier 3 / API candidates (ticketing platforms)
 
 | Name | URL | Platform | Est. events | Notes |
 |------|-----|----------|-------------|-------|
-| Eventbrite Toronto organizer pages (platform) | `https://www.eventbrite.ca/o/<slug>` | Eventbrite (Next.js `__NEXT_DATA__`) | varies | /o/ pages embed structured `upcomingEvents` in `__NEXT_DATA__` (verified on Lula Lounge: 12 events with start_date). T2 per scraper docs — one config could cover many orgs. [EB] |
-| — Burdock Music Hall | `https://www.eventbrite.ca/o/burdock-music-hall-103809367271` | Eventbrite | ~15 | Also has own site (burdockbrewery.yaml exists — check overlap). [EB] |
+| Eventbrite Toronto organizer pages (platform) | `https://www.eventbrite.ca/o/<slug>` | Eventbrite (Next.js `__NEXT_DATA__`) | varies | **VIABLE — Tier 3 REST** (t_cdc42532, 2026-08-15): unauthenticated JSON API `eventbrite.ca/organizer-profile/api/organizers/<org_id>/events/?page=1&pageSize=200` returns full upcoming list (results_field `events`). /o/ pages have ZERO ld+json blocks (Tier 0 dead) but the API sidesteps __NEXT_DATA__ entirely. Configs written: eventbrite-lula-lounge (27 events, enabled), eventbrite-socap-comedy (8, enabled), eventbrite-tpl-programs (1 now, disabled). Known limitation: start_date/start_time split → all_midnight. [EB] |
+| — Burdock Music Hall | `https://www.eventbrite.ca/o/burdock-music-hall-103809367271` | Eventbrite | 0 now | Pattern-ready (org_id 103809367271); 0 upcoming events as of 2026-08-15 — re-check when shows are published. Own site already covered by burdockbrewery.yaml. [EB] |
 | — Music Toronto | `https://www.eventbrite.ca/o/music-toronto-59613130173` | Eventbrite | ~12 | Duplicates music-toronto.com; EB as backup. [EB] |
 | — Toronto Bach Festival | `https://www.eventbrite.ca/o/toronto-bach-festival-18386248073` | Eventbrite | ~8 | [EB] |
 | — Toronto Concert Band | `https://www.eventbrite.ca/o/toronto-concert-band-12016971059` | Eventbrite | ~10 | [EB] |
 | — The 519 | `https://www.eventbrite.ca/o/the-519-11100867914` | Eventbrite | ~15 | Community centre events. [EB] |
-| — TPL Programs | `https://www.eventbrite.ca/o/tpl-programs-72000428503` | Eventbrite | ~30 | Toronto Public Library programs. [EB] |
-| — SoCap Comedy Theatre | `https://www.eventbrite.ca/o/socap-comedy-theatre-6898984189` | Eventbrite | ~10 | [EB] |
+| — TPL Programs | `https://www.eventbrite.ca/o/tpl-programs-72000428503` | Eventbrite | 1 now | Toronto Public Library programs. Config written (eventbrite-tpl-programs.yaml, disabled — only 1 upcoming event as of 2026-08-15; flip enabled when ≥3). [EB] |
+| — SoCap Comedy Theatre | `https://www.eventbrite.ca/o/socap-comedy-theatre-6898984189` | Eventbrite | 8 now | Config written + enabled (eventbrite-socap-comedy.yaml). [EB] |
 | — Jokers Theatre & Comedy Club | `https://www.eventbrite.ca/o/jokers-theatre-comedy-club-65516133963` | Eventbrite | ~12 | [EB] |
 | — Dance Hub Toronto | `https://www.eventbrite.ca/o/dance-hub-toronto-72600811973` | Eventbrite | ~10 | [EB] |
 | — Goh Ballet Toronto | `https://www.eventbrite.ca/o/goh-ballet-toronto-46515927053` | Eventbrite | ~8 | [EB] |
-| — Tablao Flamenco Toronto | `https://www.eventbrite.ca/o/tablao-flamenco-toronto-9902789664` | Eventbrite | ~6 | [EB] |
+| — Tablao Flamenco Toronto | `https://www.eventbrite.ca/o/tablao-flamenco-toronto-9902789664` | Eventbrite | 1 now | Pattern-ready (org_id 9902789664); 1 upcoming event as of 2026-08-15 — needs config when ≥3. [EB] |
 | Showpass Toronto (platform) | `https://www.showpass.com/discover/toronto/` | Showpass (JS SPA) | varies | Venue pages at `showpass.com/<slug>` (e.g. vanderpark → Burdock). T3 REST per scraper docs. [SP] |
 | — Absolute Comedy | `https://www.showpass.com/absolute-comedy-toronto-...` | Showpass | ~15 | Tickets on showpass. [SP] |
 | Showclix Toronto (platform) | `https://www.showclix.com/event/<slug>` | Showclix | varies | Used by Cineplex events, indie promoters in TO. T3 REST. [SP] |
@@ -240,8 +240,12 @@ organizer pages; [SP] = Showpass; [retry] = round-1 re-test.
   non-GTA; GTA subset captured above.
 - **Eventbrite /o/ pages embed structured event data in `__NEXT_DATA__`** —
   verified: `pageProps.upcomingEvents[]` with `name`, `url`, `start_date`,
-  `eventbrite_event_id`. A single Eventbrite organizer config pattern could
-  unlock dozens of orgs.
+  `eventbrite_event_id`. **CONFIRMED + IMPLEMENTED (t_cdc42532, 2026-08-15):**
+  the same data is available unauthenticated via the organizer-profile JSON API
+  (`/organizer-profile/api/organizers/<id>/events/?page=1&pageSize=200`), so the
+  Eventbrite organizer-page pattern now works as Tier 3 REST — one config
+  template unlocks dozens of orgs (Lula 27 events, SoCap 8 enabled; 10 more
+  org_ids documented).
 - **mhrth.com** is the shared ticketing platform for Massey Hall / Roy Thomson
   Hall / Allied Music Centre (all `*.mhrth.com`); 403 to curl but likely has a
   REST API (T3 investigation candidate).

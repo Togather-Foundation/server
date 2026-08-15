@@ -1,0 +1,34 @@
+name: "sankofa-square"
+# Sankofa Square (formerly Yonge-Dundas Square; ydsquare.ca redirects here).
+# Squarespace site (chiton-wolf-lp26 template), city-run public square + event
+# space at Yonge & Dundas, Toronto.
+#
+# Platform notes (2026-08-15):
+# - The /calendar listing page is JS-rendered; its static fallback is a
+#   <noscript> block (23 events) that Colly does not parse — selector-based
+#   extraction returns 0 events. Squarespace's ?format=json exposes the same
+#   data but with epoch-ms startDate numbers that the REST field_map cannot
+#   read (string-only). ?format=ical returns HTML, not ICS.
+# - WINNING PATH: sitemap discovery (394 URLs, 246 under /calendar/) → each
+#   detail page carries full schema.org Event JSON-LD (name, startDate,
+#   endDate, image) → Tier 0 extraction per detail page. Sitemap <lastmod>
+#   drives incremental re-scrape (only entries modified since last scrape).
+# - filter_pattern scoped to /calendar/202[6-9]/ (not the whole /calendar/)
+#   so the first sync doesn't submit 2023-2025 history to the review queue
+#   (ingest has no past-event drop). Bump the pattern before 2030.
+# - JSON-LD name has a " — Sankofa Square" suffix appended; location is empty
+#   in JSON-LD (all events are at the Square itself).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://www.sankofasquare.ca/calendar"
+tier: 0
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+# event_domain: public square — concerts, festivals, markets, movies, fitness
+domain: culture
+enabled: true
+sitemap:
+  url: "https://www.sankofasquare.ca/sitemap.xml"
+  filter_pattern: "/calendar/202[6-9]/"
+  max_urls: 250
+  rate_limit_ms: 500

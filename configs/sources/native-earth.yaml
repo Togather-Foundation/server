@@ -1,0 +1,34 @@
+name: "native-earth"
+# Native Earth Performing Arts — Toronto Indigenous theatre company (Aki Studio, Daniels Spectrum).
+# Platform: Squarespace native event block (server-rendered HTML). Tier 1 static — no headless needed.
+# Listing /shows/all-shows/ has 39 show cards (33 multi-day + 6 single-day); detail pages carry
+# full schema.org/Event JSON-LD (not needed — listing is fully scrapable).
+# Card variants (Squarespace template):
+#   multi-day (33): <li class="eventlist-meta-date"> holds 2x time.event-date + 2x time.event-time-localized
+#   single-day (6): separate <li> with 1x event-date + time.event-time-localized-start/-end
+# date_selectors are row-aligned by index: multi-day cards emit 2 rows (start + end date+time),
+# dedup by URL collapses them to 1 event (start date kept, end date dropped — see issue below);
+# single-day cards emit 1 row (date + start time + end time). The 3 partial_match quality warnings
+# are structural: each time selector only matches one card variant (66/72 vs 6/72) by design.
+# Past shows (2024-2025) appear on the listing — expected for an "all shows" page.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://nativeearth.ca/shows/all-shows/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "article.eventlist-event"
+  name: "h1.eventlist-title"
+  url: "a.eventlist-column-thumbnail"
+  image: "a.eventlist-column-thumbnail img"
+  description_selectors:
+    - "div.eventlist-excerpt"
+  date_selectors:
+    - "time.event-date"
+    - "time.event-time-localized"
+    - "time.event-time-localized-start"
+    - "time.event-time-localized-end"

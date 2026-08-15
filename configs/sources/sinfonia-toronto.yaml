@@ -1,0 +1,25 @@
+name: "sinfonia-toronto"
+# Google Sites (Atari framework) static HTML, server-rendered. Season page
+# (2026-2027-season) lists all 7 concerts; each event is a
+# section.yaqOZd.qeLZfd containing an a.fqo2vd image link (used as the event
+# discriminator via :has()). Date+time and venue are plain <p> text — no
+# <time> elements, no JSON-LD, no ICS feed, no public API. Tier 1.
+# Organization match: API unavailable
+url: "https://www.sinfoniatoronto.com/2026-2027-season"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: orchestra concert series
+domain: music
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "section.yaqOZd.qeLZfd:has(a.fqo2vd)"
+  name: "div.tyJCtd.mGzaTb.Depvyb.baZpAe p:nth-of-type(3) a span"
+  start_date: "div.tyJCtd.mGzaTb.Depvyb.baZpAe p:nth-of-type(1)"
+  location: "div.tyJCtd.mGzaTb.Depvyb.baZpAe p:nth-of-type(2)"
+  description_selectors:
+    - "div.tyJCtd.mGzaTb.Depvyb.baZpAe p:nth-of-type(5)"
+  url: "div.tyJCtd.mGzaTb.Depvyb.baZpAe p:nth-of-type(3) a"
+  image: "a.fqo2vd img"

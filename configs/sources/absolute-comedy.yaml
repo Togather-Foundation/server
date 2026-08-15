@@ -1,0 +1,28 @@
+name: "absolute-comedy"
+# Tier 3 REST: Showpass public API (venue ID 13568, slug: absolute-comedy).
+# Absolute Comedy — comedy club with Toronto (2335 Yonge St) + Ottawa locations
+# under ONE Showpass venue record. 29 events confirmed 2026-08-15; the API
+# returns both cities' shows (14 Toronto / 15 Ottawa on this pull).
+# Toronto shows identifiable by name prefix "Absolute Comedy Toronto:".
+# Supersedes the round-1 headless approach for this venue (T3 REST beats T2).
+# Same pattern as burdock-brewery.yaml (Showpass venue 17330).
+# Organization match: API unavailable during config (no SEL server URL on this box).
+url: "https://www.absolutecomedy.ca/"
+tier: 3
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 3
+rest:
+  endpoint: "https://www.showpass.com/api/public/events/?venue=13568"
+  results_field: "results"
+  next_field: "next"
+  url_template: "https://www.showpass.com/{{.slug}}"
+  field_map:
+    name: "name"
+    start_date: "starts_on"
+    end_date: "ends_on"
+    location: "location.name"
+    image: "image"

@@ -1,0 +1,31 @@
+name: "toronto-choral-society"
+# Tier 1 (Colly CSS selectors). Squarespace native event block (collection-type-events
+# page /20252026-concerts) — same proven pattern as music-toronto.yaml. Verified 2026-08-15:
+# 4 events extracted with non-empty names + dates from time.event-date datetime attrs.
+# CAVEAT: all 4 listed events are PAST (2025-26 season ended 2026-05-13; site is between
+# seasons — no 2026-27 page/announcement yet as of 2026-08-15). Selectors verified against
+# the past-season listing; they will pick up upcoming events once the new season is posted.
+# Past-dated events are filtered from API reads (internal/domain/events/service.go).
+# NOTE: events URL is season-scoped (/20252026-concerts) — the config url may need a
+# one-line update when TCS publishes next season's page (e.g. /20262027-concerts).
+# Venue names are only on event detail pages (listing shows city only) — location left empty.
+# Organization match: API unavailable (no SEL server URL on this box).
+url: "https://www.torontochoralsociety.org/20252026-concerts"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: choral society concerts → music (ticket suggested "culture", but the
+# analog choir config toronto-mendelssohn-choir.yaml and tafelmusik.yaml both use music)
+domain: music
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.eventlist-event"
+  name: "h1.eventlist-title"
+  url: "a.eventlist-column-thumbnail"
+  # No single <time> with full datetime — date and time are in separate elements:
+  date_selectors:
+    - "time.event-date"              # e.g. "Wednesday, May 13, 2026"
+    - "time.event-time-12hr-start"   # e.g. "7:30 PM"
+

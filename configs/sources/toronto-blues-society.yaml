@@ -1,0 +1,13 @@
+name: "toronto-blues-society"
+# WordPress + The Events Calendar Pro (Tribe). Tier 0: /events/ month view embeds
+# a JSON-LD Event array (397 events, ~6-week window as of 2026-08-15). iCal feed
+# (/events/?ical=1) also available but yields only ~30 near-term events.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://torontobluessociety.com/events/"
+tier: 0
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: music — Toronto Blues Society promotes blues music across Ontario
+domain: music
+enabled: true

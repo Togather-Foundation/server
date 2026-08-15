@@ -1,0 +1,33 @@
+name: "ballet-creole"
+# Ballet Creole (Toronto Afro-Caribbean dance company).
+# Platform: WordPress 7.0.4 + Divi 4.27.6 (LiteSpeed cache, Smush lazyload) — Tier 1 static HTML.
+# BLOCKED 2026-08-15: site is dormant/memorial mode (founder Patrick Parson d. 2024, 1958-2024).
+# - /upcoming/ lists exactly ONE "upcoming" event (Legacy In Motion – A Ballet Creole Tribute,
+#   2026-04-25 at The Terminal Theatre) — already past as of 2026-08-15 — plus 4 past
+#   performances (2022-2023). PAST PERFORMANCES rows are historical, not listings.
+# - /ballet-creole-unity-drum-festival/ (June 17-20, 2026, past; schedule "to be released soon").
+# - No future programming anywhere on the site as of inspection date.
+# No structured data: no Event JSON-LD (only Organization/WebSite), no ICS/Tribe Events feed,
+# no sitemap.xml (404), wp-json REST API 401-restricted (no public API path).
+# Selector quality on /upcoming/: names extract cleanly (h3), but dates are prose inside
+# .et_pb_text_inner p ("April 25, 2026 at The Terminal Theatre | ...") — no <time> elements;
+# 2 of 5 event rows extract "Photo Credit:" as start date; header rows pollute the list.
+# Unblock path: site publishes new programming (new season page with dates), then re-test
+# selectors and flip enabled: true. Tier 2 (headless) NOT attempted — not available on this box,
+# and not needed (static HTML) — the blocker is content, not rendering.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://balletcreole.org/upcoming/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: false
+max_pages: 1
+selectors:
+  event_list: ".et_pb_row.team"
+  name: "h3"
+  # Prose date text ("April 25, 2026 at The Terminal Theatre | 207 Queens Quay W...") — no <time>.
+  # Needs date_selectors work when site re-activates; some rows have "Photo Credit:" only.
+  start_date: ".et_pb_text_inner p"
+  url: "a[href]"

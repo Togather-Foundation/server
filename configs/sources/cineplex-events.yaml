@@ -1,0 +1,106 @@
+name: "cineplex-events"
+# Cineplex Events (Showclix / Leap Event Technology) — Toronto.
+# URL: https://www.cineplex.com/Events (event cinema + live events), ticketing on
+#      the Showclix platform, which has been rebranded to Leap Event Technology.
+#
+# STATUS: BLOCKED (config written disabled) — see Issues in the task result.
+#
+# INVESTIGATION FINDINGS (2026-08-15, task t_f0887b8d):
+#
+# 1. The documented Showclix S3-bucket pattern is DEAD. The scraper docs and
+#    event-platforms.md section 16 describe `https://<venue>eventsbucket.
+#    s3.amazonaws.com/events.json` (bare JSON array, results_field ".").
+#    Verified 2026-08-15: `horseshoeeventsbucket` (the documented example,
+#    Horseshoe Tavern) returns S3 NoSuchBucket (404), as do thegarrison,
+#    modclub, leespalace, dromtaberna, cineplex, showclix, leapevents bucket
+#    guesses. The pattern no longer exists on the platform.
+#
+# 2. Showclix is now Leap Event Technology (leapevents.com). showclix.com/event/
+#    <slug> URLs 301-redirect to events.leapevents.com/event/<slug>. Support
+#    site confirms: "ShowClix and Ticketbooth are becoming Leap Event
+#    Technology!" The branded ticketing product still serves Cineplex Events
+#    and Horseshoe Tavern.
+#
+# 3. A live PUBLIC per-org feed exists (discovered from the calendar widget JS
+#    on https://events.leapevents.com/events/<org_id>):
+#      GET https://events.leapevents.com/events/<org_id>/<start>/<end>.json
+#      e.g. https://events.leapevents.com/events/31733/2026-08-01/2026-12-31.json
+#    No auth required. No rate-limit headers observed (S3-standard caching).
+#
+# 4. BUT the response shape is NESTED, not a bare array:
+#      {"start_yyyy_mm_dd": "...", "end_yyyy_mm_dd": "...",
+#       "events_by_month": {"2026-08": {"dates": {"14": [ {...event...} ]}}},
+#       "color_schemes": []}
+#    The current Tier 3 REST extractor (internal/scraper/rest.go) only supports
+#    (a) results_field "." for a bare top-level array, or (b) a top-level field
+#    whose value IS an array. `events_by_month` is an OBJECT keyed by month, and
+#    each month is an object keyed by day. Verified with dry-run:
+#      results_field "."            -> "json: cannot unmarshal object into Go
+#                                       value of type []map[string]interface {}"
+#      results_field "events_by_month" -> same error (object, not array).
+#    This is a scraper capability gap, not a config error — see Issues.
+#
+# 5. Toronto usage ASSESSED:
+#      - Cineplex Events, org_id 31733 — The Rec Room Toronto Roundhouse
+#        (255 Bremner Blvd). Live events verified 2026-08-15: "Smash Wrestling
+#        - Live Pro Wrestling" (2026-08-01) and "Smash Wrestling - Live
+#        Wrestling CANUSA Classic" (2026-09-13). 2 upcoming in range — below
+#        the >= 3 event bar even with a working extractor.
+#      - Horseshoe Tavern, org_id 30428 — currently ZERO upcoming events on the
+#        platform (page shows "There are no upcoming events scheduled").
+#      - Indie promoters: Wavelength, Mother Tongues at The Garrison (org 28556)
+#        — most recent events are past-dated (2019-2022 era). Platform usage in
+#        Toronto is thin and mostly dormant right now.
+#      - Cineplex Events pages at cineplex.com/Events (Met Opera, Family, etc.)
+#        are on Cineplex's own React ticketing stack, NOT Showclix/Leap.
+#
+# 6. The JSON:API at events.leapevents.com/api/* requires authentication (401)
+#    — not a public read API.
+#
+# WHAT WOULD UNBLOCK THIS (recommendation, out of scope for this ticket):
+#   - Extend the T3 REST extractor to resolve a nested results path, e.g.
+#     `results_field: "events_by_month.*.dates.*"` (or add a flattening
+#     transform for object-of-objects-of-arrays), OR
+#   - Have the platform config hit the org page's embedded `var
+#     upcoming_events = [...]` blob — but that is inline JS, not DOM, so Tier 1
+#     CSS selectors cannot reach it, and Tier 2 headless is not available on
+#     this worker box (no Chromium).
+#   - Once nested results are supported, the correct config for this source is:
+#       endpoint: https://events.leapevents.com/events/31733/<start>/<end>.json
+#       field_map:
+#         name: "title"
+#         start_date: "event_start"     # "2026-08-14 19:30:00" — VERIFIED
+#                                       #   parseable: fuzzy path converts to
+#                                       #   RFC 3339 with source tz (mock test
+#                                       #   yielded 2026-08-14T19:30:00-04:00)
+#         url: "listing_url"
+#         location: "venue_name"
+#         image: "image_url"
+#     NOTE: the feed has no fixed date range; the widget requests
+#     <start>/<end> as URL path segments (e.g. today .. +5 months). The
+#     extractor has no date-param templating, so the endpoint date range would
+#     need to be configurable or defaulted (see Issues).
+# Organization match: API unavailable (SEL URL unset on worker)
+url: "https://www.cineplex.com/Events"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: culture (Cineplex Events = curated event cinema + live events:
+# sports/wrestling, concerts, family, film series — no single arts/music label)
+domain: culture
+enabled: false
+rest:
+  # Live endpoint verified 2026-08-15. <start>/<end> are URL path segments
+  # (YYYY-MM-DD). This exact range returned 2 events (Smash Wrestling at The
+  # Rec Room Roundhouse, Toronto).
+  endpoint: "https://events.leapevents.com/events/31733/2026-08-01/2026-12-31.json"
+  # Nested shape — "." fails ("cannot unmarshal object"). BLOCKED pending
+  # scraper support for nested results paths. Kept as the documented attempt.
+  results_field: "."
+  field_map:
+    name: "title"
+    start_date: "event_start"
+    url: "listing_url"
+    location: "venue_name"
+    image: "image_url"

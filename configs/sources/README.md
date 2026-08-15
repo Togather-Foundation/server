@@ -103,9 +103,76 @@ Requires `SCRAPER_HEADLESS_ENABLED=true`. All sources below were evaluated with
 | tranzac | disabled | 25 | DatoCMS | No ISO dates in rendered DOM; DatoCMS API adapter needed (`srv-wz0h7`) |
 | xtsc | disabled | 102 names | Zuluru | Event titles in `data-event` attributes now extractable via `::attribute` syntax; dates not on listing page |
 
+### Tier 3 (REST JSON — Eventbrite organizer pages)
+
+**Eventbrite organizer-page pattern (discovered 2026-08-15, STRATEGIC ticket t_cdc42532):**
+Eventbrite `/o/<org-slug>-<org-id>` pages embed all upcoming event data in
+`__NEXT_DATA__` (pageProps.upcomingEvents[]) but contain ZERO
+`application/ld+json` blocks, so Tier 0 cannot read them. The Next.js
+organizer-profile frontend instead fetches the same data from a **public JSON
+API requiring NO authentication**:
+
+```
+https://www.eventbrite.ca/organizer-profile/api/organizers/<ORG_ID>/events/?page=1&pageSize=200
+```
+
+Response: `{"events":[{...}], "hasMore": bool, "total": int}` — one page with
+pageSize=200 covers even large orgs (Lula: 27 events, hasMore=false). Fields:
+name, url, start_date ("2026-08-15"), start_time ("20:30:00"), end_date,
+end_time, timezone, image.url, primary_venue.name, ticket_availability.
+The scraper's own UA (Togather-SEL-Scraper/0.1) is accepted (verified HTTP 200);
+no Cloudflare challenge, no cookies, no OAuth.
+
+**Config template** (one config per org; org_id is the numeric suffix of the /o/ slug):
+
+```yaml
+name: "eventbrite-<org-slug>"
+url: "https://www.eventbrite.ca/o/<org-slug>-<org-id>"
+tier: 3
+schedule: "daily"
+trust_level: 5            # 8 for libraries/gov (TPL), 6 for established venues
+license: "CC0-1.0"
+domain: <arts|music|culture|community|education>
+timezone: "America/Toronto"
+enabled: false            # flip true after dry-run shows >= 3 events
+max_pages: 1
+rest:
+  endpoint: "https://www.eventbrite.ca/organizer-profile/api/organizers/<ORG_ID>/events/?page=1&pageSize=200"
+  results_field: "events"
+  field_map:
+    name: "name"
+    start_date: "start_date"
+    end_date: "end_date"
+    url: "url"
+    location: "primary_venue.name"
+    image: "image.url"
+    description: "summary"
+```
+
+**Known limitation (Issue):** the API splits start_date/start_time into separate
+fields; REST field_map maps one source key per field, so start times are lost
+→ all events normalize to T00:00:00 (all_midnight quality warning). Dates,
+names, URLs, venues are correct. A scraper feature (field_map value templating
+e.g. `"{{.start_date}}T{{.start_time}}"`) would fix this.
+
+**Validated orgs (2026-08-15):**
+
+| Source | Status | Events now | org_id |
+|--------|--------|-----------|--------|
+| eventbrite-lula-lounge | **enabled** | 27 | 19825205758 |
+| eventbrite-socap-comedy | **enabled** | 8 | 6898984189 |
+| eventbrite-tpl-programs | disabled (1 event now) | 1 | 72000428503 |
+
+Other candidate org_ids (0 upcoming events as of 2026-08-15, mid-season lull —
+re-check when orgs publish): Burdock 103809367271, Music Toronto 59613130173,
+Toronto Bach Festival 18386248073, Toronto Concert Band 12016971059, The 519
+11100867914, Jokers 65516133963, Dance Hub 72600811973, Goh Ballet 46515927053,
+Tablao Flamenco 9902789664.
+
 ## Selector Syntax
 
 ### Standard CSS selectors
+
 All selectors use standard CSS syntax (e.g. `.class-name`, `#id`, `tag`, `tag.class`).
 Attribute selectors like `[href*='pattern']` are supported on Tier 1 and Tier 2.
 

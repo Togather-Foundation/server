@@ -1,0 +1,42 @@
+name: "hannaford-street-silver-band"
+# Hannaford Street Silver Band (Toronto professional brass band) — WordPress
+# with CSSIgniter "muzak" theme. No JSON-LD Event, no ICS/iCal, no Tribe
+# Events Calendar, no REST route for the events CPT, no ticketing embed.
+# Events live in a custom post type (cpt_events) but the archive has only 2
+# posts (2025-08 and 2025-11, both long past). The homepage is a blog listing
+# of event RECAP posts published AFTER the event (e.g. "Pictures at an
+# Exhibition – April 12 at 3:00" posted 2026-04-13; the only structured date,
+# time.post-date, is the publication date, not the event date).
+# Tier would be: 1 static HTML (all content server-rendered).
+#
+# BLOCKER (2026-08-15): no upcoming events on the site at all. The Concerts
+# sidebar widget renders an empty <ul class="tour-dates"></ul>, the menu's
+# single event link (Gabriel's Sister, ?post_type=cpt_events&p=11669) returns
+# 404, and the most recent post is the April 2026 season-finale recap (site in
+# summer between-seasons state). Enabling now would either fail the >=3 event
+# minimum or ingest recaps with publication-date-as-start-date (wrong event
+# dates — events happened 1+ days before the post date). The scraper has no
+# past-event filter and event dates exist only as prose inside post titles
+# ("Sunday, May 3 at 3:00") — not extractable.
+# ENABLE when the band posts its 2026-27 season with >=3 upcoming events
+# (check hssb.ca homepage articles or the Concerts widget being populated).
+# NOTE: even then, confirm the date source — if dates stay prose-in-title,
+# only a sitemap/detail-page approach with real date elements can work.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://hssb.ca"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: professional brass band -> music
+domain: music
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "article.post"
+  name: ".post-intro h2 a"
+  # WARNING: time.post-date is the WordPress PUBLICATION date, not the event
+  # date (recaps are posted 1+ days after the event). Do not enable with
+  # this selector as start_date — it yields wrong event dates.
+  start_date: "time.post-date"
+  url: ".post-intro h2 a"

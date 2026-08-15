@@ -1,0 +1,47 @@
+name: "eventbrite-lula-lounge"
+# Tier 3 REST — Eventbrite organizer-page pattern (STRATEGIC, see t_cdc42532)
+#
+# PATTERN: Eventbrite /o/<org-slug>-<org-id> pages embed all upcoming event
+# data in __NEXT_DATA__ (pageProps.upcomingEvents[]), but the pages contain
+# ZERO application/ld+json blocks, so Tier 0 cannot read them. Instead, the
+# organizer-profile Next.js frontend fetches the same data from a public JSON
+# API that requires NO authentication:
+#
+#   https://www.eventbrite.ca/organizer-profile/api/organizers/<ORG_ID>/events/?page=1&pageSize=200
+#
+# Response: {"events":[{...}], "hasMore": bool, "total": int} — events carry
+# name, url, start_date, start_time, end_date, end_time, timezone, image,
+# primary_venue (nested), ticket_availability, event_sales_status.
+# pageSize=200 returns the full upcoming list in one page (hasMore=false).
+#
+# The scraper's own UA (Togather-SEL-Scraper/0.1) is accepted (verified 200).
+# No Cloudflare challenge, no cookies, no OAuth. Verified 2026-08-15.
+#
+# KNOWN LIMITATION: the API returns start_date ("2026-08-15") and start_time
+# ("20:30:00") as SEPARATE fields; REST field_map maps one source key per field,
+# so start times are lost → all events normalize to T00:00:00 (all_midnight
+# quality warning). Dates, names, URLs, venues are correct. Fix requires a
+# scraper feature (field_map value templating e.g. "{{.start_date}}T{{.start_time}}").
+#
+# org_id for this source: 19825205758 (Lula Lounge Toronto)
+# Organization match: API unavailable (SEL server not running)
+url: "https://www.eventbrite.ca/o/lula-lounge-toronto-19825205758"
+tier: 3
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: music
+timezone: "America/Toronto"
+enabled: true
+max_pages: 1
+rest:
+  endpoint: "https://www.eventbrite.ca/organizer-profile/api/organizers/19825205758/events/?page=1&pageSize=200"
+  results_field: "events"
+  field_map:
+    name: "name"
+    start_date: "start_date"
+    end_date: "end_date"
+    url: "url"
+    location: "primary_venue.name"
+    image: "image.url"
+    description: "summary"

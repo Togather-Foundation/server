@@ -1,0 +1,44 @@
+name: "corpus"
+# CORPUS (Corpus Dance Projects) — Toronto contemporary dance company.
+# WordPress + Yoast SEO (no Tribe Events Calendar; wp-json/tribe/events/v1 404s).
+# Tier 1 confirmed: /touring-calendar/ is a hand-maintained Gutenberg page; each
+# 2026 event is a <p class="wp-block-paragraph"> with venue text, <a><em>Show</em></a>,
+# and <strong>date</strong>.
+# Selector rationale: p.wp-block-paragraph matches ALL content paragraphs (awards,
+# 2025 past events, empty spacers). The filters keep only current-year tour entries:
+#   - :has(a em)           — must contain a linked show name
+#   - :not(:has(em a))     — excludes 2025 past events (link wrapped in <em>) and
+#                             the two split-link entries (Sydney Opera House, Daliangshan)
+#   - :not(:has(strong a)) — excludes the AWARDS section (name wrapped in <strong>)
+# KNOWN LIMITATIONS:
+# - Only the first <a em> per paragraph is used as name+URL; the Sydney Opera House
+#   (Oct 7-11) and Daliangshan (Nov 7-8) "Les Moutons" entries use split links
+#   ("Les Mouton" + "s" in separate anchors) and are excluded by the :not(:has(em a))
+#   filter rather than imported with garbage names.
+# - Dates are prose ("May 2", "June 6: 1pm & 5pm", "August 7-8"); the smart date
+#   assembler handles them with year inference (current year, next year if >30 days
+#   past). May-July entries that already passed in 2026 may land in 2027.
+# - Mod_Security blocks requests without a browser-like User-Agent (verified:
+#   bare curl -> 406 Not Acceptable); the scraper's UA passes.
+# - go-dateparser misparses the "X: 1pm & 5pm" double-showtime pattern:
+#   "June 6: 1pm & 5pm" -> June 15 17:00 and "July 14: 2pm & 4pm" -> July 15
+#   16:00 (2 of 9 occurrences). Day+time are off but name/URL/venue context
+#   stay correct; reported as an Issue (date parser limitation, not selectors).
+# - Past-season entries (May 2, June 6, June 18, July 14, Aug 7-8 2026) roll to
+#   2027 via the standard >30-day year-inference heuristic (documented assembler
+#   behavior — page lists the full 2026 touring year, stale entries not yet moved
+#   to the "WHERE HAVE WE BEEN" section).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://corpus.ca/touring-calendar/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "p.wp-block-paragraph:has(a em):not(:has(em a)):not(:has(strong a))"
+  name: "a em"
+  start_date: "strong"
+  url: "a[href*='corpus.ca']"

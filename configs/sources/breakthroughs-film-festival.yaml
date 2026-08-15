@@ -1,0 +1,37 @@
+name: "breakthroughs-film-festival"
+# Breakthroughs Film Festival (Toronto annual film festival of films by women +
+# non-binary directors). Platform: Squarespace 7 (confirmed: "This is Squarespace"
+# comment, sqs-block* classes, static1.squarespace.com CSS, Squarespace robots.txt).
+# Tier would be: 1 static HTML (fully server-rendered; no JS needed).
+#
+# BLOCKER (2026-08-15): NO upcoming event data exists anywhere on the site yet.
+# - 15th edition announced on homepage for December 2026, but the programme page
+#   is NOT published: /festival/2026 returns 404 (pattern is /festival/<year> —
+#   /festival/2025 is the latest live programme, Nov 21-22, 2025, now past).
+# - No JSON-LD Event anywhere (only WebSite + LocalBusiness schema on every page
+#   checked: home, /festival/2025, film detail pages). No ICS/iCal feed
+#   (?format=ical returns HTML). No eventlist* blocks on current pages (only on
+#   /new-events = "Behind the Lens 2020" archive).
+# - ./server scrape inspect /festival/2025 returns only header/nav candidate
+#   containers — programme content is static prose blocks, not structured events.
+# - Ticketing = Eventbrite (breakthroughs-film-festival.eventbrite.com redirects to
+#   eventbrite.ca/o/breakthroughs-film-festival-18854114371), but the public
+#   organizer-profile JSON API returns total: 0 events — tickets not on sale.
+# ENABLE when the Dec 2026 programme goes live (expected /festival/2026) or when
+# the Eventbrite organizer profile has >=3 upcoming events (T3 REST path would
+# then beat T1 — see eventbrite-*.yaml configs for the organizer-profile pattern).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://www.breakthroughsfilmfestival.com/"
+tier: 1
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: festivals -> culture
+domain: culture
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "PLACEHOLDER"
+  name: "PLACEHOLDER"
+  start_date: "PLACEHOLDER"
+  url: "PLACEHOLDER"

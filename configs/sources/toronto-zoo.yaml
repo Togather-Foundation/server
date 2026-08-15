@@ -1,0 +1,29 @@
+name: "toronto-zoo"
+# Toronto Zoo /events — custom static HTML (jQuery 2.1 + GTM only; no CMS framework, no JSON-LD, no ICS, no sitemap,
+# no REST API; robots.txt 404s). Tier 1. 15 x a.event containers on the listing.
+#
+# BLOCKER (status=blocked, 2026-08-15): start dates are BARE TEXT NODES inside div.colEtxtborder —
+# e.g. `<div style="font-size:1.4em">NAME</div> Saturday, May 16 <em>-</em> <div class="mbr">END</div>`.
+# CSS selectors cannot target text nodes, so the start date is structurally unreachable.
+# - date_selectors on div.colEtxtborder grabs NAME+dates mixed; go-dateparser (v1.2.4, verified via scratch prog)
+#   rejects prose-prefixed fragments ("...Admission! Saturday, May 16" → unknown format), so the range splitter
+#   only keeps the END date fragment → start date becomes the end date (wrong direction) on 6/15 events,
+#   and the 9 single-date events (no div.mbr) are dropped at normalisation.
+# - div.mbr holds only the END date (6/15 events); using it as start would misdate events at run end.
+# - Detail pages (e.g. /events/sensory) have clean <h3><b>date</b></h3> for some events but markup is
+#   inconsistent across events (bats/schleich differ) and there is no sitemap to discover URLs; follow_event_urls
+#   is Tier 0 JSON-LD-only. Not viable without feature work (see Issue).
+# Selectors below extract name/url cleanly (15/15) and are kept for a future feature unlock; do NOT enable.
+# Organization match: API unavailable
+url: "https://www.torontozoo.com/events"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: culture
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "a.event"
+  name: "div[style*='1.4em']"
+  url: "a.event"

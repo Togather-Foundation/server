@@ -1,0 +1,31 @@
+name: "leespalace"
+# Lee's Palace — rock concert hall at 529 Bloor St W, Toronto (also operates
+# The Dance Cave, upstairs). Webflow CMS (data-wf-site), server-rendered T1.
+# /events list view renders all 64 upcoming shows on one page (w-pagination-wrapper
+# is empty — no static pagination; all items in the Webflow collection are shown).
+# Dates are plain text "Saturday, August 15, 2026" (no <time datetime> attr) —
+# handled via date_selectors targeting the first .schedule-event-time in .div-block-8.
+# Location selector picks the visible Venue: line, distinguishing Lee's Palace
+# from Dance Cave shows.
+# NOTE (quality warning): all_midnight expected — the site publishes dates only
+# ("Saturday, August 15, 2026"), never show times, on the listing, detail pages,
+# or calendar (door-time fields render w-dyn-bind-empty). Not a selector failure.
+# Ticketing subdomain events.leapevents.com is Cloudflare-gated ("Just a moment..."
+# challenge) — not scrapable statically; the Webflow listing page is the source.
+# Organization match: API unavailable
+url: "https://www.leespalace.com/events"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: music
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.schedule-event"
+  name: "div.schedule-speaker-name"
+  url: "a.schedule-speaker.big"
+  location: "div.div-block-8 > div.flex.ver:not(.w-condition-invisible) > div.schedule-event-time:last-child"
+  # No <time> elements — dates are text inside the first .schedule-event-time of the card body
+  date_selectors:
+    - "div.div-block-8 > div.schedule-event-time:first-child"

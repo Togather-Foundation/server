@@ -1,0 +1,19 @@
+name: "toronto-railway-museum"
+# WordPress + The Events Calendar (Tribe), Yoast SEO. Tier 0 JSON-LD on the
+# /events/list/ page (docs-recommended view — /events/ can render month/AJAX).
+# Extracts 3 events today (2026-08-15) — the "latest past" fallback, since the
+# calendar is currently dormant (newest event 2026-05-12, no upcoming posted).
+# When new events are published they will appear in the list page JSON-LD.
+# NOTE: Tribe iCal export (?ical=1) returns an EMPTY 200 (text/html, 0 bytes)
+# on every variant tried (/events/?ical=1, /events/list/?ical=1,
+# ?post_type=tribe_events&ical=1, &tribe_display=all) — the ICS path is broken
+# on this site, so T0 JSON-LD is used instead of the usual Tribe ICS route.
+# Organization match: API unavailable (no SEL server URL on this box).
+url: "https://torontorailwaymuseum.com/events/list/"
+tier: 0
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: culture
+timezone: "America/Toronto"
+enabled: true

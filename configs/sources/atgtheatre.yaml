@@ -1,0 +1,40 @@
+name: "atgtheatre"
+# Against the Grain Theatre — https://atgtheatre.com
+# BLOCKED (2026-08-15). Platform: WordPress (Salient theme + WPBakery page builder),
+# no events plugin. Tier: 1 static HTML (est. from site content).
+#
+# Root cause — dates are prose, not structured:
+#   - /upcoming/ listing page: production cards only (title + "Learn more" button).
+#     NO dates anywhere on the listing (scrape test returned 2 containers, 0 dates).
+#   - Detail pages carry dates as narrative prose with non-normalizable formats:
+#       * Dog Days: one <p> containing "November 18, 7:30<br/>November 19, 7:30<br/>..."
+#         — 8 performances in a single paragraph, no year, no <time> elements.
+#       * Opera Pub: separate <p> per date, no year ("October 5th, 7:00 pm"),
+#         year only implied by a header ("2026/2027 dates below!").
+#       * Messiah/Complex: "December 2026" — month+year only, no day.
+#   - No JSON-LD Event anywhere (home/listing/detail all checked), no Tribe Events
+#     Calendar, no iCalendar feed (?ical=1 returns homepage HTML).
+#   - follow_event_urls is Tier 0-only (JSON-LD); there is no JSON-LD to follow.
+#   - Sitemap exists (wp-sitemap.xml) but detail pages have the same prose dates —
+#     sitemap path adds nothing.
+#
+# Fix path: needs an engine feature that can (a) depth-2 scrape detail pages for
+# Tier 1, and (b) parse multi-date prose paragraphs (split "<br/>"-separated date
+# lists, default missing years). Same blocker family as Reel Asian, Necessary Angel,
+# Outside the March. Until then: enabled: false.
+#
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://atgtheatre.com/upcoming/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: arts (experimental opera company — confirmed from site content)
+domain: arts
+enabled: false
+max_pages: 3
+selectors:
+  event_list: "div.wpb_row.vc_row-fluid.vc_row"
+  name: "strong"
+  start_date: "time"
+  url: "a.nectar-button"

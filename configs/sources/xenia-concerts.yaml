@@ -1,0 +1,15 @@
+name: "xenia-concerts"
+# Xenia Concerts (Toronto) — sensory-friendly concert presenter.
+# Tier 0 (JSON-LD + iCal feed). WordPress + The Events Calendar (Tribe, PRO
+# version — PRODID "ECPv6.17.2"). List page /eventslist/ embeds schema.org
+# Event JSON-LD blocks; iCal feed at /eventslist/?ical=1 confirmed working
+# (VEVENTs with TZID=America/Toronto).
+# Organization match: API unavailable
+url: "https://xeniaconcerts.com/eventslist/"
+tier: 0
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: music
+enabled: true
+max_pages: 3

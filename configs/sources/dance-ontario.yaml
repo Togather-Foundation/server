@@ -1,0 +1,18 @@
+name: "dance-ontario"
+# Dance Ontario (danceontario.ca) — Ontario's dance service organization.
+# Platform: WordPress + Modern Events Calendar (MEC) plugin; the community calendar
+# page (https://danceontario.ca/community/calendar/) embeds 12 schema.org Event
+# JSON-LD blocks (full ISO startDate/endDate with tz offset). Tier 0 — no selectors.
+# Note: the MEC ICS export (?mec-ical-feed=1) returns HTML on this site, so JSON-LD
+# extraction is used instead of the ICS path (cf. york-university.yaml).
+# Note: MEC labels all articles "mec-past-event" but JSON-LD startDates include
+# upcoming events (through late Sept 2026 at time of writing); ingest normalization
+# drops any genuinely past events.
+# Organization match: API unavailable
+url: "https://danceontario.ca/community/calendar/"
+tier: 0
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true

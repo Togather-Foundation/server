@@ -1,0 +1,31 @@
+name: "tangled-arts"
+# Tangled Art + Disability (Toronto disability arts gallery + programming org).
+# Platform: WordPress custom theme (Canvas plugin, custom post type "whats-on"),
+# taxonomy archive listings under /whats-on/listing/{exhibition,events,partnership,...}.
+# NO Tribe Events, NO JSON-LD Event, NO ICS feed — tier: 1 static HTML.
+# URL chosen: /whats-on/ (main page) = curated CURRENT items (3 cards as of 2026-08-15:
+# SARI-SARI XCHANGE ongoing, "A little writing..." + "Tangled's Tenth" Sept 11-Nov 13 2026).
+# The category archive /whats-on/listing/events/ is a FULL historical archive
+# (58 cards, 2009-2025) — scraping it would flood the SEL with past events, so the
+# curated page is preferred. Card = article.archive-listing-card > a[rel=bookmark]
+# (p.has-extra-small-font-size = date range text, p.heading-size-3 = title).
+# Date ranges like "September 11, 2026 - November 13, 2026" parse via go-dateparser.
+# KNOWN LIMITATION: all_midnight (3/3 events T00:00:00) — listing cards carry
+# date-only text, no times; same accepted pattern as fall-for-dance-north.
+# The upcoming Aug 22 2026 one-off ("Beyond the Normative Knot") appears only in
+# the homepage hero + full archive, not the curated page — would need a second URL.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://tangledarts.org/whats-on/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: arts (gallery / disability arts organization)
+domain: arts
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "article.archive-listing-card"
+  name: "p.heading-size-3"
+  start_date: "p.has-extra-small-font-size"
+  url: "a[rel='bookmark']"

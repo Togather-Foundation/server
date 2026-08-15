@@ -1,0 +1,22 @@
+name: "jackman-performance-centre"
+# WordPress + The Events Calendar (Tribe 6.16.2, OceanWP theme + Elementor).
+# ICS iCalendar feed at /shows/?ical=1 (PRODID wp-events-plugin.com).
+# Extraction method: ICS — full event data (SUMMARY, DTSTART, DTEND, URL, LOCATION,
+# DESCRIPTION, CATEGORIES) with America/Toronto TZID.
+# Organization match: API unavailable (SEL server URL not set on this box)
+# STATUS: blocked (thin programming) — 2026-08-15 dry-run found 1 upcoming event
+# (TO A FLAME, 2026-09-22..10-04) out of 27 VEVENTs in feed; rest past or test data.
+# Extraction is VALIDATED and working; venue's 2026-27 season is just starting to be
+# announced. Re-enable when feed shows >= 3 upcoming events (flip enabled: true).
+# NOTE: feed contains venue leftover test data ("Test Recurring Event" x13, "Test") —
+# venue data hygiene issue; real programming present (TO A FLAME, Zuleykha Odyssey...).
+# /shows/ archive page SSR's only latest-past events; ICS feed is the reliable path.
+url: "https://jackmanperformance.ca/shows/?ical=1"
+tier: 0
+extraction_method: "ics"
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: false
+timezone: "America/Toronto"

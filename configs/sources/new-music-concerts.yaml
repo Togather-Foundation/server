@@ -1,0 +1,65 @@
+name: "new-music-concerts"
+# New Music Concerts (NMC) — Toronto contemporary/new-music concert series
+# (56th season, ~4-5 concerts/season). WordPress custom theme ("nmc"); NO
+# JSON-LD Event, NO ICS/iCal, NO Tribe Events Calendar, NO REST exposure for
+# the "concert" CPT (wp-json returns rest_no_route — verified 2026-08-15).
+# Tier: 1 static HTML (all content server-rendered).
+#
+# DATE-FORMAT BLOCKER on the listing: the canonical listing /season-lineup/
+# (and homepage) render dates as dotted 2-digit-year text "Oct.05.26" in
+# <p class="date">, with no <time datetime>. go-dateparser reads "05.26" /
+# "20.27" as dotted TIMES (German-style), so days <= 23 misparse: Oct.05.26 →
+# 2026-10-15T05:26 (day=15=today, bogus 05:26 time), Feb.20.27 → 2027-02-15T20:27.
+# Verified with both start_date and date_selectors. Unfixable at config level
+# (no text-transform/format-hint option exists).
+#
+# WORKAROUND FOUND: sitemap-based scraping of concert DETAIL pages
+# (wp-sitemap-posts-concert-1.xml, 47 URLs). Detail pages carry
+# "Saturday, Feb.20.2027" (4-digit year) in p.date — go-dateparser parses
+# ALL 47 dates correctly (verified 2026-08-15: ICE 2026-10-05, Blackout
+# 2027-01-24, Relatives 2027-02-20, MAKEWAY 2027-05-29 all correct).
+# p.schedule times ("7:00PM Doors\n7:15PM Pre-Concert Talk...") are NOT
+# extractable — the multi-line multi-time string defeats go-dateparser
+# (all_midnight 46/47). Leaving p.schedule out of date_selectors also avoids
+# a bogus end<start on MAKEWAY pages (their schedule embeds "May 25 - 28,
+# 2027" rehearsal range + "May 29, 2027" showcase, which the range splitter
+# mangles into end 2027-05-26 < start 2027-05-29).
+#
+# BLOCKER (2026-08-15): sitemap contains ALL concerts since 2020 (43 of 47
+# already past). The scraper has NO past-event filter (verified
+# internal/scraper normalize.go — inferYear only; same blocker as
+# regent-park-film-festival.yaml and outside-the-march.yaml). Enabling now
+# would ingest ~43 stale events into the pipeline on first run; the
+# lastmod freshness filter (DB-configured LastScrapedAt) only helps from the
+# SECOND run onward. The 4 upcoming events extract correctly, but the 10:1
+# stale ratio makes this a blocker per team convention.
+# ENABLE WHEN: the scraper gains a past-event filter (skip startDate < now
+# at ingest or scrape), OR NMC exposes a current-season-only surface
+# (the /seasons/2026-2027/ taxonomy page is an empty stub — concerts are not
+# tagged). Selectors below are validated end-to-end (47/47 events, correct
+# names/dates/venues; all_midnight times documented as a known limitation).
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://www.newmusicconcerts.com/season-lineup/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: contemporary new-music concert series -> music
+domain: music
+enabled: false
+sitemap:
+  url: "https://www.newmusicconcerts.com/wp-sitemap-posts-concert-1.xml"
+  filter_pattern: "/concert/.+"
+  max_urls: 60
+  rate_limit_ms: 500
+selectors:
+  event_list: "article.main"
+  name: "h1"
+  # Date only — p.schedule times unparseable (see blocker comment above)
+  date_selectors:
+    - "p.date"
+  location: "p.venue"
+  # :not(.tickets) — the tickets block also carries class "info"; without the
+  # exclusion the description would include ticket prices ("General $33.90...").
+  description_selectors:
+    - ".info:not(.tickets) .body-text"

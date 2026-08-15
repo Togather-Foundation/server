@@ -1,0 +1,28 @@
+name: "toronto-youth-wind-orchestra"
+# BLOCKED (2026-08-15): WordPress + Divi theme, static HTML only. No JSON-LD
+# anywhere (homepage, /concerts/, 3 spot-checked detail pages all 0 ld+json
+# blocks), no Tribe Events, no ICS feed, no public API (tickets go to
+# Ticketmaster, which requires an API key). Concert dates are prose text
+# (e.g. "Friday November 27, 2026 Meridian Arts Centre") with no <time>
+# elements and no selectable date node — the smart date assembler cannot
+# parse date+venue mixed text (go-dateparser fails on trailing venue text),
+# so all events fail normalisation (found=7, would-submit=0). Upcoming
+# concerts have no event titles (name = date+venue concatenation), past
+# concerts have dates as bare text nodes after <br> that CSS cannot select,
+# and no event URLs exist anywhere on the listing. Even Tier 2 headless
+# would not help — the DOM is fully server-rendered; the blocker is the
+# source data structure, not JS rendering. Revisit if the site adopts
+# structured data (JSON-LD, ICS, or a ticketing API).
+# Organization match: API unavailable
+url: "https://tywo.ca/concerts/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: music
+enabled: false
+max_pages: 1
+selectors:
+  event_list: ".et_pb_column_1_4"
+  name: ".et_pb_text_inner strong"
+  start_date: ".et_pb_text_inner strong"

@@ -1,0 +1,27 @@
+name: "the-bentway"
+# Platform: WordPress (Gutenberg block theme) + Yoast SEO, custom 'event' CPT.
+#   No Tribe/Events Calendar, no JSON-LD Event blocks, no ICS feed.
+#   Listing page /whats-on/ has a static feed of ob-calendar__card entries
+#   (calendar grid + upcoming-event cards) — server-rendered, Tier 1 works.
+#   Event detail pages (/event/<slug>/) carry NO structured data.
+# Date note: <time datetime="Aug 4, 2026"> is non-ISO; fuzzy parser handles it.
+#   Feed cards expose date only (no times) — all_midnight warning is data-inherent
+#   (precedent: downtown-yonge-bia.yaml). Detail pages DO show times in prose
+#   ("Aug 22, 2026 10:00 am - 12:00 pm") but have no structured data; extracting
+#   them would need a 253-URL sitemap scrape that also pulls past events.
+#   alt container li.wp-block-post REJECTED: prose date ranges ("Fridays 5:00pm-8:00pm...",
+#   "On view now", "October 2025 through to 2027") — 7/10 events fail normalisation.
+# Organization match: API unavailable
+url: "https://thebentway.ca/whats-on/"
+tier: 1
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: culture
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.ob-calendar__card"
+  name: "h6 a"
+  start_date: "time"
+  url: "h6 a"

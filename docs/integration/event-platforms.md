@@ -33,7 +33,7 @@ Quick lookup by DOM signal. Find the first matching row; go to the named section
 | `<title>Just a moment...</title>` or `window._cf_chl_opt` or `id="challenge-error-text"` in curl output | **Cloudflare-protected** | T2 (`undetected: true`) |
 | `showpass.com` link or `showpass-widget` | **Showpass** | T3 (REST API) |
 | `showclix.com` link or `eventsbucket.s3.amazonaws.com` in network | **Showclix** | T3 (REST via S3 JSON) |
-| `eventbrite.com/o/<org-id>` link pattern | **Eventbrite** | T2 (no public API) |
+| `eventbrite.com/o/<org-id>` link pattern | **Eventbrite** | T3 (organizer-profile JSON API, no auth — see section 17) |
 | `class="nuxt-*"` or `window.__NUXT__` | **Nuxt.js** | T0 or T3 (check DatoCMS) |
 | `class="elementor-post__title"` | **WordPress + Elementor (news loop)** | T1 |
 | `__vue_app__` in global JS | **Vue SPA** | T2 |
@@ -637,19 +637,41 @@ S3 JSON API is more stable and complete.
 **API status:** Eventbrite's REST API (`eventbriteapi.com/v3/`) requires OAuth
 authentication and is designed for organizers to manage their own events — **not** a
 public read API. There is no unauthenticated endpoint for listing an organizer's events.
-T3 REST is **not viable** for Eventbrite.
 
-**Recommended approach:** T2 headless scraping of the organizer page
-(`eventbrite.ca/o/<org-slug>-<org-id>`) or the venue's own events page if it embeds
-Eventbrite widgets. The organizer page is server-rendered and may yield event cards
-via CSS selectors. If the organizer page is JS-rendered or behind Cloudflare, use
-`undetected: true`.
+**HOWEVER — public organizer-profile JSON API (discovered 2026-08-15):** the Next.js
+`/o/<org-slug>` organizer pages are backed by an unauthenticated JSON endpoint used by
+the organizer-profile frontend, which returns the same data as the page's
+`__NEXT_DATA__` (`pageProps.upcomingEvents[]`):
+
+```
+https://www.eventbrite.ca/organizer-profile/api/organizers/<ORG_ID>/events/?page=1&pageSize=200
+```
+
+Response: `{"events":[{...}], "hasMore": bool, "total": int}`. Each event carries
+name, url, start_date, start_time, end_date, end_time, timezone, image,
+primary_venue (name + address), ticket_availability. Works with a plain browser UA
+AND with the scraper's own UA (verified HTTP 200, 2026-08-15); no Cloudflare
+challenge, no cookies, no OAuth. `<ORG_ID>` is the numeric suffix of the /o/ slug
+(e.g. `lula-lounge-toronto-19825205758` → `19825205758`). This makes Eventbrite a
+**Tier 3 REST** source — no headless needed. See `configs/sources/README.md`
+"Tier 3 (REST JSON — Eventbrite organizer pages)" for the config template and the
+known start_time limitation (split date/time fields → all_midnight).
+
+**Legacy recommended approach (pre-2026-08-15, superseded):** T2 headless scraping
+of the organizer page (`eventbrite.ca/o/<org-slug>-<org-id>`) or the venue's own
+events page if it embeds Eventbrite widgets. The organizer page is server-rendered
+and may yield event cards via CSS selectors. If the organizer page is JS-rendered or
+behind Cloudflare, use `undetected: true`. Prefer the T3 REST path above.
 
 **Fallback:** If scraping fails, the only reliable path is venue cooperation (ask the
 organizer to share an iCal feed or event data export).
 
 **Known organizer IDs:**
-- Lula Lounge Toronto: `4108527983`
+- Lula Lounge Toronto: `19825205758` (verified 2026-08-15 — old documented ID 4108527983 returns 404)
+- TPL Programs: `72000428503`; SoCap Comedy: `6898984189`; Burdock Music Hall: `103809367271`;
+  Music Toronto: `59613130173`; Toronto Bach Festival: `18386248073`; Toronto Concert Band: `12016971059`;
+  The 519: `11100867914`; Jokers: `65516133963`; Dance Hub Toronto: `72600811973`; Goh Ballet: `46515927053`;
+  Tablao Flamenco: `9902789664` (org_id = numeric suffix of the /o/ slug; full list in source-candidates-v2.md)
 
 ---
 
@@ -1083,12 +1105,13 @@ does **not** expose a native ICS feed for organizers or events.
 **Verification step**: N/A — Eventbrite does not provide machine-readable calendar
 feeds without authentication (their API requires an OAuth token).
 
-**Fallback**: Use T1/T2 HTML scraping for Eventbrite organizer pages, or use third-party
-calendar export sites that can convert Eventbrite listings to ICS. When ICS is not an
-option, T1/T2 selectors on the Eventbrite organizer page are the primary approach.
+**Fallback**: Use the T3 REST organizer-profile JSON API (see section 17) for
+Eventbrite organizer pages, or use third-party calendar export sites that can
+convert Eventbrite listings to ICS. The organizer-profile JSON API is the primary
+approach and needs no auth; T1/T2 HTML scraping is a last resort.
 
-**Config key**: N/A — Eventbrite sources should use T1/T2 selectors, not
-`extraction_method: ics`.
+**Config key**: N/A — Eventbrite sources should use Tier 3 REST (see section 17),
+not `extraction_method: ics`.
 
 ### Static HTML Link
 

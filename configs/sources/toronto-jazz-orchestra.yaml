@@ -1,0 +1,35 @@
+name: "toronto-jazz-orchestra"
+# BLOCKED 2026-08-15 — config validated and ready, but source publishes NO
+# upcoming events: the calendar feature shows only "Previous events" (11
+# shows, 2020-03 to 2025-03-08). Enabling now would inject stale past events
+# into the review queue on every run (ingest does not reject past dates;
+# cleanup deletes pending reviews, then the next run re-creates them = churn).
+# Re-enable when TJO publishes future shows — selectors are proven.
+# Platform: BandZoogle (bndzgl.com) musician site builder, static HTML (Tier 1).
+# Detail pages embed JSON-LD MusicEvent, but the /shows listing is cleanly
+# selectable, so Tier 1 CSS wins over Tier 0 (no JSON-LD on the listing page).
+# Organization match: API unavailable
+url: "https://thetjo.com/shows"
+tier: 1
+schedule: "weekly"
+trust_level: 5
+license: "CC0-1.0"
+# event_domain: music venue/orchestra -> music
+domain: music
+enabled: false
+max_pages: 1
+selectors:
+  event_list: "div.event-detail"
+  name: "h2.event-info.event-title a"
+  url: "h2.event-info.event-title a"
+  location: ".event-info.event-location"
+  description_selectors:
+    - ".event-info.event-notes"
+  # No <time datetime> attributes — date and time are separate spans.
+  # Scope to .date-long: each container ALSO has a hidden .date-short
+  # ("Sat, Mar 8, 2025") variant; unscoped selectors double-match (22 raw
+  # rows for 11 events). .date-long is the full "Saturday, March 8, 2025".
+  date_selectors:
+    - "span.date-long time.from span.date"
+    - "span.date-long time.from span.time"
+    - "span.date-long time.to span.time"   # end time; absent on some events (partial match ok)

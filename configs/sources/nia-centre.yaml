@@ -1,0 +1,35 @@
+name: "nia-centre"
+# Nia Centre for the Arts — Toronto Black arts centre (524 Oakwood Ave).
+# WordPress (custom Gutenberg theme, MonsterInsights/GTM/MetaPixel; userfeedback-lite
+# plugin ships Vue assets — NOT a Vue SPA). Tier 1 static HTML confirmed.
+# /events/ lists 6 cards/page as div.col-12.col-md-6 inside section.event-listing;
+# name+url = a.title-link; each card table has Date (row 1), optional Time (row 2),
+# Location (last row). Date text is plain text (no <time> element):
+#   "August 21 - August 20, 2026" style ranges — year appears only on the last date.
+# No JSON-LD on listing, no Tribe, no ICS feed. Pagination = ?pages=N (1-indexed:
+# pages=0/1 both render page 1; Next link on page 1 points to ?pages=2).
+# KNOWN LIMITATIONS:
+# - All 8 dates parsed correctly, but 4/8 cards have no Time row (all-day/recurring
+#   listings like Guided Tours, Black Art Fair submissions) — those land at T00:00.
+# - date_selectors[1] (Time row) only matches cards that have a Time row.
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://niacentre.org/events/"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "section.event-listing div.col-12.col-md-6"
+  name: "a.title-link"
+  url: "a.title-link"
+  description_selectors:
+    - "p.divider"
+  location: "table.table tr:last-child td p"
+  pagination: "div.pagination .offset-md-2 a.btn-outline-light"
+  # No <time> elements — card table rows carry date/time as plain text:
+  date_selectors:
+    - "table.table tr:first-child td p"                   # date text ("August 20, 2026")
+    - "table.table tr:has(th:contains('Time')) td p"      # time text ("6:00PM - 8:00PM") — only when a Time row exists

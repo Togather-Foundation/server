@@ -1,0 +1,26 @@
+name: "hughs-room-live"
+# Tier 3 REST: Showpass public API (venue ID 5705, slug: hughs-room-live).
+# Hugh's Room Live, 296 Broadview Ave, Toronto — live music venue.
+# 43 events confirmed 2026-08-15 via https://www.showpass.com/api/public/events/?venue=5705
+# All events located in Toronto (location.name: "Hugh's Room").
+# Same pattern as burdock-brewery.yaml (Showpass venue 17330).
+# Organization match: API unavailable during config (no SEL server URL on this box).
+url: "https://hughsroomlive.com"
+tier: 3
+schedule: "daily"
+trust_level: 7
+license: "CC0-1.0"
+domain: music
+enabled: true
+max_pages: 5
+rest:
+  endpoint: "https://www.showpass.com/api/public/events/?venue=5705"
+  results_field: "results"
+  next_field: "next"
+  url_template: "https://www.showpass.com/{{.slug}}"
+  field_map:
+    name: "name"
+    start_date: "starts_on"
+    end_date: "ends_on"
+    location: "location.name"
+    image: "image"

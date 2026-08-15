@@ -1,0 +1,22 @@
+name: "bcurrent"
+# BCurrent Performing Arts (Toronto) — Squarespace native event block (article.eventlist-event).
+# Platform: Squarespace. Tier: 1 (static HTML, server-rendered event list).
+# Listing at /whats-on — includes past events back to 2014; ingest filters by date.
+# Organization match: API unavailable
+url: "https://www.bcurrent.ca/whats-on"
+tier: 1
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: arts
+enabled: true
+max_pages: 3
+selectors:
+  event_list: "article.eventlist-event"
+  name: "h1.eventlist-title"
+  url: "a.eventlist-column-thumbnail"
+  image: "a.eventlist-column-thumbnail img::src"
+  # date and time are in separate <time> elements (2 date + 2 time per card: start/end)
+  date_selectors:
+    - "time.event-date"
+    - "time.event-time-localized"

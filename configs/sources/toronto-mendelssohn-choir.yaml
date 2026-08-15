@@ -1,0 +1,14 @@
+name: "toronto-mendelssohn-choir"
+# Tier 0 (ICS). WordPress + Tribe Events Calendar (ECPv6.16.3) — confirmed working
+# iCal feed at /events/?ical=1 (2026-08-15). 4 VEVENTs in feed (Mozart Mass, Festival
+# of Carols, Dream of Gerontius, Considering Matthew Shepard); real VCALENDAR data
+# with TZID=America/Toronto and URL/LOCATION per event.
+# Organization match: API unavailable (no SEL server URL on this box).
+url: "https://www.tmchoir.org/events/?ical=1"
+extraction_method: ics
+schedule: "daily"
+trust_level: 5
+license: "CC0-1.0"
+domain: music
+timezone: "America/Toronto"
+enabled: true

@@ -1,0 +1,32 @@
+name: "soundstreams"
+# WordPress custom theme (soundstreams-2022) + Yoast SEO — static server-rendered HTML.
+# Events are split by series: /upcoming-events/main-stage/ (default listing, 4 events
+# server-rendered) and /upcoming-events/encounters/ (4 more, same card structure).
+# No Tribe/Events Calendar plugin; no JSON-LD @type:Event on listing or detail pages
+# (Yoast graph only: WebPage/ImageObject/BreadcrumbList) -> tier 1, not tier 0.
+# The listing container has class "is-infinite" (JS infinite scroll) — static HTML
+# contains only the first 4 cards; more load via JS. T1 captures the 4 server-rendered.
+# No <time> elements — date and time are in separate spans, hence date_selectors:
+#   startdate span e.g. "Tue, Oct 6, 2026"  (date-only)
+#   starttime span e.g. "@ 7:30 pm"         (time-only, "@ " prefix)
+# Venue span e.g. "Koerner Hall".
+# Organization match: API unavailable (SEL server URL not set on this box)
+url: "https://soundstreams.ca/upcoming-events/main-stage/"
+tier: 1
+schedule: "daily"
+trust_level: 6
+license: "CC0-1.0"
+# event_domain: contemporary classical music presenter -> music
+domain: music
+enabled: true
+max_pages: 1
+selectors:
+  event_list: "div.c-feature__item--event"
+  name: "h2 a"
+  url: "header.o-entry__header a"
+  location: "span.c-event__venue--content"
+  image: ".c-feature__item--event-image img"
+  # No <time> elements — extract date and time from separate spans:
+  date_selectors:
+    - "span.c-event__datetime--startdate"   # e.g. "Tue, Oct 6, 2026"
+    - "span.c-event__datetime--starttime"   # e.g. "@ 7:30 pm"
