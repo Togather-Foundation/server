@@ -5,16 +5,11 @@ searches: catalog-driven enumeration (Artsdata SPARQL, Toronto Arts Council 2025
 grantees, Ontario Arts Council 2025 results, Culture Days), ticketing-platform
 mining (Eventbrite, Showpass), and retries of round-1 unvalidated candidates.
 
-**DEDUP NOTE (orchestrator, 2026-08-15):** of the 78 quick-win rows below, **24 are
-already configured** (918 Bathurst, Textile Museum, Toronto Summer Music, Toronto
-Jazz Society, Aga Khan, Tarragon, Soulpepper, Crow's, Canadian Stage, Buddies,
-Factory, Obsidian, Passe Muraille, Luminato, Small World, Charles Street Video,
-Hot Docs, imagineNATIVE, InterAccess, Koffler, Mammalian, Opera Atelier, Wavelength,
-Lula Lounge — all have configs in configs/sources/). music-toronto.com redirects to
-the already-configured musictorontoconcerts.com. **53 quick wins are genuinely new** —
-those are the ones to ticket. Existing-config overlap is likely because Artsdata/TAC
-enumerate the same orgs round-1 research found; catalog discovery is best for the
-long tail below the visible tier.
+**DEDUP NOTE (orchestrator, 2026-08-15):** of the 107 candidate rows below:
+- **23 match ENABLED configs** (918 Bathurst, Aga Khan, Art Metropole, Buddies, Canadian Stage, Charles Street Video, Crow's, Factory, InterAccess, Koffler, Lula, Luminato, Mercer Union, Opera Atelier, Small World, Soulpepper, Tarragon, Textile Museum, The Mod Club, Passe Muraille, Toronto Jazz, Toronto Summer Music, Wavelength) — already live, no action.
+- **4 match DISABLED configs — re-enable/fix, NOT new:** Hot Docs (hot-docs), Mammalian Diving Reflex (mammalian-diving-reflex), Obsidian Theatre (obsidian-theatre), imagineNATIVE (imagine-native). Track in disabled-sources.md, not as new source tickets.
+- **80 genuinely new** (68 quick-win + 12 headless + platform rows). music-toronto.com redirects to already-configured musictorontoconcerts.com.
+Existing-config overlap is expected: Artsdata/TAC enumerate the same orgs round-1 research found; catalog discovery's value is the long tail below the visible tier.
 
 Method per candidate: `curl -sL --compressed --max-time 15` with browser UA, grep
 for platform signals (JSON-LD / wp-content / tribe-events / Squarespace / Drupal /
