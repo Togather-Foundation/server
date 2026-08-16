@@ -3,6 +3,7 @@ package scraper
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -414,6 +415,15 @@ type RestConfig struct {
 	TimeoutMs int `yaml:"timeout_ms" json:"timeout_ms"`
 	// Headers are extra HTTP headers sent with every request.
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
+	// Method is the HTTP method for the request. Supported values: "GET"
+	// (default) and "POST". Only used by the REST extractor.
+	Method string `yaml:"method,omitempty" json:"method,omitempty"`
+	// Body is the raw request body string. Only sent when Method is "POST"
+	// (typically a JSON object describing the query window). Ignored for GET.
+	Body string `yaml:"body,omitempty" json:"body,omitempty"`
+	// ContentType is the value of the Content-Type request header. Defaults to
+	// "application/json" when empty. Only relevant when a body is sent.
+	ContentType string `yaml:"content_type,omitempty" json:"content_type,omitempty"`
 	// FieldMap maps RawEvent field names (keys) to source JSON field names
 	// (values). Supported keys: name, start_date, end_date, url, image,
 	// location, description. When empty, field names are used directly as-is
@@ -636,6 +646,9 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 				if _, err := template.New("url").Option("missingkey=error").Parse(t); err != nil {
 					errs = append(errs, fmt.Sprintf("rest.url_template: invalid Go template: %v", err))
 				}
+			}
+			if m := cfg.REST.Method; m != "" && m != http.MethodGet && m != http.MethodPost {
+				errs = append(errs, fmt.Sprintf("rest.method: unsupported method %q (supported: GET, POST)", m))
 			}
 		}
 	}

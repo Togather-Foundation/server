@@ -1,5 +1,7 @@
 name: "mhrth-tnew"
-# BLOCKED — do NOT enable until engine supports POST + nested-array flattening.
+# DISABLED — engine now supports POST + nested-array flattening (t_e2df1749,
+# t_d2875da0); kept disabled pending a live dry-run to validate the
+# performance-level field_map against the endpoint.
 #
 # API DISCOVERED (2026-08-15, task t_88b37fea): the shared ticketing platform
 # behind Massey Hall / Roy Thomson Hall / Allied Music Centre is Tessitura TNEW
@@ -18,23 +20,18 @@ name: "mhrth-tnew"
 #     performanceTitle, actionUrl, isOnSale, ...}]}]}
 #   Verified: 77 productions / 102 performances over the 2-year window.
 #
-# BLOCKER 1 — method: this API is POST-only (GET -> 405). The Tier 3 REST
-#   engine sends GET only (internal/scraper/rest.go). No method/body support
-#   in RestConfig. Needs an engine feature: rest.method + rest.body (JSON).
+# Shape: events (dates) live in productions[].performances[] — each performance
+# is an event. With results_field: productions + flatten: true, the extractor
+# descends into the productions wrapper array and collects the nested
+# performances[] leaves as the event list (the production wrappers are not
+# events). field_map below targets the performance leaf dicts.
 #
-# BLOCKER 2 — shape: events (dates) live in productions[].performances[].
-#   field_map dot-notation cannot index arrays, so performance-level events
-#   are unreachable; production-level records carry zero-value dates
-#   (startDate "0001-01-01T00:00:00", displayDate null). Needs engine support
-#   for array flattening (e.g. results_path "productions[].performances[]").
-#
-# BLOCKER 3 (validation only): no headless browser installed on the worker
-#   (rod cache empty) — the Tier 2 intercept fallback could not be validated.
-#   Intercept would still hit BLOCKER 2 (results_path is object-only too).
+# Blocker status: the Tier 2 intercept fallback was never validated (no headless
+# browser on the worker box); the Tier 3 REST path below is the supported route.
 #
 # Existing coverage: roy-thomson-hall.yaml + roy-thomson-massey-hall.yaml
 # (Tier 2 headless, .c-card--event selectors) cover RTH + Massey; nothing
-# covers TD Music Hall / AMC Theatre. No git; config left disabled.
+# covers TD Music Hall / AMC Theatre.
 url: "https://mass-tnew-prod.tnhs.cloud/"
 tier: 3
 schedule: "daily"
@@ -44,12 +41,18 @@ domain: music
 enabled: false
 rest:
   endpoint: "https://mass-tnew-prod.tnhs.cloud/api/products/productionseasons"
+  method: POST
+  # Verified request body: 2-year window, no filter.
+  body: '{"startDate":"2026-08-15T00:00","endDate":"2028-08-15T00:00","productionSeasonIdFilter":[],"keywordIds":null}'
+  content_type: "application/json"
   results_field: "productions"
-  url_template: "https://tickets.mhrth.com/{{.productionSeasonId}}"
+  flatten: true
   field_map:
-    name: "productionTitle"
-    image: "listingImageUrl"
+    # NOTE: field_map below is best-guess for the performance leaf dicts —
+    # validate against a live request before enabling. description/image are
+    # production-level fields absent from performance leaves and will resolve
+    # empty until a per-performance mapping is confirmed.
+    name: "performanceTitle"
+    start_date: "iso8601DateString"
+    url: "actionUrl"
     description: "description"
-    url: "productionSeasonActionUrl"
-    # start_date: unreachable — real dates are in performances[].iso8601DateString
-    # (engine cannot index arrays; production startDate is the zero value).

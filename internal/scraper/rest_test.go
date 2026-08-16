@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1000,4 +1001,81 @@ func TestRestExtract_FlattenDisabledOnNestedShapeErrors(t *testing.T) {
 	require.Error(t, err, "nested object with flatten: false must error, not silently flatten")
 	assert.Contains(t, err.Error(), "rest: decoding \"events_by_month\" array from",
 		"error must identify the strict array-decode failure")
+}
+
+// --------------------------------------------------------------------------
+// POST method + body tests (t_e2df1749)
+// --------------------------------------------------------------------------
+
+func TestRestExtract_POSTBody(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod, gotBody, gotContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		gotContentType = r.Header.Get("Content-Type")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, []map[string]any{sampleEvent("slug", "Event", "2026-04-01T19:00:00Z", "")}, ""))
+	}))
+	defer srv.Close()
+
+	const postBody = `{"startDate":"2026-01-01","endDate":"2027-12-31"}`
+	source := SourceConfig{
+		Name:     "post-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "results",
+			NextField:    "next",
+			Method:       http.MethodPost,
+			Body:         postBody,
+			ContentType:  "application/json",
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+
+	assert.Equal(t, http.MethodPost, gotMethod, "server must receive POST")
+	assert.Equal(t, postBody, gotBody, "server must receive the configured body")
+	assert.Equal(t, "application/json", gotContentType, "server must receive the configured Content-Type")
+}
+
+func TestRestExtract_GETDefaultNoBody(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, []map[string]any{sampleEvent("slug", "Event", "2026-04-01T19:00:00Z", "")}, ""))
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "get-default-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "results",
+			NextField:    "next",
+			// Method empty → defaults to GET with no body.
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodGet, gotMethod, "empty method must default to GET")
+	assert.Empty(t, gotBody, "GET request must send no body")
 }

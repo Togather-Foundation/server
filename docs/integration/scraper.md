@@ -515,7 +515,9 @@ exceeds the global request timeout; the larger of the two wins.
 
 Used when a site exposes a paginated JSON REST API (e.g. Showpass).
 
-1. GET the configured endpoint
+1. Issue the configured request: GET by default, or POST with a JSON `body`
+   (and `content_type`, default `application/json`) when `method: POST` is set.
+   This supports POST-only endpoints such as Tessitura TNEW.
 2. Decode the `results_field` array (default: `"results"`) from the JSON response.
    When `results_field` is `"."`, the entire response body is treated as a bare JSON
    array (`[{...}, {...}]`) — used for APIs that return arrays without an envelope object
@@ -974,6 +976,9 @@ Values are source JSON keys from the GraphQL response record; use dot-separated 
 | `headers` | no | — | Extra HTTP headers to inject (map[string]string). When `tls_fingerprint` is set, Chrome-mimicking headers are auto-merged; source headers take precedence. |
 | `field_map` | no | — | Map from RawEvent field names to source JSON keys; values support dot-notation for nested fields (see below) |
 | `flatten` | no | `false` | When true, `results_field` may resolve to a nested object (not a flat array); the extractor collects every array-of-objects leaf depth-first in sorted-key order. When false, `results_field` must resolve to a flat array or the page errors. |
+| `method` | no | `GET` | HTTP method for the request. Supported: `GET` and `POST`. Other values are rejected at validation. |
+| `body` | no | — | Raw request body string, sent only when `method: POST` (typically a JSON query payload). Ignored for GET. |
+| `content_type` | no | `application/json` | Value of the `Content-Type` request header when a body is sent. |
 
 **`field_map` keys** (all optional; omit for identity mapping):
 `name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.

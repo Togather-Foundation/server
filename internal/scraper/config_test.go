@@ -1880,6 +1880,54 @@ rest:
 	})
 }
 
+// TestValidateConfig_RESTMethod verifies the method field validation: empty
+// (default GET), GET, and POST are accepted; any other method is rejected.
+func TestValidateConfig_RESTMethod(t *testing.T) {
+	t.Parallel()
+
+	base := func(method string) SourceConfig {
+		return SourceConfig{
+			Name:       "REST Method Source",
+			URL:        "https://example.com",
+			Tier:       3,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+			REST: &RestConfig{
+				Endpoint: "https://api.example.com/events",
+				Method:   method,
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		method  string
+		wantErr string
+	}{
+		{name: "empty method defaults to GET — valid", method: ""},
+		{name: "GET is valid", method: "GET"},
+		{name: "POST is valid", method: "POST"},
+		{name: "PUT is rejected", method: "PUT", wantErr: `rest.method: unsupported method "PUT"`},
+		{name: "DELETE is rejected", method: "DELETE", wantErr: `rest.method: unsupported method "DELETE"`},
+		{name: "lowercase get is rejected", method: "get", wantErr: `rest.method: unsupported method "get"`},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ValidateConfigWithWarnings(base(tt.method))
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
 // --------------------------------------------------------------------------
 // InterceptConfig validation (srv-enisd)
 // --------------------------------------------------------------------------

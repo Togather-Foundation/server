@@ -128,12 +128,29 @@ func (e *RestExtractor) fetchPage(
 	pageURL string,
 	urlTmpl *template.Template,
 ) ([]RawEvent, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	method := cfg.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	var bodyReader io.Reader
+	if method == http.MethodPost {
+		bodyReader = strings.NewReader(cfg.Body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, pageURL, bodyReader)
 	if err != nil {
 		return nil, "", fmt.Errorf("rest: creating request for %s: %w", pageURL, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", ScraperUserAgent)
+	if method == http.MethodPost {
+		contentType := cfg.ContentType
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		req.Header.Set("Content-Type", contentType)
+	}
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
 	}
