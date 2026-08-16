@@ -28,7 +28,11 @@ func CheckGeographicBoundary(input EventInput, cfg config.GeographicBoundaryConf
 
 	normalizedRegions := make(map[string]struct{}, len(cfg.Regions))
 	for _, r := range cfg.Regions {
-		normalizedRegions[normalizeLocationName(r)] = struct{}{}
+		// Regions are compared as ISO 3166-2 codes: events carry the code
+		// (e.g. "ON" after normalizeRegion), so the boundary config is
+		// normalized through the same mapping to accept full names too
+		// (e.g. "Ontario" → "ON").
+		normalizedRegions[normalizeRegion(r)] = struct{}{}
 	}
 	normalizedLocalities := make(map[string]struct{}, len(cfg.Localities))
 	for _, l := range cfg.Localities {
@@ -36,7 +40,7 @@ func CheckGeographicBoundary(input EventInput, cfg config.GeographicBoundaryConf
 	}
 
 	if len(cfg.Regions) > 0 && input.Location.AddressRegion != "" {
-		normRegion := normalizeLocationName(input.Location.AddressRegion)
+		normRegion := normalizeRegion(input.Location.AddressRegion)
 		if _, ok := normalizedRegions[normRegion]; !ok {
 			return &ErrOutsideGeographicBoundary{
 				Field:       "region",

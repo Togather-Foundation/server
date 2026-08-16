@@ -55,6 +55,24 @@ func TestCheckGeographicBoundary(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "region full name in boundary matches event ISO code",
+			cfg:     config.GeographicBoundaryConfig{Regions: []string{"Ontario"}},
+			input:   EventInput{Location: &PlaceInput{AddressRegion: "ON"}},
+			wantErr: false,
+		},
+		{
+			name:    "region ISO code in boundary matches event full name",
+			cfg:     config.GeographicBoundaryConfig{Regions: []string{"ON"}},
+			input:   EventInput{Location: &PlaceInput{AddressRegion: "Ontario"}},
+			wantErr: false,
+		},
+		{
+			name:    "region ISO code in boundary matches event ISO code",
+			cfg:     config.GeographicBoundaryConfig{Regions: []string{"ON"}},
+			input:   EventInput{Location: &PlaceInput{AddressRegion: "ON"}},
+			wantErr: false,
+		},
+		{
 			name:     "region mismatch rejects",
 			cfg:      config.GeographicBoundaryConfig{Regions: []string{"Ontario"}},
 			input:    EventInput{Location: &PlaceInput{AddressRegion: "Quebec"}},
