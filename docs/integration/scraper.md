@@ -963,6 +963,7 @@ never populates with event data but the underlying API response contains it.
 **`field_map` keys** (all optional; omit for legacy DatoCMS-convention mapping):
 `name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
 Values are source JSON keys from the GraphQL response record; use dot-separated paths for nested fields (e.g. `"photo.url"`, `"venue.name"`).
+A value containing `{{` is rendered as a Go `text/template` against the item map (compiled once per extract run), allowing one target field to combine multiple source keys — e.g. `start_date: "{{.start_date}}T{{.start_time}}"`. Templates use `missingkey=error`; a missing key renders the field empty.
 
 ### REST Config Fields (`rest:`)
 
@@ -983,6 +984,7 @@ Values are source JSON keys from the GraphQL response record; use dot-separated 
 **`field_map` keys** (all optional; omit for identity mapping):
 `name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
 Values are source JSON keys; use dot-separated paths to traverse nested objects (e.g. `"logo.url"`, `"title.text"`).
+A value containing `{{` is rendered as a Go `text/template` against the item map (compiled once per extract run), allowing one target field to combine multiple source keys — e.g. `start_date: "{{.start_date}}T{{.start_time}}"` to merge Eventbrite-style date/time pairs. Templates use `missingkey=error`; a missing key renders the field empty. Non-string source values (numbers, booleans) are rendered via `text/template` default formatting.
 
 > **Redirect behaviour:** The REST HTTP client allows up to 10 redirects. This is intentionally explicit — it matches the Go default but is configurable for auditability. JSON-LD (Tier 0) blocks all redirects for SSRF hardening.
 

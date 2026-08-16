@@ -129,9 +129,15 @@ func (e *GraphQLExtractor) Extract(
 		}
 	}
 
+	// Pre-parse any templated field_map values once (not per event).
+	resolver, err := newFieldMapResolver(cfg.FieldMap)
+	if err != nil {
+		return nil, fmt.Errorf("graphql: %w", err)
+	}
+
 	events := make([]RawEvent, 0, len(items))
 	for _, item := range items {
-		raw := mapToRawEvent(item, cfg.FieldMap, urlTmpl, e.logger)
+		raw := mapToRawEvent(item, resolver, urlTmpl, e.logger)
 		events = append(events, raw)
 	}
 
@@ -146,37 +152,31 @@ func (e *GraphQLExtractor) Extract(
 
 // mapToRawEvent maps a GraphQL event object (map[string]any) to a RawEvent.
 //
-// When fieldMap is non-empty, it maps logical keys (name, start_date, …) to
-// JSON paths using resolveNestedString (consistent with the REST extractor's
-// field_map). When fieldMap is nil or empty, the legacy DatoCMS-convention
-// mapping is used: title→Name, startDate→StartDate, endDate→EndDate,
-// description→Description, photo.url→Image, rooms[0].name→Location.
+// When resolver's fieldMap is non-empty, it maps logical keys (name, start_date,
+// …) to JSON paths via the shared fieldMapResolver (consistent with the REST
+// extractor's field_map). When fieldMap is nil or empty, the legacy
+// DatoCMS-convention mapping is used: title→Name, startDate→StartDate,
+// endDate→EndDate, description→Description, photo.url→Image,
+// rooms[0].name→Location.
 //
 // urlTmpl, if non-nil, is rendered with the raw item map as data to produce the
 // event's canonical URL. The template string comes from operator-supplied YAML
 // config (not user input), so text/template (not html/template) is appropriate.
-func mapToRawEvent(item map[string]any, fieldMap map[string]string, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
+func mapToRawEvent(item map[string]any, resolver *fieldMapResolver, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
 	var raw RawEvent
 
-	if len(fieldMap) > 0 {
+	if len(resolver.fieldMap) > 0 {
 		// Explicit field mapping — same approach as mapRESTItemToRawEvent.
-		resolve := func(key string) string {
-			mapped, ok := fieldMap[key]
-			if !ok {
-				return ""
-			}
-			return resolveNestedString(item, mapped)
-		}
-		raw.Name = resolve("name")
-		raw.StartDate = resolve("start_date")
-		raw.EndDate = resolve("end_date")
-		raw.Description = resolve("description")
-		raw.Image = resolve("image")
-		raw.Location = resolve("location")
+		raw.Name = resolver.resolve(item, "name", "", logger)
+		raw.StartDate = resolver.resolve(item, "start_date", "", logger)
+		raw.EndDate = resolver.resolve(item, "end_date", "", logger)
+		raw.Description = resolver.resolve(item, "description", "", logger)
+		raw.Image = resolver.resolve(item, "image", "", logger)
+		raw.Location = resolver.resolve(item, "location", "", logger)
 
 		// URL from field_map (overridden by url_template below when set).
 		if urlTmpl == nil {
-			raw.URL = resolve("url")
+			raw.URL = resolver.resolve(item, "url", "", logger)
 		}
 	} else {
 		// Legacy DatoCMS-convention mapping (backward compatible).

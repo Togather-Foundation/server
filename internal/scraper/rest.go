@@ -82,6 +82,12 @@ func (e *RestExtractor) Extract(
 		}
 	}
 
+	// Pre-parse any templated field_map values once (not per event).
+	resolver, err := newFieldMapResolver(cfg.FieldMap)
+	if err != nil {
+		return nil, fmt.Errorf("rest: %w", err)
+	}
+
 	var allEvents []RawEvent
 	nextURL := cfg.Endpoint
 	page := 0
@@ -93,7 +99,7 @@ func (e *RestExtractor) Extract(
 		}
 		page++
 
-		pageEvents, next, err := e.fetchPage(ctx, cfg, client, nextURL, urlTmpl)
+		pageEvents, next, err := e.fetchPage(ctx, cfg, client, nextURL, urlTmpl, resolver)
 		if err != nil {
 			return nil, err
 		}
@@ -127,6 +133,7 @@ func (e *RestExtractor) fetchPage(
 	client *http.Client,
 	pageURL string,
 	urlTmpl *template.Template,
+	resolver *fieldMapResolver,
 ) ([]RawEvent, string, error) {
 	method := cfg.Method
 	if method == "" {
@@ -236,7 +243,7 @@ func (e *RestExtractor) fetchPage(
 	// Map items to RawEvents.
 	events := make([]RawEvent, 0, len(items))
 	for _, item := range items {
-		raw := mapRESTItemToRawEvent(item, cfg.FieldMap, urlTmpl, e.logger)
+		raw := mapRESTItemToRawEvent(item, resolver, urlTmpl, e.logger)
 		events = append(events, raw)
 	}
 
@@ -281,6 +288,72 @@ func resolveNestedString(item map[string]any, path string) string {
 		return ""
 	}
 	return v
+}
+
+// fieldMapResolver resolves RawEvent fields from a source item using the
+// operator-supplied field_map. It pre-parses any templated field_map values
+// (values containing "{{") once, so templates are not recompiled per event.
+// Plain (non-templated) values are resolved via resolveNestedString; templated
+// values are rendered as Go text/template against the item map, allowing one
+// target field to combine multiple source keys (e.g.
+// start_date: "{{.start_date}}T{{.start_time}}").
+type fieldMapResolver struct {
+	fieldMap  map[string]string
+	templates map[string]*template.Template
+}
+
+// newFieldMapResolver builds a fieldMapResolver from fieldMap, pre-parsing any
+// templated values. It returns an error if a templated value fails to parse.
+// When fieldMap is nil/empty the resolver behaves as an identity mapping
+// (RawEvent Go field names are used directly as JSON keys).
+func newFieldMapResolver(fieldMap map[string]string) (*fieldMapResolver, error) {
+	r := &fieldMapResolver{fieldMap: fieldMap}
+	for k, v := range fieldMap {
+		if !strings.Contains(v, "{{") {
+			continue
+		}
+		t, err := template.New("fieldmap:" + k).Option("missingkey=error").Parse(v)
+		if err != nil {
+			return nil, fmt.Errorf("parsing field_map template for %q: %w", k, err)
+		}
+		if r.templates == nil {
+			r.templates = make(map[string]*template.Template)
+		}
+		r.templates[k] = t
+	}
+	return r, nil
+}
+
+// resolve returns the string value for the logical field key (e.g. "name").
+// When the resolver's fieldMap is empty, identityKey (the RawEvent Go struct
+// field name) is used directly. A templated value is rendered against item; a
+// plain value is resolved as a nested dot-separated path.
+func (r *fieldMapResolver) resolve(item map[string]any, key, identityKey string, logger zerolog.Logger) string {
+	var srcKey string
+	if len(r.fieldMap) > 0 {
+		mapped, ok := r.fieldMap[key]
+		if !ok {
+			// key not in field_map — skip.
+			return ""
+		}
+		srcKey = mapped
+	} else {
+		// Identity mapping: use the Go struct field name.
+		srcKey = identityKey
+	}
+
+	if tmpl, ok := r.templates[key]; ok {
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, item); err != nil {
+			// missingkey=error: a missing template variable returns an error here.
+			// Leave the field empty rather than emitting "<no value>" or failing
+			// the whole event.
+			logger.Debug().Err(err).Str("field", key).Msg("field_map template execution failed — leaving field empty")
+			return ""
+		}
+		return buf.String()
+	}
+	return resolveNestedString(item, srcKey)
 }
 
 // flattenResults walks a decoded JSON value depth-first and collects every
@@ -338,38 +411,18 @@ func flattenResults(v any, logger zerolog.Logger) []map[string]any {
 }
 
 // mapRESTItemToRawEvent maps a REST JSON item (map[string]any) to a RawEvent
-// using the operator-supplied field_map. When fieldMap is nil the RawEvent Go
-// field names are used directly as JSON keys (identity mapping using the exact
-// Go struct field names: Name, StartDate, EndDate, URL, Image, Location,
-// Description).
-func mapRESTItemToRawEvent(item map[string]any, fieldMap map[string]string, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
-	// resolve returns the string value of the JSON field whose name is
-	// determined by fieldMap[key] (or the identity mapping when fieldMap is nil).
-	// key is the field_map logical key (e.g. "name", "start_date").
-	// identityKey is the RawEvent Go struct field name used for identity mapping.
-	resolve := func(key, identityKey string) string {
-		var srcKey string
-		if len(fieldMap) > 0 {
-			mapped, ok := fieldMap[key]
-			if !ok {
-				// key not in field_map — skip.
-				return ""
-			}
-			srcKey = mapped
-		} else {
-			// Identity mapping: use the Go struct field name.
-			srcKey = identityKey
-		}
-		return resolveNestedString(item, srcKey)
-	}
-
+// using the operator-supplied field_map (via the pre-parsed resolver). When
+// resolver has an empty fieldMap the RawEvent Go field names are used directly
+// as JSON keys (identity mapping using the exact Go struct field names: Name,
+// StartDate, EndDate, URL, Image, Location, Description).
+func mapRESTItemToRawEvent(item map[string]any, resolver *fieldMapResolver, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
 	raw := RawEvent{
-		Name:        resolve("name", "Name"),
-		StartDate:   resolve("start_date", "StartDate"),
-		EndDate:     resolve("end_date", "EndDate"),
-		Location:    resolve("location", "Location"),
-		Description: resolve("description", "Description"),
-		Image:       resolve("image", "Image"),
+		Name:        resolver.resolve(item, "name", "Name", logger),
+		StartDate:   resolver.resolve(item, "start_date", "StartDate", logger),
+		EndDate:     resolver.resolve(item, "end_date", "EndDate", logger),
+		Location:    resolver.resolve(item, "location", "Location", logger),
+		Description: resolver.resolve(item, "description", "Description", logger),
+		Image:       resolver.resolve(item, "image", "Image", logger),
 	}
 
 	// URL: either from field_map/identity or (if a url_template is set) from the
@@ -385,7 +438,7 @@ func mapRESTItemToRawEvent(item map[string]any, fieldMap map[string]string, urlT
 			raw.URL = buf.String()
 		}
 	} else {
-		raw.URL = resolve("url", "URL")
+		raw.URL = resolver.resolve(item, "url", "URL", logger)
 	}
 
 	return raw

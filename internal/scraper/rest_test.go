@@ -442,7 +442,10 @@ func TestMapRESTItemToRawEvent_URLTemplate(t *testing.T) {
 			tmpl, err := template.New("url").Option("missingkey=error").Parse(tt.urlTemplate)
 			require.NoError(t, err)
 
-			got := mapRESTItemToRawEvent(tt.item, tt.fieldMap, tmpl, zerolog.Nop())
+			resolver, err := newFieldMapResolver(tt.fieldMap)
+			require.NoError(t, err)
+
+			got := mapRESTItemToRawEvent(tt.item, resolver, tmpl, zerolog.Nop())
 			assert.Equal(t, tt.wantURL, got.URL)
 		})
 	}
@@ -1078,4 +1081,91 @@ func TestRestExtract_GETDefaultNoBody(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.MethodGet, gotMethod, "empty method must default to GET")
 	assert.Empty(t, gotBody, "GET request must send no body")
+}
+
+// --------------------------------------------------------------------------
+// field_map value templating tests (t_e07780ca)
+// --------------------------------------------------------------------------
+
+func TestRestExtract_FieldMapTemplating(t *testing.T) {
+	t.Parallel()
+
+	// Eventbrite-style: date and time are separate keys; combine via template.
+	// name uses a plain key — unchanged behaviour alongside a templated value.
+	events := []map[string]any{
+		{
+			"title":      "Templated Event",
+			"start_date": "2026-08-15",
+			"start_time": "20:30:00",
+		},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, events, ""))
+	}))
+	defer srv.Close()
+
+	fieldMap := map[string]string{
+		"name":       "title",
+		"start_date": "{{.start_date}}T{{.start_time}}",
+	}
+	source := restSource(srv.URL, fieldMap, "", 10)
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+
+	assert.Equal(t, "Templated Event", got[0].Name, "plain key must still resolve")
+	assert.Equal(t, "2026-08-15T20:30:00", got[0].StartDate, "templated value must combine source keys")
+}
+
+func TestRestExtract_FieldMapTemplatingMissingKey(t *testing.T) {
+	t.Parallel()
+
+	// missingkey=error: a template referencing an absent key renders empty
+	// without panicking or failing the whole extract.
+	events := []map[string]any{
+		{"title": "No Time Event", "start_date": "2026-08-15"},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, events, ""))
+	}))
+	defer srv.Close()
+
+	fieldMap := map[string]string{
+		"start_date": "{{.start_date}}T{{.start_time}}",
+	}
+	source := restSource(srv.URL, fieldMap, "", 10)
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "", got[0].StartDate, "missing template key must render empty, not panic")
+}
+
+func TestFieldMapResolver_Templating(t *testing.T) {
+	t.Parallel()
+
+	t.Run("renders non-string JSON values via text/template", func(t *testing.T) {
+		t.Parallel()
+		resolver, err := newFieldMapResolver(map[string]string{"description": "Seats: {{.capacity}}"})
+		require.NoError(t, err)
+		item := map[string]any{"capacity": 150.0}
+		got := resolver.resolve(item, "description", "", zerolog.Nop())
+		assert.Equal(t, "Seats: 150", got, "numbers must be rendered by text/template")
+	})
+
+	t.Run("identity mapping bypasses templating", func(t *testing.T) {
+		t.Parallel()
+		resolver, err := newFieldMapResolver(nil)
+		require.NoError(t, err)
+		item := map[string]any{"Name": "Identity Event"}
+		got := resolver.resolve(item, "name", "Name", zerolog.Nop())
+		assert.Equal(t, "Identity Event", got)
+	})
 }

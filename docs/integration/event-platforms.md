@@ -563,6 +563,13 @@ rest:
     image: "image"
 ```
 
+Tier 3 REST configs also support `method: POST` (with a JSON `body` and
+`content_type`) for POST-only endpoints, `flatten: true` for nested result
+objects, and `field_map` value templating — a value containing `{{` is rendered
+as a Go `text/template` against the item map, so one field can combine multiple
+source keys (e.g. `start_date: "{{.start_date}}T{{.start_time}}"`). See
+`docs/integration/scraper.md` (REST Config Fields) for the full reference.
+
 **How to find a venue ID:**
 1. Look for `showpass.com` links in the venue's page source (e.g. `showpass.com/e/<slug>`)
 2. Visit `https://www.showpass.com/api/public/events/?venue=<id>` with candidate IDs
@@ -623,6 +630,11 @@ S3 JSON API is more stable and complete.
 - No pagination needed — S3 buckets serve complete event lists
 - No authentication required (public S3 bucket)
 - Rate limiting: S3 standard rate limits apply; no special throttling needed
+
+**Leap Event Technology (Showclix rebrand):** some venues now publish a nested
+month/day feed at `https://events.leapevents.com/events/<org>/<start>/<end>.json`
+whose shape is `events_by_month.<month>.dates.<day>[]`. Configure these with
+`results_field: "events_by_month"` and `flatten: true` (see `cineplex-events.yaml`).
 
 ---
 
