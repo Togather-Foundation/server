@@ -903,3 +903,101 @@ func TestRestExtract_TimeoutMs(t *testing.T) {
 	_, err := extractor.Extract(t.Context(), source, &http.Client{})
 	require.Error(t, err, "request should time out before the slow server responds")
 }
+
+// --------------------------------------------------------------------------
+// Flatten nested results tests (t_d2875da0)
+// --------------------------------------------------------------------------
+
+// leapNestedBody returns a Leap/Showclix-style nested response where
+// results_field ("events_by_month") resolves to an object keyed by month whose
+// leaves are date-keyed arrays of event objects.
+func leapNestedBody() []byte {
+	return []byte(`{
+		"events_by_month": {
+			"2026-08": {
+				"dates": {
+					"15": [{"title": "Event A", "start": "2026-08-15T20:00:00Z"}],
+					"16": [{"title": "Event B", "start": "2026-08-16T20:00:00Z"}]
+				}
+			},
+			"2026-09": {
+				"dates": {
+					"01": [{"title": "Event C", "start": "2026-09-01T20:00:00Z"}]
+				}
+			}
+		}
+	}`)
+}
+
+func TestRestExtract_FlattenNestedResults(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(leapNestedBody())
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "leap-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "events_by_month",
+			NextField:    "next",
+			Flatten:      true,
+			FieldMap: map[string]string{
+				"name":       "title",
+				"start_date": "start",
+			},
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 3, "all leaf arrays must be collected")
+
+	// Stable key order: month "2026-08" before "2026-09"; day "15" before "16".
+	assert.Equal(t, "Event A", got[0].Name)
+	assert.Equal(t, "2026-08-15T20:00:00Z", got[0].StartDate)
+	assert.Equal(t, "Event B", got[1].Name)
+	assert.Equal(t, "2026-08-16T20:00:00Z", got[1].StartDate)
+	assert.Equal(t, "Event C", got[2].Name)
+	assert.Equal(t, "2026-09-01T20:00:00Z", got[2].StartDate)
+}
+
+func TestRestExtract_FlattenDisabledOnNestedShapeErrors(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(leapNestedBody())
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "leap-source-no-flatten",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "events_by_month",
+			NextField:    "next",
+			Flatten:      false, // default — strict direct-array decoding
+			FieldMap: map[string]string{
+				"name":       "title",
+				"start_date": "start",
+			},
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.Error(t, err, "nested object with flatten: false must error, not silently flatten")
+	assert.Contains(t, err.Error(), "rest: decoding \"events_by_month\" array from",
+		"error must identify the strict array-decode failure")
+}

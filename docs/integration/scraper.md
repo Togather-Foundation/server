@@ -520,6 +520,10 @@ Used when a site exposes a paginated JSON REST API (e.g. Showpass).
    When `results_field` is `"."`, the entire response body is treated as a bare JSON
    array (`[{...}, {...}]`) — used for APIs that return arrays without an envelope object
    (e.g. Showclix S3 buckets). Bare array mode has no pagination support.
+   When `flatten: true` is set, `results_field` may instead resolve to an *object*
+   whose leaves are arrays of event objects (e.g. Leap's
+   `events_by_month.<month>.dates.<day>[]`); the extractor walks the subtree
+   depth-first and collects every array-of-objects leaf in sorted-key order.
 3. Map each item to a `RawEvent` via `field_map` (or identity mapping if none)
 4. If `url_template` is set, render the Go `text/template` with the raw item map to
    produce each event's canonical URL
@@ -969,6 +973,7 @@ Values are source JSON keys from the GraphQL response record; use dot-separated 
 | `timeout_ms` | no | — | Request timeout; the larger of this and the global timeout applies |
 | `headers` | no | — | Extra HTTP headers to inject (map[string]string). When `tls_fingerprint` is set, Chrome-mimicking headers are auto-merged; source headers take precedence. |
 | `field_map` | no | — | Map from RawEvent field names to source JSON keys; values support dot-notation for nested fields (see below) |
+| `flatten` | no | `false` | When true, `results_field` may resolve to a nested object (not a flat array); the extractor collects every array-of-objects leaf depth-first in sorted-key order. When false, `results_field` must resolve to a flat array or the page errors. |
 
 **`field_map` keys** (all optional; omit for identity mapping):
 `name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.

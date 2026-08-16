@@ -1836,6 +1836,50 @@ tier: 0
 	})
 }
 
+// TestLoadFile_RESTFlatten verifies that the flatten field defaults to false and
+// is parsed when explicitly set to true.
+func TestLoadFile_RESTFlatten(t *testing.T) {
+	t.Parallel()
+
+	t.Run("flatten defaults to false when omitted", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "REST No Flatten Source"
+url: "https://example.com"
+tier: 3
+rest:
+  endpoint: "https://api.example.com/events"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "rest_no_flatten.yaml", yamlContent)
+
+		cfg, err := loadFile(path, zerolog.Nop())
+		require.NoError(t, err)
+		require.NotNil(t, cfg.REST)
+		assert.False(t, cfg.REST.Flatten, "flatten must default to false")
+	})
+
+	t.Run("flatten true is parsed", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "REST Flatten Source"
+url: "https://example.com"
+tier: 3
+rest:
+  endpoint: "https://api.example.com/events"
+  results_field: "events_by_month"
+  flatten: true
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "rest_flatten.yaml", yamlContent)
+
+		cfg, err := loadFile(path, zerolog.Nop())
+		require.NoError(t, err)
+		require.NotNil(t, cfg.REST)
+		assert.True(t, cfg.REST.Flatten, "flatten: true must be parsed")
+	})
+}
+
 // --------------------------------------------------------------------------
 // InterceptConfig validation (srv-enisd)
 // --------------------------------------------------------------------------

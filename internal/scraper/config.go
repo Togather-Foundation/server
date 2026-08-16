@@ -419,6 +419,14 @@ type RestConfig struct {
 	// location, description. When empty, field names are used directly as-is
 	// (identity mapping using the RawEvent Go field names).
 	FieldMap map[string]string `yaml:"field_map,omitempty" json:"field_map,omitempty"`
+	// Flatten enables nested-result flattening for object-mode responses. When
+	// true and results_field resolves to a JSON object (rather than a flat
+	// array), the extractor walks the subtree depth-first and collects every
+	// array-of-objects leaf (e.g. Leap/Showclix
+	// events_by_month.<month>.dates.<day>[]). Key iteration is sorted for
+	// deterministic ordering. When false (default), results_field must resolve
+	// to a flat array or the page errors.
+	Flatten bool `yaml:"flatten,omitempty" json:"flatten,omitempty"`
 }
 
 // GetURLs returns the list of entry-point URLs for this source.

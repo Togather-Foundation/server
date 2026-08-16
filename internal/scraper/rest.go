@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -178,8 +179,20 @@ func (e *RestExtractor) fetchPage(
 			return nil, "", nil
 		}
 
-		if err := json.Unmarshal(rawResults, &items); err != nil {
-			return nil, "", fmt.Errorf("rest: decoding %q array from %s: %w", cfg.ResultsField, pageURL, err)
+		if cfg.Flatten {
+			// Nested flattening: results_field resolves to an object whose leaves
+			// are arrays of event objects (e.g. Leap's
+			// events_by_month.<month>.dates.<day>[]). Walk depth-first collecting
+			// every array-of-objects leaf in sorted-key order.
+			var raw any
+			if err := json.Unmarshal(rawResults, &raw); err != nil {
+				return nil, "", fmt.Errorf("rest: decoding %q from %s: %w", cfg.ResultsField, pageURL, err)
+			}
+			items = flattenResults(raw, e.logger)
+		} else {
+			if err := json.Unmarshal(rawResults, &items); err != nil {
+				return nil, "", fmt.Errorf("rest: decoding %q array from %s: %w", cfg.ResultsField, pageURL, err)
+			}
 		}
 
 		// Determine next page URL (only meaningful for object responses).
@@ -251,6 +264,60 @@ func resolveNestedString(item map[string]any, path string) string {
 		return ""
 	}
 	return v
+}
+
+// flattenResults walks a decoded JSON value depth-first and collects every
+// array-of-objects leaf, concatenating them in stable order. Map keys are
+// iterated in sorted order so the flattened result is deterministic regardless
+// of JSON object key ordering in the source. A leaf array whose elements are
+// all objects is treated as a terminal event list (its elements are appended
+// directly); arrays containing non-objects are recursed into. If the subtree
+// contains scalar values alongside arrays, a warning is logged (the scalars are
+// dropped — they carry no event data).
+func flattenResults(v any, logger zerolog.Logger) []map[string]any {
+	var out []map[string]any
+	var sawScalar bool
+
+	var walk func(any)
+	walk = func(node any) {
+		switch n := node.(type) {
+		case map[string]any:
+			keys := make([]string, 0, len(n))
+			for k := range n {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				walk(n[k])
+			}
+		case []any:
+			// An array whose elements are all objects is an event-list leaf.
+			allObjects := true
+			for _, el := range n {
+				if _, ok := el.(map[string]any); !ok {
+					allObjects = false
+					break
+				}
+			}
+			if allObjects {
+				for _, el := range n {
+					out = append(out, el.(map[string]any))
+				}
+				return
+			}
+			for _, el := range n {
+				walk(el)
+			}
+		default:
+			sawScalar = true
+		}
+	}
+	walk(v)
+
+	if sawScalar {
+		logger.Warn().Msg("rest: flatten: results object contained scalar values alongside arrays — scalars ignored")
+	}
+	return out
 }
 
 // mapRESTItemToRawEvent maps a REST JSON item (map[string]any) to a RawEvent
