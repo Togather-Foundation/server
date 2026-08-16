@@ -1006,6 +1006,71 @@ func TestRestExtract_FlattenDisabledOnNestedShapeErrors(t *testing.T) {
 		"error must identify the strict array-decode failure")
 }
 
+// tnewProductionsBody returns a Tessitura TNEW-style response where
+// results_field ("productions") resolves to an array of production objects,
+// each carrying a nested performances[] array — the performances are the
+// events, not the productions.
+func tnewProductionsBody() []byte {
+	return []byte(`{
+		"productions": [
+			{
+				"productionTitle": "Production One",
+				"performances": [
+					{"performanceTitle": "Perf A", "iso8601DateString": "2026-08-15T20:00:00Z"},
+					{"performanceTitle": "Perf B", "iso8601DateString": "2026-08-16T20:00:00Z"}
+				]
+			},
+			{
+				"productionTitle": "Production Two",
+				"performances": [
+					{"performanceTitle": "Perf C", "iso8601DateString": "2026-09-01T20:00:00Z"}
+				]
+			}
+		]
+	}`)
+}
+
+// TestRestExtract_FlattenWrapperArrayDescends tests the wrapper-array case: an
+// array of objects (productions) whose elements carry a further performances[]
+// array. Flatten must descend into productions and collect the performances
+// (the event leaves), not the production wrappers.
+func TestRestExtract_FlattenWrapperArrayDescends(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(tnewProductionsBody())
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "tnew-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "productions",
+			NextField:    "next",
+			Flatten:      true,
+			FieldMap: map[string]string{
+				"name":       "performanceTitle",
+				"start_date": "iso8601DateString",
+			},
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 3, "performances must be collected, not productions")
+
+	assert.Equal(t, "Perf A", got[0].Name)
+	assert.Equal(t, "2026-08-15T20:00:00Z", got[0].StartDate)
+	assert.Equal(t, "Perf B", got[1].Name)
+	assert.Equal(t, "Perf C", got[2].Name)
+}
+
 // --------------------------------------------------------------------------
 // POST method + body tests (t_e2df1749)
 // --------------------------------------------------------------------------

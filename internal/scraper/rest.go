@@ -359,9 +359,15 @@ func (r *fieldMapResolver) resolve(item map[string]any, key, identityKey string,
 // flattenResults walks a decoded JSON value depth-first and collects every
 // array-of-objects leaf, concatenating them in stable order. Map keys are
 // iterated in sorted order so the flattened result is deterministic regardless
-// of JSON object key ordering in the source. A leaf array whose elements are
-// all objects is treated as a terminal event list (its elements are appended
-// directly); arrays containing non-objects are recursed into. If the subtree
+// of JSON object key ordering in the source.
+//
+// An array is treated as a terminal event list only when every element is an
+// object AND none of those objects contains an array-valued field. This
+// distinguishes event leaves (e.g. Leap's dates.<day>[] holding flat event
+// dicts) from wrapper arrays that must be descended into (e.g. Tessitura
+// TNEW's productions[] where each production carries a performances[] array —
+// the performances, not the productions, are the events). Arrays that do not
+// meet the terminal rule are recursed into element-by-element. If the subtree
 // contains scalar values alongside arrays, a warning is logged (the scalars are
 // dropped — they carry no event data).
 func flattenResults(v any, logger zerolog.Logger) []map[string]any {
@@ -381,15 +387,27 @@ func flattenResults(v any, logger zerolog.Logger) []map[string]any {
 				walk(n[k])
 			}
 		case []any:
-			// An array whose elements are all objects is an event-list leaf.
-			allObjects := true
+			// An array is a terminal event list iff every element is an object
+			// and no element object contains an array-valued field. Wrapper
+			// arrays (objects containing further arrays) are descended into.
+			terminal := len(n) > 0
 			for _, el := range n {
-				if _, ok := el.(map[string]any); !ok {
-					allObjects = false
+				obj, ok := el.(map[string]any)
+				if !ok {
+					terminal = false
+					break
+				}
+				for _, val := range obj {
+					if _, isArr := val.([]any); isArr {
+						terminal = false
+						break
+					}
+				}
+				if !terminal {
 					break
 				}
 			}
-			if allObjects {
+			if terminal {
 				for _, el := range n {
 					out = append(out, el.(map[string]any))
 				}
