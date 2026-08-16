@@ -37,6 +37,16 @@ trust_level: 8
 license: "CC0-1.0"
 domain: music
 enabled: true
+# The feed carries no per-event venue data and the instance covers 4 halls, so
+# all events attribute to the parent org venue (Allied Music Centre). Known
+# limitation: hall-specific attribution is not possible from this API.
+default_location:
+  name: "Allied Music Centre"
+  street_address: "80 Simcoe St"
+  address_locality: "Toronto"
+  address_region: "ON"
+  postal_code: "M5H 4H2"
+  address_country: "CA"
 rest:
   endpoint: "https://mass-tnew-prod.tnhs.cloud/api/products/productionseasons"
   method: POST
