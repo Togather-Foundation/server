@@ -1209,6 +1209,56 @@ func TestRestExtract_FlattenPagination(t *testing.T) {
 	assert.Equal(t, "Page2 Event", got[1].Name)
 }
 
+// TestRestExtract_FlattenScalarArrayFieldIsNotWrapper verifies that an array of
+// scalars inside an event object (e.g. Leap's price_range: ["$30", "$40"]) does
+// NOT make the enclosing leaf array a wrapper — the events are still collected
+// (only array-of-objects fields trigger wrapper descent).
+func TestRestExtract_FlattenScalarArrayFieldIsNotWrapper(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{
+		"events_by_month": {
+			"2026-08": {
+				"dates": {
+					"14": [
+						{"title": "Wrestling Night", "event_start": "2026-08-14 19:30:00", "price_range": ["$30", "$40"]},
+						{"title": "Wrestling Night 2", "event_start": "2026-08-15 19:30:00", "price_range": ["$35"]}
+					]
+				}
+			}
+		}
+	}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "leap-scalar-array-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "events_by_month",
+			NextField:    "next",
+			Flatten:      true,
+			FieldMap: map[string]string{
+				"name":       "title",
+				"start_date": "event_start",
+			},
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 2, "event arrays with scalar-array fields must still be collected")
+	assert.Equal(t, "Wrestling Night", got[0].Name)
+	assert.Equal(t, "Wrestling Night 2", got[1].Name)
+}
+
 // --------------------------------------------------------------------------
 // POST method + body tests (t_e2df1749)
 // --------------------------------------------------------------------------

@@ -362,12 +362,13 @@ func (r *fieldMapResolver) resolve(item map[string]any, key, identityKey string,
 // of JSON object key ordering in the source.
 //
 // An array is treated as a terminal event list only when every element is an
-// object AND none of those objects contains an array-valued field. This
-// distinguishes event leaves (e.g. Leap's dates.<day>[] holding flat event
-// dicts) from wrapper arrays that must be descended into (e.g. Tessitura
-// TNEW's productions[] where each production carries a performances[] array —
-// the performances, not the productions, are the events). Arrays that do not
-// meet the terminal rule are recursed into element-by-element.
+// object AND none of those objects contains an array-of-objects field. This
+// distinguishes event leaves (e.g. Leap's dates.<day>[] holding event dicts
+// whose only arrays are scalars like price_range) from wrapper arrays that must
+// be descended into (e.g. Tessitura TNEW's productions[] where each production
+// carries a performances[] array of objects — the performances, not the
+// productions, are the events). Arrays that do not meet the terminal rule are
+// recursed into element-by-element.
 //
 // Warning behaviour: a Warn is logged only for a genuine mixed shape — scalar
 // values encountered outside a wrapper-array descent, where a results object
@@ -375,7 +376,7 @@ func (r *fieldMapResolver) resolve(item map[string]any, key, identityKey string,
 // Scalars inside objects reached via a wrapper-array descent (e.g. a TNEW
 // production's productionTitle/description metadata) are expected and only
 // traced at Debug, since the wrapper's own scalar fields are dropped by design.
-// Limitation: feeds whose event objects carry array-valued fields (images[],
+// Limitation: feeds whose event objects carry array-of-objects fields (images[],
 // lineup[], performers[]) are not cleanly flattenable — the terminal rule may
 // misclassify such arrays; see docs/integration/scraper.md.
 func flattenResults(v any, logger zerolog.Logger) []map[string]any {
@@ -397,8 +398,12 @@ func flattenResults(v any, logger zerolog.Logger) []map[string]any {
 			}
 		case []any:
 			// An array is a terminal event list iff every element is an object
-			// and no element object contains an array-valued field. Wrapper
-			// arrays (objects containing further arrays) are descended into.
+			// and no element object contains an array-of-objects field. Wrapper
+			// arrays (elements carrying further arrays of objects, e.g. TNEW
+			// productions[].performances[]) are descended into. Arrays of
+			// scalars inside an event object (e.g. Leap's price_range strings)
+			// are event data, not nested event lists, so they do not make the
+			// outer array a wrapper.
 			terminal := true
 			for _, el := range n {
 				obj, ok := el.(map[string]any)
@@ -407,8 +412,17 @@ func flattenResults(v any, logger zerolog.Logger) []map[string]any {
 					break
 				}
 				for _, val := range obj {
-					if _, isArr := val.([]any); isArr {
-						terminal = false
+					arr, isArr := val.([]any)
+					if !isArr {
+						continue
+					}
+					for _, inner := range arr {
+						if _, isObj := inner.(map[string]any); isObj {
+							terminal = false
+							break
+						}
+					}
+					if !terminal {
 						break
 					}
 				}

@@ -527,11 +527,13 @@ Used when a site exposes a paginated JSON REST API (e.g. Showpass).
     `events_by_month.<month>.dates.<day>[]`); the extractor walks the subtree
     depth-first and collects every array-of-objects leaf in sorted-key order.
     Wrapper arrays (e.g. Tessitura TNEW's `productions[]`, where each production
-    carries a nested `performances[]`) are descended into — the inner arrays, not
-    the wrapper objects, become the events. Limitation: feeds whose *event*
-    objects carry array-valued fields (e.g. `images[]`, `lineup[]`,
-    `performers[]`) are not cleanly flattenable — the leaf heuristic may
-    misclassify such arrays; prefer a flat `results_field` for those feeds.
+    carries a nested `performances[]` of objects) are descended into — the inner
+    arrays, not the wrapper objects, become the events. Arrays of scalars inside
+    an event object (e.g. Leap's `price_range` strings) are treated as event
+    data, not nested event lists. Limitation: feeds whose *event* objects carry
+    array-of-objects fields (e.g. `images[]`, `lineup[]`, `performers[]`) are not
+    cleanly flattenable — the leaf heuristic may misclassify such arrays; prefer
+    a flat `results_field` for those feeds.
 3. Map each item to a `RawEvent` via `field_map` (or identity mapping if none)
 4. If `url_template` is set, render the Go `text/template` with the raw item map to
    produce each event's canonical URL
