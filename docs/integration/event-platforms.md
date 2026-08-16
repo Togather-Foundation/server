@@ -627,18 +627,115 @@ S3 JSON API is more stable and complete.
 ```
 
 **Notes:**
-- No pagination needed — S3 buckets serve complete event lists
-- No authentication required (public S3 bucket)
-- Rate limiting: S3 standard rate limits apply; no special throttling needed
+- **The S3 bucket pattern is dead (verified 2026-08-15).** Showclix rebranded to
+  **Leap Event Technology**; the documented `*eventsbucket.s3.amazonaws.com/events.json`
+  pattern returns S3 `NoSuchBucket` for all venue guesses (horseshoeeventsbucket,
+  thegarrison, cineplex, leapevents, etc.). `showclix.com/event/<slug>` URLs now
+  301-redirect to `events.leapevents.com/event/<slug>`.
+- No pagination needed for legacy S3 feeds; the Leap feed below has no pagination either.
+- No authentication required (public endpoints). Rate limiting: S3-standard.
 
-**Leap Event Technology (Showclix rebrand):** some venues now publish a nested
-month/day feed at `https://events.leapevents.com/events/<org>/<start>/<end>.json`
-whose shape is `events_by_month.<month>.dates.<day>[]`. Configure these with
-`results_field: "events_by_month"` and `flatten: true` (see `cineplex-events.yaml`).
+**Leap Event Technology (Showclix rebrand):** venues publish a nested month/day
+feed at `https://events.leapevents.com/events/<org>/<start>/<end>.json` (no auth,
+no pagination). The `<start>`/`<end>` are URL path segments (YYYY-MM-DD) — the
+extractor has no date-param templating, so the range is hardcoded in config and
+must be refreshed periodically.
+
+**Leap feed shape:**
+```json
+{"start_yyyy_mm_dd": "...", "end_yyyy_mm_dd": "...",
+ "events_by_month": {"2026-08": {"dates": {"14": [ {...event...} ]}}},
+ "color_schemes": []}
+```
+
+Configure with `results_field: "events_by_month"` and `flatten: true`. The event
+dicts are flat objects except for scalar-only arrays (e.g. `price_range: ["$30"]`),
+which flatten treats as event data — not wrapper arrays. Verified field names
+(Cineplex Events org 31733): `title`, `event_start` (`"2026-08-14 19:30:00"` —
+fuzzy-parsed with source tz), `listing_url`, `venue_name`, `image_url`.
+
+```yaml
+rest:
+  endpoint: "https://events.leapevents.com/events/31733/2026-08-01/2026-12-31.json"
+  results_field: "events_by_month"
+  flatten: true
+  field_map:
+    name: "title"
+    start_date: "event_start"
+    url: "listing_url"
+    location: "venue_name"
+    image: "image_url"
+```
+
+See `configs/sources/cineplex-events.yaml` (disabled — only 2 events in range,
+below the >= 3 event bar).
 
 ---
 
-### 17. Eventbrite
+### 17. Tessitura TNEW (ticketing platform)
+
+**What it is:** Tessitura's TNEW web-storefront product, shared across an entire
+arts organization (one instance covers all venues of the org). Verified behind
+Massey Hall / Roy Thomson Hall / Allied Music Centre (mhrth) at
+`mass-tnew-prod.tnhs.cloud`.
+
+**Detection signals:**
+- Tickets link to `tickets.<domain>` storefront URLs (e.g. `tickets.mhrth.com`)
+- API host resembles `<prefix>-tnew-prod.tnhs.cloud` (Tessitura SaaS)
+- The public frontend is bot-gated but the TNEW API behind it is open
+
+**Endpoint (VERIFIED WORKING 2026-08-15, no auth):**
+```
+POST https://mass-tnew-prod.tnhs.cloud/api/products/productionseasons
+Content-Type: application/json
+Body: {"startDate":"2026-08-15T00:00","endDate":"2028-08-15T00:00",
+       "productionSeasonIdFilter":[],"keywordIds":null}
+```
+- **POST-only** (GET → 405) — requires `rest.method: POST` + `rest.body` + `rest.content_type`
+- **No pagination** — one request returns the full date window
+- Verified: 77 productions / 102 performances over a 2-year window
+
+**Response shape (nested):**
+```json
+{"productions": [
+  {"productionSeasonId": "...", "productionTitle": "...",
+   "listingImageUrl": "...", "description": "...", "productionSeasonActionUrl": "...",
+   "performances": [
+     {"id": "...", "iso8601DateString": "2026-08-15T19:30:00.0000000-04:00",
+      "displayDate": "August 15, 2026", "displayTime": "7:30p.m.",
+      "performanceTitle": "...", "actionUrl": "https://tickets.mhrth.com/...", "isOnSale": true}
+   ]}
+]}
+```
+
+Each **performance** is an event (not the production wrapper). Use
+`results_field: "productions"` + `flatten: true` to descend through the wrapper
+array into `performances[]`. `iso8601DateString` is a full RFC3339 timestamp —
+map directly to `start_date`. `displayDate`/`displayTime` are human-readable and
+only needed if the RFC3339 field is absent.
+
+```yaml
+rest:
+  endpoint: "https://mass-tnew-prod.tnhs.cloud/api/products/productionseasons"
+  method: POST
+  body: '{"startDate":"2026-08-15T00:00","endDate":"2028-08-15T00:00","productionSeasonIdFilter":[],"keywordIds":null}'
+  content_type: "application/json"
+  results_field: "productions"
+  flatten: true
+  field_map:
+    name: "performanceTitle"
+    start_date: "iso8601DateString"
+    url: "actionUrl"
+```
+
+**Notes:**
+- `description`/`listingImageUrl` live on the production wrapper, not the
+  performance leaf — they resolve empty in the flattened field_map.
+- See `configs/sources/mhrth-tnew.yaml` (enabled).
+
+---
+
+### 18. Eventbrite
 
 **What it is:** Global ticketing platform. Venues link to Eventbrite for ticket sales.
 
@@ -687,7 +784,7 @@ organizer to share an iCal feed or event data export).
 
 ---
 
-### 18. Elevent (ticketing widget)
+### 19. Elevent (ticketing widget)
 
 **What it is:** A cross-origin iframe-based ticketing widget.
 
@@ -713,7 +810,7 @@ headless:
 
 ---
 
-### 19. Ticket Spot (Wix embed)
+### 20. Ticket Spot (Wix embed)
 
 **What it is:** A Wix-native event widget embedded as a cross-origin iframe from
 `geteventviewer.com` or `ticketspotapp.com`. Venues that use Wix's Ticket Spot app
@@ -765,7 +862,7 @@ See `configs/sources/lula-lounge.yaml` for a working example.
 
 ---
 
-### 20. AWS CloudSearch widget
+### 21. AWS CloudSearch widget
 
 **What it is:** A custom JS widget backed by AWS CloudSearch. The page renders empty
 containers; event data arrives via XHR.
@@ -792,7 +889,7 @@ URL. If unauthenticated, configure as T3 REST.
 
 ---
 
-### 21. Agile Technologies box office
+### 22. Agile Technologies box office
 
 **What it is:** A venue ticketing system. Embeds via a `.ashx` URL widget.
 

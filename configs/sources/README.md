@@ -141,19 +141,20 @@ rest:
   results_field: "events"
   field_map:
     name: "name"
-    start_date: "start_date"
-    end_date: "end_date"
+    # field_map value templating (t_e07780ca) combines the split date/time fields:
+    start_date: "{{.start_date}}T{{.start_time}}"
+    end_date: "{{.end_date}}T{{.end_time}}"
     url: "url"
     location: "primary_venue.name"
     image: "image.url"
     description: "summary"
 ```
 
-**Known limitation (Issue):** the API splits start_date/start_time into separate
-fields; REST field_map maps one source key per field, so start times are lost
-→ all events normalize to T00:00:00 (all_midnight quality warning). Dates,
-names, URLs, venues are correct. A scraper feature (field_map value templating
-e.g. `"{{.start_date}}T{{.start_time}}"`) would fix this.
+**Note (resolved):** the API splits start_date/start_time into separate fields.
+Previously this lost start times (all events normalized to T00:00:00 / all_midnight
+quality warning). `field_map` value templating (a value containing `{{.key}}` renders
+as a Go `text/template` against the item map) now combines them into full RFC 3339
+timestamps.
 
 **Validated orgs (2026-08-15):**
 

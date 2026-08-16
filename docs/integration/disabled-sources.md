@@ -364,14 +364,49 @@ Note: `srv-hi014` (T3 REST tier) being fully landed would unblock **burdock-brew
 
 ---
 
+## 11. 2026-08-15 Tier 3 engine expansion — newly unblocked
+
+Engine features landed 2026-08-15 (branch `feat/scraper-t3-rest-engine`, tickets
+t_d2875da0 / t_e2df1749 / t_e07780ca) extend the Tier 3 REST tier and change the
+status of several previously-blocked sources:
+
+| Source | Before | After | Notes |
+|--------|--------|-------|-------|
+| `mhrth-tnew` | blocked — POST-only API + nested `productions[].performances[]` | **ENABLED** | `rest.method: POST` + `body` + `content_type` + `flatten: true`; live-validated 102 performances with RFC3339 dates/ticket URLs |
+| `cineplex-events` | blocked — Leap feed is a nested `events_by_month` object | **unblocked, still disabled** | `rest.flatten: true` + `results_field: events_by_month`; extracts correctly but only 2 events in range (below the >= 3 event bar). Also needs date-range refresh (feed has no fixed range) |
+| `eventbrite-lula-lounge` | enabled but start times lost (`all_midnight`) | **enabled, full timestamps** | `field_map` value templating: `start_date: "{{.start_date}}T{{.start_time}}"` — live-validated 29 events with real times |
+| `eventbrite-tpl-programs` | disabled (1 event) | still disabled (lull) | Same templating applied; still only 1 upcoming event as of 2026-08-15 |
+
+**New Tier 3 REST capabilities** (see `docs/integration/scraper.md` for the full
+reference):
+- `rest.method` / `rest.body` / `rest.content_type` — POST with a JSON payload
+  (unblocks POST-only APIs such as Tessitura TNEW).
+- `rest.flatten: true` — results_field may resolve to a nested object; the
+  extractor collects every array-of-objects leaf depth-first in sorted order,
+  descending through wrapper arrays (e.g. TNEW `productions[].performances[]`).
+  Arrays of scalars inside an event object (e.g. Leap `price_range`) are treated
+  as event data, not wrapper arrays.
+- `field_map` value templating — a value containing `{{.key}}` renders as a Go
+  `text/template` against the item map, so one field can combine multiple source
+  keys (e.g. Eventbrite date/time split). Applies to REST and GraphQL field_map.
+
+`the-ex` remains blocked: it additionally needs Tier 3 date-range/param-iteration
+support (per-day CNE API) — not covered by this expansion.
+
+---
+
 ## Priority Order
 
 1. **Seasonal re-enables** — heritage-toronto in April, inside-out in May, imagine-native
    in May/September, st-lawrence-market in April. Zero engineering effort; add calendar reminders.
 
-2. **T3 REST tier (`srv-hi014`)** — implement the `rest:` config block. Once landed,
-   burdock-brewery is a config-only enable (Showpass API confirmed working). Workman-arts
-   follows once its Showpass venue ID is found. Lula-lounge follows via Eventbrite API.
+2. **T3 REST tier expansion (LANDED 2026-08-15, `feat/scraper-t3-rest-engine`)** —
+   `rest.method`/`body`/`content_type`, `rest.flatten`, and `field_map` value
+   templating are implemented (t_d2875da0 / t_e2df1749 / t_e07780ca). mhrth-tnew
+   is now enabled (102 events); cineplex-events unblocked (still disabled, 2 events
+   in range); eventbrite-lula-lounge now emits real timestamps. Still-open follow-ups:
+   burdock-brewery config-only enable (Showpass API confirmed), the-ex date-range
+   param support, and a refresh mechanism for Leap's date-range endpoint.
 
 3. **Hot Docs re-check (March 24)** — festival lineup announcement expected; check for
    new film listings URLs. Low effort, high potential.
