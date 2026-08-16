@@ -515,11 +515,25 @@ exceeds the global request timeout; the larger of the two wins.
 
 Used when a site exposes a paginated JSON REST API (e.g. Showpass).
 
-1. GET the configured endpoint
+1. Issue the configured request: GET by default, or POST with a JSON `body`
+   (and `content_type`, default `application/json`) when `method: POST` is set.
+   This supports POST-only endpoints such as Tessitura TNEW.
 2. Decode the `results_field` array (default: `"results"`) from the JSON response.
    When `results_field` is `"."`, the entire response body is treated as a bare JSON
    array (`[{...}, {...}]`) — used for APIs that return arrays without an envelope object
    (e.g. Showclix S3 buckets). Bare array mode has no pagination support.
+    When `flatten: true` is set, `results_field` may instead resolve to an *object*
+    whose leaves are arrays of event objects (e.g. Leap's
+    `events_by_month.<month>.dates.<day>[]`); the extractor walks the subtree
+    depth-first and collects every array-of-objects leaf in sorted-key order.
+    Wrapper arrays (e.g. Tessitura TNEW's `productions[]`, where each production
+    carries a nested `performances[]` of objects) are descended into — the inner
+    arrays, not the wrapper objects, become the events. Arrays of scalars inside
+    an event object (e.g. Leap's `price_range` strings) are treated as event
+    data, not nested event lists. Limitation: feeds whose *event* objects carry
+    array-of-objects fields (e.g. `images[]`, `lineup[]`, `performers[]`) are not
+    cleanly flattenable — the leaf heuristic may misclassify such arrays; prefer
+    a flat `results_field` for those feeds.
 3. Map each item to a `RawEvent` via `field_map` (or identity mapping if none)
 4. If `url_template` is set, render the Go `text/template` with the raw item map to
    produce each event's canonical URL
@@ -957,6 +971,7 @@ never populates with event data but the underlying API response contains it.
 **`field_map` keys** (all optional; omit for legacy DatoCMS-convention mapping):
 `name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
 Values are source JSON keys from the GraphQL response record; use dot-separated paths for nested fields (e.g. `"photo.url"`, `"venue.name"`).
+A value containing `{{` is rendered as a Go `text/template` against the item map (compiled once per extract run), allowing one target field to combine multiple source keys — e.g. `start_date: "{{.start_date}}T{{.start_time}}"`. Templates use `missingkey=error`; a missing key renders the field empty.
 
 ### REST Config Fields (`rest:`)
 
@@ -969,10 +984,15 @@ Values are source JSON keys from the GraphQL response record; use dot-separated 
 | `timeout_ms` | no | — | Request timeout; the larger of this and the global timeout applies |
 | `headers` | no | — | Extra HTTP headers to inject (map[string]string). When `tls_fingerprint` is set, Chrome-mimicking headers are auto-merged; source headers take precedence. |
 | `field_map` | no | — | Map from RawEvent field names to source JSON keys; values support dot-notation for nested fields (see below) |
+| `flatten` | no | `false` | When true, `results_field` may resolve to a nested object (not a flat array); the extractor collects every array-of-objects leaf depth-first in sorted-key order. When false, `results_field` must resolve to a flat array or the page errors. |
+| `method` | no | `GET` | HTTP method for the request. Supported: `GET` and `POST`. Other values are rejected at validation. |
+| `body` | no | — | Raw request body string, sent only when `method: POST` (typically a JSON query payload). Ignored for GET. |
+| `content_type` | no | `application/json` | Value of the `Content-Type` request header when a body is sent. |
 
 **`field_map` keys** (all optional; omit for identity mapping):
 `name`, `start_date`, `end_date`, `url`, `image`, `location`, `description`.
 Values are source JSON keys; use dot-separated paths to traverse nested objects (e.g. `"logo.url"`, `"title.text"`).
+A value containing `{{` is rendered as a Go `text/template` against the item map (compiled once per extract run), allowing one target field to combine multiple source keys — e.g. `start_date: "{{.start_date}}T{{.start_time}}"` to merge Eventbrite-style date/time pairs. Templates use `missingkey=error`; a missing key renders the field empty. Non-string source values (numbers, booleans) are rendered via `text/template` default formatting.
 
 > **Redirect behaviour:** The REST HTTP client allows up to 10 redirects. This is intentionally explicit — it matches the Go default but is configurable for auditability. JSON-LD (Tier 0) blocks all redirects for SSRF hardening.
 

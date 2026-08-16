@@ -1836,6 +1836,154 @@ tier: 0
 	})
 }
 
+// TestLoadFile_RESTFlatten verifies that the flatten field defaults to false and
+// is parsed when explicitly set to true.
+func TestLoadFile_RESTFlatten(t *testing.T) {
+	t.Parallel()
+
+	t.Run("flatten defaults to false when omitted", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "REST No Flatten Source"
+url: "https://example.com"
+tier: 3
+rest:
+  endpoint: "https://api.example.com/events"
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "rest_no_flatten.yaml", yamlContent)
+
+		cfg, err := loadFile(path, zerolog.Nop())
+		require.NoError(t, err)
+		require.NotNil(t, cfg.REST)
+		assert.False(t, cfg.REST.Flatten, "flatten must default to false")
+	})
+
+	t.Run("flatten true is parsed", func(t *testing.T) {
+		t.Parallel()
+		yamlContent := `
+name: "REST Flatten Source"
+url: "https://example.com"
+tier: 3
+rest:
+  endpoint: "https://api.example.com/events"
+  results_field: "events_by_month"
+  flatten: true
+`
+		dir := t.TempDir()
+		path := writeYAML(t, dir, "rest_flatten.yaml", yamlContent)
+
+		cfg, err := loadFile(path, zerolog.Nop())
+		require.NoError(t, err)
+		require.NotNil(t, cfg.REST)
+		assert.True(t, cfg.REST.Flatten, "flatten: true must be parsed")
+	})
+}
+
+// TestValidateConfig_RESTMethod verifies the method field validation: empty
+// (default GET), GET, and POST are accepted; any other method is rejected.
+func TestValidateConfig_RESTMethod(t *testing.T) {
+	t.Parallel()
+
+	base := func(method string) SourceConfig {
+		return SourceConfig{
+			Name:       "REST Method Source",
+			URL:        "https://example.com",
+			Tier:       3,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+			REST: &RestConfig{
+				Endpoint: "https://api.example.com/events",
+				Method:   method,
+			},
+		}
+	}
+
+	tests := []struct {
+		name    string
+		method  string
+		wantErr string
+	}{
+		{name: "empty method defaults to GET — valid", method: ""},
+		{name: "GET is valid", method: "GET"},
+		{name: "POST is valid", method: "POST"},
+		{name: "PUT is rejected", method: "PUT", wantErr: `rest.method: unsupported method "PUT"`},
+		{name: "DELETE is rejected", method: "DELETE", wantErr: `rest.method: unsupported method "DELETE"`},
+		{name: "lowercase get is rejected", method: "get", wantErr: `rest.method: unsupported method "get"`},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := ValidateConfigWithWarnings(base(tt.method))
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+// TestValidateConfig_RESTBodyWarning verifies the non-fatal warnings for body
+// without POST and flatten with bare-array results_field.
+func TestValidateConfig_RESTBodyWarning(t *testing.T) {
+	t.Parallel()
+
+	base := func(method string) SourceConfig {
+		return SourceConfig{
+			Name:       "REST Body Warning Source",
+			URL:        "https://example.com",
+			Tier:       3,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+			REST: &RestConfig{
+				Endpoint:     "https://api.example.com/events",
+				ResultsField: "results",
+				Method:       method,
+				Body:         `{"window":"2y"}`,
+			},
+		}
+	}
+
+	tests := []struct {
+		name     string
+		method   string
+		wantWarn []string
+	}{
+		{name: "body with explicit GET warns", method: "GET", wantWarn: []string{"rest.body: body is ignored unless rest.method is POST"}},
+		{name: "body with empty method (default GET) warns", method: "", wantWarn: []string{"rest.body: body is ignored unless rest.method is POST"}},
+		{name: "body with POST does not warn", method: "POST"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			warnings, err := ValidateConfigWithWarnings(base(tt.method))
+			require.NoError(t, err)
+			for _, want := range tt.wantWarn {
+				assert.Contains(t, warnings, want)
+			}
+		})
+	}
+
+	t.Run("flatten with bare array results_field warns", func(t *testing.T) {
+		t.Parallel()
+		cfg := base("POST")
+		cfg.REST.ResultsField = "."
+		cfg.REST.Body = ""
+		cfg.REST.Flatten = true
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		assert.Contains(t, warnings, `rest.flatten: flatten is ignored when rest.results_field is "." (bare-array mode)`)
+	})
+}
+
 // --------------------------------------------------------------------------
 // InterceptConfig validation (srv-enisd)
 // --------------------------------------------------------------------------

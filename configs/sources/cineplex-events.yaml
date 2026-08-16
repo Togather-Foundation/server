@@ -3,7 +3,9 @@ name: "cineplex-events"
 # URL: https://www.cineplex.com/Events (event cinema + live events), ticketing on
 #      the Showclix platform, which has been rebranded to Leap Event Technology.
 #
-# STATUS: BLOCKED (config written disabled) — see Issues in the task result.
+# STATUS: DISABLED — engine now supports the nested shape (flatten, t_d2875da0);
+#         kept disabled pending a live dry-run against the date-range endpoint
+#         (feed has no fixed range; widget requests <start>/<end> path segments).
 #
 # INVESTIGATION FINDINGS (2026-08-15, task t_f0887b8d):
 #
@@ -27,18 +29,13 @@ name: "cineplex-events"
 #      e.g. https://events.leapevents.com/events/31733/2026-08-01/2026-12-31.json
 #    No auth required. No rate-limit headers observed (S3-standard caching).
 #
-# 4. BUT the response shape is NESTED, not a bare array:
+# 4. The response shape is NESTED, not a bare array:
 #      {"start_yyyy_mm_dd": "...", "end_yyyy_mm_dd": "...",
 #       "events_by_month": {"2026-08": {"dates": {"14": [ {...event...} ]}}},
 #       "color_schemes": []}
-#    The current Tier 3 REST extractor (internal/scraper/rest.go) only supports
-#    (a) results_field "." for a bare top-level array, or (b) a top-level field
-#    whose value IS an array. `events_by_month` is an OBJECT keyed by month, and
-#    each month is an object keyed by day. Verified with dry-run:
-#      results_field "."            -> "json: cannot unmarshal object into Go
-#                                       value of type []map[string]interface {}"
-#      results_field "events_by_month" -> same error (object, not array).
-#    This is a scraper capability gap, not a config error — see Issues.
+#    With `flatten: true` (t_d2875da0), `results_field: events_by_month`
+#    resolves the object and the extractor collects every array-of-objects leaf
+#    depth-first in sorted-key order — no longer a capability gap.
 #
 # 5. Toronto usage ASSESSED:
 #      - Cineplex Events, org_id 31733 — The Rec Room Toronto Roundhouse
@@ -57,29 +54,6 @@ name: "cineplex-events"
 # 6. The JSON:API at events.leapevents.com/api/* requires authentication (401)
 #    — not a public read API.
 #
-# WHAT WOULD UNBLOCK THIS (recommendation, out of scope for this ticket):
-#   - Extend the T3 REST extractor to resolve a nested results path, e.g.
-#     `results_field: "events_by_month.*.dates.*"` (or add a flattening
-#     transform for object-of-objects-of-arrays), OR
-#   - Have the platform config hit the org page's embedded `var
-#     upcoming_events = [...]` blob — but that is inline JS, not DOM, so Tier 1
-#     CSS selectors cannot reach it, and Tier 2 headless is not available on
-#     this worker box (no Chromium).
-#   - Once nested results are supported, the correct config for this source is:
-#       endpoint: https://events.leapevents.com/events/31733/<start>/<end>.json
-#       field_map:
-#         name: "title"
-#         start_date: "event_start"     # "2026-08-14 19:30:00" — VERIFIED
-#                                       #   parseable: fuzzy path converts to
-#                                       #   RFC 3339 with source tz (mock test
-#                                       #   yielded 2026-08-14T19:30:00-04:00)
-#         url: "listing_url"
-#         location: "venue_name"
-#         image: "image_url"
-#     NOTE: the feed has no fixed date range; the widget requests
-#     <start>/<end> as URL path segments (e.g. today .. +5 months). The
-#     extractor has no date-param templating, so the endpoint date range would
-#     need to be configurable or defaulted (see Issues).
 # Organization match: API unavailable (SEL URL unset on worker)
 url: "https://www.cineplex.com/Events"
 tier: 3
@@ -93,11 +67,13 @@ enabled: false
 rest:
   # Live endpoint verified 2026-08-15. <start>/<end> are URL path segments
   # (YYYY-MM-DD). This exact range returned 2 events (Smash Wrestling at The
-  # Rec Room Roundhouse, Toronto).
+  # Rec Room Roundhouse, Toronto). The feed has no fixed date range; the
+  # extractor has no date-param templating, so the range is hardcoded here.
   endpoint: "https://events.leapevents.com/events/31733/2026-08-01/2026-12-31.json"
-  # Nested shape — "." fails ("cannot unmarshal object"). BLOCKED pending
-  # scraper support for nested results paths. Kept as the documented attempt.
-  results_field: "."
+  # Nested shape — resolves to events_by_month object; flatten: true collects
+  # every array-of-objects leaf (dates.<day>[]) as events.
+  results_field: "events_by_month"
+  flatten: true
   field_map:
     name: "title"
     start_date: "event_start"

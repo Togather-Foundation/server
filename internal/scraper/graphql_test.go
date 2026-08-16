@@ -610,6 +610,35 @@ func TestMapToRawEvent(t *testing.T) {
 				StartDate: "2026-08-01T18:00:00+00:00",
 			},
 		},
+		{
+			name: "field_map — templated value combines keys",
+			item: map[string]any{
+				"event_title": "Templated GQL Event",
+				"date_start":  "2026-06-01",
+				"time_start":  "19:00:00",
+			},
+			fieldMap: map[string]string{
+				"name":       "event_title",
+				"start_date": "{{.date_start}}T{{.time_start}}",
+			},
+			want: RawEvent{
+				Name:      "Templated GQL Event",
+				StartDate: "2026-06-01T19:00:00",
+			},
+		},
+		{
+			// missingkey=error: a templated field_map referencing an absent key
+			// renders empty without panicking.
+			name: "field_map — templated missing key renders empty",
+			item: map[string]any{
+				"event_title": "Missing Time Event",
+			},
+			fieldMap: map[string]string{
+				"name":       "event_title",
+				"start_date": "{{.date_start}}T{{.time_start}}",
+			},
+			want: RawEvent{Name: "Missing Time Event"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -623,7 +652,10 @@ func TestMapToRawEvent(t *testing.T) {
 				require.NoError(t, err)
 			}
 
-			got := mapToRawEvent(tt.item, tt.fieldMap, tmpl, zerolog.Nop())
+			resolver, err := newFieldMapResolver(tt.fieldMap)
+			require.NoError(t, err)
+
+			got := mapToRawEvent(tt.item, resolver, tmpl, zerolog.Nop())
 			assert.Equal(t, tt.want, got)
 		})
 	}

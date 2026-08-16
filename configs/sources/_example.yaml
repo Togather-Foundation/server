@@ -133,12 +133,18 @@ max_pages: 5
 #   results_field: "results"
 #   next_field: "next"
 #   url_template: "https://myvenue.ca/events/{{.slug}}"
+#   # method: POST                      # for POST-only endpoints (default: GET)
+#   # body: '{"start":"2026-01-01","end":"2027-12-31"}'   # raw request body (POST only)
+#   # content_type: "application/json"  # default: application/json
+#   # flatten: true                     # collect nested array-of-objects leaves
 #   field_map:
 #     name: "title"                   # Flat key: top-level "title" field
 #     image: "logo.url"               # Dot-notation: {"logo": {"url": "..."}}
 #     start_date: "dates.start"       # Dot-notation: nested start date
 #     end_date: "dates.end"
 #     location: "venue.name"          # Dot-notation: nested venue name
+#     # Templated value (combines multiple keys via Go text/template):
+#     # start_date: "{{.start_date}}T{{.start_time}}"
 
 # --- SITEMAP-BASED SCRAPING EXAMPLE ---
 # Use when the listing page is unscrapeable (e.g. Wix Thunderbolt, Duda builder)

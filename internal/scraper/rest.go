@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"text/template"
 	"time"
@@ -81,6 +82,12 @@ func (e *RestExtractor) Extract(
 		}
 	}
 
+	// Pre-parse any templated field_map values once (not per event).
+	resolver, err := newFieldMapResolver(cfg.FieldMap)
+	if err != nil {
+		return nil, fmt.Errorf("rest: %w", err)
+	}
+
 	var allEvents []RawEvent
 	nextURL := cfg.Endpoint
 	page := 0
@@ -92,7 +99,7 @@ func (e *RestExtractor) Extract(
 		}
 		page++
 
-		pageEvents, next, err := e.fetchPage(ctx, cfg, client, nextURL, urlTmpl)
+		pageEvents, next, err := e.fetchPage(ctx, cfg, client, nextURL, urlTmpl, resolver)
 		if err != nil {
 			return nil, err
 		}
@@ -126,13 +133,31 @@ func (e *RestExtractor) fetchPage(
 	client *http.Client,
 	pageURL string,
 	urlTmpl *template.Template,
+	resolver *fieldMapResolver,
 ) ([]RawEvent, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	method := cfg.Method
+	if method == "" {
+		method = http.MethodGet
+	}
+
+	var bodyReader io.Reader
+	if method == http.MethodPost {
+		bodyReader = strings.NewReader(cfg.Body)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, pageURL, bodyReader)
 	if err != nil {
 		return nil, "", fmt.Errorf("rest: creating request for %s: %w", pageURL, err)
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", ScraperUserAgent)
+	if method == http.MethodPost {
+		contentType := cfg.ContentType
+		if contentType == "" {
+			contentType = "application/json"
+		}
+		req.Header.Set("Content-Type", contentType)
+	}
 	for k, v := range cfg.Headers {
 		req.Header.Set(k, v)
 	}
@@ -178,8 +203,20 @@ func (e *RestExtractor) fetchPage(
 			return nil, "", nil
 		}
 
-		if err := json.Unmarshal(rawResults, &items); err != nil {
-			return nil, "", fmt.Errorf("rest: decoding %q array from %s: %w", cfg.ResultsField, pageURL, err)
+		if cfg.Flatten {
+			// Nested flattening: results_field resolves to an object whose leaves
+			// are arrays of event objects (e.g. Leap's
+			// events_by_month.<month>.dates.<day>[]). Walk depth-first collecting
+			// every array-of-objects leaf in sorted-key order.
+			var raw any
+			if err := json.Unmarshal(rawResults, &raw); err != nil {
+				return nil, "", fmt.Errorf("rest: decoding %q from %s: %w", cfg.ResultsField, pageURL, err)
+			}
+			items = flattenResults(raw, e.logger)
+		} else {
+			if err := json.Unmarshal(rawResults, &items); err != nil {
+				return nil, "", fmt.Errorf("rest: decoding %q array from %s: %w", cfg.ResultsField, pageURL, err)
+			}
 		}
 
 		// Determine next page URL (only meaningful for object responses).
@@ -206,7 +243,7 @@ func (e *RestExtractor) fetchPage(
 	// Map items to RawEvents.
 	events := make([]RawEvent, 0, len(items))
 	for _, item := range items {
-		raw := mapRESTItemToRawEvent(item, cfg.FieldMap, urlTmpl, e.logger)
+		raw := mapRESTItemToRawEvent(item, resolver, urlTmpl, e.logger)
 		events = append(events, raw)
 	}
 
@@ -253,39 +290,193 @@ func resolveNestedString(item map[string]any, path string) string {
 	return v
 }
 
-// mapRESTItemToRawEvent maps a REST JSON item (map[string]any) to a RawEvent
-// using the operator-supplied field_map. When fieldMap is nil the RawEvent Go
-// field names are used directly as JSON keys (identity mapping using the exact
-// Go struct field names: Name, StartDate, EndDate, URL, Image, Location,
-// Description).
-func mapRESTItemToRawEvent(item map[string]any, fieldMap map[string]string, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
-	// resolve returns the string value of the JSON field whose name is
-	// determined by fieldMap[key] (or the identity mapping when fieldMap is nil).
-	// key is the field_map logical key (e.g. "name", "start_date").
-	// identityKey is the RawEvent Go struct field name used for identity mapping.
-	resolve := func(key, identityKey string) string {
-		var srcKey string
-		if len(fieldMap) > 0 {
-			mapped, ok := fieldMap[key]
-			if !ok {
-				// key not in field_map — skip.
-				return ""
-			}
-			srcKey = mapped
-		} else {
-			// Identity mapping: use the Go struct field name.
-			srcKey = identityKey
+// fieldMapResolver resolves RawEvent fields from a source item using the
+// operator-supplied field_map. It pre-parses any templated field_map values
+// (values containing "{{") once, so templates are not recompiled per event.
+// Plain (non-templated) values are resolved via resolveNestedString; templated
+// values are rendered as Go text/template against the item map, allowing one
+// target field to combine multiple source keys (e.g.
+// start_date: "{{.start_date}}T{{.start_time}}").
+type fieldMapResolver struct {
+	fieldMap  map[string]string
+	templates map[string]*template.Template
+}
+
+// newFieldMapResolver builds a fieldMapResolver from fieldMap, pre-parsing any
+// templated values. It returns an error if a templated value fails to parse.
+// When fieldMap is nil/empty the resolver behaves as an identity mapping
+// (RawEvent Go field names are used directly as JSON keys).
+func newFieldMapResolver(fieldMap map[string]string) (*fieldMapResolver, error) {
+	r := &fieldMapResolver{fieldMap: fieldMap}
+	for k, v := range fieldMap {
+		if !strings.Contains(v, "{{") {
+			continue
 		}
-		return resolveNestedString(item, srcKey)
+		t, err := template.New("fieldmap:" + k).Option("missingkey=error").Parse(v)
+		if err != nil {
+			return nil, fmt.Errorf("parsing field_map template for %q: %w", k, err)
+		}
+		if r.templates == nil {
+			r.templates = make(map[string]*template.Template)
+		}
+		r.templates[k] = t
+	}
+	return r, nil
+}
+
+// resolve returns the string value for the logical field key (e.g. "name").
+// When the resolver's fieldMap is empty, identityKey (the RawEvent Go struct
+// field name) is used directly. A templated value is rendered against item; a
+// plain value is resolved as a nested dot-separated path.
+func (r *fieldMapResolver) resolve(item map[string]any, key, identityKey string, logger zerolog.Logger) string {
+	var srcKey string
+	if len(r.fieldMap) > 0 {
+		mapped, ok := r.fieldMap[key]
+		if !ok {
+			// key not in field_map — skip.
+			return ""
+		}
+		srcKey = mapped
+	} else {
+		// Identity mapping: use the Go struct field name.
+		srcKey = identityKey
 	}
 
+	if tmpl, ok := r.templates[key]; ok {
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, item); err != nil {
+			// missingkey=error: a missing template variable returns an error here.
+			// Leave the field empty rather than emitting "<no value>" or failing
+			// the whole event.
+			logger.Debug().Err(err).Str("field", key).Msg("field_map template execution failed — leaving field empty")
+			return ""
+		}
+		return buf.String()
+	}
+	return resolveNestedString(item, srcKey)
+}
+
+// flattenResults walks a decoded JSON value depth-first and collects every
+// array-of-objects leaf, concatenating them in stable order. Map keys are
+// iterated in sorted order so the flattened result is deterministic regardless
+// of JSON object key ordering in the source.
+//
+// An array is treated as a terminal event list only when every element is an
+// object AND none of those objects contains an array-of-objects field. This
+// distinguishes event leaves (e.g. Leap's dates.<day>[] holding event dicts
+// whose only arrays are scalars like price_range) from wrapper arrays that must
+// be descended into (e.g. Tessitura TNEW's productions[] where each production
+// carries a performances[] array of objects — the performances, not the
+// productions, are the events). Arrays that do not meet the terminal rule are
+// recursed into element-by-element.
+//
+// Warning behaviour: a Warn is logged only for a genuine mixed shape — scalar
+// values encountered outside a wrapper-array descent, where a results object
+// interleaves scalars with the event arrays (e.g. {"meta": ..., "events": [...]}).
+// Scalars inside objects reached via a wrapper-array descent (e.g. a TNEW
+// production's productionTitle/description metadata) are expected and only
+// traced at Debug, since the wrapper's own scalar fields are dropped by design.
+// Limitation: feeds whose event objects carry array-of-objects fields (images[],
+// lineup[], performers[]) are not cleanly flattenable — the terminal rule may
+// misclassify such arrays; see docs/integration/scraper.md.
+func flattenResults(v any, logger zerolog.Logger) []map[string]any {
+	var out []map[string]any
+	var sawMixedScalar bool
+	var sawWrapperScalar bool
+
+	var walk func(node any, inWrapper bool)
+	walk = func(node any, inWrapper bool) {
+		switch n := node.(type) {
+		case map[string]any:
+			keys := make([]string, 0, len(n))
+			for k := range n {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				walk(n[k], inWrapper)
+			}
+		case []any:
+			// An array is a terminal event list iff every element is an object
+			// and no element object contains an array-of-objects field. Wrapper
+			// arrays (elements carrying further arrays of objects, e.g. TNEW
+			// productions[].performances[]) are descended into. Arrays of
+			// scalars inside an event object (e.g. Leap's price_range strings)
+			// are event data, not nested event lists, so they do not make the
+			// outer array a wrapper.
+			terminal := true
+			for _, el := range n {
+				obj, ok := el.(map[string]any)
+				if !ok {
+					terminal = false
+					break
+				}
+				for _, val := range obj {
+					arr, isArr := val.([]any)
+					if !isArr {
+						continue
+					}
+					for _, inner := range arr {
+						if _, isObj := inner.(map[string]any); isObj {
+							terminal = false
+							break
+						}
+					}
+					if !terminal {
+						break
+					}
+				}
+				if !terminal {
+					break
+				}
+			}
+			if terminal {
+				for _, el := range n {
+					out = append(out, el.(map[string]any))
+				}
+				return
+			}
+			// Non-terminal wrapper array: its element objects carry further
+			// arrays. Scalar fields inside those elements are wrapper metadata
+			// (dropped by design), so descend with inWrapper=true.
+			logger.Debug().
+				Int("elements", len(n)).
+				Msg("rest: flatten: descending into wrapper array (elements contain nested arrays)")
+			for _, el := range n {
+				walk(el, true)
+			}
+		default:
+			if inWrapper {
+				sawWrapperScalar = true
+			} else {
+				sawMixedScalar = true
+			}
+		}
+	}
+	walk(v, false)
+
+	switch {
+	case sawMixedScalar:
+		logger.Warn().Msg("rest: flatten: results object mixes scalar values with event arrays — scalars ignored")
+	case sawWrapperScalar:
+		logger.Debug().Msg("rest: flatten: scalar fields inside wrapper objects ignored")
+	}
+	return out
+}
+
+// mapRESTItemToRawEvent maps a REST JSON item (map[string]any) to a RawEvent
+// using the operator-supplied field_map (via the pre-parsed resolver). When
+// resolver has an empty fieldMap the RawEvent Go field names are used directly
+// as JSON keys (identity mapping using the exact Go struct field names: Name,
+// StartDate, EndDate, URL, Image, Location, Description).
+func mapRESTItemToRawEvent(item map[string]any, resolver *fieldMapResolver, urlTmpl *template.Template, logger zerolog.Logger) RawEvent {
 	raw := RawEvent{
-		Name:        resolve("name", "Name"),
-		StartDate:   resolve("start_date", "StartDate"),
-		EndDate:     resolve("end_date", "EndDate"),
-		Location:    resolve("location", "Location"),
-		Description: resolve("description", "Description"),
-		Image:       resolve("image", "Image"),
+		Name:        resolver.resolve(item, "name", "Name", logger),
+		StartDate:   resolver.resolve(item, "start_date", "StartDate", logger),
+		EndDate:     resolver.resolve(item, "end_date", "EndDate", logger),
+		Location:    resolver.resolve(item, "location", "Location", logger),
+		Description: resolver.resolve(item, "description", "Description", logger),
+		Image:       resolver.resolve(item, "image", "Image", logger),
 	}
 
 	// URL: either from field_map/identity or (if a url_template is set) from the
@@ -301,7 +492,7 @@ func mapRESTItemToRawEvent(item map[string]any, fieldMap map[string]string, urlT
 			raw.URL = buf.String()
 		}
 	} else {
-		raw.URL = resolve("url", "URL")
+		raw.URL = resolver.resolve(item, "url", "URL", logger)
 	}
 
 	return raw

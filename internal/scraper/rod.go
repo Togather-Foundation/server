@@ -592,6 +592,15 @@ func (e *RodExtractor) parseInterceptedBody(body string, ic *InterceptConfig, so
 		return nil
 	}
 
+	// Pre-parse the field_map resolver (shared with the REST extractor).
+	// Intercept field_map values are plain dot-notation paths; an invalid
+	// template (unexpected) degrades to plain-key resolution.
+	resolver, err := newFieldMapResolver(ic.FieldMap)
+	if err != nil {
+		e.logger.Warn().Err(err).Str("source", sourceName).Msg("rod: intercept: invalid field_map template — treating as plain keys")
+		resolver = &fieldMapResolver{fieldMap: ic.FieldMap}
+	}
+
 	events := make([]RawEvent, 0, len(items))
 	for _, item := range items {
 		m, ok := item.(map[string]any)
@@ -600,7 +609,7 @@ func (e *RodExtractor) parseInterceptedBody(body string, ic *InterceptConfig, so
 		}
 		// Reuse the REST field-mapping helper (same package); pass nil urlTmpl
 		// since intercept does not support URL templates.
-		ev := mapRESTItemToRawEvent(m, ic.FieldMap, nil, e.logger)
+		ev := mapRESTItemToRawEvent(m, resolver, nil, e.logger)
 		events = append(events, ev)
 	}
 

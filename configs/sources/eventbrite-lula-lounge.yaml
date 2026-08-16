@@ -17,11 +17,10 @@ name: "eventbrite-lula-lounge"
 # The scraper's own UA (Togather-SEL-Scraper/0.1) is accepted (verified 200).
 # No Cloudflare challenge, no cookies, no OAuth. Verified 2026-08-15.
 #
-# KNOWN LIMITATION: the API returns start_date ("2026-08-15") and start_time
-# ("20:30:00") as SEPARATE fields; REST field_map maps one source key per field,
-# so start times are lost → all events normalize to T00:00:00 (all_midnight
-# quality warning). Dates, names, URLs, venues are correct. Fix requires a
-# scraper feature (field_map value templating e.g. "{{.start_date}}T{{.start_time}}").
+# The API returns start_date ("2026-08-15") and start_time ("20:30:00") as
+# SEPARATE fields; field_map value templating (t_e07780ca) combines them:
+#   start_date: "{{.start_date}}T{{.start_time}}" → "2026-08-15T20:30:00"
+# so real start times are preserved (no all_midnight quality warning).
 #
 # org_id for this source: 19825205758 (Lula Lounge Toronto)
 # Organization match: API unavailable (SEL server not running)
@@ -39,8 +38,8 @@ rest:
   results_field: "events"
   field_map:
     name: "name"
-    start_date: "start_date"
-    end_date: "end_date"
+    start_date: "{{.start_date}}T{{.start_time}}"
+    end_date: "{{.end_date}}T{{.end_time}}"
     url: "url"
     location: "primary_venue.name"
     image: "image.url"

@@ -3,6 +3,7 @@ package scraper
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -412,6 +413,17 @@ type RestConfig struct {
 	URLTemplate string `yaml:"url_template" json:"url_template"`
 	// TimeoutMs is the HTTP request timeout in milliseconds. 0 = use default.
 	TimeoutMs int `yaml:"timeout_ms" json:"timeout_ms"`
+	// Method is the HTTP method for the request. Supported values: "GET"
+	// (default) and "POST". Only used by the REST extractor.
+	Method string `yaml:"method,omitempty" json:"method,omitempty"`
+	// Body is the raw request body string. Only sent when Method is "POST"
+	// (typically a JSON object describing the query window). Ignored for GET.
+	Body string `yaml:"body,omitempty" json:"body,omitempty"`
+	// ContentType is the value of the Content-Type request header. Defaults to
+	// "application/json" when empty. Only relevant when a body is sent. Note:
+	// a Content-Type set in Headers takes precedence over this field (headers
+	// are applied after the injected Content-Type).
+	ContentType string `yaml:"content_type,omitempty" json:"content_type,omitempty"`
 	// Headers are extra HTTP headers sent with every request.
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	// FieldMap maps RawEvent field names (keys) to source JSON field names
@@ -419,6 +431,14 @@ type RestConfig struct {
 	// location, description. When empty, field names are used directly as-is
 	// (identity mapping using the RawEvent Go field names).
 	FieldMap map[string]string `yaml:"field_map,omitempty" json:"field_map,omitempty"`
+	// Flatten enables nested-result flattening for object-mode responses. When
+	// true and results_field resolves to a JSON object (rather than a flat
+	// array), the extractor walks the subtree depth-first and collects every
+	// array-of-objects leaf (e.g. Leap/Showclix
+	// events_by_month.<month>.dates.<day>[]). Key iteration is sorted for
+	// deterministic ordering. When false (default), results_field must resolve
+	// to a flat array or the page errors.
+	Flatten bool `yaml:"flatten,omitempty" json:"flatten,omitempty"`
 }
 
 // GetURLs returns the list of entry-point URLs for this source.
@@ -628,6 +648,15 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 				if _, err := template.New("url").Option("missingkey=error").Parse(t); err != nil {
 					errs = append(errs, fmt.Sprintf("rest.url_template: invalid Go template: %v", err))
 				}
+			}
+			if m := cfg.REST.Method; m != "" && m != http.MethodGet && m != http.MethodPost {
+				errs = append(errs, fmt.Sprintf("rest.method: unsupported method %q (supported: GET, POST)", m))
+			}
+			if cfg.REST.Body != "" && cfg.REST.Method != http.MethodPost {
+				warnings = append(warnings, "rest.body: body is ignored unless rest.method is POST")
+			}
+			if cfg.REST.Flatten && cfg.REST.ResultsField == "." {
+				warnings = append(warnings, `rest.flatten: flatten is ignored when rest.results_field is "." (bare-array mode)`)
 			}
 		}
 	}
