@@ -4,8 +4,8 @@ name: "eventbrite-tpl-programs"
 #
 # org_id: 72000428503 (TPL Programs — Toronto Public Library)
 # Organization match: API unavailable (SEL server not running)
-# NOTE: currently only 1 upcoming event on Eventbrite (mid-August lull);
-# keep enabled:false until >= 3 upcoming events validate.
+# NOTE: verified 2026-08-15 — only 1 upcoming event on Eventbrite (mid-August
+# lull); keep enabled:false until >= 3 upcoming events validate.
 url: "https://www.eventbrite.ca/o/tpl-programs-72000428503"
 tier: 3
 schedule: "daily"
@@ -20,8 +20,8 @@ rest:
   results_field: "events"
   field_map:
     name: "name"
-    start_date: "start_date"
-    end_date: "end_date"
+    start_date: "{{.start_date}}T{{.start_time}}"
+    end_date: "{{.end_date}}T{{.end_time}}"
     url: "url"
     location: "primary_venue.name"
     image: "image.url"

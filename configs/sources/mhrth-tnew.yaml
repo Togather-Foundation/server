@@ -1,7 +1,7 @@
 name: "mhrth-tnew"
-# DISABLED — engine now supports POST + nested-array flattening (t_e2df1749,
-# t_d2875da0); kept disabled pending a live dry-run to validate the
-# performance-level field_map against the endpoint.
+# ENABLED — validated live 2026-08-15 with the POST + flatten engine support
+# (t_e2df1749, t_d2875da0): dry-run returned 102 performances across 77
+# productions with correct RFC3339 dates and ticket URLs.
 #
 # API DISCOVERED (2026-08-15, task t_88b37fea): the shared ticketing platform
 # behind Massey Hall / Roy Thomson Hall / Allied Music Centre is Tessitura TNEW
@@ -24,10 +24,8 @@ name: "mhrth-tnew"
 # is an event. With results_field: productions + flatten: true, the extractor
 # descends into the productions wrapper array and collects the nested
 # performances[] leaves as the event list (the production wrappers are not
-# events). field_map below targets the performance leaf dicts.
-#
-# Blocker status: the Tier 2 intercept fallback was never validated (no headless
-# browser on the worker box); the Tier 3 REST path below is the supported route.
+# events). field_map below targets the performance leaf dicts. description is a
+# production-level field absent from performance leaves and resolves empty.
 #
 # Existing coverage: roy-thomson-hall.yaml + roy-thomson-massey-hall.yaml
 # (Tier 2 headless, .c-card--event selectors) cover RTH + Massey; nothing
@@ -38,7 +36,7 @@ schedule: "daily"
 trust_level: 8
 license: "CC0-1.0"
 domain: music
-enabled: false
+enabled: true
 rest:
   endpoint: "https://mass-tnew-prod.tnhs.cloud/api/products/productionseasons"
   method: POST
@@ -48,14 +46,6 @@ rest:
   results_field: "productions"
   flatten: true
   field_map:
-    # NOTE: field_map below is best-guess for the performance leaf dicts —
-    # validate against a live request before enabling. description/image are
-    # production-level fields absent from performance leaves and will resolve
-    # empty until a per-performance mapping is confirmed.
     name: "performanceTitle"
     start_date: "iso8601DateString"
     url: "actionUrl"
-    # NOTE: placeholder field names below are best-guess — the response shape is
-    # verified but the performance leaf dicts may lack production-level keys
-    # (e.g. description). Validate against a live request before enabling.
-    description: "description"
