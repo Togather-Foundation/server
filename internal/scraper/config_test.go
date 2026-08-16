@@ -1928,6 +1928,62 @@ func TestValidateConfig_RESTMethod(t *testing.T) {
 	}
 }
 
+// TestValidateConfig_RESTBodyWarning verifies the non-fatal warnings for body
+// without POST and flatten with bare-array results_field.
+func TestValidateConfig_RESTBodyWarning(t *testing.T) {
+	t.Parallel()
+
+	base := func(method string) SourceConfig {
+		return SourceConfig{
+			Name:       "REST Body Warning Source",
+			URL:        "https://example.com",
+			Tier:       3,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+			REST: &RestConfig{
+				Endpoint:     "https://api.example.com/events",
+				ResultsField: "results",
+				Method:       method,
+				Body:         `{"window":"2y"}`,
+			},
+		}
+	}
+
+	tests := []struct {
+		name     string
+		method   string
+		wantWarn []string
+	}{
+		{name: "body with explicit GET warns", method: "GET", wantWarn: []string{"rest.body: body is ignored unless rest.method is POST"}},
+		{name: "body with empty method (default GET) warns", method: "", wantWarn: []string{"rest.body: body is ignored unless rest.method is POST"}},
+		{name: "body with POST does not warn", method: "POST"},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			warnings, err := ValidateConfigWithWarnings(base(tt.method))
+			require.NoError(t, err)
+			for _, want := range tt.wantWarn {
+				assert.Contains(t, warnings, want)
+			}
+		})
+	}
+
+	t.Run("flatten with bare array results_field warns", func(t *testing.T) {
+		t.Parallel()
+		cfg := base("POST")
+		cfg.REST.ResultsField = "."
+		cfg.REST.Body = ""
+		cfg.REST.Flatten = true
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		assert.Contains(t, warnings, `rest.flatten: flatten is ignored when rest.results_field is "." (bare-array mode)`)
+	})
+}
+
 // --------------------------------------------------------------------------
 // InterceptConfig validation (srv-enisd)
 // --------------------------------------------------------------------------

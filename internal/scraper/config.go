@@ -652,7 +652,7 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 			if m := cfg.REST.Method; m != "" && m != http.MethodGet && m != http.MethodPost {
 				errs = append(errs, fmt.Sprintf("rest.method: unsupported method %q (supported: GET, POST)", m))
 			}
-			if cfg.REST.Body != "" && cfg.REST.Method != "" && cfg.REST.Method != http.MethodPost {
+			if cfg.REST.Body != "" && cfg.REST.Method != http.MethodPost {
 				warnings = append(warnings, "rest.body: body is ignored unless rest.method is POST")
 			}
 			if cfg.REST.Flatten && cfg.REST.ResultsField == "." {
