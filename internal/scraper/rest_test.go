@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -1071,6 +1072,143 @@ func TestRestExtract_FlattenWrapperArrayDescends(t *testing.T) {
 	assert.Equal(t, "Perf C", got[2].Name)
 }
 
+// TestRestExtract_FlattenFlatArrayIsGraceful verifies flatten: true on an
+// ordinary flat array (results_field resolving directly to the array) collects
+// the events unchanged — flatten is a superset, not a replacement.
+func TestRestExtract_FlattenFlatArrayIsGraceful(t *testing.T) {
+	t.Parallel()
+
+	events := []map[string]any{
+		sampleEvent("one", "Flat Event One", "2026-04-01T19:00:00Z", ""),
+		sampleEvent("two", "Flat Event Two", "2026-04-02T19:00:00Z", ""),
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, events, ""))
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "flatten-flat-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "results",
+			NextField:    "next",
+			Flatten:      true,
+			FieldMap: map[string]string{
+				"name": "name",
+			},
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 2, "flat array under flatten must yield the same events")
+	assert.Equal(t, "Flat Event One", got[0].Name)
+	assert.Equal(t, "Flat Event Two", got[1].Name)
+}
+
+// TestRestExtract_FlattenEmptyLeafArray verifies an empty day/month array is a
+// clean no-op — it contributes zero events and does not error.
+func TestRestExtract_FlattenEmptyLeafArray(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(`{
+		"events_by_month": {
+			"2026-08": {
+				"dates": {
+					"01": [],
+					"02": [{"title": "Event B", "start": "2026-08-02T20:00:00Z"}]
+				}
+			}
+		}
+	}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "flatten-empty-leaf-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "events_by_month",
+			NextField:    "next",
+			Flatten:      true,
+			FieldMap: map[string]string{
+				"name":       "title",
+				"start_date": "start",
+			},
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 1, "empty leaf array must contribute zero events")
+	assert.Equal(t, "Event B", got[0].Name)
+}
+
+// TestRestExtract_FlattenPagination verifies flatten and next-field pagination
+// compose: each page's nested object is flattened independently and pages are
+// concatenated.
+func TestRestExtract_FlattenPagination(t *testing.T) {
+	t.Parallel()
+
+	page1 := []byte(`{
+		"events_by_month": {"2026-08": {"dates": {"15": [{"title": "Page1 Event", "start": "2026-08-15T20:00:00Z"}]}}},
+		"next": "__NEXT__"
+	}`)
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/page1":
+			b := bytes.ReplaceAll(page1, []byte("__NEXT__"), []byte(srv.URL+"/page2"))
+			_, _ = w.Write(b)
+		case "/page2":
+			body := []byte(`{
+				"events_by_month": {"2026-09": {"dates": {"01": [{"title": "Page2 Event", "start": "2026-09-01T20:00:00Z"}]}}}
+			}`)
+			_, _ = w.Write(body)
+		}
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "flatten-pagination-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL + "/page1",
+			ResultsField: "events_by_month",
+			NextField:    "next",
+			Flatten:      true,
+			FieldMap: map[string]string{
+				"name":       "title",
+				"start_date": "start",
+			},
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	got, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	require.Len(t, got, 2, "both pages' flattened events must be concatenated")
+	assert.Equal(t, "Page1 Event", got[0].Name)
+	assert.Equal(t, "Page2 Event", got[1].Name)
+}
+
 // --------------------------------------------------------------------------
 // POST method + body tests (t_e2df1749)
 // --------------------------------------------------------------------------
@@ -1148,6 +1286,76 @@ func TestRestExtract_GETDefaultNoBody(t *testing.T) {
 	assert.Empty(t, gotBody, "GET request must send no body")
 }
 
+// TestRestExtract_POSTDefaultsContentType verifies Content-Type defaults to
+// application/json when content_type is not configured.
+func TestRestExtract_POSTDefaultsContentType(t *testing.T) {
+	t.Parallel()
+
+	var gotContentType string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, []map[string]any{sampleEvent("slug", "Event", "2026-04-01T19:00:00Z", "")}, ""))
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "post-default-ct-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "results",
+			NextField:    "next",
+			Method:       http.MethodPost,
+			Body:         `{}`,
+			// ContentType empty → defaults to application/json.
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	assert.Equal(t, "application/json", gotContentType, "empty content_type must default to application/json")
+}
+
+// TestRestExtract_BodyIgnoredOnGET verifies a configured body is not sent when
+// method is GET (body only attaches for POST).
+func TestRestExtract_BodyIgnoredOnGET(t *testing.T) {
+	t.Parallel()
+
+	var gotMethod, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, []map[string]any{sampleEvent("slug", "Event", "2026-04-01T19:00:00Z", "")}, ""))
+	}))
+	defer srv.Close()
+
+	source := SourceConfig{
+		Name:     "get-with-body-source",
+		URL:      "https://example.com",
+		Tier:     3,
+		MaxPages: 10,
+		REST: &RestConfig{
+			Endpoint:     srv.URL,
+			ResultsField: "results",
+			NextField:    "next",
+			Method:       http.MethodGet,
+			Body:         `{"should":"not be sent"}`,
+		},
+	}
+
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err := extractor.Extract(t.Context(), source, &http.Client{})
+	require.NoError(t, err)
+	assert.Equal(t, http.MethodGet, gotMethod)
+	assert.Empty(t, gotBody, "GET request must not attach the configured body")
+}
+
 // --------------------------------------------------------------------------
 // field_map value templating tests (t_e07780ca)
 // --------------------------------------------------------------------------
@@ -1211,6 +1419,32 @@ func TestRestExtract_FieldMapTemplatingMissingKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Equal(t, "", got[0].StartDate, "missing template key must render empty, not panic")
+}
+
+// TestFieldMapResolver_InvalidTemplateErrors verifies a malformed template in
+// field_map fails config resolution (Extract returns an error), rather than
+// being silently accepted and mis-rendered at runtime.
+func TestFieldMapResolver_InvalidTemplateErrors(t *testing.T) {
+	t.Parallel()
+
+	_, err := newFieldMapResolver(map[string]string{"start_date": "{{.bad"})
+	require.Error(t, err, "malformed template must fail resolver construction")
+	assert.Contains(t, err.Error(), "start_date", "error must identify the offending field_map key")
+
+	// End-to-end: Extract fails fast with the same error.
+	events := []map[string]any{
+		{"title": "X", "start_date": "2026-08-15"},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(showpassPage(t, events, ""))
+	}))
+	defer srv.Close()
+
+	source := restSource(srv.URL, map[string]string{"start_date": "{{.bad"}, "", 10)
+	extractor := NewRestExtractor(zerolog.Nop())
+	_, err = extractor.Extract(t.Context(), source, &http.Client{})
+	require.Error(t, err, "invalid field_map template must fail the whole extract")
 }
 
 func TestFieldMapResolver_Templating(t *testing.T) {

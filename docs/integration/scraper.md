@@ -522,10 +522,16 @@ Used when a site exposes a paginated JSON REST API (e.g. Showpass).
    When `results_field` is `"."`, the entire response body is treated as a bare JSON
    array (`[{...}, {...}]`) — used for APIs that return arrays without an envelope object
    (e.g. Showclix S3 buckets). Bare array mode has no pagination support.
-   When `flatten: true` is set, `results_field` may instead resolve to an *object*
-   whose leaves are arrays of event objects (e.g. Leap's
-   `events_by_month.<month>.dates.<day>[]`); the extractor walks the subtree
-   depth-first and collects every array-of-objects leaf in sorted-key order.
+    When `flatten: true` is set, `results_field` may instead resolve to an *object*
+    whose leaves are arrays of event objects (e.g. Leap's
+    `events_by_month.<month>.dates.<day>[]`); the extractor walks the subtree
+    depth-first and collects every array-of-objects leaf in sorted-key order.
+    Wrapper arrays (e.g. Tessitura TNEW's `productions[]`, where each production
+    carries a nested `performances[]`) are descended into — the inner arrays, not
+    the wrapper objects, become the events. Limitation: feeds whose *event*
+    objects carry array-valued fields (e.g. `images[]`, `lineup[]`,
+    `performers[]`) are not cleanly flattenable — the leaf heuristic may
+    misclassify such arrays; prefer a flat `results_field` for those feeds.
 3. Map each item to a `RawEvent` via `field_map` (or identity mapping if none)
 4. If `url_template` is set, render the Go `text/template` with the raw item map to
    produce each event's canonical URL

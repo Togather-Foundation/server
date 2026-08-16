@@ -367,15 +367,24 @@ func (r *fieldMapResolver) resolve(item map[string]any, key, identityKey string,
 // dicts) from wrapper arrays that must be descended into (e.g. Tessitura
 // TNEW's productions[] where each production carries a performances[] array —
 // the performances, not the productions, are the events). Arrays that do not
-// meet the terminal rule are recursed into element-by-element. If the subtree
-// contains scalar values alongside arrays, a warning is logged (the scalars are
-// dropped — they carry no event data).
+// meet the terminal rule are recursed into element-by-element.
+//
+// Warning behaviour: a Warn is logged only for a genuine mixed shape — scalar
+// values encountered outside a wrapper-array descent, where a results object
+// interleaves scalars with the event arrays (e.g. {"meta": ..., "events": [...]}).
+// Scalars inside objects reached via a wrapper-array descent (e.g. a TNEW
+// production's productionTitle/description metadata) are expected and only
+// traced at Debug, since the wrapper's own scalar fields are dropped by design.
+// Limitation: feeds whose event objects carry array-valued fields (images[],
+// lineup[], performers[]) are not cleanly flattenable — the terminal rule may
+// misclassify such arrays; see docs/integration/scraper.md.
 func flattenResults(v any, logger zerolog.Logger) []map[string]any {
 	var out []map[string]any
-	var sawScalar bool
+	var sawMixedScalar bool
+	var sawWrapperScalar bool
 
-	var walk func(any)
-	walk = func(node any) {
+	var walk func(node any, inWrapper bool)
+	walk = func(node any, inWrapper bool) {
 		switch n := node.(type) {
 		case map[string]any:
 			keys := make([]string, 0, len(n))
@@ -384,13 +393,13 @@ func flattenResults(v any, logger zerolog.Logger) []map[string]any {
 			}
 			sort.Strings(keys)
 			for _, k := range keys {
-				walk(n[k])
+				walk(n[k], inWrapper)
 			}
 		case []any:
 			// An array is a terminal event list iff every element is an object
 			// and no element object contains an array-valued field. Wrapper
 			// arrays (objects containing further arrays) are descended into.
-			terminal := len(n) > 0
+			terminal := true
 			for _, el := range n {
 				obj, ok := el.(map[string]any)
 				if !ok {
@@ -413,17 +422,30 @@ func flattenResults(v any, logger zerolog.Logger) []map[string]any {
 				}
 				return
 			}
+			// Non-terminal wrapper array: its element objects carry further
+			// arrays. Scalar fields inside those elements are wrapper metadata
+			// (dropped by design), so descend with inWrapper=true.
+			logger.Debug().
+				Int("elements", len(n)).
+				Msg("rest: flatten: descending into wrapper array (elements contain nested arrays)")
 			for _, el := range n {
-				walk(el)
+				walk(el, true)
 			}
 		default:
-			sawScalar = true
+			if inWrapper {
+				sawWrapperScalar = true
+			} else {
+				sawMixedScalar = true
+			}
 		}
 	}
-	walk(v)
+	walk(v, false)
 
-	if sawScalar {
-		logger.Warn().Msg("rest: flatten: results object contained scalar values alongside arrays — scalars ignored")
+	switch {
+	case sawMixedScalar:
+		logger.Warn().Msg("rest: flatten: results object mixes scalar values with event arrays — scalars ignored")
+	case sawWrapperScalar:
+		logger.Debug().Msg("rest: flatten: scalar fields inside wrapper objects ignored")
 	}
 	return out
 }

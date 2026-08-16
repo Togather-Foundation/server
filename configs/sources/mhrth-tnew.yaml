@@ -55,4 +55,7 @@ rest:
     name: "performanceTitle"
     start_date: "iso8601DateString"
     url: "actionUrl"
+    # NOTE: placeholder field names below are best-guess — the response shape is
+    # verified but the performance leaf dicts may lack production-level keys
+    # (e.g. description). Validate against a live request before enabling.
     description: "description"

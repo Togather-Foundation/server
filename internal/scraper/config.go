@@ -413,8 +413,6 @@ type RestConfig struct {
 	URLTemplate string `yaml:"url_template" json:"url_template"`
 	// TimeoutMs is the HTTP request timeout in milliseconds. 0 = use default.
 	TimeoutMs int `yaml:"timeout_ms" json:"timeout_ms"`
-	// Headers are extra HTTP headers sent with every request.
-	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	// Method is the HTTP method for the request. Supported values: "GET"
 	// (default) and "POST". Only used by the REST extractor.
 	Method string `yaml:"method,omitempty" json:"method,omitempty"`
@@ -422,8 +420,12 @@ type RestConfig struct {
 	// (typically a JSON object describing the query window). Ignored for GET.
 	Body string `yaml:"body,omitempty" json:"body,omitempty"`
 	// ContentType is the value of the Content-Type request header. Defaults to
-	// "application/json" when empty. Only relevant when a body is sent.
+	// "application/json" when empty. Only relevant when a body is sent. Note:
+	// a Content-Type set in Headers takes precedence over this field (headers
+	// are applied after the injected Content-Type).
 	ContentType string `yaml:"content_type,omitempty" json:"content_type,omitempty"`
+	// Headers are extra HTTP headers sent with every request.
+	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 	// FieldMap maps RawEvent field names (keys) to source JSON field names
 	// (values). Supported keys: name, start_date, end_date, url, image,
 	// location, description. When empty, field names are used directly as-is
@@ -649,6 +651,12 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 			}
 			if m := cfg.REST.Method; m != "" && m != http.MethodGet && m != http.MethodPost {
 				errs = append(errs, fmt.Sprintf("rest.method: unsupported method %q (supported: GET, POST)", m))
+			}
+			if cfg.REST.Body != "" && cfg.REST.Method != "" && cfg.REST.Method != http.MethodPost {
+				warnings = append(warnings, "rest.body: body is ignored unless rest.method is POST")
+			}
+			if cfg.REST.Flatten && cfg.REST.ResultsField == "." {
+				warnings = append(warnings, `rest.flatten: flatten is ignored when rest.results_field is "." (bare-array mode)`)
 			}
 		}
 	}
