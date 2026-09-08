@@ -802,7 +802,6 @@ FEDERATION_SYNC_ENABLED=false
 
 # Feature Flags
 ENABLE_VECTOR_SEARCH=false
-ENABLE_AUTO_RECONCILIATION=false
 `,
 		currentTimestamp(),
 		cfg.DatabaseURL,
