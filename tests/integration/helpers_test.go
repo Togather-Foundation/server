@@ -171,13 +171,25 @@ func cleanupShared() {
 }
 
 // testConfig wraps testhelpers.TestConfig and adds the integration-specific
-// DeveloperConfig (short UsageFlushTimeout to prevent CI hangs).
+// DeveloperConfig (short UsageFlushTimeout to prevent CI hangs) and enables
+// Artsdata reconciliation so the reconciliation workers are registered in the
+// River client. Workers are NOT started in this package (see setupTestEnv), but
+// registering them is required for the events handler to enqueue reconciliation
+// jobs — River's Insert rejects kinds that aren't in the Workers bundle.
 func testConfig(dbURL string) config.Config {
 	cfg := testhelpers.TestConfig(dbURL)
 	cfg.Developer = config.DeveloperConfig{
 		UsageFlushTimeoutSeconds: 2, // Short timeout so CI doesn't hang if pool is busy.
 	}
 	cfg.Auth.TokenExchangeJWTExpiry = 5 * time.Minute
+	cfg.Artsdata = config.ArtsdataConfig{
+		Endpoint:        "http://localhost:0/recon", // Unused: workers never run in this package.
+		Enabled:         true,
+		RateLimitPerSec: 100,
+		TimeoutSeconds:  10,
+		CacheTTLDays:    30,
+		FailureTTLDays:  7,
+	}
 	return cfg
 }
 
