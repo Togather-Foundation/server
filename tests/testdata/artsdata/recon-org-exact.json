@@ -1,0 +1,199 @@
+{
+  "name": "recon-org-exact",
+  "kind": "recon",
+  "provenance": "live-recorded",
+  "recorded_at": "2026-09-08T20:47:56Z",
+  "request": {
+    "method": "POST",
+    "url": "https://api.artsdata.ca/recon",
+    "path": "/recon",
+    "accept": "application/json",
+    "content_type": "application/x-www-form-urlencoded",
+    "body": "queries=%7B%22q0%22%3A%7B%22query%22%3A%22Canadian+Opera+Company%22%2C%22type%22%3A%22schema%3AOrganization%22%7D%7D",
+    "queries": {
+      "q0": {
+        "query": "Canadian Opera Company",
+        "type": "schema:Organization"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "body": {
+      "q0": {
+        "result": [
+          {
+            "id": "K2-5143",
+            "name": "Canadian Opera Company",
+            "description": "",
+            "score": 1020.7109451293945,
+            "match": true,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K10-30",
+            "name": "Canadian Stage Company",
+            "description": "",
+            "score": 6.090598106384277,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-6616",
+            "name": "Renaissance Canadian Theatre Company",
+            "description": "",
+            "score": 5.898018836975098,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-5344",
+            "name": "Great Canadian Theatre Company",
+            "description": "theatre company in Ottawa, Ontario, Canada",
+            "score": 5.487174987792969,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K5-962",
+            "name": "fu-GEN Asian Canadian Theatre Company",
+            "description": "",
+            "score": 4.579710006713867,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-6405",
+            "name": "Opera Atelier",
+            "description": "organisme d’opéra basé à Toronto, Ontario",
+            "score": 4.228174209594727,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-5145",
+            "name": "Tapestry Opera",
+            "description": "",
+            "score": 4.094089984893799,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-5141",
+            "name": "Opera 5",
+            "description": "",
+            "score": 4.094089984893799,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-5133",
+            "name": "Manitoba Opera",
+            "description": "",
+            "score": 3.7384305000305176,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-5132",
+            "name": "Edmonton Opera",
+            "description": "Canadian opera company",
+            "score": 3.7384305000305176,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-5128",
+            "name": "Saskatoon Opera",
+            "description": "",
+            "score": 3.7384305000305176,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-5127",
+            "name": "Opera Kelowna",
+            "description": "",
+            "score": 3.7384305000305176,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          },
+          {
+            "id": "K2-5125",
+            "name": "Calgary Opera",
+            "description": "Canadian opera company",
+            "score": 3.7384305000305176,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Organization",
+                "name": "Organization"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

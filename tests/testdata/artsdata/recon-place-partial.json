@@ -1,0 +1,199 @@
+{
+  "name": "recon-place-partial",
+  "kind": "recon",
+  "provenance": "live-recorded",
+  "recorded_at": "2026-09-08T20:47:53Z",
+  "request": {
+    "method": "POST",
+    "url": "https://api.artsdata.ca/recon",
+    "path": "/recon",
+    "accept": "application/json",
+    "content_type": "application/x-www-form-urlencoded",
+    "body": "queries=%7B%22q0%22%3A%7B%22query%22%3A%22Art+Gallery+of+Ontario%22%2C%22type%22%3A%22schema%3APlace%22%7D%7D",
+    "queries": {
+      "q0": {
+        "query": "Art Gallery of Ontario",
+        "type": "schema:Place"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "body": {
+      "q0": {
+        "result": [
+          {
+            "id": "K2-5541",
+            "name": "Capitol Theatre Art Gallery",
+            "description": "",
+            "score": 5.262917518615723,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K11-70",
+            "name": "Klondike Institute of Art \u0026 Culture",
+            "description": "",
+            "score": 4.214789867401123,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K4-43",
+            "name": "Théâtre du Nouvel-Ontario",
+            "description": "",
+            "score": 3.7899391651153564,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-5526",
+            "name": "Hearth Gallery",
+            "description": "performing arts centre",
+            "score": 3.747875452041626,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K11-9",
+            "name": "National Gallery of Canada",
+            "description": "",
+            "score": 3.6383631229400635,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K11-71",
+            "name": "ODD Gallery – Dënäkär Zho",
+            "description": "",
+            "score": 3.278273820877075,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K11-181",
+            "name": "The Cultch Gallery",
+            "description": "art gallery within the Cultch",
+            "score": 3.0459439754486084,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-7337",
+            "name": "Humboldt and District Gallery",
+            "description": "cultural venues in Humboldt, Saskatchewan, Canada",
+            "score": 2.949633836746216,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-6119",
+            "name": "Blackout Art Society",
+            "description": "",
+            "score": 2.7957355976104736,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K5-863",
+            "name": "Écart - art actuel",
+            "description": "",
+            "score": 2.7957355976104736,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K5-360",
+            "name": "Galerie Rose-Art",
+            "description": "",
+            "score": 2.7957355976104736,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-6879",
+            "name": "Key City Theatre Gallery Stage",
+            "description": "cabaret-style performance hall inside the Key City Theatre in Cranbrook, BC, Canada",
+            "score": 2.727267026901245,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-5207",
+            "name": "The Bank Art House",
+            "description": "performing arts building in Welland, Ontario, Canada",
+            "score": 2.707336902618408,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

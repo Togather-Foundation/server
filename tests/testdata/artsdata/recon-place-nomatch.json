@@ -1,0 +1,56 @@
+{
+  "name": "recon-place-nomatch",
+  "kind": "recon",
+  "provenance": "live-recorded",
+  "recorded_at": "2026-09-08T20:47:54Z",
+  "request": {
+    "method": "POST",
+    "url": "https://api.artsdata.ca/recon",
+    "path": "/recon",
+    "accept": "application/json",
+    "content_type": "application/x-www-form-urlencoded",
+    "body": "queries=%7B%22q0%22%3A%7B%22query%22%3A%22Definitely+No+Such+Venue+Xyzzy%22%2C%22type%22%3A%22schema%3APlace%22%7D%7D",
+    "queries": {
+      "q0": {
+        "query": "Definitely No Such Venue Xyzzy",
+        "type": "schema:Place"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "body": {
+      "q0": {
+        "result": [
+          {
+            "id": "K2-5822",
+            "name": "The Venue",
+            "description": "",
+            "score": 5.25942325592041,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-5596",
+            "name": "Royal Canadian Legion Calgary (Alberta No. 1 Branch)",
+            "description": "Legion clubhouse in Calgary, Alberta, Canada",
+            "score": 2.2436113357543945,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

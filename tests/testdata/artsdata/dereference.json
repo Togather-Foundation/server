@@ -1,0 +1,62 @@
+{
+  "name": "dereference",
+  "kind": "dereference",
+  "provenance": "live-recorded",
+  "recorded_at": "2026-09-08T20:47:57Z",
+  "request": {
+    "method": "GET",
+    "url": "https://kg.artsdata.ca/resource/K11-24",
+    "path": "/resource/K11-24",
+    "accept": "application/ld+json",
+    "body": ""
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/ld+json; charset=utf-8",
+    "body": {
+      "@context": "https://kg.artsdata.ca/context.jsonld",
+      "id": "http://kg.artsdata.ca/resource/K11-24",
+      "type": [
+        "Place",
+        "MusicVenue"
+      ],
+      "sameAs": [
+        "http://www.wikidata.org/entity/Q1122776",
+        "https://www.facebook.com/soundboardTO/",
+        "https://en.wikipedia.org/wiki/Massey_Hall",
+        "https://twitter.com/masseyhall",
+        "https://www.youtube.com/user/liveatmasseyhall",
+        "https://www.instagram.com/masseyhall/",
+        "https://fr.wikipedia.org/wiki/Massey_Hall"
+      ],
+      "address": {
+        "id": "http://kg.artsdata.ca/resource/K11-24#PostalAddress",
+        "type": "PostalAddress",
+        "addressCountry": {
+          "@none": "CA"
+        },
+        "addressLocality": {
+          "@none": "Toronto"
+        },
+        "addressRegion": {
+          "@none": "ON"
+        },
+        "postalCode": "M5B 1T7",
+        "streetAddress": {
+          "@none": "178 Victoria St"
+        }
+      },
+      "maximumAttendeeCapacity": {
+        "type": "xsd:integer",
+        "@value": "2752"
+      },
+      "name": {
+        "fr": "Massey Hall",
+        "en": "Massey Hall",
+        "@none": "Massey Hall"
+      },
+      "url": "https://www.masseyhall.com",
+      "http://dbpedia.org/ontology/timeZone": "America/Toronto"
+    }
+  }
+}

@@ -1,0 +1,186 @@
+{
+  "name": "recon-place-exact",
+  "kind": "recon",
+  "provenance": "live-recorded",
+  "recorded_at": "2026-09-08T20:47:52Z",
+  "request": {
+    "method": "POST",
+    "url": "https://api.artsdata.ca/recon",
+    "path": "/recon",
+    "accept": "application/json",
+    "content_type": "application/x-www-form-urlencoded",
+    "body": "queries=%7B%22q0%22%3A%7B%22query%22%3A%22Massey+Hall%22%2C%22type%22%3A%22schema%3APlace%22%7D%7D",
+    "queries": {
+      "q0": {
+        "query": "Massey Hall",
+        "type": "schema:Place"
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/json; charset=utf-8",
+    "body": {
+      "q0": {
+        "result": [
+          {
+            "id": "K11-24",
+            "name": "Massey Hall",
+            "description": "",
+            "score": 879.8117637634277,
+            "match": true,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K11-24",
+            "name": "Ireland Park",
+            "description": "",
+            "score": 6.237634181976318,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-5486",
+            "name": "Massey Theatre",
+            "description": "proscenium performing arts theatre in New Westminster, British Columbia, Canada",
+            "score": 5.330963134765625,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-5334",
+            "name": "TD Music Hall [formerly known as Massey Hall]",
+            "description": "",
+            "score": 5.304579734802246,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-200",
+            "name": "Auditorium Massey-Vanier",
+            "description": "salle de spectacle, dont des pièces de théâtre, au Québec",
+            "score": 4.33253812789917,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-6082",
+            "name": "Darke Hall",
+            "description": "performance hall inside the same-named building in Regina, Saskatchewan, Canada",
+            "score": 3.3473763465881348,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-5773",
+            "name": "Partridge Hall",
+            "description": "performance hall inside the FirstOntario Performing Arts Centre in St. Catharines, Ontario, Canada",
+            "score": 3.292562246322632,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K11-84",
+            "name": "Heritage Hall",
+            "description": "",
+            "score": 3.292562246322632,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K11-37",
+            "name": "Cadogan Hall",
+            "description": "",
+            "score": 3.292562246322632,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K11-36",
+            "name": "Saffron Hall",
+            "description": "",
+            "score": 3.292562246322632,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-5727",
+            "name": "Meridian Hall",
+            "description": "performing arts building in Toronto, Ontario, Canada",
+            "score": 3.292562246322632,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          },
+          {
+            "id": "K2-5323",
+            "name": "Aeolian Hall",
+            "description": "concert hall located within a historic town hall building in London, Ontario, Canada",
+            "score": 3.292562246322632,
+            "match": false,
+            "type": [
+              {
+                "id": "http://schema.org/Place",
+                "name": "Place"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
