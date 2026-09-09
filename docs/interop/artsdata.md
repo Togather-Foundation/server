@@ -495,6 +495,108 @@ Confidence thresholds are hardcoded: >=0.95 with `match=true` → `auto_high`, >
 6. Keep local `@id` stable and never equal to the page `url`.
 7. When contributing via Databus: no `kg.artsdata.ca` subjects; no ontologies; validate with SHACL.
 
+## 13) Go-Live Enablement Runbook
+
+How to turn Artsdata reconciliation on in a deployed environment (staging → production) and roll it back safely. Scope: reconciliation + enrichment only — no minting is performed.
+
+### 13.1 Prerequisites
+
+- Code ≥ the reconciliation/enrichment pipeline (§8) plus `server reconcile stats` (this ticket).
+- `ARTSDATA_ENABLED` / `ARTSDATA_ENDPOINT` are already forwarded to the server container by `deploy/docker/docker-compose.yml` (prior work t_fcaae899). You must set them in the **deployed environment file**, not just `.env.example`:
+  - staging: `/opt/togather/.env.staging`
+  - production: `/opt/togather/.env.production`
+- All vars: `ARTSDATA_ENABLED`, `ARTSDATA_ENDPOINT`, `ARTSDATA_TIMEOUT_SECONDS`, `ARTSDATA_RATE_LIMIT_PER_SEC`, `ARTSDATA_CACHE_TTL_DAYS`, `ARTSDATA_FAILURE_TTL_DAYS` (see §8 env table for defaults).
+
+### 13.2 Flip it on
+
+```bash
+# 1. Add/update the vars in the server's environment file (NOT a template):
+ssh deploy@server 'echo "ARTSDATA_ENABLED=true" >> /opt/togather/.env.staging'
+ssh deploy@server 'chmod 600 /opt/togather/.env.staging'
+
+# 2. Deploy (deploy.sh --force-recreate picks up the new values):
+./deploy/scripts/deploy.sh staging --version HEAD
+
+# 3. Confirm the running container actually sees them:
+ssh deploy@server 'docker exec togather-server-blue printenv | grep ARTSDATA'
+#   expected: ARTSDATA_ENABLED=true, ARTSDATA_ENDPOINT=https://api.artsdata.ca/recon
+```
+
+Audit first (`./deploy/scripts/env-audit.sh staging`) if you suspect a var is missing. See [env-management.md](../deploy/env-management.md) for the full variable workflow.
+
+### 13.3 Sanity check
+
+Ingest an event at a known Artsdata venue and watch the server logs for the full pipeline:
+
+1. `starting reconciliation job` (entity_type, entity_id)
+2. `reconciliation completed` (match_count)
+3. `enrichment job enqueued` (identifier_uri) — only for `auto_high` matches
+4. `enrichment started` (identifier_uri)
+5. `enrichment completed` (same_as_stored) — or `enrichment completed – no metadata fields to update` when there is nothing to fill
+
+Log lines live in `internal/jobs/workers.go` (`ReconciliationWorker` / `EnrichmentWorker`). Use `docker logs -f togather-server-blue | grep -E 'reconciliation|enrichment'` to follow them.
+
+### 13.4 Backfill guidance
+
+Existing rows have no `enriched_at` (and no `entity_identifiers`), so:
+
+1. Dry-run first: `server reconcile places --dry-run` and `server reconcile organizations --dry-run` (counts unreconciled, no API calls).
+2. Reconcile in bounded batches: `server reconcile places --limit 100`, `server reconcile organizations --limit 100`. The reconciliation queue is single-worker and rate-limited to ~1 req/s, so backfill is slow by design — be polite to the public API.
+3. Existing venues/orgs enrich **on their next event ingest** (or once reconciled), because `enriched_at` is NULL until an enrichment job runs.
+4. `server reconcile all --force` re-reconciles everything (bypasses cache) — use sparingly.
+
+### 13.5 Verification
+
+```bash
+# Coverage overview (table; --json for scripting):
+server reconcile stats
+#   entity        total    matched    enriched      stale
+#   places        1234         45          20          5
+#   organizations  567         12           3          0
+
+# Inspect the raw reconciliation state:
+#   identifiers (artsdata + transitive sameAs):
+SELECT entity_type, authority_code, identifier_uri, confidence
+FROM entity_identifiers
+WHERE authority_code IN ('artsdata','wikidata','isni','musicbrainz','osm')
+ORDER BY entity_type, authority_code;
+
+#   cache hits/negatives:
+SELECT entity_type, is_negative, COUNT(*) FROM reconciliation_cache GROUP BY 1,2;
+```
+
+> The `enriched`/`stale` columns are **capability-detected**: until the `places.enriched_at` /
+> `organizations.enriched_at` column merges (ticket t_027a1bf2), `server reconcile stats`
+> prints `enriched: n/a (requires enriched_at column, ticket t_027a1bf2)`. `stale` is defined
+> as `enriched_at < now() - ARTSDATA_ENRICH_REFRESH_DAYS` (default 30).
+
+### 13.6 Monitoring
+
+- Log lines above (`starting reconciliation job` … `enrichment completed`) in the standard JSON log stream.
+- Existing River job metrics (reconciliation/enrichment queue lengths, retries, failures) — see `docs/deploy/monitoring.md`.
+- `server scrape failures`-style diagnostics are not applicable; use `server reconcile stats` + the SQL in §13.5 for coverage.
+
+### 13.7 Rollback
+
+```bash
+# 1. Turn it off:
+ssh deploy@server 'sed -i "s/^ARTSDATA_ENABLED=.*/ARTSDATA_ENABLED=false/" /opt/togather/.env.staging'
+./deploy/scripts/deploy.sh staging --version HEAD
+
+# 2. Confirm:
+ssh deploy@server 'docker exec togather-server-blue printenv | grep ARTSDATA_ENABLED'
+```
+
+- Cached rows in `reconciliation_cache` / `entity_identifiers` remain and are harmless — the pipeline simply stops calling Artsdata.
+- To clear them if desired:
+  ```sql
+  DELETE FROM reconciliation_cache;                 -- or WHERE authority_code='artsdata'
+  DELETE FROM entity_identifiers WHERE authority_code='artsdata';
+  -- transitive sameAs rows (wikidata/isni/...) added by enrichment are left in place;
+  -- delete them too if you want a fully clean slate:
+  DELETE FROM entity_identifiers WHERE reconciliation_method = 'enrichment_sameas';
+  ```
+
 ### Web-verified against these Artsdata primary docs (for audit)
 
 Artsdata KG quick links + entry points: https://kg.artsdata.ca/
@@ -513,4 +615,4 @@ Databus constraints + auth modes: https://docs.artsdata.ca/architecture/graph-st
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-09-09

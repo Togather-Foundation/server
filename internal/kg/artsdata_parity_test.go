@@ -34,14 +34,22 @@ func TestReconciliationServiceParity(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, fixtures, "no artsdata fixtures — run ARTSDATA_RECORD=1 go test ./internal/kg/artsdata/ -run TestArtsdataRecord")
 
-	deref := findFixture(fixtures, "dereference")
-	require.NotNil(t, deref, "dereference fixture required")
+	placeDeref := findFixture(fixtures, "dereference")
+	require.NotNil(t, placeDeref, "place dereference fixture required")
+	orgDeref := findFixture(fixtures, "dereference-org")
+	require.NotNil(t, orgDeref, "organization dereference fixture required")
 
 	for _, f := range fixtures {
 		if f.Kind != artsdata.KindRecon {
 			continue
 		}
 		f := f
+		// Route the organization recon to the organization dereference fixture so
+		// the org shape parses through the real client, not the place fixture.
+		deref := placeDeref
+		if q0, ok := f.Request.Queries["q0"]; ok && q0.Type == "schema:Organization" {
+			deref = orgDeref
+		}
 		t.Run(f.Name, func(t *testing.T) {
 			runClassificationReplay(t, f, deref)
 		})
@@ -117,7 +125,7 @@ func runClassificationReplay(t *testing.T, f *artsdata.Fixture, deref *artsdata.
 		// The exact match dereferences the recorded compacted fixture; the client
 		// must parse it and extract the sameAs identifiers.
 		require.NotEmpty(t, matches[0].SameAsURIs, "dereference must extract sameAs from the recorded fixture")
-		assert.Contains(t, matches[0].SameAsURIs, "http://www.wikidata.org/entity/Q1122776")
+		assert.Contains(t, matches[0].SameAsURIs, firstWikidataURI(t, deref))
 	} else {
 		// Partial/no-match: raw score ~3-12 -> normalizeArtsdataScore/15 < 0.8 -> reject.
 		assert.Empty(t, matches, "partial matches must be rejected by classification")
@@ -147,6 +155,21 @@ func findFixture(fixtures []*artsdata.Fixture, name string) *artsdata.Fixture {
 		}
 	}
 	return nil
+}
+
+// firstWikidataURI parses the dereference fixture body and returns the first
+// sameAs URI that points at wikidata.org, so the classification replay can assert
+// the correct authority-specific sameAs link regardless of entity type.
+func firstWikidataURI(t *testing.T, deref *artsdata.Fixture) string {
+	t.Helper()
+	var entity artsdata.EntityData
+	require.NoError(t, json.Unmarshal([]byte(deref.Response.Body), &entity))
+	for _, uri := range artsdata.ExtractSameAsURIs(&entity) {
+		if strings.Contains(uri, "wikidata.org") {
+			return uri
+		}
+	}
+	return ""
 }
 
 // hostRewriteTransport rewrites any outgoing request to the target httptest URL,

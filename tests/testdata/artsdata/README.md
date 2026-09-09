@@ -35,6 +35,7 @@ capture, pending refresh).
 | `recon-place-nomatch` | "Definitely No Such Venue Xyzzy" (schema:Place) | the API returns low-score partials (`match:false`) rather than an empty result |
 | `recon-org-exact` | "Canadian Opera Company" (schema:Organization) | exact: `match:true`, score ~1020, short id `K2-5143` |
 | `dereference` | GET `https://kg.artsdata.ca/resource/K11-24` | 303 → `/entity.jsonld?uri=...` → 200 `application/ld+json` |
+| `dereference-org` | GET `https://kg.artsdata.ca/resource/K2-5143` | 303 → `/entity.jsonld?uri=...` → 200 `application/ld+json` |
 
 Key real-API facts encoded by these fixtures (see `docs/interop/artsdata.md` §3.1, §10):
 
@@ -54,10 +55,19 @@ language maps for names (`{"fr": ..., "en": ..., "@none": ...}`), and `{"@none":
 (method/path/`Accept: application/ld+json`) and that the recorded response parses
 successfully with its fields populated.
 
+**Organizations dereference differently from places** (`dereference-org`):
+
+- `type` is a plain string (`"Organization"`), not an array (`["Place","MusicVenue"]`).
+- `name`/`description` are `en`-only language maps (`{"en": "..."}`) with **no** `@none` key.
+- `sameAs` is a string array (Wikidata + ISNI + Wikipedia).
+- There is **no `address`** and **no `url`** — Artsdata organizations do not carry a
+  `PostalAddress` block, so `EntityData.Address` is nil and the enrichment worker must
+  guard against it (which it does: `entity.Address != nil` in `internal/jobs/workers.go`).
+
 ## Refreshing fixtures
 
 ```bash
-# Re-record from the live API (<=1 rps, ~5 calls). Review the diff before committing.
+# Re-record from the live API (<=1 rps, ~6 calls). Review the diff before committing.
 ARTSDATA_RECORD=1 scripts/agent-run.sh go test ./internal/kg/artsdata/ -run TestArtsdataRecord -count=1
 
 # Re-fetch and diff against the committed fixtures (fails loudly on drift).

@@ -39,7 +39,14 @@ var shortIDPattern = regexp.MustCompile(`^K\d+-\d+$`)
 // recorder follows; the fixture stores the final 200 JSON-LD body.
 const dereferenceURI = "https://kg.artsdata.ca/resource/K11-24"
 
-// corpus is the fixed, small recording corpus (<=4 recon queries + 1 dereference).
+// dereferenceOrgURI is a stable Artsdata resource URI (Canadian Opera Company,
+// the exact-match organization in the recon-org-exact fixture). Organization
+// dereferences return a different shape from places: a plain-string `type`,
+// `en`-only language maps for name/description, a string-array sameAs, and no
+// address/url — so a dedicated fixture exercises that path.
+const dereferenceOrgURI = "https://kg.artsdata.ca/resource/K2-5143"
+
+// corpus is the fixed, small recording corpus (<=4 recon queries + 2 dereferences).
 // Names were chosen against the live API to exercise each score-semantic class:
 //   - "Massey Hall" -> exact match (match:true, score ~880, short ID K11-24)
 //   - "Art Gallery of Ontario" -> partial only (match:false, score ~3-5); note this
@@ -88,6 +95,11 @@ func artsdataCorpus() []corpusEntry {
 			name: "dereference",
 			kind: KindDereference,
 			uri:  dereferenceURI,
+		},
+		{
+			name: "dereference-org",
+			kind: KindDereference,
+			uri:  dereferenceOrgURI,
 		},
 	}
 }
@@ -185,7 +197,25 @@ func runDereferenceReplay(t *testing.T, f *Fixture) {
 
 	// The recorded response is compacted JSON-LD (id/type aliases, language maps,
 	// @none-wrapped address). Assert the client actually populated the fields.
+	// Places and organizations dereference into different shapes, so dispatch on
+	// the fixture name and assert the shape specific to each entity kind.
 	require.NotNil(t, entity)
+	switch f.Name {
+	case "dereference":
+		assertPlaceDereference(t, entity)
+	case "dereference-org":
+		assertOrgDereference(t, entity)
+	default:
+		t.Fatalf("unknown dereference fixture %q", f.Name)
+	}
+	assert.NotEmpty(t, entity.RawJSON, "raw response must be preserved")
+}
+
+// assertPlaceDereference asserts the Massey Hall (Place/MusicVenue) shape: an
+// array `type`, a full language-map name (preferring @none), and a @none-wrapped
+// address block.
+func assertPlaceDereference(t *testing.T, entity *EntityData) {
+	t.Helper()
 	assert.Equal(t, "http://kg.artsdata.ca/resource/K11-24", entity.ID)
 	require.NotNil(t, entity.Address, "compacted address must decode")
 	assert.Equal(t, "178 Victoria St", entity.Address.StreetAddress)
@@ -193,7 +223,30 @@ func runDereferenceReplay(t *testing.T, f *Fixture) {
 	assert.Equal(t, "CA", entity.Address.AddressCountry)
 	assert.Equal(t, "Massey Hall", resolveString(entity.Name))
 	assert.Len(t, ExtractSameAsURIs(entity), 7)
-	assert.NotEmpty(t, entity.RawJSON, "raw response must be preserved")
+}
+
+// assertOrgDereference asserts the Canadian Opera Company (Organization) shape:
+// a plain-string `type`, an `en`-only language-map name/description (no @none),
+// a string-array sameAs, and no address/url (Artsdata organizations do not carry
+// a PostalAddress block).
+func assertOrgDereference(t *testing.T, entity *EntityData) {
+	t.Helper()
+	assert.Equal(t, "http://kg.artsdata.ca/resource/K2-5143", entity.ID)
+
+	typeStr, ok := entity.Type.(string)
+	require.True(t, ok, "organization type should decode as a plain string, not an array")
+	assert.Equal(t, "Organization", typeStr)
+
+	assert.Equal(t, "Canadian Opera Company", resolveString(entity.Name), "en-only language map name must resolve")
+	assert.Contains(t, resolveString(entity.Description), "Canadian Opera Company")
+
+	uris := ExtractSameAsURIs(entity)
+	assert.Len(t, uris, 4)
+	assert.Contains(t, uris, "http://www.wikidata.org/entity/Q2915268")
+	assert.Contains(t, uris, "https://isni.org/isni/0000000121842483")
+
+	assert.Nil(t, entity.Address, "organizations carry no PostalAddress block in Artsdata")
+	assert.Empty(t, resolveString(entity.URL), "organization dereference has no url")
 }
 
 // assertNoProperties decodes a form-encoded `queries=...` body and fails if any
