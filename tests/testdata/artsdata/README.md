@@ -44,14 +44,15 @@ Key real-API facts encoded by these fixtures (see `docs/interop/artsdata.md` §3
 - The client must **never send a `properties` array** — Artsdata returns HTTP 500.
   This is asserted on the wire in both record and replay.
 
-## Known client drift (not yet fixed)
+## Dereference response shape (compacted JSON-LD)
 
-The real dereference body uses `id`/`type` (not `@id`/`@type`) and `{"@none": ...}`
-objects for `streetAddress`/`addressLocality`/`addressRegion`/`addressCountry`, which the
-client's `artsdata.EntityData`/`Address` structs do not decode. `Client.Dereference`
-therefore returns a parse error against the real shape. The replay test asserts the
-dereference wire request (method/path/`Accept: application/ld+json`) and records the body
-so the client can be fixed to parse it; it does not assert dereference parse success.
+The real dereference body uses **compacted** JSON-LD: `id`/`type` (not `@id`/`@type`),
+language maps for names (`{"fr": ..., "en": ..., "@none": ...}`), and `{"@none": ...}`
+/ typed-value (`{"@value": ..., "type": "xsd:integer"}`) wrappers for scalar fields.
+`artsdata.Client.Dereference` expands these shapes on decode (see
+`docs/interop/artsdata.md` §3.4.2). The replay test asserts both the wire request
+(method/path/`Accept: application/ld+json`) and that the recorded response parses
+successfully with its fields populated.
 
 ## Refreshing fixtures
 

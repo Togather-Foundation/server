@@ -200,6 +200,22 @@ Start point: https://docs.artsdata.ca/architecture/overview.html
   - explicit format parameters (where supported by the endpoint/UI).
 - Use this to fetch entity JSON-LD deterministically from a known Artsdata URI.
 
+#### 3.4.2 Compacted JSON-LD response shape
+
+Dereference responses are **compacted JSON-LD**, not the fully-expanded `@id`/`@type`
+form. The client (`internal/kg/artsdata`) expands these shapes on decode:
+
+- The entity identifier/type keys use the aliases `id`/`type` rather than `@id`/`@type`.
+- Multi-language values arrive as language maps, e.g.
+  `"name": {"fr": "Massey Hall", "en": "Massey Hall", "@none": "Massey Hall"}`.
+- Scalar fields may be wrapped as `{"@none": "..."}` (the compacted language-map
+  tail) or typed-value objects (`{"@value": "2752", "type": "xsd:integer"}`).
+- Nested entities (e.g. `address`) carry their own `id`/`type` keys, which the
+  client ignores when filling the address scalar fields.
+
+`EntityData.UnmarshalJSON` accepts both `id`/`@id` and `type`/`@type`, and resolves
+language maps / `@none` / `@value` wrappers into plain strings (preferring `@none`).
+
 ### 3.5 iCalendar feeds (consumer convenience)
 
 - Mentioned in architecture overview; entry points are exposed in KG UI navigation.
@@ -393,6 +409,10 @@ The Artsdata reconciliation adapter is implemented in the following locations:
 | Configuration | `internal/config/config.go` | `ArtsdataConfig` struct (env vars: `ARTSDATA_ENABLED`, `ARTSDATA_ENDPOINT`, etc.) |
 | DB Migration | `internal/storage/postgres/migrations/000030_*` | `knowledge_graph_authorities`, `entity_identifiers`, `reconciliation_cache` tables |
 | SQLc Queries | `internal/storage/postgres/queries/knowledge_graph.sql` | 13 queries for CRUD on KG tables |
+
+> **Dereference shape note:** Artsdata dereferences return **compacted** JSON-LD
+> (`id`/`type` aliases, language maps, `{"@none": ...}` / `{"@value": ...}` wrappers).
+> `internal/kg/artsdata` expands these before `EnrichmentWorker` reads fields — see §3.4.2.
 
 ### Pipeline Flow
 
