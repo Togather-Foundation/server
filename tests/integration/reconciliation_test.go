@@ -1,8 +1,10 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -17,7 +20,6 @@ import (
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"log/slog"
 )
 
 // seedAuthorityCodesIfNeeded ensures authority codes exist in the database.
@@ -390,62 +392,83 @@ func TestReconciliationNegativeCache(t *testing.T) {
 	assert.Equal(t, firstCallCount, secondCallCount, "API should not be called again (negative cache hit)")
 }
 
-// TestReconciliationViaEventIngestion tests that the full pipeline enqueues reconciliation jobs.
-// Note: This test only verifies job insertion since River workers are not running in integration tests.
+// TestReconciliationViaEventIngestion exercises the REAL ingest pipeline through the running
+// httptest router and asserts that reconciliation jobs are enqueued for the newly created place
+// and organization. River workers are intentionally NOT started in this package (see
+// setupTestEnv in helpers_test.go), so this test only asserts enqueue — full job execution is
+// covered by tests/integration_batch.
 func TestReconciliationViaEventIngestion(t *testing.T) {
 	env := setupTestEnv(t)
 
-	// Note: River workers are NOT started in setupTestEnv to optimize test execution time.
-	// This test only verifies that reconciliation jobs are enqueued during ingestion.
+	apiKey := insertAPIKey(t, env, "reconciliation-ingest-agent")
 
-	// Create an organization first (required for event ingestion)
-	orgULID := ulid.Make().String()
-	var orgID string
-	err := env.Pool.QueryRow(env.Context,
-		`INSERT INTO organizations (ulid, name) VALUES ($1, $2) RETURNING id`,
-		orgULID, "Test Organization",
-	).Scan(&orgID)
+	// POST an event that references a place (venue) and an organization (organizer).
+	// The ingest pipeline must create both, populating IngestResult.PlaceULID/OrganizerULID,
+	// which is what drives the reconciliation job enqueues in the events handler.
+	const venueName = "Reconciliation Test Venue"
+	const orgName = "Reconciliation Test Organization"
+
+	payload := map[string]any{
+		"name":        "Reconciliation Ingest Test Event",
+		"description": "Event used to verify reconciliation jobs are enqueued through the ingest pipeline.",
+		"startDate":   time.Now().Add(48 * time.Hour).Format(time.RFC3339),
+		"location": map[string]any{
+			"name":            venueName,
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+			"addressCountry":  "CA",
+		},
+		"organizer": map[string]any{
+			"name": orgName,
+		},
+		"source": map[string]any{
+			"url":     "https://example.com/events/reconciliation-ingest",
+			"eventId": "reconciliation-ingest-1",
+		},
+	}
+
+	body, err := json.Marshal(payload)
 	require.NoError(t, err)
 
-	// Create a place for the event
-	placeULID := ulid.Make().String()
-	var placeID string
-	err = env.Pool.QueryRow(env.Context,
-		`INSERT INTO places (ulid, name, address_locality, postal_code, address_country) 
-		 VALUES ($1, $2, $3, $4, $5) 
-		 RETURNING id`,
-		placeULID, "Test Venue", "Toronto", "M5V 3A8", "Canada",
-	).Scan(&placeID)
+	req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body))
 	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/ld+json")
+	req.Header.Set("Accept", "application/ld+json")
 
-	// Create an event that references the place and organization
-	eventULID := ulid.Make().String()
-	var eventID string
-	err = env.Pool.QueryRow(env.Context,
-		`INSERT INTO events (ulid, name, organizer_id, primary_venue_id, lifecycle_state) 
-		 VALUES ($1, $2, $3, $4, $5) 
-		 RETURNING id`,
-		eventULID, "Test Event", orgID, placeID, "published",
-	).Scan(&eventID)
+	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
 
-	// Verify that reconciliation jobs were enqueued in the river_job table
-	// We look for jobs with kind='reconcile_entity'
-	ctx, cancel := context.WithTimeout(env.Context, 5*time.Second)
-	defer cancel()
+	if resp.StatusCode != http.StatusCreated {
+		var failure map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "status=%d response=%v", resp.StatusCode, failure)
+	}
 
+	// The ingest pipeline must have created both the venue and the organizer.
+	var placeCount, orgCount int
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM places WHERE name = $1`, venueName).Scan(&placeCount))
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM organizations WHERE name = $1`, orgName).Scan(&orgCount))
+	require.Equal(t, 1, placeCount, "ingest should create exactly one place for the venue")
+	require.Equal(t, 1, orgCount, "ingest should create exactly one organization for the organizer")
+
+	// Assert reconciliation jobs were enqueued for the newly created place and organization.
 	var jobCount int
-	err = env.Pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM river_job WHERE kind = 'reconcile_entity'`,
-	).Scan(&jobCount)
-	require.NoError(t, err)
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM river_job WHERE kind = $1`, jobs.JobKindReconciliation).Scan(&jobCount))
+	assert.Greater(t, jobCount, 0, "expected at least one reconciliation job to be enqueued")
 
-	// Note: This test inserts directly into the DB, bypassing the HTTP handler/ingest service
-	// which is where River jobs are enqueued. We verify the river_job table is queryable
-	// and the schema supports reconciliation job tracking.
-	// Full job enqueue testing requires going through the ingest pipeline (see handler tests).
-	assert.GreaterOrEqual(t, jobCount, 0, "river_job table should be queryable for reconciliation jobs")
-
-	// Note: To fully test job execution, use tests/integration_batch/ which starts River workers
-	t.Log("reconciliation job enqueue test completed - job execution requires River workers (see tests/integration_batch/)")
+	// Precisely: one place reconciliation job and one organization reconciliation job.
+	var placeJobs, orgJobs int
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM river_job WHERE kind = $1 AND args->>'entity_type' = 'place'`,
+		jobs.JobKindReconciliation).Scan(&placeJobs))
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM river_job WHERE kind = $1 AND args->>'entity_type' = 'organization'`,
+		jobs.JobKindReconciliation).Scan(&orgJobs))
+	assert.Equal(t, 1, placeJobs, "expected exactly one place reconciliation job")
+	assert.Equal(t, 1, orgJobs, "expected exactly one organization reconciliation job")
 }
