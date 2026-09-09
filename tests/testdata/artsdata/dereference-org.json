@@ -1,0 +1,36 @@
+{
+  "name": "dereference-org",
+  "kind": "dereference",
+  "provenance": "live-recorded",
+  "recorded_at": "2026-09-09T14:31:32Z",
+  "request": {
+    "method": "GET",
+    "url": "https://kg.artsdata.ca/resource/K2-5143",
+    "path": "/resource/K2-5143",
+    "accept": "application/ld+json",
+    "body": ""
+  },
+  "response": {
+    "status": 200,
+    "content_type": "application/ld+json; charset=utf-8",
+    "body": {
+      "@context": "https://kg.artsdata.ca/context.jsonld",
+      "id": "http://kg.artsdata.ca/resource/K2-5143",
+      "type": "Organization",
+      "sameAs": [
+        "http://www.wikidata.org/entity/Q2915268",
+        "https://en.wikipedia.org/wiki/Canadian_Opera_Company",
+        "https://fr.wikipedia.org/wiki/Compagnie_nationale_d%27op%C3%A9ra_du_Canada",
+        "https://isni.org/isni/0000000121842483"
+      ],
+      "description": {
+        "en": "The Canadian Opera Company (COC) is an opera company in Toronto, Ontario, Canada. It is the largest opera company in Canada and one of the largest producers of opera in North America. The COC performs in its own opera house, the Four Seasons Centre for the Performing Arts. For forty years until April 2006, the COC had performed at the O'Keefe Centre (now known as Meridian Hall)."
+      },
+      "name": {
+        "en": "Canadian Opera Company"
+      },
+      "skos:historyNote": "Minted Arstsdata ID for schema:Organization named 'Canadian Opera Company' on 2024-07-09T17:04:06.659Z",
+      "generatedAtTime": "2024-07-09T17:04:06.659Z"
+    }
+  }
+}

@@ -319,7 +319,7 @@ func TestDereference_CompactedArtsdataJSONLD(t *testing.T) {
 
 	var body []byte
 	for _, f := range fixtures {
-		if f.Kind == KindDereference {
+		if f.Name == "dereference" {
 			body = f.Response.Body
 			break
 		}
@@ -369,6 +369,59 @@ func TestDereference_CompactedArtsdataJSONLD(t *testing.T) {
 	// in the raw JSON.
 	assert.True(t, strings.Contains(string(entity.RawJSON), "maximumAttendeeCapacity"))
 	assert.True(t, strings.Contains(string(entity.RawJSON), "xsd:integer"))
+}
+
+func TestDereference_CompactedArtsdataOrganizationJSONLD(t *testing.T) {
+	// Load the live-recorded organization dereference fixture
+	// (tests/testdata/artsdata/dereference-org.json) so the unit test pins the
+	// REAL compacted organization shape, not a hand-authored one. Organizations
+	// dereference differently from places: a plain-string `type`, an `en`-only
+	// language-map name/description (no @none), a string-array sameAs, and no
+	// address/url block.
+	fixtures, err := LoadFixtures(fixturesDir())
+	require.NoError(t, err)
+
+	var body []byte
+	for _, f := range fixtures {
+		if f.Name == "dereference-org" {
+			body = f.Response.Body
+			break
+		}
+	}
+	require.NotEmpty(t, body, "organization dereference fixture body must be present (run ARTSDATA_RECORD=1 to refresh)")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/ld+json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, WithRateLimit(1000.0))
+	entity, err := client.Dereference(context.Background(), server.URL+"/resource/K2-5143")
+	require.NoError(t, err)
+	require.NotNil(t, entity)
+
+	// id/type aliases are accepted; organization `type` is a plain string (not an array).
+	assert.Equal(t, "http://kg.artsdata.ca/resource/K2-5143", entity.ID)
+	typeStr, ok := entity.Type.(string)
+	require.True(t, ok, "organization type should decode as a plain string")
+	assert.Equal(t, "Organization", typeStr)
+
+	// name/description are en-only language maps that resolve via the "en" key.
+	assert.Equal(t, "Canadian Opera Company", resolveString(entity.Name))
+	assert.Contains(t, resolveString(entity.Description), "Canadian Opera Company")
+
+	// sameAs is a string array (Wikidata + ISNI + Wikipedia).
+	uris := ExtractSameAsURIs(entity)
+	require.Len(t, uris, 4)
+	assert.Contains(t, uris, "http://www.wikidata.org/entity/Q2915268")
+	assert.Contains(t, uris, "https://isni.org/isni/0000000121842483")
+
+	// organizations carry no PostalAddress and no url — the parser must leave
+	// these empty rather than error (the enrichment worker guards entity.Address).
+	assert.Nil(t, entity.Address)
+	assert.Empty(t, resolveString(entity.URL))
 }
 
 func TestExtractSameAsURIs(t *testing.T) {

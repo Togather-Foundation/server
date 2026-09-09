@@ -247,3 +247,4 @@ openssl rand -hex 32
 - [docs/deploy/deploy-conf.md](deploy-conf.md) — `.deploy.conf.*` deployment metadata files
 - [docs/deploy/quickstart.md](quickstart.md) — Deployment quick start
 - [docs/deploy/troubleshooting.md](troubleshooting.md) — Common deployment failures
+- [docs/interop/artsdata.md](../interop/artsdata.md) §13 — Artsdata reconciliation enablement + rollback runbook (set `ARTSDATA_*` in the deployed env file, not just `.env.example`)
