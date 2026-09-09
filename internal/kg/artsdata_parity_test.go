@@ -114,6 +114,10 @@ func runClassificationReplay(t *testing.T, f *artsdata.Fixture, deref *artsdata.
 			wantURI = "https://kg.artsdata.ca/resource/" + wantURI
 		}
 		assert.Equal(t, wantURI, matches[0].IdentifierURI, "short ID must be expanded to the full Artsdata URI")
+		// The exact match dereferences the recorded compacted fixture; the client
+		// must parse it and extract the sameAs identifiers.
+		require.NotEmpty(t, matches[0].SameAsURIs, "dereference must extract sameAs from the recorded fixture")
+		assert.Contains(t, matches[0].SameAsURIs, "http://www.wikidata.org/entity/Q1122776")
 	} else {
 		// Partial/no-match: raw score ~3-12 -> normalizeArtsdataScore/15 < 0.8 -> reject.
 		assert.Empty(t, matches, "partial matches must be rejected by classification")

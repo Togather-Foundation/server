@@ -28,6 +28,26 @@ func TestExtractStringValue(t *testing.T) {
 			want:  "some description",
 		},
 		{
+			name:  "language map prefers @none",
+			input: map[string]interface{}{"fr": "Salle A", "en": "Hall A", "@none": "Massey Hall"},
+			want:  "Massey Hall",
+		},
+		{
+			name:  "language map without @none falls back to en",
+			input: map[string]interface{}{"fr": "Salle A", "en": "Hall A"},
+			want:  "Hall A",
+		},
+		{
+			name:  "@none wrapper",
+			input: map[string]interface{}{"@none": "178 Victoria St"},
+			want:  "178 Victoria St",
+		},
+		{
+			name:  "typed value object",
+			input: map[string]interface{}{"@value": "2752", "type": "xsd:integer"},
+			want:  "2752",
+		},
+		{
 			name:  "object missing @value key",
 			input: map[string]interface{}{"@id": "http://example.org/123"},
 			want:  "",

@@ -176,19 +176,24 @@ func runDereferenceReplay(t *testing.T, f *Fixture) {
 	defer server.Close()
 
 	client := NewClient(server.URL, WithRateLimit(1000.0))
-	_, err := client.Dereference(context.Background(), server.URL+f.Request.Path)
-	// Known drift (see README): the real Artsdata JSON-LD uses `id`/`type` (not
-	// @id/@type) and {@none: ...} objects for address fields, which the client's
-	// EntityData struct does not yet decode. The replay asserts the wire request
-	// (method/path/Accept) below; the response bytes are recorded so the client can
-	// be fixed to parse them. Do not fail on this parse error here.
-	if err != nil {
-		t.Logf("Dereference parse error (known drift, tracked in README): %v", err)
-	}
+	entity, err := client.Dereference(context.Background(), server.URL+f.Request.Path)
+	require.NoError(t, err, "client must parse the recorded dereference response")
 
 	assert.Equal(t, f.Request.Method, gotMethod)
 	assert.Equal(t, f.Request.Path, gotPath)
 	assert.Equal(t, f.Request.Accept, gotAccept, "dereference Accept header drifted from recorded golden value")
+
+	// The recorded response is compacted JSON-LD (id/type aliases, language maps,
+	// @none-wrapped address). Assert the client actually populated the fields.
+	require.NotNil(t, entity)
+	assert.Equal(t, "http://kg.artsdata.ca/resource/K11-24", entity.ID)
+	require.NotNil(t, entity.Address, "compacted address must decode")
+	assert.Equal(t, "178 Victoria St", entity.Address.StreetAddress)
+	assert.Equal(t, "Toronto", entity.Address.AddressLocality)
+	assert.Equal(t, "CA", entity.Address.AddressCountry)
+	assert.Equal(t, "Massey Hall", resolveString(entity.Name))
+	assert.Len(t, ExtractSameAsURIs(entity), 7)
+	assert.NotEmpty(t, entity.RawJSON, "raw response must be preserved")
 }
 
 // assertNoProperties decodes a form-encoded `queries=...` body and fails if any

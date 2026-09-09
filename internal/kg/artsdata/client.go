@@ -176,25 +176,32 @@ func (c *Client) Reconcile(ctx context.Context, queries map[string]Reconciliatio
 }
 
 // EntityData is the JSON-LD data returned when dereferencing an Artsdata URI.
+//
+// Artsdata dereferences return *compacted* JSON-LD: the entity keys use the
+// `id`/`type` aliases (rather than `@id`/`@type`), names arrive as language maps
+// ({"fr": ..., "en": ..., "@none": ...}), and scalar values may be typed-value
+// objects ({"@value": ..., "type": "xsd:integer"}). UnmarshalJSON (see jsonld.go)
+// normalises these shapes; RawJSON preserves the raw response bytes.
 type EntityData struct {
-	ID          string      `json:"@id"`
-	Type        interface{} `json:"@type"`  // can be string or []string
-	Name        interface{} `json:"name"`   // can be string or localized object
-	SameAs      interface{} `json:"sameAs"` // can be string, object, or array
-	Address     *Address    `json:"address,omitempty"`
-	Description interface{} `json:"description,omitempty"`
-	URL         interface{} `json:"url,omitempty"`
-	RawJSON     []byte      `json:"-"` // full response for storage
+	ID          string      // populated from `id` or `@id`
+	Type        interface{} // populated from `type` or `@type`; string or []string
+	Name        interface{} // raw value: string, language map, or object
+	SameAs      interface{} // raw value: string, object, or array
+	Address     *Address
+	Description interface{}
+	URL         interface{}
+	RawJSON     []byte `json:"-"` // full response for storage
 }
 
-// Address represents a schema:PostalAddress in JSON-LD.
+// Address represents a schema:PostalAddress in JSON-LD. Scalar fields are
+// resolved from plain strings or {@none}/{@value} wrappers; the address's own
+// id/type keys are ignored (see Address.decode in jsonld.go).
 type Address struct {
-	Type            interface{} `json:"@type,omitempty"`
-	StreetAddress   string      `json:"streetAddress,omitempty"`
-	AddressLocality string      `json:"addressLocality,omitempty"`
-	AddressRegion   string      `json:"addressRegion,omitempty"`
-	PostalCode      string      `json:"postalCode,omitempty"`
-	AddressCountry  string      `json:"addressCountry,omitempty"`
+	StreetAddress   string
+	AddressLocality string
+	AddressRegion   string
+	PostalCode      string
+	AddressCountry  string
 }
 
 // Dereference fetches the full JSON-LD entity data from an Artsdata URI.

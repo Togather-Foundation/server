@@ -311,6 +311,66 @@ func TestDereference_EmptyURI(t *testing.T) {
 	assert.ErrorContains(t, err, "uri cannot be empty")
 }
 
+func TestDereference_CompactedArtsdataJSONLD(t *testing.T) {
+	// Load the live-recorded dereference fixture (tests/testdata/artsdata/dereference.json)
+	// so the unit test pins the REAL compacted JSON-LD shape, not a hand-authored one.
+	fixtures, err := LoadFixtures(fixturesDir())
+	require.NoError(t, err)
+
+	var body []byte
+	for _, f := range fixtures {
+		if f.Kind == KindDereference {
+			body = f.Response.Body
+			break
+		}
+	}
+	require.NotEmpty(t, body, "dereference fixture body must be present (run ARTSDATA_RECORD=1 to refresh)")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/ld+json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, WithRateLimit(1000.0))
+	entity, err := client.Dereference(context.Background(), server.URL+"/resource/K11-24")
+	require.NoError(t, err)
+	require.NotNil(t, entity)
+
+	// id/type aliases are accepted (not just @id/@type).
+	assert.Equal(t, "http://kg.artsdata.ca/resource/K11-24", entity.ID)
+	typeArr, ok := entity.Type.([]interface{})
+	require.True(t, ok, "type should decode as an array of strings")
+	assert.Contains(t, typeArr, "Place")
+	assert.Contains(t, typeArr, "MusicVenue")
+
+	// name is a language map that resolves preferring "@none".
+	assert.Equal(t, "Massey Hall", resolveString(entity.Name))
+
+	// address scalars resolve from @none wrappers and plain strings; the address's
+	// own id/type keys are ignored.
+	require.NotNil(t, entity.Address)
+	assert.Equal(t, "178 Victoria St", entity.Address.StreetAddress)
+	assert.Equal(t, "Toronto", entity.Address.AddressLocality)
+	assert.Equal(t, "ON", entity.Address.AddressRegion)
+	assert.Equal(t, "M5B 1T7", entity.Address.PostalCode)
+	assert.Equal(t, "CA", entity.Address.AddressCountry)
+
+	// sameAs is still extracted.
+	uris := ExtractSameAsURIs(entity)
+	require.Len(t, uris, 7)
+	assert.Contains(t, uris, "http://www.wikidata.org/entity/Q1122776")
+
+	// url is a plain string.
+	assert.Equal(t, "https://www.masseyhall.com", resolveString(entity.URL))
+
+	// typed value (maximumAttendeeCapacity) decodes without error and is preserved
+	// in the raw JSON.
+	assert.True(t, strings.Contains(string(entity.RawJSON), "maximumAttendeeCapacity"))
+	assert.True(t, strings.Contains(string(entity.RawJSON), "xsd:integer"))
+}
+
 func TestExtractSameAsURIs(t *testing.T) {
 	tests := []struct {
 		name     string

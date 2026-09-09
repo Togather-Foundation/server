@@ -122,17 +122,30 @@ func newMockArtsdataServer(t *testing.T, callCounter *atomic.Int32) *httptest.Se
 			}
 
 		case strings.HasPrefix(r.URL.Path, "/resource/") && r.Method == "GET":
-			// Return a dereferenced entity with sameAs links
-			// Use the full URL from the request as @id
+			// Return a dereferenced entity with sameAs links, using the realistic
+			// *compacted* JSON-LD shape (id/type aliases, @none-wrapped address
+			// scalars) the live Artsdata API returns — see docs/interop/artsdata.md §3.4.
 			baseURL := "http://" + r.Host
 			entity := map[string]interface{}{
 				"@context": "http://schema.org",
-				"@id":      baseURL + r.URL.Path,
-				"@type":    "Place",
-				"name":     "Art Gallery of Ontario",
+				"id":       baseURL + r.URL.Path,
+				"type":     "Place",
+				"name": map[string]interface{}{
+					"en":    "Art Gallery of Ontario",
+					"@none": "Art Gallery of Ontario",
+				},
 				"sameAs": []string{
 					"http://www.wikidata.org/entity/Q319378",
 					"http://www.openstreetmap.org/relation/123456",
+				},
+				"address": map[string]interface{}{
+					"id":              baseURL + r.URL.Path + "#PostalAddress",
+					"type":            "PostalAddress",
+					"streetAddress":   map[string]interface{}{"@none": "317 Dundas Street West"},
+					"addressLocality": map[string]interface{}{"@none": "Toronto"},
+					"addressRegion":   map[string]interface{}{"@none": "ON"},
+					"postalCode":      "M5T 1G4",
+					"addressCountry":  map[string]interface{}{"@none": "CA"},
 				},
 			}
 			w.Header().Set("Content-Type", "application/ld+json")
