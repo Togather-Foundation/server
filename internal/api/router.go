@@ -155,7 +155,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create a single ScraperSubmissionRepository shared by workers and handlers (srv-rgmjl).
 	submissionRepo := postgres.NewScraperSubmissionRepository(pool)
 
-	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, submissionRepo)
+	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, submissionRepo, cfg.Artsdata.EnrichmentRefreshDays)
 
 	// Create River metrics hook for Prometheus monitoring
 	riverHooks := []rivertype.Hook{
@@ -242,6 +242,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 			time.Duration(cfg.Scraper.SourceJobTimeoutSeconds)*time.Second,
 			time.Duration(cfg.Scraper.ChainEnqueueTimeoutMs)*time.Millisecond,
 			cfg.Scraper.ChainEnqueueRetries,
+			cfg.Artsdata.EnrichmentRefreshDays,
 		)
 	}
 

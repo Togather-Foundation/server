@@ -49,7 +49,7 @@ func (q *Queries) CreateOrganizationTombstone(ctx context.Context, arg CreateOrg
 }
 
 const getOrganizationByULID = `-- name: GetOrganizationByULID :one
-SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id, o.enriched_at
   FROM organizations o
  WHERE o.ulid = $1
 `
@@ -87,6 +87,7 @@ func (q *Queries) GetOrganizationByULID(ctx context.Context, ulid string) (GetOr
 		&i.Organization.FederationUri,
 		&i.Organization.NormalizedName,
 		&i.Organization.MergedIntoID,
+		&i.Organization.EnrichedAt,
 	)
 	return i, err
 }
@@ -123,7 +124,7 @@ func (q *Queries) GetOrganizationTombstoneByULID(ctx context.Context, ulid strin
 
 const listOrganizationsByCreatedAt = `-- name: ListOrganizationsByCreatedAt :many
 
-SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id, o.enriched_at
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
@@ -191,6 +192,7 @@ func (q *Queries) ListOrganizationsByCreatedAt(ctx context.Context, arg ListOrga
 			&i.Organization.FederationUri,
 			&i.Organization.NormalizedName,
 			&i.Organization.MergedIntoID,
+			&i.Organization.EnrichedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -203,7 +205,7 @@ func (q *Queries) ListOrganizationsByCreatedAt(ctx context.Context, arg ListOrga
 }
 
 const listOrganizationsByCreatedAtDesc = `-- name: ListOrganizationsByCreatedAtDesc :many
-SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id, o.enriched_at
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
@@ -270,6 +272,7 @@ func (q *Queries) ListOrganizationsByCreatedAtDesc(ctx context.Context, arg List
 			&i.Organization.FederationUri,
 			&i.Organization.NormalizedName,
 			&i.Organization.MergedIntoID,
+			&i.Organization.EnrichedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -282,7 +285,7 @@ func (q *Queries) ListOrganizationsByCreatedAtDesc(ctx context.Context, arg List
 }
 
 const listOrganizationsByName = `-- name: ListOrganizationsByName :many
-SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id, o.enriched_at
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
@@ -349,6 +352,7 @@ func (q *Queries) ListOrganizationsByName(ctx context.Context, arg ListOrganizat
 			&i.Organization.FederationUri,
 			&i.Organization.NormalizedName,
 			&i.Organization.MergedIntoID,
+			&i.Organization.EnrichedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -361,7 +365,7 @@ func (q *Queries) ListOrganizationsByName(ctx context.Context, arg ListOrganizat
 }
 
 const listOrganizationsByNameDesc = `-- name: ListOrganizationsByNameDesc :many
-SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id
+SELECT o.id, o.ulid, o.name, o.legal_name, o.alternate_name, o.description, o.email, o.telephone, o.url, o.street_address, o.address_locality, o.address_region, o.postal_code, o.address_country, o.organization_type, o.founding_date, o.origin_node_id, o.confidence, o.created_at, o.updated_at, o.deleted_at, o.deletion_reason, o.federation_uri, o.normalized_name, o.merged_into_id, o.enriched_at
   FROM organizations o
  WHERE o.deleted_at IS NULL
    AND ($1::text IS NULL OR o.address_locality ILIKE '%' || $1 || '%')
@@ -428,6 +432,7 @@ func (q *Queries) ListOrganizationsByNameDesc(ctx context.Context, arg ListOrgan
 			&i.Organization.FederationUri,
 			&i.Organization.NormalizedName,
 			&i.Organization.MergedIntoID,
+			&i.Organization.EnrichedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -437,6 +442,18 @@ func (q *Queries) ListOrganizationsByNameDesc(ctx context.Context, arg ListOrgan
 		return nil, err
 	}
 	return items, nil
+}
+
+const markOrganizationEnriched = `-- name: MarkOrganizationEnriched :exec
+UPDATE organizations
+   SET enriched_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL
+`
+
+func (q *Queries) MarkOrganizationEnriched(ctx context.Context, ulid string) error {
+	_, err := q.db.Exec(ctx, markOrganizationEnriched, ulid)
+	return err
 }
 
 const softDeleteOrganization = `-- name: SoftDeleteOrganization :exec
@@ -473,7 +490,7 @@ UPDATE organizations
        updated_at = now()
  WHERE ulid = $1
    AND deleted_at IS NULL
-RETURNING organizations.id, organizations.ulid, organizations.name, organizations.legal_name, organizations.alternate_name, organizations.description, organizations.email, organizations.telephone, organizations.url, organizations.street_address, organizations.address_locality, organizations.address_region, organizations.postal_code, organizations.address_country, organizations.organization_type, organizations.founding_date, organizations.origin_node_id, organizations.confidence, organizations.created_at, organizations.updated_at, organizations.deleted_at, organizations.deletion_reason, organizations.federation_uri, organizations.normalized_name, organizations.merged_into_id
+RETURNING organizations.id, organizations.ulid, organizations.name, organizations.legal_name, organizations.alternate_name, organizations.description, organizations.email, organizations.telephone, organizations.url, organizations.street_address, organizations.address_locality, organizations.address_region, organizations.postal_code, organizations.address_country, organizations.organization_type, organizations.founding_date, organizations.origin_node_id, organizations.confidence, organizations.created_at, organizations.updated_at, organizations.deleted_at, organizations.deletion_reason, organizations.federation_uri, organizations.normalized_name, organizations.merged_into_id, organizations.enriched_at
 `
 
 type UpdateOrganizationParams struct {
@@ -535,6 +552,7 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		&i.Organization.FederationUri,
 		&i.Organization.NormalizedName,
 		&i.Organization.MergedIntoID,
+		&i.Organization.EnrichedAt,
 	)
 	return i, err
 }

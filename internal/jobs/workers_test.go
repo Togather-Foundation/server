@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
@@ -390,8 +391,10 @@ func (m *mockIdentifierUpserter) UpsertEntityIdentifier(ctx context.Context, arg
 type mockPlaceUpdater struct {
 	getFunc     func(ctx context.Context, ulid string) (*places.Place, error)
 	updateFunc  func(ctx context.Context, ulid string, params places.UpdatePlaceParams) (*places.Place, error)
+	markFunc    func(ctx context.Context, ulid string) error
 	getCalls    int
 	updateCalls int
+	markCalls   int
 }
 
 func (m *mockPlaceUpdater) GetByULID(ctx context.Context, ulid string) (*places.Place, error) {
@@ -410,11 +413,21 @@ func (m *mockPlaceUpdater) Update(ctx context.Context, ulid string, params place
 	return &places.Place{ULID: ulid}, nil
 }
 
+func (m *mockPlaceUpdater) MarkEnriched(ctx context.Context, ulid string) error {
+	m.markCalls++
+	if m.markFunc != nil {
+		return m.markFunc(ctx, ulid)
+	}
+	return nil
+}
+
 type mockOrgUpdater struct {
 	getFunc     func(ctx context.Context, ulid string) (*organizations.Organization, error)
 	updateFunc  func(ctx context.Context, ulid string, params organizations.UpdateOrganizationParams) (*organizations.Organization, error)
+	markFunc    func(ctx context.Context, ulid string) error
 	getCalls    int
 	updateCalls int
+	markCalls   int
 }
 
 func (m *mockOrgUpdater) GetByULID(ctx context.Context, ulid string) (*organizations.Organization, error) {
@@ -431,6 +444,14 @@ func (m *mockOrgUpdater) Update(ctx context.Context, ulid string, params organiz
 		return m.updateFunc(ctx, ulid, params)
 	}
 	return &organizations.Organization{ULID: ulid}, nil
+}
+
+func (m *mockOrgUpdater) MarkEnriched(ctx context.Context, ulid string) error {
+	m.markCalls++
+	if m.markFunc != nil {
+		return m.markFunc(ctx, ulid)
+	}
+	return nil
 }
 
 func makeEnrichmentJob(entityType, entityID, identifierURI string) *river.Job[EnrichmentArgs] {
@@ -690,8 +711,13 @@ func TestEnrichmentWorker_WorkOrg_NoArtsdataFields_SkipsUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if orgService.getCalls != 0 || orgService.updateCalls != 0 {
-		t.Error("expected no GetByULID or Update calls when entity has no metadata fields")
+	// The freshness check now reads the entity before dereferencing, so GetByULID is
+	// expected to be called once; what must NOT happen is a metadata Update.
+	if orgService.updateCalls != 0 {
+		t.Error("expected no Update calls when entity has no metadata fields")
+	}
+	if orgService.markCalls == 0 {
+		t.Error("expected MarkEnriched to be called on a successful dereference even with no metadata fields")
 	}
 }
 
@@ -972,5 +998,158 @@ func TestEnrichmentWorker_WorkURLValidation(t *testing.T) {
 	// Malformed URL must not reach the params.
 	if capturedParams.URL != nil {
 		t.Errorf("expected URL to be nil (invalid URL discarded), got %q", *capturedParams.URL)
+	}
+}
+
+// ── Enrichment freshness (enriched_at TTL) tests ───────────────────────────
+
+func TestEnrichmentWorker_WorkPlace_FreshSkip(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return &places.Place{ULID: "01V", EnrichedAt: &now}, nil
+		},
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return &artsdata.EntityData{ID: "http://kg.artsdata.ca/resource/K-20"}, nil
+		},
+	}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		PlaceService:          placeService,
+		EnrichmentRefreshDays: 30,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01V", "http://kg.artsdata.ca/resource/K-20"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deref.calls != 0 {
+		t.Errorf("expected no dereference for a fresh entity, got %d", deref.calls)
+	}
+	if placeService.markCalls != 0 {
+		t.Errorf("expected no MarkEnriched on a skip, got %d", placeService.markCalls)
+	}
+}
+
+func TestEnrichmentWorker_WorkPlace_StaleEnrichedAt_ReDereferences(t *testing.T) {
+	t.Parallel()
+	stale := time.Now().Add(-40 * 24 * time.Hour)
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return &places.Place{ULID: "01W", EnrichedAt: &stale}, nil
+		},
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return &artsdata.EntityData{ID: "http://kg.artsdata.ca/resource/K-21"}, nil
+		},
+	}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		PlaceService:          placeService,
+		EnrichmentRefreshDays: 30,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01W", "http://kg.artsdata.ca/resource/K-21"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deref.calls != 1 {
+		t.Errorf("expected one dereference for a stale entity, got %d", deref.calls)
+	}
+	if placeService.markCalls != 1 {
+		t.Errorf("expected MarkEnriched after re-dereference, got %d", placeService.markCalls)
+	}
+}
+
+func TestEnrichmentWorker_WorkPlace_EnrichedAtNil_AlwaysEnriches(t *testing.T) {
+	t.Parallel()
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return &places.Place{ULID: "01X"}, nil // enriched_at NULL
+		},
+	}
+	deref := &mockEntityDereferencer{
+		dereferenceFunc: func(_ context.Context, _ string) (*artsdata.EntityData, error) {
+			return &artsdata.EntityData{ID: "http://kg.artsdata.ca/resource/K-22"}, nil
+		},
+	}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		PlaceService:          placeService,
+		EnrichmentRefreshDays: 30,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01X", "http://kg.artsdata.ca/resource/K-22"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deref.calls != 1 {
+		t.Errorf("expected one dereference for a never-enriched entity, got %d", deref.calls)
+	}
+	if placeService.markCalls != 1 {
+		t.Errorf("expected MarkEnriched after dereference, got %d", placeService.markCalls)
+	}
+}
+
+func TestEnrichmentWorker_WorkPlace_RefreshDaysZero_SkipsWhenEnriched(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	placeService := &mockPlaceUpdater{
+		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
+			return &places.Place{ULID: "01Y", EnrichedAt: &now}, nil
+		},
+	}
+	deref := &mockEntityDereferencer{}
+
+	// EnrichmentRefreshDays == 0 means "enrich only when enriched_at is NULL".
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		PlaceService:          placeService,
+		EnrichmentRefreshDays: 0,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01Y", "http://kg.artsdata.ca/resource/K-23"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deref.calls != 0 {
+		t.Errorf("expected no dereference when EnrichmentRefreshDays=0 and entity already enriched, got %d", deref.calls)
+	}
+}
+
+func TestEnrichmentWorker_WorkOrg_FreshSkip(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	orgService := &mockOrgUpdater{
+		getFunc: func(_ context.Context, _ string) (*organizations.Organization, error) {
+			return &organizations.Organization{ULID: "01Z", EnrichedAt: &now}, nil
+		},
+	}
+	deref := &mockEntityDereferencer{}
+
+	worker := EnrichmentWorker{
+		Pool:                  fakePool(),
+		ReconciliationService: deref,
+		IdentifierStore:       &mockIdentifierUpserter{},
+		OrgService:            orgService,
+		EnrichmentRefreshDays: 30,
+	}
+	err := worker.Work(context.Background(), makeEnrichmentJob("organization", "01Z", "http://kg.artsdata.ca/resource/K-24"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deref.calls != 0 {
+		t.Errorf("expected no dereference for a fresh organization, got %d", deref.calls)
 	}
 }

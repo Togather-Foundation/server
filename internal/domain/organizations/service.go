@@ -33,6 +33,10 @@ func (s *Service) Update(ctx context.Context, ulid string, params UpdateOrganiza
 	return s.repo.Update(ctx, ulid, params)
 }
 
+func (s *Service) MarkEnriched(ctx context.Context, ulid string) error {
+	return s.repo.MarkEnriched(ctx, ulid)
+}
+
 // TODO(srv-d7cnu): Create removed during rebase
 // func (s *Service) Create(ctx context.Context, params CreateParams) (*Organization, error) {
 // 	return s.repo.Create(ctx, params)

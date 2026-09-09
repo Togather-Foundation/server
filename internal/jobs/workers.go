@@ -290,6 +290,7 @@ var _ IdentifierUpserter = (*postgres.Queries)(nil)
 type PlaceUpdater interface {
 	GetByULID(ctx context.Context, ulid string) (*places.Place, error)
 	Update(ctx context.Context, ulid string, params places.UpdatePlaceParams) (*places.Place, error)
+	MarkEnriched(ctx context.Context, ulid string) error
 }
 
 // OrgUpdater is the subset of organizations.Service used by EnrichmentWorker.
@@ -297,6 +298,7 @@ type PlaceUpdater interface {
 type OrgUpdater interface {
 	GetByULID(ctx context.Context, ulid string) (*organizations.Organization, error)
 	Update(ctx context.Context, ulid string, params organizations.UpdateOrganizationParams) (*organizations.Organization, error)
+	MarkEnriched(ctx context.Context, ulid string) error
 }
 
 // compile-time assertions: the concrete services must satisfy the interfaces.
@@ -311,6 +313,11 @@ type EnrichmentWorker struct {
 	PlaceService          PlaceUpdater
 	OrgService            OrgUpdater
 	Logger                *slog.Logger
+	// EnrichmentRefreshDays is the freshness TTL (in days) for dereferenced entities.
+	// An entity whose enriched_at is within this many days is skipped (no repeat
+	// dereference GET). 0 means enrich only when enriched_at is NULL. Negative values
+	// are treated as 0.
+	EnrichmentRefreshDays int
 }
 
 func (EnrichmentWorker) Kind() string { return JobKindEnrichment }
@@ -344,6 +351,24 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 		"attempt", job.Attempt,
 	)
 
+	// 0. Freshness skip: if the entity has been enriched recently (enriched_at NOT
+	// NULL and younger than the refresh TTL), skip the dereference entirely — no
+	// repeat Artsdata GET, no sameAs re-upsert. Entities with enriched_at NULL always
+	// enrich (backfills never-enriched venues on their next ingest). A failed read is
+	// treated as "not fresh" so we proceed rather than block enrichment on a read error.
+	//
+	// This lives here (not in ReconciliationWorker) because EnrichmentWorker already
+	// holds PlaceService/OrgService and already calls GetByULID; adding the check
+	// before dereferencing is the smallest correct change.
+	if fresh, err := w.isRecentlyEnriched(ctx, args.EntityType, args.EntityID); err == nil && fresh {
+		logger.Info("enrichment skipped (enriched_at fresh)",
+			"entity_type", args.EntityType,
+			"entity_id", args.EntityID,
+			"identifier_uri", args.IdentifierURI,
+		)
+		return nil
+	}
+
 	// 1. Dereference the identifier URI via the Artsdata client.
 	entity, err := w.ReconciliationService.DereferenceEntity(ctx, args.IdentifierURI)
 	if err != nil {
@@ -360,6 +385,12 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 		}
 		return fmt.Errorf("dereference %s: %w", args.IdentifierURI, err)
 	}
+
+	// 1b. Record a successful dereference. This is the enriched_at freshness marker
+	// the skip above relies on. It is set on every successful dereference (including
+	// the conservative "nothing to fill" no-op path), but NOT on 404 (left NULL so it
+	// can be retried later) or on retryable errors (job fails, left NULL).
+	w.markEnriched(ctx, args.EntityType, args.EntityID, logger)
 
 	// 2. Extract and store additional sameAs identifiers.
 	sameAsURIs := artsdata.ExtractSameAsURIs(entity)
@@ -568,6 +599,71 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 	)
 
 	return nil
+}
+
+// isRecentlyEnriched reports whether the entity should be skipped based on its
+// enriched_at marker. It returns true when enriched_at is NOT NULL and either
+// EnrichmentRefreshDays <= 0 (no time-based refresh) or the marker is younger than
+// the refresh TTL. A NULL enriched_at always returns false (backfill).
+func (w EnrichmentWorker) isRecentlyEnriched(ctx context.Context, entityType, entityID string) (bool, error) {
+	var enrichedAt *time.Time
+
+	switch entityType {
+	case "place":
+		if w.PlaceService == nil {
+			return false, nil
+		}
+		p, err := w.PlaceService.GetByULID(ctx, entityID)
+		if err != nil {
+			return false, err
+		}
+		enrichedAt = p.EnrichedAt
+	case "organization":
+		if w.OrgService == nil {
+			return false, nil
+		}
+		o, err := w.OrgService.GetByULID(ctx, entityID)
+		if err != nil {
+			return false, err
+		}
+		enrichedAt = o.EnrichedAt
+	default:
+		return false, fmt.Errorf("unsupported entity type: %s", entityType)
+	}
+
+	if enrichedAt == nil {
+		return false, nil // never enriched — always backfill
+	}
+	if w.EnrichmentRefreshDays <= 0 {
+		return true, nil // no time-based refresh — enrich only when NULL
+	}
+
+	ttl := time.Duration(w.EnrichmentRefreshDays) * 24 * time.Hour
+	return time.Since(*enrichedAt) < ttl, nil
+}
+
+// markEnriched records a successful dereference by setting the entity's enriched_at
+// marker to now(). Failures are soft (logged, not returned) — a lost marker only
+// means the entity is re-dereferenced on its next ingest, which is safe.
+func (w EnrichmentWorker) markEnriched(ctx context.Context, entityType, entityID string, logger *slog.Logger) {
+	var err error
+	switch entityType {
+	case "place":
+		if w.PlaceService != nil {
+			err = w.PlaceService.MarkEnriched(ctx, entityID)
+		}
+	case "organization":
+		if w.OrgService != nil {
+			err = w.OrgService.MarkEnriched(ctx, entityID)
+		}
+	}
+	if err != nil {
+		logger.Warn("failed to mark entity enriched",
+			"entity_type", entityType,
+			"entity_id", entityID,
+			"error", err,
+		)
+	}
 }
 
 // IdempotencyCleanupArgs defines the job for cleaning expired idempotency keys.
@@ -918,8 +1014,8 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, submissionRepo domainScraper.SubmissionRepository) *river.Workers {
-	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, (*postgres.Queries)(nil), submissionRepo, 0, 0, 0)
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, submissionRepo domainScraper.SubmissionRepository, enrichmentRefreshDays int) *river.Workers {
+	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, (*postgres.Queries)(nil), submissionRepo, 0, 0, 0, enrichmentRefreshDays)
 }
 
 // scraperQueries combines both config and sources queries needed by scrape workers.
@@ -930,7 +1026,7 @@ type scraperQueries interface {
 
 // NewWorkersWithScraper creates workers like NewWorkersWithPool but also
 // registers ScrapeSourceWorker when a non-nil scraper is provided.
-func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperQueries, submissionRepo domainScraper.SubmissionRepository, scrapeSourceJobTimeout, chainEnqueueTimeout time.Duration, chainEnqueueRetries int) *river.Workers {
+func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperQueries, submissionRepo domainScraper.SubmissionRepository, scrapeSourceJobTimeout, chainEnqueueTimeout time.Duration, chainEnqueueRetries int, enrichmentRefreshDays int) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -992,6 +1088,7 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 			PlaceService:          placeService,
 			OrgService:            orgService,
 			Logger:                logger,
+			EnrichmentRefreshDays: enrichmentRefreshDays,
 		})
 	}
 

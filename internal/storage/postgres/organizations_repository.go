@@ -227,6 +227,17 @@ func (r *OrganizationRepository) Update(ctx context.Context, ulid string, params
 	return &org, nil
 }
 
+// MarkEnriched records that an organization has been successfully enriched from a
+// knowledge graph dereference. Used as the freshness marker for enrichment skip.
+func (r *OrganizationRepository) MarkEnriched(ctx context.Context, ulid string) error {
+	queries := Queries{db: r.queryer()}
+
+	if err := queries.MarkOrganizationEnriched(ctx, ulid); err != nil {
+		return fmt.Errorf("mark organization enriched: %w", err)
+	}
+	return nil
+}
+
 // SoftDelete marks an organization as deleted
 func (r *OrganizationRepository) SoftDelete(ctx context.Context, ulid string, reason string) error {
 	queries := Queries{db: r.queryer()}
@@ -331,6 +342,10 @@ func (o *Organization) toDomain() organizations.Organization {
 	}
 	if o.UpdatedAt.Valid {
 		org.UpdatedAt = o.UpdatedAt.Time
+	}
+	if o.EnrichedAt.Valid {
+		t := o.EnrichedAt.Time
+		org.EnrichedAt = &t
 	}
 	return org
 }

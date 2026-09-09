@@ -28,6 +28,7 @@ type Organization struct {
 	Lifecycle        string
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
+	EnrichedAt       *time.Time
 }
 
 type CreateParams struct {
@@ -82,6 +83,7 @@ type Repository interface {
 	// TODO(srv-d7cnu): Create removed during rebase - check if needed
 	// Create(ctx context.Context, params CreateParams) (*Organization, error)
 	Update(ctx context.Context, ulid string, params UpdateOrganizationParams) (*Organization, error)
+	MarkEnriched(ctx context.Context, ulid string) error
 	SoftDelete(ctx context.Context, ulid string, reason string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByULID(ctx context.Context, ulid string) (*Tombstone, error)

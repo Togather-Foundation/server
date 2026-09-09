@@ -423,6 +423,7 @@ The Artsdata reconciliation adapter is implemented in the following locations:
 5. Results classified by confidence: >=0.95 with `match=true` → `auto_high`, >=0.80 → `auto_low`, <0.80 → rejected
 6. Matches stored in `entity_identifiers`, results cached in `reconciliation_cache` (both positive and negative)
 7. High-confidence matches enqueue `EnrichmentArgs` job → `EnrichmentWorker` dereferences the Artsdata URI, extracts `sameAs` links (stored as additional `entity_identifiers`), and conservatively fills empty fields on the local place/org (description, URL, address components)
+8. On a successful dereference `EnrichmentWorker` sets `places.enriched_at` / `organizations.enriched_at = now()`. Before dereferencing, it skips entities whose `enriched_at` is within `ARTSDATA_ENRICH_REFRESH_DAYS` (default 30) — avoiding repeat dereference GETs for busy venues — while entities with `enriched_at` NULL always enrich.
 
 ### Bulk Reconciliation
 
@@ -442,6 +443,7 @@ server reconcile all --force                 # Force re-reconcile everything (by
 | `ARTSDATA_RATE_LIMIT_PER_SEC` | `1.0` | Max API calls per second |
 | `ARTSDATA_CACHE_TTL_DAYS` | `30` | Cache TTL for successful reconciliation results |
 | `ARTSDATA_FAILURE_TTL_DAYS` | `7` | Cache TTL for negative/failed reconciliation attempts |
+| `ARTSDATA_ENRICH_REFRESH_DAYS` | `30` | Freshness TTL for dereferenced entities — an entity whose `enriched_at` is within this many days is skipped on subsequent enrichment jobs (no repeat dereference GET). `0` = enrich only when `enriched_at` is NULL (no time-based refresh) |
 
 Confidence thresholds are hardcoded: >=0.95 with `match=true` → `auto_high`, >=0.80 → `auto_low`, <0.80 → rejected.
 

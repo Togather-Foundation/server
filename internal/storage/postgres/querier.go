@@ -289,6 +289,8 @@ type Querier interface {
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error)
 	MarkInvitationAccepted(ctx context.Context, id pgtype.UUID) error
+	MarkOrganizationEnriched(ctx context.Context, ulid string) error
+	MarkPlaceEnriched(ctx context.Context, ulid string) error
 	// Mark events as deleted before cleaning up their pending reviews
 	MarkUnreviewedEventsAsDeleted(ctx context.Context) error
 	MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error

@@ -49,7 +49,7 @@ func (q *Queries) CreatePlaceTombstone(ctx context.Context, arg CreatePlaceTombs
 }
 
 const getPlaceByULID = `-- name: GetPlaceByULID :one
-SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id
+SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id, p.enriched_at
   FROM places p
  WHERE p.ulid = $1
 `
@@ -90,6 +90,7 @@ func (q *Queries) GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByUL
 		&i.Place.FederationUri,
 		&i.Place.NormalizedName,
 		&i.Place.MergedIntoID,
+		&i.Place.EnrichedAt,
 	)
 	return i, err
 }
@@ -126,7 +127,7 @@ func (q *Queries) GetPlaceTombstoneByULID(ctx context.Context, ulid string) (Pla
 
 const listPlacesByCreatedAt = `-- name: ListPlacesByCreatedAt :many
 
-SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id
+SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id, p.enriched_at
   FROM places p
  WHERE p.deleted_at IS NULL
    AND ($1::text IS NULL OR p.address_locality ILIKE '%' || $1 || '%')
@@ -197,6 +198,7 @@ func (q *Queries) ListPlacesByCreatedAt(ctx context.Context, arg ListPlacesByCre
 			&i.Place.FederationUri,
 			&i.Place.NormalizedName,
 			&i.Place.MergedIntoID,
+			&i.Place.EnrichedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -209,7 +211,7 @@ func (q *Queries) ListPlacesByCreatedAt(ctx context.Context, arg ListPlacesByCre
 }
 
 const listPlacesByCreatedAtDesc = `-- name: ListPlacesByCreatedAtDesc :many
-SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id
+SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id, p.enriched_at
   FROM places p
  WHERE p.deleted_at IS NULL
    AND ($1::text IS NULL OR p.address_locality ILIKE '%' || $1 || '%')
@@ -279,6 +281,7 @@ func (q *Queries) ListPlacesByCreatedAtDesc(ctx context.Context, arg ListPlacesB
 			&i.Place.FederationUri,
 			&i.Place.NormalizedName,
 			&i.Place.MergedIntoID,
+			&i.Place.EnrichedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -291,7 +294,7 @@ func (q *Queries) ListPlacesByCreatedAtDesc(ctx context.Context, arg ListPlacesB
 }
 
 const listPlacesByName = `-- name: ListPlacesByName :many
-SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id
+SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id, p.enriched_at
   FROM places p
  WHERE p.deleted_at IS NULL
    AND ($1::text IS NULL OR p.address_locality ILIKE '%' || $1 || '%')
@@ -361,6 +364,7 @@ func (q *Queries) ListPlacesByName(ctx context.Context, arg ListPlacesByNamePara
 			&i.Place.FederationUri,
 			&i.Place.NormalizedName,
 			&i.Place.MergedIntoID,
+			&i.Place.EnrichedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -373,7 +377,7 @@ func (q *Queries) ListPlacesByName(ctx context.Context, arg ListPlacesByNamePara
 }
 
 const listPlacesByNameDesc = `-- name: ListPlacesByNameDesc :many
-SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id
+SELECT p.id, p.ulid, p.name, p.description, p.street_address, p.address_locality, p.address_region, p.postal_code, p.address_country, p.full_address, p.latitude, p.longitude, p.geo_point, p.telephone, p.email, p.url, p.maximum_attendee_capacity, p.venue_type, p.accessibility_features, p.origin_node_id, p.confidence, p.created_at, p.updated_at, p.deleted_at, p.deletion_reason, p.federation_uri, p.normalized_name, p.merged_into_id, p.enriched_at
   FROM places p
  WHERE p.deleted_at IS NULL
    AND ($1::text IS NULL OR p.address_locality ILIKE '%' || $1 || '%')
@@ -443,6 +447,7 @@ func (q *Queries) ListPlacesByNameDesc(ctx context.Context, arg ListPlacesByName
 			&i.Place.FederationUri,
 			&i.Place.NormalizedName,
 			&i.Place.MergedIntoID,
+			&i.Place.EnrichedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -452,6 +457,18 @@ func (q *Queries) ListPlacesByNameDesc(ctx context.Context, arg ListPlacesByName
 		return nil, err
 	}
 	return items, nil
+}
+
+const markPlaceEnriched = `-- name: MarkPlaceEnriched :exec
+UPDATE places
+   SET enriched_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL
+`
+
+func (q *Queries) MarkPlaceEnriched(ctx context.Context, ulid string) error {
+	_, err := q.db.Exec(ctx, markPlaceEnriched, ulid)
+	return err
 }
 
 const softDeletePlace = `-- name: SoftDeletePlace :exec
@@ -488,7 +505,7 @@ UPDATE places
        updated_at = now()
  WHERE ulid = $1
    AND deleted_at IS NULL
-RETURNING places.id, places.ulid, places.name, places.description, places.street_address, places.address_locality, places.address_region, places.postal_code, places.address_country, places.full_address, places.latitude, places.longitude, places.geo_point, places.telephone, places.email, places.url, places.maximum_attendee_capacity, places.venue_type, places.accessibility_features, places.origin_node_id, places.confidence, places.created_at, places.updated_at, places.deleted_at, places.deletion_reason, places.federation_uri, places.normalized_name, places.merged_into_id
+RETURNING places.id, places.ulid, places.name, places.description, places.street_address, places.address_locality, places.address_region, places.postal_code, places.address_country, places.full_address, places.latitude, places.longitude, places.geo_point, places.telephone, places.email, places.url, places.maximum_attendee_capacity, places.venue_type, places.accessibility_features, places.origin_node_id, places.confidence, places.created_at, places.updated_at, places.deleted_at, places.deletion_reason, places.federation_uri, places.normalized_name, places.merged_into_id, places.enriched_at
 `
 
 type UpdatePlaceParams struct {
@@ -553,6 +570,7 @@ func (q *Queries) UpdatePlace(ctx context.Context, arg UpdatePlaceParams) (Updat
 		&i.Place.FederationUri,
 		&i.Place.NormalizedName,
 		&i.Place.MergedIntoID,
+		&i.Place.EnrichedAt,
 	)
 	return i, err
 }

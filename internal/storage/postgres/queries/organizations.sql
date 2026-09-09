@@ -104,5 +104,11 @@ UPDATE organizations
    AND deleted_at IS NULL
 RETURNING sqlc.embed(organizations);
 
+-- name: MarkOrganizationEnriched :exec
+UPDATE organizations
+   SET enriched_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL;
+
 -- name: CountAllOrganizations :one
 SELECT COUNT(*) FROM organizations WHERE deleted_at IS NULL;
