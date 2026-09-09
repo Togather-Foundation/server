@@ -367,6 +367,7 @@ type Organization struct {
 	FederationUri    pgtype.Text        `json:"federation_uri"`
 	NormalizedName   pgtype.Text        `json:"normalized_name"`
 	MergedIntoID     pgtype.UUID        `json:"merged_into_id"`
+	EnrichedAt       pgtype.Timestamptz `json:"enriched_at"`
 }
 
 type OrganizationTombstone struct {
@@ -408,6 +409,7 @@ type Place struct {
 	FederationUri           pgtype.Text        `json:"federation_uri"`
 	NormalizedName          pgtype.Text        `json:"normalized_name"`
 	MergedIntoID            pgtype.UUID        `json:"merged_into_id"`
+	EnrichedAt              pgtype.Timestamptz `json:"enriched_at"`
 }
 
 type PlaceScraperSource struct {

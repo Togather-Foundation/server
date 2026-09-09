@@ -445,6 +445,12 @@ type ArtsdataConfig struct {
 	CacheTTLDays int
 	// FailureTTLDays is the TTL for negative/failed reconciliation attempts (default: 7)
 	FailureTTLDays int
+	// EnrichmentRefreshDays is the freshness TTL for dereferenced entities. An entity
+	// whose enriched_at is within this many days is skipped on subsequent enrichment
+	// jobs (no repeat Artsdata dereference GET). 0 means enrich only when enriched_at
+	// is NULL (no time-based refresh). Default: 30.
+	// Environment variable: ARTSDATA_ENRICH_REFRESH_DAYS
+	EnrichmentRefreshDays int
 }
 
 func Load() (Config, error) {
@@ -557,12 +563,13 @@ func Load() (Config, error) {
 			DefaultCountry:           getEnv("GEOCODING_DEFAULT_COUNTRY", "ca"),
 		},
 		Artsdata: ArtsdataConfig{
-			Endpoint:        getEnv("ARTSDATA_ENDPOINT", "https://api.artsdata.ca/recon"),
-			Enabled:         getEnvBool("ARTSDATA_ENABLED", false),
-			RateLimitPerSec: getEnvFloat("ARTSDATA_RATE_LIMIT_PER_SEC", 1.0),
-			TimeoutSeconds:  getEnvInt("ARTSDATA_TIMEOUT_SECONDS", 10),
-			CacheTTLDays:    getEnvInt("ARTSDATA_CACHE_TTL_DAYS", 30),
-			FailureTTLDays:  getEnvInt("ARTSDATA_FAILURE_TTL_DAYS", 7),
+			Endpoint:              getEnv("ARTSDATA_ENDPOINT", "https://api.artsdata.ca/recon"),
+			Enabled:               getEnvBool("ARTSDATA_ENABLED", false),
+			RateLimitPerSec:       getEnvFloat("ARTSDATA_RATE_LIMIT_PER_SEC", 1.0),
+			TimeoutSeconds:        getEnvInt("ARTSDATA_TIMEOUT_SECONDS", 10),
+			CacheTTLDays:          getEnvInt("ARTSDATA_CACHE_TTL_DAYS", 30),
+			FailureTTLDays:        getEnvInt("ARTSDATA_FAILURE_TTL_DAYS", 7),
+			EnrichmentRefreshDays: getEnvInt("ARTSDATA_ENRICH_REFRESH_DAYS", 30),
 		},
 		Scraper: ScraperConfig{
 			HeadlessEnabled:         getEnvBool("SCRAPER_HEADLESS_ENABLED", false),

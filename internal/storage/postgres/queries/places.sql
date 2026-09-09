@@ -104,5 +104,11 @@ UPDATE places
    AND deleted_at IS NULL
 RETURNING sqlc.embed(places);
 
+-- name: MarkPlaceEnriched :exec
+UPDATE places
+   SET enriched_at = now()
+ WHERE ulid = $1
+   AND deleted_at IS NULL;
+
 -- name: CountAllPlaces :one
 SELECT COUNT(*) FROM places WHERE deleted_at IS NULL;

@@ -33,6 +33,10 @@ func (s *Service) Update(ctx context.Context, ulid string, params UpdatePlacePar
 	return s.repo.Update(ctx, ulid, params)
 }
 
+func (s *Service) MarkEnriched(ctx context.Context, ulid string) error {
+	return s.repo.MarkEnriched(ctx, ulid)
+}
+
 func (s *Service) SoftDelete(ctx context.Context, ulid string, reason string) error {
 	return s.repo.SoftDelete(ctx, ulid, reason)
 }

@@ -46,6 +46,10 @@ func (s stubPlacesRepo) Update(_ context.Context, _ string, _ places.UpdatePlace
 	return nil, errors.New("not implemented")
 }
 
+func (s stubPlacesRepo) MarkEnriched(_ context.Context, _ string) error {
+	return errors.New("not implemented")
+}
+
 func TestPlacesHandlerListSuccess(t *testing.T) {
 	repo := stubPlacesRepo{
 		listFn: func(filters places.Filters, pagination places.Pagination) (places.ListResult, error) {

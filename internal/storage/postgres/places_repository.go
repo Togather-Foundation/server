@@ -45,6 +45,7 @@ type placeRow struct {
 	DistanceKm              *float64
 	CreatedAt               pgtype.Timestamptz
 	UpdatedAt               pgtype.Timestamptz
+	EnrichedAt              pgtype.Timestamptz
 }
 
 func (r *PlaceRepository) List(ctx context.Context, filters places.Filters, paginationArgs places.Pagination) (places.ListResult, error) {
@@ -140,7 +141,7 @@ SELECT p.id, p.ulid, p.name, p.description,
        p.federation_uri,
        p.deleted_at, p.deletion_reason,
        ST_Distance(p.geo_point::geography, ST_MakePoint($1, $2)::geography) / 1000.0 AS distance_km,
-       p.created_at, p.updated_at
+       p.created_at, p.updated_at, p.enriched_at
   FROM places p
  WHERE %s
  ORDER BY distance_km ASC, p.ulid ASC
@@ -289,6 +290,7 @@ SELECT p.id, p.ulid, p.name, p.description,
 			&row.DistanceKm,
 			&row.CreatedAt,
 			&row.UpdatedAt,
+			&row.EnrichedAt,
 		); err != nil {
 			return places.ListResult{}, fmt.Errorf("scan places: %w", err)
 		}
@@ -356,6 +358,10 @@ func placeRowToDomain(row *placeRow) places.Place {
 	if row.UpdatedAt.Valid {
 		place.UpdatedAt = row.UpdatedAt.Time
 	}
+	if row.EnrichedAt.Valid {
+		t := row.EnrichedAt.Time
+		place.EnrichedAt = &t
+	}
 	return place
 }
 
@@ -386,6 +392,10 @@ func (p *Place) toDomain() places.Place {
 	}
 	if p.UpdatedAt.Valid {
 		place.UpdatedAt = p.UpdatedAt.Time
+	}
+	if p.EnrichedAt.Valid {
+		t := p.EnrichedAt.Time
+		place.EnrichedAt = &t
 	}
 	return place
 }
@@ -461,6 +471,17 @@ func (r *PlaceRepository) Update(ctx context.Context, ulid string, params places
 
 	place := row.Place.toDomain()
 	return &place, nil
+}
+
+// MarkEnriched records that a place has been successfully enriched from a
+// knowledge graph dereference. Used as the freshness marker for enrichment skip.
+func (r *PlaceRepository) MarkEnriched(ctx context.Context, ulid string) error {
+	queries := Queries{db: r.queryer()}
+
+	if err := queries.MarkPlaceEnriched(ctx, ulid); err != nil {
+		return fmt.Errorf("mark place enriched: %w", err)
+	}
+	return nil
 }
 
 // SoftDelete marks a place as deleted

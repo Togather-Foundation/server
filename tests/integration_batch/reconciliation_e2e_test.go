@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -49,8 +50,14 @@ func seedAuthorityCodes(t *testing.T, pool *pgxpool.Pool) {
 // ReconciliationService normalizes to 0.99 and classifies as auto_high.
 // The returned identifier URI points back at this mock so the follow-up
 // dereference (GET /resource/...) also lands here.
-func newMockArtsdataServer(t *testing.T) *httptest.Server {
+//
+// The returned *atomic.Int32 counts every dereference (GET /resource/...) the mock
+// serves, so tests can assert enrichment freshness (a fresh entity must NOT trigger
+// another dereference).
+func newMockArtsdataServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
 	t.Helper()
+
+	var derefCounter atomic.Int32
 
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -105,6 +112,7 @@ func newMockArtsdataServer(t *testing.T) *httptest.Server {
 			}
 
 		case strings.HasPrefix(r.URL.Path, "/resource/") && r.Method == "GET":
+			derefCounter.Add(1)
 			// Dereferenced entity with sameAs links and enrichment fields, using the
 			// realistic *compacted* JSON-LD shape (id/type aliases, @none-wrapped
 			// address scalars) the live Artsdata API returns — see docs/interop/artsdata.md §3.4.
@@ -142,7 +150,7 @@ func newMockArtsdataServer(t *testing.T) *httptest.Server {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
+	})), &derefCounter
 }
 
 // waitForJobState polls the river_job table until a job of the given kind for the
@@ -168,6 +176,72 @@ func waitForJobState(t *testing.T, pool *pgxpool.Pool, kind, entityType, entityI
 	t.Fatalf("timed out after %v waiting for %s job for %s %s to reach state %q", timeout, kind, entityType, entityID, state)
 }
 
+// waitForJobCount polls the river_job table until at least minCount jobs of the given
+// kind for the given entity have reached the expected state. Used when a prior job of
+// the same kind/entity already completed and a subsequent ingest enqueues another.
+func waitForJobCount(t *testing.T, pool *pgxpool.Pool, kind, entityType, entityID, state string, minCount int, timeout time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		var count int
+		err := pool.QueryRow(context.Background(),
+			`SELECT COUNT(*) FROM river_job
+			 WHERE kind = $1 AND args->>'entity_type' = $2 AND args->>'entity_id' = $3 AND state = $4`,
+			kind, entityType, entityID, state).Scan(&count)
+		require.NoError(t, err)
+		if count >= minCount {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("timed out after %v waiting for %d %s jobs for %s %s in state %q", timeout, minCount, kind, entityType, entityID, state)
+}
+
+// ingestEvent POSTs a single event (JSON-LD) to the running test server and asserts
+// a 201 Created response. Each call uses a distinct event name and source eventId so
+// the event itself is unique, while the venue name stays constant to exercise the
+// venue-resolution path.
+func ingestEvent(t *testing.T, server *httptest.Server, apiKey, name, venueName, eventID string) {
+	t.Helper()
+
+	payload := map[string]any{
+		"name":        name,
+		"description": "Opening night for a new exhibition.",
+		"startDate":   time.Now().Add(48 * time.Hour).Format(time.RFC3339),
+		"location": map[string]any{
+			"name":            venueName,
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+			"addressCountry":  "CA",
+			"postalCode":      "M5T 1G4",
+		},
+		"source": map[string]any{
+			"url":     "https://example.com/events/" + eventID,
+			"eventId": eventID,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+"/api/v1/events", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/ld+json")
+	req.Header.Set("Accept", "application/ld+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	if resp.StatusCode != http.StatusCreated {
+		var failure map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "status=%d response=%v", resp.StatusCode, failure)
+	}
+}
+
 // TestReconciliationEndToEnd exercises the full live reconciliation path with running
 // River workers: event ingestion → reconciliation job → Artsdata lookup →
 // entity_identifiers + reconciliation_cache → enrichment (dereference + sameAs + field fill).
@@ -175,18 +249,19 @@ func TestReconciliationEndToEnd(t *testing.T) {
 	initShared(t)
 	testhelpers.ResetDatabase(t, sharedPool)
 
-	mockServer := newMockArtsdataServer(t)
+	mockServer, derefCounter := newMockArtsdataServer(t)
 	t.Cleanup(mockServer.Close)
 
 	// Build a config with Artsdata enabled, pointed at the mock server.
 	cfg := testhelpers.TestConfig(sharedDBURL)
 	cfg.Artsdata = config.ArtsdataConfig{
-		Endpoint:        mockServer.URL + "/recon",
-		Enabled:         true,
-		RateLimitPerSec: 100,
-		TimeoutSeconds:  10,
-		CacheTTLDays:    30,
-		FailureTTLDays:  7,
+		Endpoint:              mockServer.URL + "/recon",
+		Enabled:               true,
+		RateLimitPerSec:       100,
+		TimeoutSeconds:        10,
+		CacheTTLDays:          30,
+		FailureTTLDays:        7,
+		EnrichmentRefreshDays: 30,
 	}
 
 	routerWithClient := api.NewRouter(cfg, testhelpers.TestLogger(), sharedPool, "test", "test-commit", "test-date")
@@ -212,40 +287,7 @@ func TestReconciliationEndToEnd(t *testing.T) {
 	// place and the events handler enqueues a reconciliation job for it.
 	const venueName = "Art Gallery of Ontario"
 
-	payload := map[string]any{
-		"name":        "AGO Exhibition Opening",
-		"description": "Opening night for a new exhibition.",
-		"startDate":   time.Now().Add(48 * time.Hour).Format(time.RFC3339),
-		"location": map[string]any{
-			"name":            venueName,
-			"addressLocality": "Toronto",
-			"addressRegion":   "ON",
-			"addressCountry":  "CA",
-		},
-		"source": map[string]any{
-			"url":     "https://example.com/events/ago-opening",
-			"eventId": "ago-opening-1",
-		},
-	}
-
-	body, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+"/api/v1/events", bytes.NewReader(body))
-	require.NoError(t, err)
-	req.Header.Set("Authorization", "Bearer "+apiKey)
-	req.Header.Set("Content-Type", "application/ld+json")
-	req.Header.Set("Accept", "application/ld+json")
-
-	resp, err := http.DefaultClient.Do(req)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = resp.Body.Close() })
-
-	if resp.StatusCode != http.StatusCreated {
-		var failure map[string]any
-		_ = json.NewDecoder(resp.Body).Decode(&failure)
-		require.Failf(t, "unexpected status", "status=%d response=%v", resp.StatusCode, failure)
-	}
+	ingestEvent(t, server, apiKey, "AGO Exhibition Opening", venueName, "ago-opening-1")
 
 	// Resolve the ULID of the newly created place.
 	var placeULID string
@@ -291,4 +333,47 @@ func TestReconciliationEndToEnd(t *testing.T) {
 	assert.NotEmpty(t, description, "expected enrichment to fill the place description")
 	assert.Equal(t, "https://ago.ca", url, "expected enrichment to fill the place URL")
 	assert.NotEmpty(t, streetAddress, "expected enrichment to fill the place street address")
+
+	// ── Enrichment freshness (enriched_at TTL marker) ─────────────────────────
+	//
+	// Note: a single auto_high reconciliation dereferences once in the reconciliation
+	// service (to extract sameAs) AND once in the enrichment worker, so the first
+	// cycle serves two /resource GETs. We measure deltas relative to that baseline,
+	// not absolute counts, so the assertion holds regardless of that detail.
+	var enrichedAt time.Time
+	require.NoError(t, sharedPool.QueryRow(context.Background(),
+		`SELECT enriched_at FROM places WHERE ulid = $1`, placeULID).Scan(&enrichedAt),
+		"expected enriched_at to be set after first enrichment")
+	firstDeref := derefCounter.Load()
+
+	// A SECOND event at the same venue reuses the same place; its enrichment job must
+	// be skipped because enriched_at is fresh — no new dereference, enriched_at unchanged.
+	ingestEvent(t, server, apiKey, "AGO Members Preview", venueName, "ago-opening-2")
+
+	waitForJobCount(t, sharedPool, jobs.JobKindReconciliation, "place", placeULID, "completed", 2, 30*time.Second)
+	waitForJobCount(t, sharedPool, jobs.JobKindEnrichment, "place", placeULID, "completed", 2, 30*time.Second)
+
+	assert.Equal(t, firstDeref, derefCounter.Load(), "expected no additional dereference for a fresh entity")
+
+	var enrichedAtAfterSecond time.Time
+	require.NoError(t, sharedPool.QueryRow(context.Background(),
+		`SELECT enriched_at FROM places WHERE ulid = $1`, placeULID).Scan(&enrichedAtAfterSecond))
+	assert.Equal(t, enrichedAt, enrichedAtAfterSecond, "enriched_at must be unchanged when enrichment is skipped")
+
+	// Artificially age enriched_at past the refresh TTL; the next ingest must dereference again.
+	_, err = sharedPool.Exec(context.Background(),
+		`UPDATE places SET enriched_at = now() - interval '40 days' WHERE ulid = $1`, placeULID)
+	require.NoError(t, err)
+
+	ingestEvent(t, server, apiKey, "AGO Fall Gala", venueName, "ago-opening-3")
+
+	waitForJobCount(t, sharedPool, jobs.JobKindReconciliation, "place", placeULID, "completed", 3, 30*time.Second)
+	waitForJobCount(t, sharedPool, jobs.JobKindEnrichment, "place", placeULID, "completed", 3, 30*time.Second)
+
+	assert.Equal(t, firstDeref+1, derefCounter.Load(), "expected exactly one re-dereference after enriched_at aged past TTL")
+
+	var enrichedAtAfterThird time.Time
+	require.NoError(t, sharedPool.QueryRow(context.Background(),
+		`SELECT enriched_at FROM places WHERE ulid = $1`, placeULID).Scan(&enrichedAtAfterThird))
+	assert.True(t, enrichedAtAfterThird.After(enrichedAt), "enriched_at must be refreshed after re-dereference")
 }

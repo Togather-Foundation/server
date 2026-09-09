@@ -30,6 +30,7 @@ type Place struct {
 	DistanceKm              *float64
 	CreatedAt               time.Time
 	UpdatedAt               time.Time
+	EnrichedAt              *time.Time
 }
 
 type Filters struct {
@@ -72,6 +73,7 @@ type Repository interface {
 	List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error)
 	GetByULID(ctx context.Context, ulid string) (*Place, error)
 	Update(ctx context.Context, ulid string, params UpdatePlaceParams) (*Place, error)
+	MarkEnriched(ctx context.Context, ulid string) error
 	SoftDelete(ctx context.Context, ulid string, reason string) error
 	CreateTombstone(ctx context.Context, params TombstoneCreateParams) error
 	GetTombstoneByULID(ctx context.Context, ulid string) (*Tombstone, error)

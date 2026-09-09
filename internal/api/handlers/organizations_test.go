@@ -50,6 +50,10 @@ func (s stubOrganizationsRepo) Update(_ context.Context, _ string, _ organizatio
 	return nil, errors.New("not implemented")
 }
 
+func (s stubOrganizationsRepo) MarkEnriched(_ context.Context, _ string) error {
+	return errors.New("not implemented")
+}
+
 func TestOrganizationsHandlerListSuccess(t *testing.T) {
 	repo := stubOrganizationsRepo{
 		listFn: func(filters organizations.Filters, pagination organizations.Pagination) (organizations.ListResult, error) {
