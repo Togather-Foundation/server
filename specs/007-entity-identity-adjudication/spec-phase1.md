@@ -32,7 +32,7 @@ identifiers** for places/orgs after a merge, verified on staging.
 | Event merge | omits `deletion_reason` | `queries/events.sql:78-85` |
 | Tombstone builders | unexported handler funcs; take URI+payload | `internal/api/handlers/admin.go:471`, `:560` |
 | ULID validation helper | always returns **400** | `internal/api/handlers/validators.go:25` |
-| Admin JWT claims | `AdminClaims(r).Subject` available | `internal/auth/auth_cookie.go:86`, `internal/auth/jwt.go:11-14` |
+| Admin JWT claims | `AdminClaims(r).Subject` available | `internal/api/middleware/auth_cookie.go:86`, `internal/auth/jwt.go:11-14` |
 | Review CLI pattern | Live agent contract to mirror | `docs/integration/tg-review.md` |
 
 **Observed drift (staging, 2026-09-10 — runtime observation, not repo-verifiable):**
@@ -44,8 +44,8 @@ identifiers** for places/orgs after a merge, verified on staging.
    authority URI patterns; append-only `identity_decisions`; signal-scoped
    `identity_not_duplicates`; missing merge indexes; **down migration**.
 2. **Atomic primary election** (transaction + Go rank) integrated into reconciliation/
-   enrichment writes; refresh `observed_at`; write `superseded_by_id`; stop writing
-   `is_canonical`.
+   enrichment writes; refresh `observed_at`; write `superseded_by_id`; never set
+   `is_canonical=true` (write `false` only to satisfy the old-container column contract).
 3. **Merge integrity**: `MergePlaces`/`MergeOrganizations` made **transactional**, reassign +
    dedupe identifiers (ULID-resolved), write tombstones, re-elect a primary.
 4. `LinkIdentifier` / `Reject` executor + decision store, exposed via **admin REST
@@ -199,11 +199,6 @@ type IdentifierObservation struct {
 // Canonical order (plan.md): method > authority trust/priority > confidence > observed_at > id.
 func ElectPrimary(obs []IdentifierObservation) (IdentifierObservation, bool)
 
-type GroupObservation struct {
-    IdentifierObservation
-    IsPrimary bool
-}
-
 // internal/identity/record.go — flat, mirrors identity_decisions columns and JSON.
 type DecisionRecord struct {
     ID              string         `json:"id"`           // "idn-{ulid}"
@@ -262,8 +257,13 @@ type DecisionsResponse struct {
 ```
 
 **Cursor semantics**: opaque base64 keyset cursors. Conflicts order
-`(authority_code, identifier_uri, entity_id)`; decisions order `(created_at DESC, id DESC)`
-with `since` an inclusive RFC3339 lower bound on `created_at`. No offset paging.
+`(authority_code, identifier_uri, entity_id_a, entity_id_b)` (cursor encodes all four);
+decisions order `(created_at DESC, id DESC)` with `since` an inclusive RFC3339 lower bound on
+`created_at`. No offset paging.
+
+**Evidence fingerprint** (`internal/identity/fingerprint.go`) = hex SHA-256 of the sorted,
+newline-joined `authority|uri|entityId` observations of both entities at decision time. The
+same function computes the *current* fingerprint on read.
 
 ### Interfaces
 
@@ -271,15 +271,25 @@ with `since` an inclusive RFC3339 lower bound on `created_at`. No offset paging.
 // internal/identity/store.go
 // RecordObservation performs the whole election in ONE transaction (no partial writes):
 //   1. pg_advisory_xact_lock(hash(entity_type|entity_id|authority))   -- serialize per group
-//   2. UpsertObservation(..., is_primary=false, observed_at=now(), source=obs.Source)
-//   3. GroupObservations(...)  -- joins knowledge_graph_authorities for trust/priority
+//   2. UpsertObservation(..., observed_at=now(), source=obs.Source)
+//      -- INSERT sets is_primary=false; ON CONFLICT DO UPDATE does NOT touch is_primary
+//   3. GetEntityIdentifiers(...)  -- joins knowledge_graph_authorities for trust/priority
 //   4. winner, ok := ElectPrimary(obs)          -- Go rank
-//   5. if winner changed: DemotePrimaryAndSupersede(group, winner.ID)  -- sets superseded_by_id
-//      SetPrimary(winner.ID)
-// Idempotent when the winner is unchanged. Returns the stored observation.
+//   5. DemotePrimaryAndSupersede(group, winner.ID)  -- demotes every primary except winner,
+//      setting superseded_by_id=winner.ID
+//   6. SetPrimary(winner.ID)                    -- UNCONDITIONAL; guarantees exactly one primary
+// Steps 5-6 run even when the winner is unchanged (no-ops then), so a re-observed current
+// winner cannot be left non-primary.
+type TxManager interface {
+    WithTx(ctx context.Context, fn func(q *postgres.Queries) error) error
+}
+
 type IdentifierStore interface {
+    // Own-transaction convenience for the reconciliation/enrichment writers.
     RecordObservation(ctx context.Context, ref IdentityRef, obs IdentifierObservation) (IdentifierObservation, error)
-    GetEntityIdentifiers(ctx context.Context, ref IdentityRef) ([]GroupObservation, error)
+    // Tx-scoped form: caller supplies the tx so election + decision append commit atomically.
+    RecordObservationTx(ctx context.Context, q *postgres.Queries, ref IdentityRef, obs IdentifierObservation) (IdentifierObservation, error)
+    GetEntityIdentifiers(ctx context.Context, ref IdentityRef) ([]IdentifierObservation, error)
 }
 
 type NotDuplicateStore interface {
@@ -304,19 +314,25 @@ observation** for one SEL entity, then elect the primary. It is *not* entity-to-
 Entity-to-entity sameness is expressed by `Reject` (distinct) or, in Phase 2, by merge.
 
 **SQLc queries to add** (`internal/storage/postgres/queries/identity.sql`):
-- `UpsertObservation :one` — insert/update with `is_primary=false`, `observed_at=now()`,
-  `source`, `is_canonical=false` (kept for the old-container contract). Does **not** elect.
-- `GroupObservations :many` — `SELECT ei..., a.trust_level, a.priority_order FROM
-  entity_identifiers ei JOIN knowledge_graph_authorities a ON a.authority_code =
-  ei.authority_code WHERE ei.entity_type=$1 AND ei.entity_id=$2 AND ei.authority_code=$3
-  FOR UPDATE OF ei`.
+- `UpsertObservation :one` — **renames** the existing `UpsertEntityIdentifier` query. INSERT
+  sets `is_primary=false`; `ON CONFLICT DO UPDATE` refreshes `confidence`,
+  `reconciliation_method`, `observed_at=now()`, `source`, `metadata`, `updated_at` and does
+  **not** touch `is_primary`; `is_canonical` written `false`. Does **not** elect.
+- `GetEntityIdentifiers :many` — existing query extended to join
+  `knowledge_graph_authorities` (via `a.authority_code = ei.authority_code`) selecting
+  `a.trust_level, a.priority_order`, with `FOR UPDATE OF ei`.
 - `DemotePrimaryAndSupersede :exec` — `UPDATE entity_identifiers SET is_primary=false,
   superseded_by_id=$4, updated_at=now() WHERE entity_type=$1 AND entity_id=$2 AND
   authority_code=$3 AND is_primary AND id<>$4`.
 - `SetPrimary :exec` — `UPDATE entity_identifiers SET is_primary=true, superseded_by_id=NULL,
   updated_at=now() WHERE id=$1`.
-- `ListConflicts :many` — groups sharing `(authority_code, identifier_uri)` across distinct
-  `entity_id` (keyset-paginated).
+- `ListConflicts :many` — self-join `entity_identifiers a JOIN entity_identifiers b ON
+  a.authority_code=b.authority_code AND a.identifier_uri=b.identifier_uri AND
+  a.entity_id<b.entity_id`, keyset on `(authority_code, identifier_uri, a.entity_id,
+  b.entity_id)`; returns each unordered pair once plus the stored `evidence_fingerprint`.
+- `InsertNotDuplicate :exec` — `INSERT ... ON CONFLICT (entity_type,id_a,id_b) DO UPDATE SET
+  evidence_fingerprint=EXCLUDED.evidence_fingerprint, decision_id=EXCLUDED.decision_id,
+  created_at=now(), created_by=EXCLUDED.created_by`.
 - `ListIdentityDecisions :many` — keyset-paginated feed.
 
 ### REST / CLI Schemas
@@ -324,9 +340,13 @@ Entity-to-entity sameness is expressed by `Reject` (distinct) or, in Phase 2, by
 **GET `/api/v1/admin/identity/{type}/{id}`** → `200`: `IdentityView`.
 
 **GET `/api/v1/admin/identity/conflicts?type=place&limit=50&cursor=&include_suppressed=false`**
-→ `200`: `ConflictsResponse`. **Phase 1 conflict source** = distinct entities sharing an exact
-`(authority_code, identifier_uri)`. Suppressed pairs (matching fingerprint) are **excluded by
-default**; `include_suppressed=true` includes them with `prior_decision` populated.
+→ `200`: `ConflictsResponse`. **Phase 1 conflict source** = a self-join of
+`entity_identifiers` on equal `(authority_code, identifier_uri)` with `entity_id_a <
+entity_id_b`, returning each unordered pair once. `Suppressed` is computed in Go: the service
+loads the stored `evidence_fingerprint` for the pair and compares it to the current
+fingerprint (same `fingerprint.go` function). Suppressed pairs are **excluded by default**;
+`include_suppressed=true` includes them with `prior_decision` (joined via
+`identity_not_duplicates.decision_id`).
 ```json
 { "items": [
     { "ref": {"entity_type":"place","entity_id":"01...A"},
@@ -347,7 +367,10 @@ default**; `include_suppressed=true` includes them with `prior_decision` populat
   "rationale":"confirmed via venue website" }
 ```
 Server defaults omitted `method=manual`, `confidence=1.0`, `source=manual`; validates `uri`
-against the authority pattern. `actor` is taken from the JWT subject, never the body.
+against the authority pattern. Client-supplied `method`/`source` are accepted only from the
+Phase 1 allow-list (`manual`) and otherwise normalised to `manual` — an agent cannot assert
+`auto_high`/`auto_low`; `confidence` is clamped to `[0,1]` and never affects the method rank.
+`actor` is taken from the JWT subject, never the body.
 
 **POST `/api/v1/admin/identity/reject`** → `201` `DecisionRecord`:
 ```json
@@ -419,6 +442,7 @@ CREATE TABLE identity_not_duplicates (
   entity_type TEXT NOT NULL CHECK (entity_type IN ('place','organization')),
   id_a TEXT NOT NULL, id_b TEXT NOT NULL,
   evidence_fingerprint TEXT NOT NULL,
+  decision_id TEXT REFERENCES identity_decisions(id),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(), created_by TEXT NOT NULL,
   PRIMARY KEY (entity_type, id_a, id_b), CHECK (id_a < id_b)
 );
@@ -499,19 +523,20 @@ FROM entity_identifiers WHERE is_primary GROUP BY 1,2,3 HAVING count(*)>1` retur
 ### Task 2: Atomic primary election + writer integration
 
 **What**: Implement `internal/identity/rank.go` (`ElectPrimary`) and
-`internal/identity/store.go` (`RecordObservation`: advisory lock → upsert observation
-(`is_primary=false`, `observed_at=now()`, `source`) → `GroupObservations` (authority join) →
-Go `ElectPrimary` → demote+supersede → set primary, all in one transaction). Add the SQLc
-queries. Update `internal/kg/reconciliation.go` and `internal/jobs/workers.go` to call
-`RecordObservation`; remove `IsCanonical` from writer params; update `UpsertEntityIdentifier`
-SQL/params and regenerate.
+`internal/identity/store.go` (`RecordObservation`: advisory lock → `UpsertObservation` →
+`GetEntityIdentifiers` (authority join) → Go `ElectPrimary` → demote+supersede →
+unconditional set primary, in one transaction). **Rename** the existing
+`UpsertEntityIdentifier` query to `UpsertObservation`; its `ON CONFLICT DO UPDATE` must not
+touch `is_primary`. Add the SQLc queries. Update `internal/kg/reconciliation.go` and
+`internal/jobs/workers.go` to call `RecordObservation`; remove `IsCanonical` from writer
+params; regenerate SQLc.
 **Test**: unit tests for `ElectPrimary` ordering with explicit ties (each tier, incl. `id`
-tie-break); integration test that a higher-ranked second write demotes the prior primary,
-sets `superseded_by_id`, and retains both rows; concurrency test (two goroutines) yields one
-primary.
+tie-break); integration test that a higher-ranked second write demotes the prior primary, sets
+`superseded_by_id`, and retains both rows; **idempotency test**: re-observing the current
+winner leaves it primary; concurrency test (two goroutines) yields exactly one primary.
 **Acceptance**: after two reconciles with different top matches, exactly one `is_primary` row
 exists and the higher-ranked wins; `superseded_by_id` points at the new primary; `observed_at`
-refreshed; no `ElectPrimary` SQL-name collision (the SQL query is `UpsertObservation`).
+refreshed; re-observing the current winner never clears its primary flag.
 
 ### Task 3: Transactional merge integrity (identifiers, tombstones)
 
@@ -521,8 +546,11 @@ in one transaction; resolve the duplicate/primary **ULIDs** (methods receive UUI
 re-elect one primary; write a `place_tombstones`/`organization_tombstones` row (URI+payload
 from the domain service). Move the tombstone-payload builders from
 `internal/api/handlers/admin.go:471,560` to a new exported `internal/domain/tombstones`
-package and call them from the domain service. Fix `MergeEvents` (`queries/events.sql:78-85`)
-to set `deletion_reason`. (`deletion_reason` is already set for place/org merges.)
+package (moving `buildPlaceURI`/`buildOrganizationURI` with them) and call them from the
+domain service; the domain service resolves UUIDs to `(ULID, name)` via the existing place/org
+getters and receives `BaseURL` via constructor injection. Fix `MergeEvents`
+(`queries/events.sql:78-85`) to set `deletion_reason`. (`deletion_reason` is already set for
+place/org merges.)
 **Test**: integration tests for US2 scenarios incl. injected-failure rollback and shared-
 identifier dedup; tombstone builder unit tests.
 **Acceptance**: 0 `entity_identifiers` rows reference a soft-deleted place/org after any merge

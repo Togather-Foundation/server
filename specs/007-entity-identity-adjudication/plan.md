@@ -156,9 +156,9 @@ internal/identity/                  # generic identity resolution (no SEL-specif
   record.go         # DecisionRecord type + append-only store contract
 internal/storage/postgres/queries/identity.sql   # SQLc queries (primary election, candidates, decisions)
 internal/storage/postgres/migrations/0000NN_identity_*.{up,down}.sql
-internal/api/handlers/identity_review.go         # admin REST: list/get/act on identity items
+internal/api/handlers/identity.go                # admin REST: view/conflicts/decisions + link/reject
 internal/jobs/identity_scan.go                   # River worker: enqueue candidates for new/changed entities
-cmd/server/cmd/identity.go                       # `server identity queue|check|link|reject|merge`
+cmd/server/cmd/identity.go                      # `server identity check|conflicts|link|reject|tidy` (Phase 2 adds queue|merge|undo)
 docs/integration/tg-identity.md                  # agent-facing CLI/API contract (mirrors tg-review.md)
 ```
 
@@ -262,6 +262,18 @@ type Executor struct { /* ids, store, notDup, decisions, clock */ }
 func (e *Executor) LinkIdentifier(ctx context.Context, ref IdentityRef, obs IdentifierObservation, actor string) (DecisionRecord, error)
 func (e *Executor) Reject(ctx context.Context, a, b IdentityRef, actor, reason string) (DecisionRecord, error)
 
+// IdentifierStore runs election in one transaction (advisory lock → upsert observation →
+// load group with authority trust/priority → Go ElectPrimary → demote+supersede → set primary).
+// RecordObservationTx lets LinkIdentifier commit the election and its decision record atomically.
+type TxManager interface {
+    WithTx(ctx context.Context, fn func(q *postgres.Queries) error) error
+}
+type IdentifierStore interface {
+    RecordObservation(ctx context.Context, ref IdentityRef, obs IdentifierObservation) (IdentifierObservation, error)
+    RecordObservationTx(ctx context.Context, q *postgres.Queries, ref IdentityRef, obs IdentifierObservation) (IdentifierObservation, error)
+    GetEntityIdentifiers(ctx context.Context, ref IdentityRef) ([]IdentifierObservation, error)
+}
+
 type DecisionStore interface {
     Append(ctx context.Context, rec DecisionRecord) (string, error)
     List(ctx context.Context, ref IdentityRef) ([]DecisionRecord, error)
@@ -281,8 +293,9 @@ type DecisionStore interface {
   Partial index on `status='pending'`; index on `(subject_type, subject_id)`.
 - New `identity_decisions` (append-only) backing `DecisionRecord`.
 - New `identity_not_duplicates` generalizing `event_not_duplicates`, but **signal-scoped**
-  (`evidence_fingerprint`): retained indefinitely and re-opened only when evidence changes.
-  (Events use plain indefinite suppression because they age out; places/orgs are persistent.)
+  (`evidence_fingerprint`) and linked to the deciding row (`decision_id`); upserted on
+  re-decision. Retained indefinitely and re-opened only when evidence changes. (Events use
+  plain indefinite suppression because they age out; places/orgs are persistent.)
 - Indexes: `places.merged_into_id`, `organizations.merged_into_id`, `identity_review_queue(status)`.
 - **Verify the next migration number** (`ls migrations | tail`) before creating.
 
@@ -353,9 +366,9 @@ reversible via `undo_ref`.
 
 ### Phase 3 — External KG integration + sameAs emission
 
-**Delivers:** exact-ID candidate generation backed by `entity_identifiers`; primary election
-wired into reconcile/enrichment writes; `sameAs` emission from authority primaries;
-TTL re-verification; enrichment→identity feedback with runaway guardrails.
+**Delivers:** exact-ID candidate generation backed by `entity_identifiers`; `sameAs` emission
+from authority primaries; TTL re-verification; enrichment→identity feedback with runaway
+guardrails. (Primary election is delivered in Phase 1.)
 **Entry:** Phase 2 delivered; KG reconciliation stable on staging.
 **Exit:** staging shows no multi-primary rows; sameAs emitted deterministically; enrichment
 cannot trigger an unreviewed merge.
