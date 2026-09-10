@@ -201,6 +201,7 @@ type Evidence struct {
 //   2. authority trust_level DESC, then priority_order ASC
 //   3. confidence DESC
 //   4. observed_at DESC (newest)
+//   5. id DESC (terminal deterministic tie-break)
 type IdentifierObservation struct {
     ID         int32   // entity_identifiers.id (SERIAL)
     Authority  string
@@ -208,27 +209,30 @@ type IdentifierObservation struct {
     Method     string  // "manual" | "imported" | "auto_high" | "auto_low" | "enrichment_sameas"
     Confidence float64
     ObservedAt time.Time
-    TrustLevel int     // knowledge_graph_authorities.trust_level
-    Priority   int     // knowledge_graph_authorities.priority_order
+    TrustLevel int32   // knowledge_graph_authorities.trust_level (SQLc INTEGER -> int32)
+    Priority   int32   // knowledge_graph_authorities.priority_order
+    IsPrimary  bool    // current slot state (read path)
     Source     string  // provenance: "reconciliation" | "enrichment_sameas" | "manual" | "agent"
 }
 
 // internal/identity/record.go
 // Flat shape mirrors the identity_decisions columns and the REST/CLI JSON (one contract).
+// CreatedAt maps to the identity_decisions.created_at column.
 type DecisionRecord struct {
-    ID              string    `json:"id"`               // "idn-{ulid}"
-    Timestamp       time.Time `json:"timestamp"`
-    EntityType      EntityType `json:"entity_type"`
-    EntityID        string    `json:"entity_id"`
-    Action          string    `json:"action"`           // link|reject (merge|escalate reserved, Phase 2)
+    ID              string      `json:"id"`               // "idn-{ulid}"
+    CreatedAt       time.Time   `json:"created_at"`       // identity_decisions.created_at
+    EntityType      EntityType  `json:"entity_type"`
+    EntityID        string      `json:"entity_id"`
+    Action          string      `json:"action"`           // link|reject (merge|escalate reserved, Phase 2)
     CounterpartType *EntityType `json:"counterpart_type,omitempty"`
-    CounterpartID   *string   `json:"counterpart_id,omitempty"`
-    Rationale       string    `json:"rationale"`
-    Citations       []string  `json:"citations"`        // decision/rule ids (precedent)
-    Confidence      float64   `json:"confidence"`
-    Actor           string    `json:"actor"`
-    Reversible      bool      `json:"reversible"`
-    UndoRef         string    `json:"undo_ref,omitempty"`
+    CounterpartID   *string     `json:"counterpart_id,omitempty"`
+    Rationale       string      `json:"rationale"`
+    Citations       []string    `json:"citations"`        // decision/rule ids (precedent)
+    Confidence      float64     `json:"confidence"`
+    Actor           string      `json:"actor"`
+    Reversible      bool        `json:"reversible"`
+    UndoRef         string      `json:"undo_ref,omitempty"`
+    Metadata        map[string]any `json:"metadata,omitempty"`
 }
 ```
 
@@ -271,13 +275,14 @@ type DecisionStore interface {
   one primary per `(entity_type, entity_id, authority_code)` by the D2 rank, then create
   `CREATE UNIQUE INDEX ... ON entity_identifiers(entity_type, entity_id, authority_code)
   WHERE is_primary`.
-- New `identity_review_queue` (entity-type-agnostic): subject ref, counterpart ref,
+- New `identity_review_queue` (**Phase 2**; entity-type-agnostic): subject ref, counterpart ref,
   `evidence JSONB`, `score`, `status` (`pending|linked|merged|rejected|dismissed|escalated`),
   `decided_by`, `decided_at`, `rationale`, `citations JSONB`, `reversible`, `undo_ref`.
   Partial index on `status='pending'`; index on `(subject_type, subject_id)`.
 - New `identity_decisions` (append-only) backing `DecisionRecord`.
-- New `identity_not_duplicates` (generalizes `event_not_duplicates`) for permanent
-  "these are not the same" suppression.
+- New `identity_not_duplicates` generalizing `event_not_duplicates`, but **signal-scoped**
+  (`evidence_fingerprint`): retained indefinitely and re-opened only when evidence changes.
+  (Events use plain indefinite suppression because they age out; places/orgs are persistent.)
 - Indexes: `places.merged_into_id`, `organizations.merged_into_id`, `identity_review_queue(status)`.
 - **Verify the next migration number** (`ls migrations | tail`) before creating.
 
@@ -286,17 +291,20 @@ type DecisionStore interface {
 Follow `docs/integration/tg-review.md` conventions. Endpoints (must be added to
 `docs/api/openapi.yaml`, enforced by `make lint-openapi`):
 
-| Method | Path | Purpose |
-|---|---|---|
-| GET | `/api/v1/admin/identity/queue` | List pending identity items (filters: type, score, source) |
-| GET | `/api/v1/admin/identity/queue/{id}` | Full item: entities, evidence, score, prior decisions |
-| POST | `/api/v1/admin/identity/queue/{id}/link` | Confirm sameAs link (additive, reversible) |
-| POST | `/api/v1/admin/identity/queue/{id}/reject` | Record not-a-duplicate (requires reason) |
-| POST | `/api/v1/admin/identity/queue/{id}/merge` | Merge duplicate → primary (review-gated, reversible) |
-| GET | `/api/v1/admin/identity/{type}/{id}` | Identity view: identifiers, primary, decision history |
+| Method | Path | Phase | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/admin/identity/{type}/{id}` | 1 | Identity view: identifiers, primary, decision history |
+| GET | `/api/v1/admin/identity/conflicts` | 1 | Entities sharing an external identifier (read) |
+| GET | `/api/v1/admin/identity/decisions` | 1 | Filterable decision feed (precedent replay) |
+| POST | `/api/v1/admin/identity/link` | 1 | Record an external identifier observation |
+| POST | `/api/v1/admin/identity/reject` | 1 | Record not-a-duplicate (requires reason) |
+| GET | `/api/v1/admin/identity/queue` | 2 | List pending identity review items |
+| GET | `/api/v1/admin/identity/queue/{id}` | 2 | Full review item + evidence + prior decisions |
+| POST | `/api/v1/admin/identity/queue/{id}/merge` | 2 | Merge duplicate → primary (review-gated, reversible) |
+| POST | `/api/v1/admin/identity/queue/{id}/undo` | 2 | Reverse a prior reversible action |
 
-CLI mirrors `server review`: `server identity queue|check|link|reject|merge`, with
-`--dry-run` on merge and batch support deferred to Phase 2+.
+CLI mirrors `server review`: Phase 1 `server identity check|conflicts|link|reject|tidy`;
+Phase 2 adds `queue|merge|undo` and batch; `--dry-run` on `tidy` (and merge in Phase 2).
 
 ### Configuration (new fields in `internal/config/config.go`)
 
@@ -327,14 +335,15 @@ policy validator yet.
 **Entry:** plan approved.
 **Exit:** one primary per authority enforced by index; merge paths reassign identifiers;
 `server identity check <type> <id>` returns identifiers + primary + decision history; CI green.
-**Interface contracts:** `IdentityRef`, `Candidate`, `Evidence`, `DecisionRecord`, `Ranker`,
-`Executor.{Link,Reject}`, `DecisionStore`; REST read endpoints; CLI `identity queue|check`.
+**Interface contracts:** `IdentityRef`, `Candidate`, `Evidence`, `DecisionRecord`,
+`ElectPrimary(obs)`, `Executor.{LinkIdentifier,Reject}`, `DecisionStore`; REST read endpoints +
+`POST link/reject`; CLI `identity check|conflicts|link|reject|tidy`.
 
 ### Phase 2 — Agent adjudication loop
 
-**Delivers:** `identity_review_queue` + REST/CLI actions `link|reject|merge`; server-side
-policy validator (allowed set, citation requirement, red-lines, fan-out caps); agent skill
-doc (`docs/integration/tg-identity.md` + a `skills/togather-identity` playbook).
+**Delivers:** `identity_review_queue` + REST/CLI actions `merge`/`undo` (link/reject land in
+Phase 1); server-side policy validator (allowed set, citation requirement, red-lines, fan-out
+caps); agent skill doc (`docs/integration/tg-identity.md` + a `skills/togather-identity` playbook).
 
 **Entry:** Phase 1 delivered.
 **Exit:** an external agent (scripted in test) can fetch queue → act → observe decision

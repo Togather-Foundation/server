@@ -160,10 +160,11 @@ These are the pivotal choices. My recommendation is in **bold**.
 - **Recommendation: SEL ULID is the canonical internal identity; external URIs are aliases.
   Adopt exactly one *primary* identifier per `(entity, authority)`, elected by a rank, with
   `is_canonical` redefined as "this row holds the authority's primary slot."**
-- Rank: `manual` override > method rank (`auto_high`/`manual`/`imported` > `auto_low`) >
-  confidence > authority `trust_level`/`priority_order` > recency. Keep all identifiers
-  (the documented "keep-all" strategy); store observations; supersede rather than silently
-  overwrite. Enforce with a partial unique index `WHERE is_primary`.
+- Rank (canonical order defined once in `plan.md` § Component Design): method rank
+  (`manual` > `imported` > `auto_high` > `auto_low` > `enrichment_sameas`) → authority
+  `trust_level` DESC / `priority_order` ASC → confidence → `observed_at` → `id`. Keep all
+  identifiers (the documented "keep-all" strategy); store observations; supersede rather than
+  silently overwrite. Enforce with a partial unique index `WHERE is_primary`.
 - No single global external canonical; emit each authority's primary as `sameAs`.
 
 ### D3 — v1 posture
