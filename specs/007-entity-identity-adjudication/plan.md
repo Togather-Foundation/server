@@ -33,13 +33,13 @@ server — the interface is the seam.
 
 | Capability | Status | Code / location |
 |---|---|---|
-| Event near-dup + place/org fuzzy dedup | **Wired** | `internal/domain/events/create_event_core.go:432-533` (place), `:592-660` (org), `internal/domain/events/dedup.go`, `internal/config/config.go:214-236` |
+| Event near-dup + place/org fuzzy dedup | **Wired** | `internal/domain/events/create_event_core.go:432-533` (place), `:592-660` (org), `internal/domain/events/dedup.go`, `internal/config/config.go:213-238` |
 | Event/place/org merge | **Wired, incomplete** | `MergePlaces` `internal/storage/postgres/events_repository.go:1717`, `MergeOrganizations` `:1839`, `MergeEvents` `:2125`, `Consolidate` `internal/domain/events/admin_service.go:1562` |
 | Review queue (events) | **Wired** | `migrations/000025_create_event_review_queue.up.sql`, `internal/api/handlers/admin_review_queue.go` |
 | Not-duplicate suppression (events) | **Wired** | `migrations/000027_event_not_duplicates.up.sql`, writer `admin_review_queue.go:1029,1045`, reader `create_event_core.go:906` |
-| External identifiers (`entity_identifiers`) | **Write-only** | writers `internal/kg/reconciliation.go:332`, `internal/jobs/workers.go:422`; readers: none in Go (CLI raw SQL only, `cmd/server/cmd/reconcile.go:307,443,571`) |
+| External identifiers (`entity_identifiers`) | **Write-only** | writers `internal/kg/reconciliation.go:332`, `internal/jobs/workers.go:422`; no live/domain reader (generated SQLc methods exist but are uncalled); only CLI raw SQL reads, `cmd/server/cmd/reconcile.go:307,443,571` |
 | `knowledge_graph_authorities` (trust/priority) | **Unused** | seeded `migrations/000030_knowledge_graph_tables.up.sql:62-67`; queries `GetActiveAuthorities`/`GetAuthoritiesForDomain` have no callers |
-| Field-level provenance (`field_provenance`) | **Schema-only** | `migrations/000002_provenance.up.sql:67-111`; `InsertFieldProvenance`/`SupersedeFieldProvenance` have no callers; readers exist (`internal/provenance/service.go`) |
+| Field-level provenance (`field_provenance`) | **Schema-only** | `migrations/000002_provenance.up.sql:67-111`; `InsertFieldProvenance`/`SupersedeFieldProvenance` have no callers; readers exist (`internal/domain/provenance/service.go`) |
 | Source trust (`sources.trust_level`) | **Wired (field merge)** | `create_event_core.go:165-173,220-231`; `events_repository.go:1405,1426` |
 | LLM injection boundary (`internal/llmsafe`) | **Wired (scraper only)** | `internal/llmsafe/boundary.go`; `internal/scraper/inspect.go:124,201` |
 | MCP review/admin surface | **Absent (by design)** | MCP is public-only; no admin/identity tools |
@@ -163,9 +163,9 @@ docs/integration/tg-identity.md                  # agent-facing CLI/API contract
 ```
 
 Existing packages touched: `internal/kg/` (primary election on reconcile/enrichment write),
-`internal/domain/places` + `internal/domain/organizations` (merge paths reassign identifiers),
-`internal/storage/postgres/events_repository.go` (merge fixes), `internal/api/router.go`,
-`internal/config/config.go`.
+`internal/storage/postgres/events_repository.go` (identity-merge fixes: `MergePlaces`/
+`MergeOrganizations` live here, reached via `internal/domain/events/admin_service.go`),
+`internal/api/router.go`, `internal/config/config.go`.
 
 ### Data structures
 
@@ -196,29 +196,39 @@ type Evidence struct {
 }
 
 // internal/identity/rank.go
+// Primary election order (CANONICAL — defined here once; other docs reference it):
+//   1. method rank: manual > imported > auto_high > auto_low > enrichment_sameas
+//   2. authority trust_level DESC, then priority_order ASC
+//   3. confidence DESC
+//   4. observed_at DESC (newest)
 type IdentifierObservation struct {
+    ID         int32   // entity_identifiers.id (SERIAL)
     Authority  string
     URI        string
-    Method     string  // "auto_high" | "auto_low" | "imported" | "manual" | "enrichment_sameas"
+    Method     string  // "manual" | "imported" | "auto_high" | "auto_low" | "enrichment_sameas"
     Confidence float64
     ObservedAt time.Time
     TrustLevel int     // knowledge_graph_authorities.trust_level
     Priority   int     // knowledge_graph_authorities.priority_order
+    Source     string  // provenance: "reconciliation" | "enrichment_sameas" | "manual" | "agent"
 }
 
 // internal/identity/record.go
+// Flat shape mirrors the identity_decisions columns and the REST/CLI JSON (one contract).
 type DecisionRecord struct {
-    ID          string      `json:"id"`
-    Timestamp   time.Time   `json:"timestamp"`
-    Ref         IdentityRef `json:"ref"`
-    Action      string      `json:"action"`        // link|reject|merge|escalate
-    Counterpart *IdentityRef `json:"counterpart,omitempty"`
-    Rationale   string      `json:"rationale"`
-    Citations   []string    `json:"citations"`     // decision/rule ids; required for non-escalate
-    Confidence  float64     `json:"confidence"`
-    Actor       string      `json:"actor"`         // agent identity / admin subject
-    Reversible  bool        `json:"reversible"`
-    UndoRef     string      `json:"undo_ref,omitempty"`
+    ID              string    `json:"id"`               // "idn-{ulid}"
+    Timestamp       time.Time `json:"timestamp"`
+    EntityType      EntityType `json:"entity_type"`
+    EntityID        string    `json:"entity_id"`
+    Action          string    `json:"action"`           // link|reject (merge|escalate reserved, Phase 2)
+    CounterpartType *EntityType `json:"counterpart_type,omitempty"`
+    CounterpartID   *string   `json:"counterpart_id,omitempty"`
+    Rationale       string    `json:"rationale"`
+    Citations       []string  `json:"citations"`        // decision/rule ids (precedent)
+    Confidence      float64   `json:"confidence"`
+    Actor           string    `json:"actor"`
+    Reversible      bool      `json:"reversible"`
+    UndoRef         string    `json:"undo_ref,omitempty"`
 }
 ```
 
@@ -237,15 +247,16 @@ type Ranker interface {
 type ActionValidator interface {
     // Validate returns a semantic outcome: allowed, or escalate with a reason.
     // It never returns a structural error for a well-formed-but-policy-violating action.
+    // (Phase 2.)
     Validate(ctx context.Context, rec DecisionRecord) (ValidationOutcome, error)
 }
 
-type Executor interface {
-    Link(ctx context.Context, ref IdentityRef, e Evidence) error
-    Reject(ctx context.Context, a, b IdentityRef, reason string) error
-    Merge(ctx context.Context, duplicate, primary IdentityRef, rec DecisionRecord) (MergeResult, error)
-    Undo(ctx context.Context, undoRef string) error
-}
+// Executor is a concrete struct in internal/identity/execute.go (not an interface —
+// avoids naming drift; Phase 1 implements LinkIdentifier + Reject; Phase 2 adds Merge/Undo).
+type Executor struct { /* ids, store, notDup, decisions, clock */ }
+
+func (e *Executor) LinkIdentifier(ctx context.Context, ref IdentityRef, obs IdentifierObservation, actor string) (DecisionRecord, error)
+func (e *Executor) Reject(ctx context.Context, a, b IdentityRef, actor, reason string) (DecisionRecord, error)
 
 type DecisionStore interface {
     Append(ctx context.Context, rec DecisionRecord) (string, error)
@@ -294,7 +305,8 @@ CLI mirrors `server review`: `server identity queue|check|link|reject|merge`, wi
 | `IDENTITY_TRIGRAM_REVIEW_THRESHOLD` | `0.6` | Flag identity candidates for review |
 | `IDENTITY_TRIGRAM_LINK_THRESHOLD` | `0.95` | Auto-link (additive) threshold |
 | `IDENTITY_MERGE_MAX_FAN_OUT` | `25` | Max events on either entity before merge always escalates |
-| `IDENTITY_CANDIDATE_MAX` | `5` | Max candidates surfaced per subject |
+| `IDENTITY_CANDIDATE_MAX` | `5` | Max candidates surfaced per subject (Phase 2/3) |
+| `IDENTITY_CONFLICT_LIMIT_MAX` | `200` | Max `limit` accepted by the conflicts/decisions read endpoints (Phase 1) |
 | `IDENTITY_OBSERVATION_TTL_DAYS` | `180` | Re-verify staleness for external identifiers |
 
 ---
@@ -309,7 +321,8 @@ outlined only.
 
 **Delivers:** the data model (primary slot, decision record, not-duplicates, indexes) and
 the deterministic executor for *link* and *reject*; fixes identifier orphaning on merge;
-exposes read-only identity API + CLI. No agent action loop yet beyond link/reject.
+exposes the identity API + CLI (read views and link/reject actions). No merge/undo or
+policy validator yet.
 
 **Entry:** plan approved.
 **Exit:** one primary per authority enforced by index; merge paths reassign identifiers;
