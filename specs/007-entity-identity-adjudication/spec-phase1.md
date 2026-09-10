@@ -261,9 +261,11 @@ type DecisionsResponse struct {
 decisions order `(created_at DESC, id DESC)` with `since` an inclusive RFC3339 lower bound on
 `created_at`. No offset paging.
 
-**Evidence fingerprint** (`internal/identity/fingerprint.go`) = hex SHA-256 of the sorted,
-newline-joined `authority|uri|entityId` observations of both entities at decision time. The
-same function computes the *current* fingerprint on read.
+**Evidence fingerprint** (`internal/identity/fingerprint.go`) is **signal-scoped**: hex
+SHA-256 of the sorted, newline-joined `authority|uri` values asserted for *both* entities
+(the shared identifier signals) at decision time, keyed by the canonical pair. Identifiers
+held by only one entity do not affect it, so an unrelated new identifier does not re-open the
+pair. The same function computes the *current* fingerprint on read.
 
 ### Interfaces
 
@@ -326,10 +328,13 @@ Entity-to-entity sameness is expressed by `Reject` (distinct) or, in Phase 2, by
   authority_code=$3 AND is_primary AND id<>$4`.
 - `SetPrimary :exec` — `UPDATE entity_identifiers SET is_primary=true, superseded_by_id=NULL,
   updated_at=now() WHERE id=$1`.
-- `ListConflicts :many` — self-join `entity_identifiers a JOIN entity_identifiers b ON
-  a.authority_code=b.authority_code AND a.identifier_uri=b.identifier_uri AND
-  a.entity_id<b.entity_id`, keyset on `(authority_code, identifier_uri, a.entity_id,
-  b.entity_id)`; returns each unordered pair once plus the stored `evidence_fingerprint`.
+- `ListConflicts :many` — `entity_identifiers a JOIN entity_identifiers b ON
+  a.entity_type=b.entity_type AND a.authority_code=b.authority_code AND
+  a.identifier_uri=b.identifier_uri AND a.entity_id<b.entity_id`, `LEFT JOIN
+  identity_not_duplicates nd` (matched on the pair's canonical ordered ids with
+  `LEAST`/`GREATEST`), filtered by `a.entity_type=$1`, keyset on `(authority_code,
+  identifier_uri, a.entity_id, b.entity_id)`; each unordered pair once, with the stored
+  `evidence_fingerprint` (nullable).
 - `InsertNotDuplicate :exec` — `INSERT ... ON CONFLICT (entity_type,id_a,id_b) DO UPDATE SET
   evidence_fingerprint=EXCLUDED.evidence_fingerprint, decision_id=EXCLUDED.decision_id,
   created_at=now(), created_by=EXCLUDED.created_by`.
@@ -561,10 +566,12 @@ path; tombstone present with non-null URI/payload; failure rolls back cleanly.
 **What**: Implement `internal/identity/execute.go` (`LinkIdentifier`, `Reject`),
 `internal/identity/record.go` (DecisionStore), `internal/identity/fingerprint.go` (evidence
 fingerprint), and `identity_not_duplicates` read/write. Validate URIs via authority patterns;
-require non-empty actor. `LinkIdentifier` calls `RecordObservation` then appends a decision.
+require non-empty actor. `LinkIdentifier` calls `RecordObservationTx` inside a transaction
+that also appends the decision (atomic).
 **Test**: unit + integration for LinkIdentifier (upsert + election + decision), Reject
 (not-duplicate row with fingerprint + decision), empty-actor structural error, fingerprint
-re-open (different evidence ⇒ `IsNotDuplicate` false), idempotent re-link.
+re-open (different evidence ⇒ `IsNotDuplicate` false), idempotent re-link, and an
+atomic-rollback test (a decision-append failure rolls back the election).
 **Acceptance**: each call appends exactly one decision record; Reject suppresses identical
 evidence indefinitely and permits resurface on changed evidence.
 
