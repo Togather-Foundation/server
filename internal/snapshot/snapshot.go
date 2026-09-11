@@ -32,10 +32,11 @@ type Metadata struct {
 
 // Snapshot represents a database snapshot file with its metadata
 type Snapshot struct {
-	Path     string
-	Metadata Metadata
-	SizeMB   int
-	Age      time.Duration
+	Path      string
+	Metadata  Metadata
+	SizeMB    int
+	SizeBytes int64
+	Age       time.Duration
 }
 
 // CreateOptions contains options for creating a snapshot
@@ -188,7 +189,8 @@ func Create(ctx context.Context, opts CreateOptions) (*Snapshot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat snapshot file: %w", err)
 	}
-	sizeMB := int(fileInfo.Size() / (1024 * 1024))
+	sizeBytes := fileInfo.Size()
+	sizeMB := int(sizeBytes / (1024 * 1024))
 
 	// Update metadata with size and duration
 	metadata.SizeMB = sizeMB
@@ -198,10 +200,11 @@ func Create(ctx context.Context, opts CreateOptions) (*Snapshot, error) {
 	}
 
 	return &Snapshot{
-		Path:     snapshotPath,
-		Metadata: metadata,
-		SizeMB:   sizeMB,
-		Age:      0,
+		Path:      snapshotPath,
+		Metadata:  metadata,
+		SizeMB:    sizeMB,
+		SizeBytes: sizeBytes,
+		Age:       0,
 	}, nil
 }
 
@@ -233,7 +236,8 @@ func List(snapshotDir string) ([]Snapshot, error) {
 			continue // Skip files we can't stat
 		}
 
-		sizeMB := int(fileInfo.Size() / (1024 * 1024))
+		sizeBytes := fileInfo.Size()
+		sizeMB := int(sizeBytes / (1024 * 1024))
 		age := now.Sub(fileInfo.ModTime())
 
 		// Try to load metadata
@@ -250,10 +254,11 @@ func List(snapshotDir string) ([]Snapshot, error) {
 		}
 
 		snapshots = append(snapshots, Snapshot{
-			Path:     path,
-			Metadata: metadata,
-			SizeMB:   sizeMB,
-			Age:      age,
+			Path:      path,
+			Metadata:  metadata,
+			SizeMB:    sizeMB,
+			SizeBytes: sizeBytes,
+			Age:       age,
 		})
 	}
 
