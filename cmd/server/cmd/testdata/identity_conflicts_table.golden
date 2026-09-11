@@ -1,0 +1,4 @@
+Conflicts (place) — 2:
+ENTITY                      CANDIDATE                   AUTHORITY  URI                                     SCORE  SUPPRESSED
+01ARZ3NDEKTSV4RRFFQ69G5FAV  01ARZ3NDEKTSV4RRFFQ69G5FAW  artsdata   https://kg.artsdata.ca/resource/K11-24  0.99   no
+01ARZ3NDEKTSV4RRFFQ69G5FAX  01ARZ3NDEKTSV4RRFFQ69G5FAY  wikidata   https://www.wikidata.org/wiki/Q1234     0.87   yes
