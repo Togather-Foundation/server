@@ -1254,6 +1254,21 @@ run_migrations() {
     log "INFO" "Sourcing environment from: ${env_file}"
     source "${env_file}"
     
+    # For local/development deploys, the sourced DATABASE_URL points at the
+    # in-network host (togather-db:5432), unreachable from the host where the
+    # `migrate` binary runs. Build a host-reachable URL from POSTGRES_* vars
+    # instead. Remote envs keep the sourced DATABASE_URL untouched.
+    local migration_database_url="${DATABASE_URL}"
+    if [[ "$env" == "development" ]]; then
+        if [[ -n "${POSTGRES_USER:-}" && -n "${POSTGRES_PASSWORD:-}" && -n "${POSTGRES_PORT:-}" && -n "${POSTGRES_DB:-}" ]]; then
+            migration_database_url="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+            log "INFO" "Using host-reachable DATABASE_URL for local migrations (localhost:${POSTGRES_PORT})"
+        else
+            log "WARN" "POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_PORT/POSTGRES_DB not all set in ${env_file}"
+            log "WARN" "Falling back to sourced DATABASE_URL for migrations"
+        fi
+    fi
+    
     local migrations_dir="${PROJECT_ROOT}/internal/storage/postgres/migrations"
     
     if [[ ! -d "${migrations_dir}" ]]; then
@@ -1265,7 +1280,7 @@ run_migrations() {
     acquire_named_lock "$migration_lock_dir" || return 1
     
     # Check current migration version
-    local current_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
+    local current_version=$(migrate -path "${migrations_dir}" -database "${migration_database_url}" version 2>&1 || echo "none")
     log "INFO" "Current migration version: ${current_version}"
     
     # Check for dirty migration state
@@ -1282,7 +1297,7 @@ run_migrations() {
     
     # Run migrations
     log "INFO" "Running forward migrations..."
-    if ! migrate -path "${migrations_dir}" -database "${DATABASE_URL}" up; then
+    if ! migrate -path "${migrations_dir}" -database "${migration_database_url}" up; then
         # T031: Migration failure detected - provide rollback instructions
         log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         log "ERROR" "MIGRATION FAILED"
@@ -1321,7 +1336,7 @@ run_migrations() {
     fi
     
     # Get new migration version
-    local new_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
+    local new_version=$(migrate -path "${migrations_dir}" -database "${migration_database_url}" version 2>&1 || echo "none")
     log "INFO" "New migration version: ${new_version}"
     
     if [[ "$current_version" != "$new_version" ]]; then
