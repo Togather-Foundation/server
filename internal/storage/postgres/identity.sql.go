@@ -69,6 +69,71 @@ func (q *Queries) InsertIdentityNotDuplicate(ctx context.Context, arg InsertIden
 	return err
 }
 
+const listEntityIdentifiersForUpdate = `-- name: ListEntityIdentifiersForUpdate :many
+SELECT ei.id, ei.authority_code, ei.identifier_uri, ei.reconciliation_method,
+       ei.confidence, ei.observed_at, ei.is_primary, ei.source,
+       a.trust_level, a.priority_order
+FROM entity_identifiers ei
+JOIN knowledge_graph_authorities a ON a.authority_code = ei.authority_code
+WHERE ei.entity_type = $1
+  AND ei.entity_id = $2
+ORDER BY ei.id
+FOR UPDATE OF ei
+`
+
+type ListEntityIdentifiersForUpdateParams struct {
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+}
+
+type ListEntityIdentifiersForUpdateRow struct {
+	ID                   int32              `json:"id"`
+	AuthorityCode        string             `json:"authority_code"`
+	IdentifierUri        string             `json:"identifier_uri"`
+	ReconciliationMethod string             `json:"reconciliation_method"`
+	Confidence           pgtype.Numeric     `json:"confidence"`
+	ObservedAt           pgtype.Timestamptz `json:"observed_at"`
+	IsPrimary            bool               `json:"is_primary"`
+	Source               pgtype.Text        `json:"source"`
+	TrustLevel           int32              `json:"trust_level"`
+	PriorityOrder        int32              `json:"priority_order"`
+}
+
+// Load all of an entity's identifier observations joined with authority
+// trust/priority. FOR UPDATE OF ei serializes the entity's identifier rows against
+// concurrent elections. Used by the transactional merge path to reassign, dedupe,
+// and re-elect one primary per authority.
+func (q *Queries) ListEntityIdentifiersForUpdate(ctx context.Context, arg ListEntityIdentifiersForUpdateParams) ([]ListEntityIdentifiersForUpdateRow, error) {
+	rows, err := q.db.Query(ctx, listEntityIdentifiersForUpdate, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListEntityIdentifiersForUpdateRow{}
+	for rows.Next() {
+		var i ListEntityIdentifiersForUpdateRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AuthorityCode,
+			&i.IdentifierUri,
+			&i.ReconciliationMethod,
+			&i.Confidence,
+			&i.ObservedAt,
+			&i.IsPrimary,
+			&i.Source,
+			&i.TrustLevel,
+			&i.PriorityOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listGroupIdentifiersForUpdate = `-- name: ListGroupIdentifiersForUpdate :many
 SELECT ei.id, ei.authority_code, ei.identifier_uri, ei.reconciliation_method,
        ei.confidence, ei.observed_at, ei.is_primary, ei.source,

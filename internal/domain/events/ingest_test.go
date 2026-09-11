@@ -49,6 +49,10 @@ type MockRepository struct {
 	mergePlacesDupID           string
 	mergePlacesPriID           string
 	getOrCreateSourceCallCount int
+	placeTombstoneCreated      bool
+	placeTombstoneParams       PlaceTombstoneCreateParams
+	orgTombstoneCreated        bool
+	orgTombstoneParams         OrganizationTombstoneCreateParams
 
 	// Behavior controls
 	shouldFailCreate                 bool
@@ -366,10 +370,20 @@ func (m *MockRepository) GetOrganizationByID(ctx context.Context, id string) (*O
 }
 
 func (m *MockRepository) CreatePlaceTombstone(ctx context.Context, params PlaceTombstoneCreateParams) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.placeTombstoneCreated = true
+	m.placeTombstoneParams = params
 	return nil
 }
 
 func (m *MockRepository) CreateOrganizationTombstone(ctx context.Context, params OrganizationTombstoneCreateParams) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.orgTombstoneCreated = true
+	m.orgTombstoneParams = params
 	return nil
 }
 

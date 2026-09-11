@@ -8,6 +8,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	identityrank "github.com/Togather-Foundation/server/internal/identity/rank"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -2140,107 +2141,168 @@ func (r *EventRepository) mergeOrganizationIdentifiers(ctx context.Context, dupl
 // (survivor, authority). Must run inside the merge transaction.
 //
 // Collision handling: two rows that share (entity_type, authority_code, identifier_uri)
-// after the move are folded into a single survivor row (best confidence/metadata kept)
-// and the duplicate's redundant row is deleted. Folding happens before the reassignment
-// UPDATE because the UNIQUE(entity_type, entity_id, authority_code, identifier_uri)
-// constraint would otherwise reject the reassignment.
+// after the move are folded into a single survivor row — the better-ranked attributes
+// win and metadata is merged non-destructively — and the duplicate's redundant row is
+// deleted. Re-election reuses the canonical rank (identityrank.ElectPrimary) and the
+// same DemotePrimaryAndSupersede/SetPrimary primitives as RecordObservation, so
+// supersession provenance on the survivor is preserved rather than wiped.
 func (r *EventRepository) mergeEntityIdentifiers(ctx context.Context, entityType, duplicateULID, survivorULID string) error {
 	queryer := r.queryer()
+	q := &Queries{db: queryer}
 
-	// 1. Demote every primary on either entity so the reassignment below cannot
-	//    momentarily create two primaries for one (entity, authority) group and
-	//    violate the partial unique index.
+	dupRows, err := q.ListEntityIdentifiersForUpdate(ctx, ListEntityIdentifiersForUpdateParams{
+		EntityType: entityType,
+		EntityID:   duplicateULID,
+	})
+	if err != nil {
+		return fmt.Errorf("load duplicate identifiers: %w", err)
+	}
+	// If the duplicate has no identifiers there is nothing to move, dedupe, or
+	// re-elect — leave the survivor's primaries and supersession provenance untouched.
+	if len(dupRows) == 0 {
+		return nil
+	}
+
+	survRows, err := q.ListEntityIdentifiersForUpdate(ctx, ListEntityIdentifiersForUpdateParams{
+		EntityType: entityType,
+		EntityID:   survivorULID,
+	})
+	if err != nil {
+		return fmt.Errorf("load survivor identifiers: %w", err)
+	}
+
+	survByKey := make(map[string]ListEntityIdentifiersForUpdateRow, len(survRows))
+	for _, row := range survRows {
+		survByKey[row.AuthorityCode+"\x00"+row.IdentifierUri] = row
+	}
+
+	// Fold colliding rows into the survivor (and delete the duplicate's row), or
+	// reassign non-colliding rows onto the survivor (demoting them so the reassignment
+	// cannot momentarily create two primaries for one authority).
+	for _, d := range dupRows {
+		key := d.AuthorityCode + "\x00" + d.IdentifierUri
+		if s, ok := survByKey[key]; ok {
+			if err := r.foldCollidingIdentifier(ctx, queryer, s, d); err != nil {
+				return err
+			}
+		} else if err := r.reassignIdentifier(ctx, queryer, survivorULID, d); err != nil {
+			return err
+		}
+	}
+
+	return r.reelectEntityIdentifiers(ctx, q, entityType, survivorULID)
+}
+
+// foldCollidingIdentifier folds the duplicate's rank attributes into the survivor row
+// when the duplicate outranks it, merges metadata non-destructively, and deletes the
+// duplicate's row (clearing any superseded_by_id references into it first).
+func (r *EventRepository) foldCollidingIdentifier(ctx context.Context, queryer queryer, s, d ListEntityIdentifiersForUpdateRow) error {
+	dOutranks := identityrank.Outranks(identifierRowToObservation(d), identifierRowToObservation(s))
+
 	_, err := queryer.Exec(ctx, `
-UPDATE entity_identifiers
-   SET is_primary = false, superseded_by_id = NULL, updated_at = now()
- WHERE entity_type = $1 AND entity_id = ANY($2::text[])
-`, entityType, []string{duplicateULID, survivorULID})
-	if err != nil {
-		return fmt.Errorf("demote primaries before reassignment: %w", err)
-	}
-
-	// 2. Fold the duplicate's colliding rows into the survivor, keeping the better
-	//    confidence and non-null metadata, so the dedupe never loses provenance.
-	_, err = queryer.Exec(ctx, `
 UPDATE entity_identifiers s
-   SET confidence = CASE WHEN d.confidence > s.confidence THEN d.confidence ELSE s.confidence END,
-       metadata   = COALESCE(s.metadata, d.metadata),
-       updated_at = now()
+   SET reconciliation_method = CASE WHEN $3 THEN d.reconciliation_method ELSE s.reconciliation_method END,
+       source               = CASE WHEN $3 THEN d.source ELSE s.source END,
+       observed_at          = CASE WHEN $3 THEN d.observed_at ELSE s.observed_at END,
+       confidence           = CASE WHEN $3 THEN d.confidence ELSE s.confidence END,
+       metadata             = COALESCE(s.metadata, '{}'::jsonb) || COALESCE(d.metadata, '{}'::jsonb),
+       updated_at           = now()
   FROM entity_identifiers d
- WHERE d.entity_type = $1 AND d.entity_id = $2
-   AND s.entity_type = $1 AND s.entity_id = $3
-   AND s.authority_code = d.authority_code
-   AND s.identifier_uri = d.identifier_uri
-`, entityType, duplicateULID, survivorULID)
+ WHERE s.id = $1 AND d.id = $2
+`, s.ID, d.ID, dOutranks)
 	if err != nil {
-		return fmt.Errorf("fold colliding identifiers: %w", err)
+		return fmt.Errorf("fold colliding identifier: %w", err)
 	}
 
-	// 3. Clear superseded_by_id references into the duplicate's rows before deleting
-	//    them (the FK has no ON DELETE action), then delete the duplicate's colliding rows.
-	_, err = queryer.Exec(ctx, `
+	if _, err := queryer.Exec(ctx, `
 UPDATE entity_identifiers SET superseded_by_id = NULL, updated_at = now()
- WHERE superseded_by_id IN (SELECT id FROM entity_identifiers WHERE entity_type = $1 AND entity_id = $2)
-`, entityType, duplicateULID)
-	if err != nil {
+ WHERE superseded_by_id = $1
+`, d.ID); err != nil {
 		return fmt.Errorf("clear superseded references before dedupe: %w", err)
 	}
 
-	_, err = queryer.Exec(ctx, `
-DELETE FROM entity_identifiers
- WHERE entity_type = $1 AND entity_id = $2
-   AND EXISTS (
-     SELECT 1 FROM entity_identifiers s
-      WHERE s.entity_type = $1 AND s.entity_id = $3
-        AND s.authority_code = entity_identifiers.authority_code
-        AND s.identifier_uri = entity_identifiers.identifier_uri
-   )
-`, entityType, duplicateULID, survivorULID)
-	if err != nil {
-		return fmt.Errorf("dedupe colliding identifiers: %w", err)
+	if _, err := queryer.Exec(ctx, `DELETE FROM entity_identifiers WHERE id = $1`, d.ID); err != nil {
+		return fmt.Errorf("delete colliding identifier: %w", err)
 	}
-
-	// 4. Reassign the duplicate's remaining (non-colliding) identifiers onto the survivor.
-	_, err = queryer.Exec(ctx, `
-UPDATE entity_identifiers
-   SET entity_id = $2, updated_at = now()
- WHERE entity_type = $1 AND entity_id = $3
-`, entityType, survivorULID, duplicateULID)
-	if err != nil {
-		return fmt.Errorf("reassign identifiers: %w", err)
-	}
-
-	// 5. Re-elect exactly one primary per (survivor, authority) using the canonical
-	//    order (method > authority trust/priority > confidence > observed_at > id).
-	_, err = queryer.Exec(ctx, `
-WITH ranked AS (
-  SELECT ei.id,
-         ROW_NUMBER() OVER (
-           PARTITION BY ei.authority_code
-           ORDER BY CASE ei.reconciliation_method
-                      WHEN 'manual' THEN 5 WHEN 'imported' THEN 4
-                      WHEN 'auto_high' THEN 3 WHEN 'auto_low' THEN 2
-                      WHEN 'enrichment_sameas' THEN 1 ELSE 0 END DESC,
-                    a.trust_level DESC,
-                    a.priority_order ASC,
-                    ei.confidence DESC,
-                    ei.observed_at DESC,
-                    ei.id DESC
-         ) AS rn
-    FROM entity_identifiers ei
-    JOIN knowledge_graph_authorities a ON a.authority_code = ei.authority_code
-   WHERE ei.entity_type = $1 AND ei.entity_id = $2
-)
-UPDATE entity_identifiers ei
-   SET is_primary = (r.rn = 1), superseded_by_id = NULL, updated_at = now()
-  FROM ranked r
- WHERE ei.id = r.id
-`, entityType, survivorULID)
-	if err != nil {
-		return fmt.Errorf("re-elect primary identifiers: %w", err)
-	}
-
 	return nil
+}
+
+// reassignIdentifier moves a non-colliding duplicate identifier onto the survivor,
+// demoting it so the reassignment cannot create two primaries for one authority.
+func (r *EventRepository) reassignIdentifier(ctx context.Context, queryer queryer, survivorULID string, d ListEntityIdentifiersForUpdateRow) error {
+	_, err := queryer.Exec(ctx, `
+UPDATE entity_identifiers
+   SET entity_id = $1, is_primary = false, superseded_by_id = NULL, updated_at = now()
+ WHERE id = $2
+`, survivorULID, d.ID)
+	if err != nil {
+		return fmt.Errorf("reassign identifier %d: %w", d.ID, err)
+	}
+	return nil
+}
+
+// reelectEntityIdentifiers re-elects exactly one primary per (survivor, authority)
+// using the canonical rank. It mirrors RecordObservation's DemotePrimaryAndSupersede
+// then SetPrimary sequence so demoted rows record their superseding winner.
+func (r *EventRepository) reelectEntityIdentifiers(ctx context.Context, q *Queries, entityType, survivorULID string) error {
+	rows, err := q.ListEntityIdentifiersForUpdate(ctx, ListEntityIdentifiersForUpdateParams{
+		EntityType: entityType,
+		EntityID:   survivorULID,
+	})
+	if err != nil {
+		return fmt.Errorf("load survivor identifiers for re-election: %w", err)
+	}
+
+	byAuthority := make(map[string][]identityrank.IdentifierObservation)
+	for _, row := range rows {
+		obs := identifierRowToObservation(row)
+		byAuthority[row.AuthorityCode] = append(byAuthority[row.AuthorityCode], obs)
+	}
+
+	for authority, group := range byAuthority {
+		winner, ok := identityrank.ElectPrimary(group)
+		if !ok {
+			continue
+		}
+		if err := q.DemotePrimaryAndSupersede(ctx, DemotePrimaryAndSupersedeParams{
+			WinnerID:      pgtype.Int4{Int32: winner.ID, Valid: true},
+			EntityType:    entityType,
+			EntityID:      survivorULID,
+			AuthorityCode: authority,
+		}); err != nil {
+			return fmt.Errorf("demote primary for authority %s: %w", authority, err)
+		}
+		if err := q.SetPrimary(ctx, winner.ID); err != nil {
+			return fmt.Errorf("set primary for authority %s: %w", authority, err)
+		}
+	}
+	return nil
+}
+
+// identifierRowToObservation converts a ListEntityIdentifiersForUpdateRow into a
+// rank.IdentifierObservation for the shared election logic.
+func identifierRowToObservation(row ListEntityIdentifiersForUpdateRow) identityrank.IdentifierObservation {
+	return identityrank.IdentifierObservation{
+		ID:         row.ID,
+		Authority:  row.AuthorityCode,
+		URI:        row.IdentifierUri,
+		Method:     row.ReconciliationMethod,
+		Confidence: observationConfidence(row.Confidence),
+		ObservedAt: row.ObservedAt.Time,
+		TrustLevel: row.TrustLevel,
+		Priority:   row.PriorityOrder,
+		IsPrimary:  row.IsPrimary,
+		Source:     row.Source.String,
+	}
+}
+
+// observationConfidence converts a pgtype.Numeric confidence to float64 (0 when invalid/NULL).
+func observationConfidence(n pgtype.Numeric) float64 {
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return 0
+	}
+	return f.Float64
 }
 
 // CreatePlaceTombstone writes a place_tombstones row for a soft-deleted place.
