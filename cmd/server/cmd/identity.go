@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -69,7 +70,7 @@ func getIdentityJWT() (string, error) {
 		return identityTokenFlag, nil
 	}
 
-	serverURL := resolveIdentityServerURL()
+	serverURL := resolveServerURL(identityServerURL)
 
 	key := identityAPIKey
 	if key == "" {
@@ -82,26 +83,40 @@ func getIdentityJWT() (string, error) {
 	return exchangeReviewJWT(serverURL, key)
 }
 
-func resolveIdentityServerURL() string {
-	u := identityServerURL
-	if u == "" {
-		u = os.Getenv("TOGATHER_BASE_URL")
-	}
-	if u == "" {
-		u = "http://localhost:8080"
-	}
-	if !strings.Contains(u, "://") && !strings.HasPrefix(u, "localhost") {
-		u = "https://" + u
-	}
-	return u
-}
-
-func identityHTTPClient() *http.Client {
-	return &http.Client{Timeout: 30 * time.Second}
-}
-
 func isValidIdentityType(t string) bool {
 	return t == string(identity.EntityTypePlace) || t == string(identity.EntityTypeOrganization)
+}
+
+// identityDoGET performs a GET and preserves the RFC 7807 error body on
+// 4xx/5xx so callers can surface title/detail/instance.
+func identityDoGET(client *http.Client, u, authKey string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	if authKey != "" {
+		req.Header.Set("Authorization", "Bearer "+authKey)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		return nil, fmt.Errorf("authentication failed (401)")
+	}
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("server returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return body, nil
 }
 
 // --- check ----------------------------------------------------------------
@@ -125,12 +140,12 @@ func runIdentityCheck(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	serverURL := resolveIdentityServerURL()
-	client := identityHTTPClient()
+	serverURL := resolveServerURL(identityServerURL)
+	client := newHTTPClient()
 	out := cmd.OutOrStdout()
 
 	u := fmt.Sprintf("%s/api/v1/admin/identity/%s/%s", serverURL, url.PathEscape(typ), url.PathEscape(ulid))
-	body, err := doGET(client, u, jwt)
+	body, err := identityDoGET(client, u, jwt)
 	if err != nil {
 		return fmt.Errorf("fetch identity view: %w", err)
 	}
@@ -164,7 +179,7 @@ var (
 
 func init() {
 	identityConflictsCmd.Flags().StringVar(&conflictsType, "type", "", "Entity type: place or organization (required)")
-	identityConflictsCmd.Flags().IntVar(&conflictsLimit, "limit", 50, "Maximum conflicts to return")
+	identityConflictsCmd.Flags().IntVar(&conflictsLimit, "limit", 50, "Page size per request (all pages are fetched)")
 	identityConflictsCmd.Flags().BoolVar(&conflictsIncludeSuppressed, "include-suppressed", false, "Include suppressed conflicts with their prior decision")
 }
 
@@ -178,29 +193,16 @@ func runIdentityConflicts(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	serverURL := resolveIdentityServerURL()
-	client := identityHTTPClient()
+	serverURL := resolveServerURL(identityServerURL)
+	client := newHTTPClient()
 	out := cmd.OutOrStdout()
 
-	params := url.Values{}
-	params.Set("type", conflictsType)
-	if conflictsLimit > 0 {
-		params.Set("limit", fmt.Sprintf("%d", conflictsLimit))
-	}
-	if conflictsIncludeSuppressed {
-		params.Set("include_suppressed", "true")
-	}
-
-	u := fmt.Sprintf("%s/api/v1/admin/identity/conflicts?%s", serverURL, params.Encode())
-	body, err := doGET(client, u, jwt)
+	items, err := fetchAllIdentityConflicts(client, serverURL, jwt, conflictsType, conflictsLimit, conflictsIncludeSuppressed)
 	if err != nil {
 		return fmt.Errorf("fetch conflicts: %w", err)
 	}
 
-	var resp identity.ConflictsResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return fmt.Errorf("parse conflicts: %w", err)
-	}
+	resp := identity.ConflictsResponse{Items: items}
 
 	if identityJSON {
 		return writeIndentedJSON(out, resp)
@@ -208,6 +210,51 @@ func runIdentityConflicts(cmd *cobra.Command, args []string) error {
 
 	printConflicts(out, conflictsType, resp)
 	return nil
+}
+
+// fetchAllIdentityConflicts follows next_cursor until exhausted, returning every
+// conflict item across all pages.
+func fetchAllIdentityConflicts(client *http.Client, serverURL, jwt, typ string, limit int, includeSuppressed bool) ([]identity.ConflictItem, error) {
+	var all []identity.ConflictItem
+	cursor := ""
+	for {
+		resp, err := fetchIdentityConflictsPage(client, serverURL, jwt, typ, limit, cursor, includeSuppressed)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, resp.Items...)
+		if resp.NextCursor == nil || *resp.NextCursor == "" {
+			break
+		}
+		cursor = *resp.NextCursor
+	}
+	return all, nil
+}
+
+func fetchIdentityConflictsPage(client *http.Client, serverURL, jwt, typ string, limit int, cursor string, includeSuppressed bool) (*identity.ConflictsResponse, error) {
+	params := url.Values{}
+	params.Set("type", typ)
+	if limit > 0 {
+		params.Set("limit", fmt.Sprintf("%d", limit))
+	}
+	if includeSuppressed {
+		params.Set("include_suppressed", "true")
+	}
+	if cursor != "" {
+		params.Set("cursor", cursor)
+	}
+
+	u := fmt.Sprintf("%s/api/v1/admin/identity/conflicts?%s", serverURL, params.Encode())
+	body, err := identityDoGET(client, u, jwt)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp identity.ConflictsResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("parse conflicts: %w", err)
+	}
+	return &resp, nil
 }
 
 // --- link -----------------------------------------------------------------
@@ -223,16 +270,16 @@ var (
 	linkAuthority  string
 	linkURI        string
 	linkSource     string
-	linkMethod     string
 	linkConfidence float64
+	linkRationale  string
 )
 
 func init() {
 	identityLinkCmd.Flags().StringVar(&linkAuthority, "authority", "", "Authority code (required, e.g. artsdata)")
 	identityLinkCmd.Flags().StringVar(&linkURI, "uri", "", "External identifier URI (required)")
 	identityLinkCmd.Flags().StringVar(&linkSource, "source", "manual", "Observation source (Phase 1 allow-list: manual)")
-	identityLinkCmd.Flags().StringVar(&linkMethod, "method", "manual", "Observation method (Phase 1 allow-list: manual)")
-	identityLinkCmd.Flags().Float64Var(&linkConfidence, "confidence", 1.0, "Confidence in [0,1]")
+	identityLinkCmd.Flags().Float64Var(&linkConfidence, "confidence", 1.0, "Confidence in [0,1] (accepted and clamped; never affects primary ranking)")
+	identityLinkCmd.Flags().StringVar(&linkRationale, "rationale", "", "Free-text rationale recorded on the decision")
 }
 
 type identityLinkRequest struct {
@@ -243,6 +290,7 @@ type identityLinkRequest struct {
 	Method     string  `json:"method"`
 	Confidence float64 `json:"confidence"`
 	Source     string  `json:"source"`
+	Rationale  string  `json:"rationale"`
 }
 
 func runIdentityLink(cmd *cobra.Command, args []string) error {
@@ -272,9 +320,10 @@ func runIdentityLink(cmd *cobra.Command, args []string) error {
 		EntityID:   ulid,
 		Authority:  linkAuthority,
 		URI:        linkURI,
-		Method:     linkMethod,
+		Method:     "manual",
 		Confidence: confidence,
 		Source:     linkSource,
+		Rationale:  linkRationale,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal request body: %w", err)
@@ -348,8 +397,8 @@ func postIdentityAction(cmd *cobra.Command, path string, body []byte, line func(
 		return err
 	}
 
-	serverURL := resolveIdentityServerURL()
-	client := identityHTTPClient()
+	serverURL := resolveServerURL(identityServerURL)
+	client := newHTTPClient()
 	out := cmd.OutOrStdout()
 
 	respBody, err := doPOST(client, serverURL+path, bytes.NewReader(body), jwt)
@@ -382,10 +431,16 @@ func printIdentityView(out io.Writer, view identity.IdentityView) {
 	_, _ = fmt.Fprintf(out, "Entity: %s %s\n", view.Ref.Type, view.Ref.ULID)
 
 	if len(view.Primary) > 0 {
+		authorities := make([]string, 0, len(view.Primary))
+		for authority := range view.Primary {
+			authorities = append(authorities, authority)
+		}
+		sort.Strings(authorities)
+
 		_, _ = fmt.Fprintln(out)
 		_, _ = fmt.Fprintln(out, "Primary:")
-		for authority, uri := range view.Primary {
-			_, _ = fmt.Fprintf(out, "  %s -> %s\n", authority, uri)
+		for _, authority := range authorities {
+			_, _ = fmt.Fprintf(out, "  %s -> %s\n", authority, view.Primary[authority])
 		}
 	}
 
@@ -436,10 +491,6 @@ func printConflicts(out io.Writer, typ string, resp identity.ConflictsResponse) 
 			item.Ref.ULID, item.Candidate.ULID, item.Authority, item.URI, item.Score, suppressed)
 	}
 	_ = w.Flush()
-
-	if resp.NextCursor != nil && *resp.NextCursor != "" {
-		_, _ = fmt.Fprintf(out, "\n(next cursor: %s)\n", *resp.NextCursor)
-	}
 }
 
 func formatObservedAt(t time.Time) string {

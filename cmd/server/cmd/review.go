@@ -379,7 +379,14 @@ func getReviewJWT() (string, error) {
 }
 
 func resolveReviewServerURL() string {
-	u := reviewServerURL
+	return resolveServerURL(reviewServerURL)
+}
+
+// resolveServerURL resolves a server base URL from an explicit flag value,
+// falling back to TOGATHER_BASE_URL then the local default. A bare host (no
+// scheme) is upgraded to https unless it is "localhost".
+func resolveServerURL(flag string) string {
+	u := flag
 	if u == "" {
 		u = os.Getenv("TOGATHER_BASE_URL")
 	}
@@ -390,6 +397,12 @@ func resolveReviewServerURL() string {
 		u = "https://" + u
 	}
 	return u
+}
+
+// newHTTPClient returns the standard short-timeout client shared by the CLI
+// commands that talk to the server.
+func newHTTPClient() *http.Client {
+	return &http.Client{Timeout: 30 * time.Second}
 }
 
 func formatAge(t time.Time) string {
