@@ -25,6 +25,8 @@ type DemotePrimaryAndSupersedeParams struct {
 }
 
 // Demote every primary in the group except the winner, recording the superseding row.
+// superseded_by_id records the *immediate successor* at demotion time, not necessarily
+// the current primary: if that successor is later demoted, it keeps pointing at it.
 func (q *Queries) DemotePrimaryAndSupersede(ctx context.Context, arg DemotePrimaryAndSupersedeParams) error {
 	_, err := q.db.Exec(ctx, demotePrimaryAndSupersede,
 		arg.WinnerID,
@@ -163,7 +165,7 @@ DO UPDATE SET
     confidence = EXCLUDED.confidence,
     reconciliation_method = EXCLUDED.reconciliation_method,
     is_canonical = false,
-    metadata = EXCLUDED.metadata,
+    metadata = COALESCE(EXCLUDED.metadata, entity_identifiers.metadata),
     observed_at = now(),
     source = EXCLUDED.source,
     updated_at = now()
@@ -184,6 +186,8 @@ type UpsertObservationParams struct {
 // SQLc queries for entity identity primitives.
 // See: specs/007-entity-identity-adjudication/spec-phase1.md (Task 1/2)
 // Insert or refresh an identifier observation without disturbing the primary slot.
+// metadata is non-destructive on conflict: a NULL incoming metadata (the common case —
+// RecordObservation does not carry metadata) preserves the existing row's JSONB.
 func (q *Queries) UpsertObservation(ctx context.Context, arg UpsertObservationParams) (EntityIdentifier, error) {
 	row := q.db.QueryRow(ctx, upsertObservation,
 		arg.EntityType,

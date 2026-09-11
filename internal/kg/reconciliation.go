@@ -3,6 +3,7 @@ package kg
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -66,6 +67,10 @@ var _ ReconciliationCacheStore = (*postgres.Queries)(nil)
 type IdentityRecorder interface {
 	RecordObservation(ctx context.Context, ref identity.IdentityRef, obs identity.IdentifierObservation) (identity.IdentifierObservation, error)
 }
+
+// ErrIdentityRecorderNotConfigured is returned when a reconciliation runs without
+// an identity recorder injected.
+var ErrIdentityRecorderNotConfigured = errors.New("identity recorder not configured")
 
 // compile-time assertion: *identity.Store must satisfy IdentityRecorder.
 var _ IdentityRecorder = (*identity.Store)(nil)
@@ -322,7 +327,7 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 // storeIdentifier records an identifier observation via the atomic primary election.
 func (s *ReconciliationService) storeIdentifier(ctx context.Context, entityID, entityType string, match *MatchResult) error {
 	if s.identities == nil {
-		return fmt.Errorf("identity recorder not configured")
+		return ErrIdentityRecorderNotConfigured
 	}
 
 	_, err := s.identities.RecordObservation(ctx, identity.IdentityRef{

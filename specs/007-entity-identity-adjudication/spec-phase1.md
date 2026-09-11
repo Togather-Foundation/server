@@ -275,13 +275,18 @@ pair. The same function computes the *current* fingerprint on read.
 //   1. pg_advisory_xact_lock(hash(entity_type|entity_id|authority))   -- serialize per group
 //   2. UpsertObservation(..., observed_at=now(), source=obs.Source)
 //      -- INSERT sets is_primary=false; ON CONFLICT DO UPDATE does NOT touch is_primary
-//   3. GetEntityIdentifiers(...)  -- joins knowledge_graph_authorities for trust/priority
+//      and preserves metadata via COALESCE(EXCLUDED.metadata, existing.metadata)
+//   3. ListGroupIdentifiersForUpdate(...)  -- group load joining knowledge_graph_authorities
+//      for trust/priority, with FOR UPDATE OF ei (READ-COMMITTED reread after the lock)
 //   4. winner, ok := ElectPrimary(obs)          -- Go rank
 //   5. DemotePrimaryAndSupersede(group, winner.ID)  -- demotes every primary except winner,
-//      setting superseded_by_id=winner.ID
+//      setting superseded_by_id=winner.ID (immediate successor, not necessarily the
+//      eventual primary)
 //   6. SetPrimary(winner.ID)                    -- UNCONDITIONAL; guarantees exactly one primary
 // Steps 5-6 run even when the winner is unchanged (no-ops then), so a re-observed current
 // winner cannot be left non-primary.
+// The transaction must be READ COMMITTED (Postgres default): the group SELECT issued
+// after the advisory lock must observe rows committed by earlier serialized writers.
 type TxManager interface {
     WithTx(ctx context.Context, fn func(q *postgres.Queries) error) error
 }
@@ -318,14 +323,22 @@ Entity-to-entity sameness is expressed by `Reject` (distinct) or, in Phase 2, by
 **SQLc queries to add** (`internal/storage/postgres/queries/identity.sql`):
 - `UpsertObservation :one` — added in Task 1; **replaces** the deleted `UpsertEntityIdentifier`
   query. INSERT sets `is_primary=false`; `ON CONFLICT DO UPDATE` refreshes `confidence`,
-  `reconciliation_method`, `observed_at=now()`, `source`, `metadata`, `updated_at` and does
-  **not** touch `is_primary`; `is_canonical` written `false`. Does **not** elect.
-- `GetEntityIdentifiers :many` — existing query extended to join
+  `reconciliation_method`, `observed_at=now()`, `source`, `updated_at` and does **not** touch
+  `is_primary`; `metadata` is preserved non-destructively via
+  `COALESCE(EXCLUDED.metadata, entity_identifiers.metadata)` (a NULL incoming metadata keeps the
+  existing provenance JSONB); `is_canonical` written `false`. Does **not** elect.
+- `LockIdentityGroup :exec` — `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+  keyed by `entity_type|entity_id|authority_code`; serializes concurrent elections per group.
+- `ListGroupIdentifiersForUpdate :many` — group load (one authority) joining
   `knowledge_graph_authorities` (via `a.authority_code = ei.authority_code`) selecting
-  `a.trust_level, a.priority_order`, with `FOR UPDATE OF ei`.
+  `a.trust_level, a.priority_order`, with `FOR UPDATE OF ei`. The election's locking read.
+- `GetEntityIdentifiers :many` — existing query extended to join
+  `knowledge_graph_authorities` for `trust_level`/`priority_order`; the **non-locking**
+  read path (no `FOR UPDATE`) used by `IdentifierStore.GetEntityIdentifiers`.
 - `DemotePrimaryAndSupersede :exec` — `UPDATE entity_identifiers SET is_primary=false,
   superseded_by_id=$4, updated_at=now() WHERE entity_type=$1 AND entity_id=$2 AND
-  authority_code=$3 AND is_primary AND id<>$4`.
+  authority_code=$3 AND is_primary AND id<>$4`. `superseded_by_id` records the immediate
+  successor at demotion time, not necessarily the eventual primary.
 - `SetPrimary :exec` — `UPDATE entity_identifiers SET is_primary=true, superseded_by_id=NULL,
   updated_at=now() WHERE id=$1`.
 - `ListConflicts :many` — `entity_identifiers a JOIN entity_identifiers b ON

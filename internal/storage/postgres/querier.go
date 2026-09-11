@@ -93,6 +93,8 @@ type Querier interface {
 	DeleteScraperSource(ctx context.Context, name string) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
 	// Demote every primary in the group except the winner, recording the superseding row.
+	// superseded_by_id records the *immediate successor* at demotion time, not necessarily
+	// the current primary: if that successor is later demoted, it keeps pointing at it.
 	DemotePrimaryAndSupersede(ctx context.Context, arg DemotePrimaryAndSupersedeParams) error
 	// Atomically strips all companion warning entries referencing the given event_ulid
 	// from a specific review row. Handles three warning types:
@@ -383,6 +385,8 @@ type Querier interface {
 	// SQLc queries for entity identity primitives.
 	// See: specs/007-entity-identity-adjudication/spec-phase1.md (Task 1/2)
 	// Insert or refresh an identifier observation without disturbing the primary slot.
+	// metadata is non-destructive on conflict: a NULL incoming metadata (the common case —
+	// RecordObservation does not carry metadata) preserves the existing row's JSONB.
 	UpsertObservation(ctx context.Context, arg UpsertObservationParams) (EntityIdentifier, error)
 	// Insert or update a cache entry
 	UpsertReconciliationCache(ctx context.Context, arg UpsertReconciliationCacheParams) (ReconciliationCache, error)

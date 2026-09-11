@@ -2,12 +2,18 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+// ErrInvalidEntityType is returned when an IdentityRef.Type is not a supported
+// entity type (place or organization). It is a BadRequest-class error that
+// handlers map to HTTP 400.
+var ErrInvalidEntityType = errors.New("invalid entity type")
 
 // TxManager runs a function against a single transaction-scoped *postgres.Queries,
 // committing on success and rolling back on error.
@@ -84,7 +90,8 @@ func (s *Store) RecordObservation(ctx context.Context, ref IdentityRef, obs Iden
 // RecordObservationTx performs the full election inside the caller's transaction:
 //
 //  1. pg_advisory_xact_lock(hash(entity_type|entity_id|authority))
-//  2. UpsertObservation (INSERT sets is_primary=false; ON CONFLICT never touches is_primary)
+//  2. UpsertObservation (INSERT sets is_primary=false; ON CONFLICT never touches
+//     is_primary and preserves metadata via COALESCE)
 //  3. ListGroupIdentifiersForUpdate (authority trust/priority, FOR UPDATE OF ei)
 //  4. ElectPrimary (Go rank)
 //  5. DemotePrimaryAndSupersede(group, winner.ID)
@@ -92,7 +99,17 @@ func (s *Store) RecordObservation(ctx context.Context, ref IdentityRef, obs Iden
 //
 // Steps 5–6 run even when the winner is unchanged (no-ops then), so re-observing
 // the current winner never clears its primary flag.
+//
+// The caller's transaction MUST run at READ COMMITTED (Postgres' default): the
+// advisory-lock-then-reread pattern relies on the group SELECT issued after the
+// lock observing every row committed by earlier serialized writers. Higher
+// isolation levels (REPEATABLE READ / SERIALIZABLE) snapshot before the lock and
+// would not see those rows.
 func (s *Store) RecordObservationTx(ctx context.Context, q *postgres.Queries, ref IdentityRef, obs IdentifierObservation) (IdentifierObservation, error) {
+	if ref.Type != EntityTypePlace && ref.Type != EntityTypeOrganization {
+		return IdentifierObservation{}, fmt.Errorf("%w: %q", ErrInvalidEntityType, ref.Type)
+	}
+
 	// 1. Serialize concurrent elections on this (entity, authority) group.
 	if err := q.LockIdentityGroup(ctx, identityLockKey(ref, obs.Authority)); err != nil {
 		return IdentifierObservation{}, fmt.Errorf("identity: acquire group lock: %w", err)

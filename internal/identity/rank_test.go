@@ -1,6 +1,7 @@
 package identity
 
 import (
+	"math"
 	"testing"
 	"time"
 )
@@ -134,5 +135,32 @@ func TestElectPrimary_Single(t *testing.T) {
 	}
 	if got.ID != only.ID {
 		t.Errorf("got id %d, want %d", got.ID, only.ID)
+	}
+}
+
+func TestElectPrimary_NaNConfidenceTreatedLowest(t *testing.T) {
+	// A NaN confidence must sort below every valid confidence (including 0.0),
+	// so the valid-confidence observation wins regardless of id.
+	nanConf := obs(99, "auto_high", 9, 10, math.NaN(), time.Unix(100, 0))
+	zeroConf := obs(1, "auto_high", 9, 10, 0.0, time.Unix(100, 0))
+
+	got, ok := ElectPrimary([]IdentifierObservation{nanConf, zeroConf})
+	if !ok {
+		t.Fatal("unexpected ok=false")
+	}
+	if got.ID != zeroConf.ID {
+		t.Errorf("got winner id %d, want %d (NaN confidence must be lowest)", got.ID, zeroConf.ID)
+	}
+
+	// Two NaN confidences fall through to the terminal id tie-break.
+	nanLow := obs(2, "auto_high", 9, 10, math.NaN(), time.Unix(100, 0))
+	nanHigh := obs(7, "auto_high", 9, 10, math.NaN(), time.Unix(100, 0))
+
+	got2, ok := ElectPrimary([]IdentifierObservation{nanLow, nanHigh})
+	if !ok {
+		t.Fatal("unexpected ok=false")
+	}
+	if got2.ID != nanHigh.ID {
+		t.Errorf("got winner id %d, want %d (NaN vs NaN falls to id DESC)", got2.ID, nanHigh.ID)
 	}
 }

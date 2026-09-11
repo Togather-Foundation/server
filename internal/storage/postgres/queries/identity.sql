@@ -3,6 +3,8 @@
 
 -- name: UpsertObservation :one
 -- Insert or refresh an identifier observation without disturbing the primary slot.
+-- metadata is non-destructive on conflict: a NULL incoming metadata (the common case —
+-- RecordObservation does not carry metadata) preserves the existing row's JSONB.
 INSERT INTO entity_identifiers (entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, observed_at, is_primary, source)
 VALUES (sqlc.arg('entity_type'), sqlc.arg('entity_id'), sqlc.arg('authority_code'), sqlc.arg('identifier_uri'), sqlc.arg('confidence'), sqlc.arg('reconciliation_method'), false, sqlc.arg('metadata'), now(), false, sqlc.arg('source'))
 ON CONFLICT (entity_type, entity_id, authority_code, identifier_uri)
@@ -10,7 +12,7 @@ DO UPDATE SET
     confidence = EXCLUDED.confidence,
     reconciliation_method = EXCLUDED.reconciliation_method,
     is_canonical = false,
-    metadata = EXCLUDED.metadata,
+    metadata = COALESCE(EXCLUDED.metadata, entity_identifiers.metadata),
     observed_at = now(),
     source = EXCLUDED.source,
     updated_at = now()
@@ -42,6 +44,8 @@ WHERE id = sqlc.arg('id');
 
 -- name: DemotePrimaryAndSupersede :exec
 -- Demote every primary in the group except the winner, recording the superseding row.
+-- superseded_by_id records the *immediate successor* at demotion time, not necessarily
+-- the current primary: if that successor is later demoted, it keeps pointing at it.
 UPDATE entity_identifiers SET is_primary = false, superseded_by_id = sqlc.arg('winner_id'), updated_at = now()
 WHERE entity_type = sqlc.arg('entity_type') AND entity_id = sqlc.arg('entity_id')
   AND authority_code = sqlc.arg('authority_code') AND is_primary AND id <> sqlc.arg('winner_id');

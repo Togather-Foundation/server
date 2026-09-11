@@ -1,6 +1,9 @@
 package identity
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 // IdentifierObservation is a single external-identifier observation for a SEL
 // entity. Multiple observations for the same (entity, authority) form a group;
@@ -38,13 +41,23 @@ func methodRank(method string) int {
 	}
 }
 
+// confidenceForRank normalizes a confidence value for ranking, treating NaN as
+// the lowest possible value so the deterministic tie-breaks still run instead of
+// poisoning the comparison (NaN never compares true with < or >).
+func confidenceForRank(c float64) float64 {
+	if math.IsNaN(c) {
+		return math.Inf(-1)
+	}
+	return c
+}
+
 // less reports whether a is strictly lower-ranked than b under the canonical
 // election order (plan.md § Component Design):
 //
 //  1. method rank (manual > imported > auto_high > auto_low > enrichment_sameas)
 //  2. authority trust_level DESC
 //  3. authority priority_order ASC (lower wins)
-//  4. confidence DESC
+//  4. confidence DESC (NaN treated as lowest)
 //  5. observed_at DESC (newest)
 //  6. id DESC (terminal deterministic tie-break)
 func less(a, b IdentifierObservation) bool {
@@ -57,8 +70,8 @@ func less(a, b IdentifierObservation) bool {
 	if a.Priority != b.Priority {
 		return a.Priority > b.Priority
 	}
-	if a.Confidence != b.Confidence {
-		return a.Confidence < b.Confidence
+	if ca, cb := confidenceForRank(a.Confidence), confidenceForRank(b.Confidence); ca != cb {
+		return ca < cb
 	}
 	if !a.ObservedAt.Equal(b.ObservedAt) {
 		return a.ObservedAt.Before(b.ObservedAt)

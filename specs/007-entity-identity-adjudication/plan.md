@@ -243,10 +243,9 @@ type CandidateSource interface {
     Candidates(ctx context.Context, ref IdentityRef) ([]Candidate, error)
 }
 
-type Ranker interface {
-    // ElectPrimary returns the observation that should hold the primary slot.
-    ElectPrimary(obs []IdentifierObservation) (IdentifierObservation, bool)
-}
+// ElectPrimary is a free function (internal/identity/rank.go) — not an interface —
+// returning the observation that should hold the primary slot:
+func ElectPrimary(obs []IdentifierObservation) (IdentifierObservation, bool)
 
 type ActionValidator interface {
     // Validate returns a semantic outcome: allowed, or escalate with a reason.
