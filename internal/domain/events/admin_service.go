@@ -1160,7 +1160,12 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 		return fmt.Errorf("merge events: %w", err)
 	}
 
-	// Generate tombstone for the duplicate event
+	// Generate tombstone for the duplicate event.
+	//
+	// Note the intentional granularity difference: the event row's deletion_reason is
+	// 'merged' (set by MergeEventIntoDuplicate), while this tombstone records the more
+	// descriptive 'duplicate_merged' so downstream consumers can distinguish it from a
+	// place/organization merge. The two fields deliberately differ.
 	primaryURI, err := s.eventURI(params.PrimaryULID)
 	if err != nil {
 		return fmt.Errorf("canonical URI for primary event: %w", err)
@@ -1169,7 +1174,7 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 	if err != nil {
 		return fmt.Errorf("canonical URI for duplicate event: %w", err)
 	}
-	tombstonePayload, err := buildTombstonePayload(duplicateURI, duplicate.Name, &primaryURI, "merged")
+	tombstonePayload, err := buildTombstonePayload(duplicateURI, duplicate.Name, &primaryURI, "duplicate_merged")
 	if err != nil {
 		return fmt.Errorf("build tombstone: %w", err)
 	}
@@ -1178,7 +1183,7 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 		EventID:      duplicate.ID,
 		EventURI:     duplicateURI,
 		DeletedAt:    time.Now(),
-		Reason:       "merged",
+		Reason:       "duplicate_merged",
 		SupersededBy: &primaryURI,
 		Payload:      tombstonePayload,
 	}
