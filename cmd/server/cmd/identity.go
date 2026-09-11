@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/identity"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +32,7 @@ Subcommands:
   conflicts --type <type>            list identifier conflicts (unordered pairs sharing an identifier)
   link      <type> <ulid>            record an external identifier observation
   reject    <type> <ulid>            record that two entities are not duplicates
+  tidy      [--apply] [--type]       repair primary-identifier drift (fills missing / demotes extras)
 
 Auth (mirrors "server review"):
   --token JWT (skips STS exchange) → --key admin API key (STS exchange) → TOGATHER_ADMIN_API_KEY env
@@ -61,6 +64,7 @@ func init() {
 	identityCmd.AddCommand(identityConflictsCmd)
 	identityCmd.AddCommand(identityLinkCmd)
 	identityCmd.AddCommand(identityRejectCmd)
+	identityCmd.AddCommand(identityTidyCmd)
 }
 
 // --- auth resolution (mirrors server review) ------------------------------
@@ -498,4 +502,90 @@ func formatObservedAt(t time.Time) string {
 		return "-"
 	}
 	return t.UTC().Format(time.RFC3339)
+}
+
+// --- tidy -----------------------------------------------------------------
+
+var (
+	identityTidyCmd = &cobra.Command{
+		Use:   "tidy",
+		Short: "Repair primary-identifier drift",
+		Args:  cobra.NoArgs,
+		Long: `Repair primary-identifier drift in entity_identifiers.
+
+For every (entity, authority) identifier group, tidy (a) elects a canonical
+primary where a group has observations but none primary, and (b) demotes all but
+the canonical winner where a group has more than one primary (legacy/pre-index
+state). Identifier rows are never deleted — only demoted.
+
+By default tidy runs as a dry-run and mutates nothing; pass --apply to write
+repairs. --type scopes the scan to place or organization (default: both).
+
+Unlike the other identity verbs, tidy operates directly on the database via
+DATABASE_URL (it does not go through the admin REST API).`,
+		RunE: runIdentityTidy,
+	}
+
+	tidyApply  bool
+	tidyDryRun bool
+	tidyType   string
+)
+
+func init() {
+	identityTidyCmd.Flags().BoolVar(&tidyApply, "apply", false, "apply repairs (default is dry-run)")
+	identityTidyCmd.Flags().BoolVar(&tidyDryRun, "dry-run", false, "report repairs without applying (this is the default)")
+	identityTidyCmd.Flags().StringVar(&tidyType, "type", "", "entity type to scan: place or organization (default: both)")
+}
+
+type tidyJSONResult struct {
+	identity.TidyStats
+	DryRun bool `json:"dry_run"`
+}
+
+func runIdentityTidy(cmd *cobra.Command, args []string) error {
+	if tidyApply && tidyDryRun {
+		return fmt.Errorf("--dry-run and --apply are mutually exclusive")
+	}
+	if tidyType != "" && !isValidIdentityType(tidyType) {
+		return fmt.Errorf("--type must be place or organization")
+	}
+	apply := tidyApply
+
+	dbURL := getDatabaseURL()
+	if dbURL == "" {
+		return fmt.Errorf("DATABASE_URL not set\n\nTried loading from:\n  - Environment variable DATABASE_URL\n  - .env file in project root\n  - deploy/docker/.env\n\nPlease set DATABASE_URL or create a .env file")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		return fmt.Errorf("connect to database: %w", err)
+	}
+	defer pool.Close()
+
+	store := identity.NewStore(pool)
+	stats, err := store.Tidy(ctx, identity.EntityType(tidyType), apply)
+	if err != nil {
+		return fmt.Errorf("identity tidy: %w", err)
+	}
+
+	out := cmd.OutOrStdout()
+	if identityJSON {
+		return writeIndentedJSON(out, tidyJSONResult{TidyStats: stats, DryRun: !apply})
+	}
+
+	printTidySummary(out, stats, apply)
+	return nil
+}
+
+func printTidySummary(out io.Writer, stats identity.TidyStats, apply bool) {
+	if !apply {
+		_, _ = fmt.Fprintln(out, "Dry run — no changes applied.")
+	}
+	_, _ = fmt.Fprintln(out, "Summary:")
+	_, _ = fmt.Fprintf(out, "  Entities scanned:  %d\n", stats.EntitiesScanned)
+	_, _ = fmt.Fprintf(out, "  Primaries filled:  %d\n", stats.PrimariesFilled)
+	_, _ = fmt.Fprintf(out, "  Rows demoted:      %d\n", stats.RowsDemoted)
 }
