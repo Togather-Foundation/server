@@ -545,7 +545,8 @@ const listIdentityGroups = `-- name: ListIdentityGroups :many
 SELECT entity_type, entity_id, authority_code,
        COUNT(*) FILTER (WHERE is_primary) AS primary_count
 FROM entity_identifiers
-WHERE ($1::text IS NULL OR entity_type = $1::text)
+WHERE entity_type IN ('place', 'organization')
+  AND ($1::text IS NULL OR entity_type = $1::text)
 GROUP BY entity_type, entity_id, authority_code
 ORDER BY entity_type, entity_id, authority_code
 `
@@ -560,7 +561,9 @@ type ListIdentityGroupsRow struct {
 // List every (entity_type, entity_id, authority_code) identifier group with the
 // number of primary rows it currently holds. Used by `server identity tidy` to
 // find groups with zero primaries (fill) or more than one primary (demote
-// extras). entity_type is optional (NULL = all types).
+// extras). entity_type is optional (NULL = both supported types). The scan is
+// hard-scoped to place and organization: events/persons are Phase 4 and must
+// never be touched by tidy.
 func (q *Queries) ListIdentityGroups(ctx context.Context, entityType pgtype.Text) ([]ListIdentityGroupsRow, error) {
 	rows, err := q.db.Query(ctx, listIdentityGroups, entityType)
 	if err != nil {

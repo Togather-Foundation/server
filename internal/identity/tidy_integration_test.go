@@ -66,6 +66,14 @@ func countPrimaries(t *testing.T, pool *pgxpool.Pool, entityType, entityID strin
 	return n
 }
 
+func countIdentifierRows(t *testing.T, pool *pgxpool.Pool) int {
+	t.Helper()
+	var n int
+	err := pool.QueryRow(context.Background(), `SELECT COUNT(*) FROM entity_identifiers`).Scan(&n)
+	require.NoError(t, err)
+	return n
+}
+
 // TestTidy_RepairsDrift covers User Story 5: seed a "no primary" group and a
 // legacy multi-primary group (after dropping the partial unique index), then
 // verify dry-run purity, apply, invariant restoration, and idempotency.
@@ -87,6 +95,9 @@ func TestTidy_RepairsDrift(t *testing.T) {
 
 	store := NewStore(pool)
 
+	// Total identifier rows before apply — tidy must never add or delete rows.
+	totalBefore := countIdentifierRows(t, pool)
+
 	// Dry-run reports the drift but mutates nothing.
 	stats, err := store.Tidy(ctx, EntityTypePlace, false)
 	require.NoError(t, err)
@@ -97,6 +108,7 @@ func TestTidy_RepairsDrift(t *testing.T) {
 	require.Equal(t, 2, countDriftedGroups(t, pool), "dry-run must not repair drift")
 	require.Equal(t, 0, countPrimaries(t, pool, "place", "01ARZ3NDEKTSV4RRFFQ69G5FAA"), "group A still has no primary after dry-run")
 	require.Equal(t, 2, countPrimaries(t, pool, "place", "01ARZ3NDEKTSV4RRFFQ69G5FAB"), "group B still has two primaries after dry-run")
+	require.Equal(t, totalBefore, countIdentifierRows(t, pool), "dry-run must not change row count")
 
 	// Apply repairs the drift.
 	stats, err = store.Tidy(ctx, EntityTypePlace, true)
@@ -108,9 +120,12 @@ func TestTidy_RepairsDrift(t *testing.T) {
 	require.Equal(t, 0, countDriftedGroups(t, pool), "invariant must hold after apply")
 	require.Equal(t, 1, countPrimaries(t, pool, "place", "01ARZ3NDEKTSV4RRFFQ69G5FAA"), "group A must have exactly one primary")
 	require.Equal(t, 1, countPrimaries(t, pool, "place", "01ARZ3NDEKTSV4RRFFQ69G5FAB"), "group B must have exactly one primary")
+	require.Equal(t, totalBefore, countIdentifierRows(t, pool), "tidy must never delete (or add) identifier rows")
 
-	// The canonical winner (auto_high) must be the surviving primary in group B.
+	// The canonical winner (auto_high) must be the surviving primary in group B,
+	// and both rows must still exist (tidy demotes, never deletes).
 	states := loadPrimaryStates(t, pool, "place", "01ARZ3NDEKTSV4RRFFQ69G5FAB")
+	require.Len(t, states, 2, "tidy must never delete identifier rows")
 	for _, s := range states {
 		if s.IsPrimary {
 			require.Equal(t, "https://kg.artsdata.ca/resource/K11-200", s.URI, "auto_high must win over auto_low")
@@ -182,4 +197,34 @@ func TestTidy_InvalidType(t *testing.T) {
 	_, err := store.Tidy(context.Background(), EntityType("event"), true)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrInvalidEntityType)
+}
+
+// TestTidy_IgnoresUnsupportedEntityTypes verifies the unfiltered (--type omitted)
+// scan is hard-scoped to place/organization: event and person identifier groups
+// are never scanned or repaired (Phase 4 non-goal).
+func TestTidy_IgnoresUnsupportedEntityTypes(t *testing.T) {
+	pool := setupIdentity(t)
+	dropPrimaryIndex(t, pool)
+	ctx := context.Background()
+
+	// Drift in unsupported types: a no-primary event group and a no-primary
+	// person group. Both must be ignored by tidy.
+	seedIdentifierRow(t, pool, "event", "01ARZ3NDEKTSV4RRFFQ69G5FAF", "artsdata", "https://kg.artsdata.ca/resource/K11-600", "auto_high", false)
+	seedIdentifierRow(t, pool, "person", "01ARZ3NDEKTSV4RRFFQ69G5FAG", "artsdata", "https://kg.artsdata.ca/resource/K11-700", "auto_high", false)
+
+	// A place with drift, to prove the scan still finds supported types.
+	seedIdentifierRow(t, pool, "place", "01ARZ3NDEKTSV4RRFFQ69G5FAH", "artsdata", "https://kg.artsdata.ca/resource/K11-800", "auto_high", false)
+
+	store := NewStore(pool)
+
+	stats, err := store.Tidy(ctx, "", true)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), stats.EntitiesScanned, "only the place entity must be scanned")
+	require.Equal(t, int64(1), stats.PrimariesFilled)
+	require.Equal(t, int64(0), stats.RowsDemoted)
+
+	// The place was repaired; event/person were left untouched.
+	require.Equal(t, 1, countPrimaries(t, pool, "place", "01ARZ3NDEKTSV4RRFFQ69G5FAH"), "place primary must be filled")
+	require.Equal(t, 0, countPrimaries(t, pool, "event", "01ARZ3NDEKTSV4RRFFQ69G5FAF"), "event group must be left untouched")
+	require.Equal(t, 0, countPrimaries(t, pool, "person", "01ARZ3NDEKTSV4RRFFQ69G5FAG"), "person group must be left untouched")
 }

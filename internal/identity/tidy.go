@@ -18,16 +18,21 @@ type TidyStats struct {
 	RowsDemoted     int64 `json:"rows_demoted"`
 }
 
-// Tidy scans every (entity_type, entity_id, authority_code) identifier group and
-// repairs primary-slot drift:
+// Tidy scans every (entity_type, entity_id, authority_code) identifier group for
+// places and organizations and repairs primary-slot drift:
 //
 //  1. A group with observations but no primary gets one elected (canonical rank).
 //  2. A group with more than one primary (legacy/pre-index state) gets all but
 //     the canonical winner demoted.
 //
+// A group with exactly one primary — even if that primary is not the canonical
+// winner — is intentionally left untouched: single-primary-but-non-canonical
+// rank drift is out of scope for tidy (only fill-missing and demote-extras are
+// repaired). Events/persons are never scanned (Phase 4).
+//
 // Rows are never deleted — only demoted (is_primary=false, superseded_by_id set).
 //
-// typ scopes the scan to a single entity type; the zero value ("" ) scans both
+// typ scopes the scan to a single entity type; the zero value ("") scans both
 // place and organization. When apply is false, nothing is written and the
 // returned stats report what a subsequent --apply would change (dry-run).
 // The operation is idempotent: a second --apply reports zero changes.
@@ -60,9 +65,10 @@ func (s *Store) Tidy(ctx context.Context, typ EntityType, apply bool) (TidyStats
 }
 
 // repairGroup elects the canonical primary for one (entity, authority) group and
-// — when apply is true — demotes extras and sets the winner. It returns the
-// number of primary slots filled and rows demoted. Dry-run (apply=false) performs
-// the same locking read and election but writes nothing.
+// — when apply is true and the group is actually drifted — demotes extras and
+// sets the winner. It returns the number of primary slots filled and rows
+// demoted. Dry-run (apply=false) performs the same locking read and election but
+// writes nothing.
 func (s *Store) repairGroup(ctx context.Context, entityType, entityID, authority string, apply bool) (filled, demoted int64, err error) {
 	ref := IdentityRef{Type: EntityType(entityType), ULID: entityID}
 	err = s.WithTx(ctx, func(q *postgres.Queries) error {
@@ -100,6 +106,9 @@ func (s *Store) repairGroup(ctx context.Context, entityType, entityID, authority
 			return fmt.Errorf("identity: empty group during tidy")
 		}
 
+		// Count repairs from the fresh, locked rows (not the pre-lock listing),
+		// so a group already repaired by a concurrent writer is neither counted
+		// nor rewritten.
 		var primaryCount int64
 		for _, o := range observations {
 			if o.IsPrimary {
@@ -107,9 +116,15 @@ func (s *Store) repairGroup(ctx context.Context, entityType, entityID, authority
 			}
 		}
 
-		if primaryCount == 0 {
+		// Scope: only fill-missing (0 primaries) and demote-extras (>1 primary)
+		// are repaired. A single-primary group is left as-is even when that
+		// primary is not the canonical winner (out of scope), and a group that
+		// drifted to healthy between the scan and this lock is a no-op.
+		needsRepair := primaryCount != 1
+		switch {
+		case primaryCount == 0:
 			filled = 1
-		} else if primaryCount > 1 {
+		case primaryCount > 1:
 			if winner.IsPrimary {
 				demoted = primaryCount - 1
 			} else {
@@ -117,7 +132,7 @@ func (s *Store) repairGroup(ctx context.Context, entityType, entityID, authority
 			}
 		}
 
-		if !apply {
+		if !apply || !needsRepair {
 			return nil
 		}
 

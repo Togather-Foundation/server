@@ -625,7 +625,11 @@ matches the schemas.
 
 **What**: Add `tidy [--dry-run|--apply] [--type ...]` that (a) fills a primary where a group
 has observations but none primary, and (b) demotes extras where a group has >1 primary
-(legacy/pre-index). Reports entities scanned / primaries filled / rows demoted.
+(legacy/pre-index). Reports entities scanned / primaries filled / rows demoted. The scan is
+scoped to `place`/`organization` only — events/persons are never touched (Phase 4).
+Single-primary-but-non-canonical rank drift is **out of scope**: tidy repairs only
+fill-missing and demote-extras and leaves a group with exactly one primary (even a
+non-canonical one) untouched. Rows are never deleted — only demoted.
 **Test**: fixtures — a "no primary" group and a legacy multi-primary group created **after
 temporarily dropping the partial index** (the only way a post-000051 schema can hold
 multi-primary; documented in the test). Dry-run purity; apply idempotence.

@@ -510,6 +510,7 @@ var (
 	identityTidyCmd = &cobra.Command{
 		Use:   "tidy",
 		Short: "Repair primary-identifier drift",
+		Args:  cobra.NoArgs,
 		Long: `Repair primary-identifier drift in entity_identifiers.
 
 For every (entity, authority) identifier group, tidy (a) elects a canonical

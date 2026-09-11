@@ -163,11 +163,14 @@ LIMIT sqlc.arg('limit');
 -- List every (entity_type, entity_id, authority_code) identifier group with the
 -- number of primary rows it currently holds. Used by `server identity tidy` to
 -- find groups with zero primaries (fill) or more than one primary (demote
--- extras). entity_type is optional (NULL = all types).
+-- extras). entity_type is optional (NULL = both supported types). The scan is
+-- hard-scoped to place and organization: events/persons are Phase 4 and must
+-- never be touched by tidy.
 SELECT entity_type, entity_id, authority_code,
        COUNT(*) FILTER (WHERE is_primary) AS primary_count
 FROM entity_identifiers
-WHERE (sqlc.narg('entity_type')::text IS NULL OR entity_type = sqlc.narg('entity_type')::text)
+WHERE entity_type IN ('place', 'organization')
+  AND (sqlc.narg('entity_type')::text IS NULL OR entity_type = sqlc.narg('entity_type')::text)
 GROUP BY entity_type, entity_id, authority_code
 ORDER BY entity_type, entity_id, authority_code;
 

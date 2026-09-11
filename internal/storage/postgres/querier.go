@@ -288,7 +288,9 @@ type Querier interface {
 	// List every (entity_type, entity_id, authority_code) identifier group with the
 	// number of primary rows it currently holds. Used by `server identity tidy` to
 	// find groups with zero primaries (fill) or more than one primary (demote
-	// extras). entity_type is optional (NULL = all types).
+	// extras). entity_type is optional (NULL = both supported types). The scan is
+	// hard-scoped to place and organization: events/persons are Phase 4 and must
+	// never be touched by tidy.
 	ListIdentityGroups(ctx context.Context, entityType pgtype.Text) ([]ListIdentityGroupsRow, error)
 	// List all events that have been confirmed as NOT duplicates of a given event.
 	// Returns both sides of the pair (the given event could be event_id_a or event_id_b).
