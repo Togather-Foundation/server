@@ -53,6 +53,10 @@ func setupIdentityCmd(t *testing.T, args []string) (*cobra.Command, *bytes.Buffe
 	identityRejectOther = ""
 	identityRejectReason = ""
 
+	tidyApply = false
+	tidyDryRun = false
+	tidyType = ""
+
 	testRoot := &cobra.Command{Use: "server"}
 	testRoot.AddCommand(identityCmd)
 
@@ -806,5 +810,37 @@ func TestIdentityRejectJSON(t *testing.T) {
 	}
 	if rec.Action != identity.ActionReject {
 		t.Errorf("unexpected action: %q", rec.Action)
+	}
+}
+
+// --- tidy ----------------------------------------------------------------
+
+func TestIdentityTidyMutuallyExclusive(t *testing.T) {
+	t.Parallel()
+	identityTestMu.Lock()
+	t.Cleanup(func() { identityTestMu.Unlock() })
+
+	cmd, _, _ := setupIdentityCmd(t, []string{"identity", "tidy", "--dry-run", "--apply"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for --dry-run with --apply")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("error should mention mutually exclusive, got: %v", err)
+	}
+}
+
+func TestIdentityTidyInvalidType(t *testing.T) {
+	t.Parallel()
+	identityTestMu.Lock()
+	t.Cleanup(func() { identityTestMu.Unlock() })
+
+	cmd, _, _ := setupIdentityCmd(t, []string{"identity", "tidy", "--type", "event"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for invalid --type")
+	}
+	if !strings.Contains(err.Error(), "--type must be place or organization") {
+		t.Errorf("error should mention --type validation, got: %v", err)
 	}
 }

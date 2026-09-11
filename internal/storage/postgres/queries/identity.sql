@@ -159,6 +159,18 @@ WHERE a.entity_type = sqlc.arg('entity_type')
 ORDER BY a.authority_code, a.identifier_uri, a.entity_id, b.entity_id
 LIMIT sqlc.arg('limit');
 
+-- name: ListIdentityGroups :many
+-- List every (entity_type, entity_id, authority_code) identifier group with the
+-- number of primary rows it currently holds. Used by `server identity tidy` to
+-- find groups with zero primaries (fill) or more than one primary (demote
+-- extras). entity_type is optional (NULL = all types).
+SELECT entity_type, entity_id, authority_code,
+       COUNT(*) FILTER (WHERE is_primary) AS primary_count
+FROM entity_identifiers
+WHERE (sqlc.narg('entity_type')::text IS NULL OR entity_type = sqlc.narg('entity_type')::text)
+GROUP BY entity_type, entity_id, authority_code
+ORDER BY entity_type, entity_id, authority_code;
+
 -- name: EntityExists :one
 -- Reports whether a place or organization with the given ULID exists (and is
 -- not soft-deleted). Used by the identity view to distinguish an absent entity

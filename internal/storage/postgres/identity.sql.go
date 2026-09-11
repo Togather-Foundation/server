@@ -541,6 +541,51 @@ func (q *Queries) ListIdentityDecisionsByEntity(ctx context.Context, arg ListIde
 	return items, nil
 }
 
+const listIdentityGroups = `-- name: ListIdentityGroups :many
+SELECT entity_type, entity_id, authority_code,
+       COUNT(*) FILTER (WHERE is_primary) AS primary_count
+FROM entity_identifiers
+WHERE ($1::text IS NULL OR entity_type = $1::text)
+GROUP BY entity_type, entity_id, authority_code
+ORDER BY entity_type, entity_id, authority_code
+`
+
+type ListIdentityGroupsRow struct {
+	EntityType    string `json:"entity_type"`
+	EntityID      string `json:"entity_id"`
+	AuthorityCode string `json:"authority_code"`
+	PrimaryCount  int64  `json:"primary_count"`
+}
+
+// List every (entity_type, entity_id, authority_code) identifier group with the
+// number of primary rows it currently holds. Used by `server identity tidy` to
+// find groups with zero primaries (fill) or more than one primary (demote
+// extras). entity_type is optional (NULL = all types).
+func (q *Queries) ListIdentityGroups(ctx context.Context, entityType pgtype.Text) ([]ListIdentityGroupsRow, error) {
+	rows, err := q.db.Query(ctx, listIdentityGroups, entityType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIdentityGroupsRow{}
+	for rows.Next() {
+		var i ListIdentityGroupsRow
+		if err := rows.Scan(
+			&i.EntityType,
+			&i.EntityID,
+			&i.AuthorityCode,
+			&i.PrimaryCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockIdentityGroup = `-- name: LockIdentityGroup :exec
 SELECT pg_advisory_xact_lock(hashtextextended($1, 0))
 `
