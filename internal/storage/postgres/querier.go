@@ -92,6 +92,8 @@ type Querier interface {
 	// Delete a scraper source by name.
 	DeleteScraperSource(ctx context.Context, name string) error
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
+	// Demote every primary in the group except the winner, recording the superseding row.
+	DemotePrimaryAndSupersede(ctx context.Context, arg DemotePrimaryAndSupersedeParams) error
 	// Atomically strips all companion warning entries referencing the given event_ulid
 	// from a specific review row. Handles three warning types:
 	//   near_duplicate_of_new_event  — stripped when duplicate_of_event_id matches
@@ -214,6 +216,8 @@ type Querier interface {
 	// Records field-level provenance with source timestamp
 	InsertFieldProvenance(ctx context.Context, arg InsertFieldProvenanceParams) (FieldProvenance, error)
 	InsertIdempotencyKey(ctx context.Context, arg InsertIdempotencyKeyParams) (InsertIdempotencyKeyRow, error)
+	// Record a not-duplicate pair; re-decision refreshes the evidence fingerprint and decision.
+	InsertIdentityNotDuplicate(ctx context.Context, arg InsertIdentityNotDuplicateParams) error
 	// SQLc queries for event_not_duplicates table.
 	// Tracks pairs of events that an admin has confirmed are NOT duplicates,
 	// preventing them from being re-flagged during near-duplicate detection.
@@ -301,6 +305,8 @@ type Querier interface {
 	// Returns the ULID of the final canonical event (the one that is not itself merged).
 	ResolveCanonicalEventULID(ctx context.Context, ulid string) (string, error)
 	RevokeAllDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) (int64, error)
+	// Unconditionally mark one identifier row as the group's primary and clear its supersession.
+	SetPrimary(ctx context.Context, id int32) error
 	SetScraperConfig(ctx context.Context, arg SetScraperConfigParams) error
 	// Enable or disable a scraper source by name. Returns the updated row.
 	SetScraperSourceEnabled(ctx context.Context, arg SetScraperSourceEnabledParams) (SetScraperSourceEnabledRow, error)
@@ -370,6 +376,10 @@ type Querier interface {
 	// Insert or update an entity identifier (sameAs link)
 	UpsertEntityIdentifier(ctx context.Context, arg UpsertEntityIdentifierParams) (EntityIdentifier, error)
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
+	// SQLc queries for entity identity primitives.
+	// See: specs/007-entity-identity-adjudication/spec-phase1.md (Task 1/2)
+	// Insert or refresh an identifier observation without disturbing the primary slot.
+	UpsertObservation(ctx context.Context, arg UpsertObservationParams) (EntityIdentifier, error)
 	// Insert or update a cache entry
 	UpsertReconciliationCache(ctx context.Context, arg UpsertReconciliationCacheParams) (ReconciliationCache, error)
 	// SQLc queries for scraper_sources and linkage tables.
