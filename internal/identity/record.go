@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
@@ -41,6 +42,8 @@ type DecisionRecord struct {
 
 // DecisionStore persists the append-only identity_decisions ledger.
 type DecisionStore interface {
+	// Append appends one decision in its own transaction (convenience form).
+	Append(ctx context.Context, rec DecisionRecord) (DecisionRecord, error)
 	// AppendTx appends one decision inside the caller's transaction.
 	AppendTx(ctx context.Context, q *postgres.Queries, rec DecisionRecord) (DecisionRecord, error)
 	// List returns one entity's decisions, newest first.
@@ -60,6 +63,41 @@ func NewDecisionStore(pool *pgxpool.Pool) DecisionStore {
 }
 
 var _ DecisionStore = (*decisionStore)(nil)
+
+// Append appends one decision in its own transaction.
+func (s *decisionStore) Append(ctx context.Context, rec DecisionRecord) (DecisionRecord, error) {
+	var out DecisionRecord
+	err := s.withTx(ctx, func(q *postgres.Queries) error {
+		var err error
+		out, err = s.AppendTx(ctx, q, rec)
+		return err
+	})
+	if err != nil {
+		return DecisionRecord{}, err
+	}
+	return out, nil
+}
+
+// withTx runs fn in a READ COMMITTED transaction, committing on success and
+// rolling back on error.
+func (s *decisionStore) withTx(ctx context.Context, fn func(q *postgres.Queries) error) error {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if err != nil {
+		return fmt.Errorf("identity: begin transaction: %w", err)
+	}
+
+	if err := fn(postgres.New(tx)); err != nil {
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			return fmt.Errorf("identity: rollback after error %v: %w", err, rbErr)
+		}
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("identity: commit transaction: %w", err)
+	}
+	return nil
+}
 
 // AppendTx appends one decision inside the caller's transaction. It generates
 // the decision id when absent and returns the record with CreatedAt populated

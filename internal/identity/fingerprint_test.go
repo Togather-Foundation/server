@@ -18,12 +18,17 @@ func pairObs(pairs ...[2]string) []IdentifierObservation {
 }
 
 // TestFingerprint_OrderIndependent verifies the fingerprint is symmetric in its
-// arguments.
+// arguments and depends only on the shared signals.
 func TestFingerprint_OrderIndependent(t *testing.T) {
-	a := pairObs([2]string{"artsdata", "https://kg.artsdata.ca/resource/K11-24"}, [2]string{"wikidata", "https://www.wikidata.org/entity/Q1"})
-	b := pairObs([2]string{"artsdata", "https://kg.artsdata.ca/resource/K11-24"}, [2]string{"wikidata", "https://www.wikidata.org/entity/Q1"})
+	shared := [2]string{"artsdata", "https://kg.artsdata.ca/resource/K11-24"}
+
+	// a and b carry different single-sided identifiers; only `shared` overlaps.
+	a := pairObs(shared, [2]string{"wikidata", "https://www.wikidata.org/entity/Q1"})
+	b := pairObs(shared, [2]string{"musicbrainz", "https://musicbrainz.org/place/abc"})
 
 	require.Equal(t, Fingerprint(a, b), Fingerprint(b, a))
+	require.Equal(t, Fingerprint(pairObs(shared), pairObs(shared)), Fingerprint(a, b),
+		"single-sided identifiers must not affect the fingerprint")
 }
 
 // TestFingerprint_SingleSidedIgnored verifies an identifier asserted by only one
@@ -72,12 +77,12 @@ func TestFingerprint_Deterministic(t *testing.T) {
 }
 
 // TestFingerprint_NoSharedSignals verifies two entities with disjoint identifiers
-// produce the digest of the empty string (still a well-defined value).
+// produce the digest of the empty string.
 func TestFingerprint_NoSharedSignals(t *testing.T) {
 	a := pairObs([2]string{"artsdata", "https://kg.artsdata.ca/resource/K11-24"})
 	b := pairObs([2]string{"wikidata", "https://www.wikidata.org/entity/Q1"})
 
 	fp := Fingerprint(a, b)
-	require.NotEmpty(t, fp)
-	require.Regexp(t, regexp.MustCompile(`^[0-9a-f]{64}$`), fp)
+	require.Equal(t, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", fp,
+		"no shared signals must equal SHA-256 of the empty string")
 }

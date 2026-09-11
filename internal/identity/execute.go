@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // Structural (BadRequest-class) errors surfaced by the Executor. These must be
@@ -36,11 +36,12 @@ type Executor struct {
 	tx        TxManager
 	ids       IdentifierStore
 	decisions DecisionStore
+	notDup    NotDuplicateStore
 }
 
 // NewExecutor assembles an Executor from its collaborators.
-func NewExecutor(tx TxManager, ids IdentifierStore, decisions DecisionStore) *Executor {
-	return &Executor{tx: tx, ids: ids, decisions: decisions}
+func NewExecutor(tx TxManager, ids IdentifierStore, decisions DecisionStore, notDup NotDuplicateStore) *Executor {
+	return &Executor{tx: tx, ids: ids, decisions: decisions, notDup: notDup}
 }
 
 // LinkIdentifier records/confirms an external identifier observation for one
@@ -106,6 +107,14 @@ func (e *Executor) LinkIdentifier(ctx context.Context, ref IdentityRef, obs Iden
 // together with a decision record, all in one transaction. Re-rejecting a pair
 // after its evidence changes refreshes the stored fingerprint, re-opening the
 // pair for future conflict detection.
+//
+// Locking note: Reject takes row-level locks on the pair's identifier rows (via
+// ListEntityIdentifiersForUpdate) but does NOT take the per-group advisory lock
+// that RecordObservationTx uses to serialize elections. A concurrent
+// LinkIdentifier may therefore commit between Reject's fingerprint read and its
+// own commit, so the stored fingerprint can be immediately stale. This is
+// benign: the pair then resurfaces in the conflict scan (stored fingerprint no
+// longer matches the current one) rather than staying wrongly suppressed.
 func (e *Executor) Reject(ctx context.Context, a, b IdentityRef, actor, reason string) (DecisionRecord, error) {
 	if strings.TrimSpace(actor) == "" {
 		return DecisionRecord{}, ErrEmptyActor
@@ -163,15 +172,8 @@ func (e *Executor) Reject(ctx context.Context, a, b IdentityRef, actor, reason s
 			return err
 		}
 
-		if err := q.InsertIdentityNotDuplicate(ctx, postgres.InsertIdentityNotDuplicateParams{
-			EntityType:          string(a.Type),
-			IDA:                 idA,
-			IDB:                 idB,
-			EvidenceFingerprint: fp,
-			DecisionID:          pgtype.Text{String: rec.ID, Valid: true},
-			CreatedBy:           actor,
-		}); err != nil {
-			return fmt.Errorf("identity: record not-duplicate: %w", err)
+		if err := e.notDup.UpsertNotDuplicateTx(ctx, q, a.Type, idA, idB, fp, rec.ID, actor); err != nil {
+			return err
 		}
 
 		return nil
@@ -204,15 +206,38 @@ func (e *Executor) loadIdentifiersTx(ctx context.Context, q *postgres.Queries, r
 	return obs, nil
 }
 
-// validateAuthorityURI reports whether uri matches the authority's compiled
-// base_uri_pattern. A pattern that fails to compile is an internal error; a
-// non-matching URI is a structural ErrInvalidURI.
-func validateAuthorityURI(pattern, uri string) error {
+// authorityPatternCache memoizes compiled authority base_uri_patterns. There
+// are only a handful of authorities and their patterns do not change at
+// runtime, so this is safe and avoids recompiling on every link.
+var authorityPatternCache sync.Map // string -> *regexp.Regexp
+
+// compiledAuthorityPattern returns a compiled authority pattern, reusing the
+// cached compilation when present.
+func compiledAuthorityPattern(pattern string) (*regexp.Regexp, error) {
+	if v, ok := authorityPatternCache.Load(pattern); ok {
+		return v.(*regexp.Regexp), nil
+	}
 	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	authorityPatternCache.Store(pattern, re)
+	return re, nil
+}
+
+// validateAuthorityURI reports whether uri fully matches the authority's
+// compiled base_uri_pattern. A pattern that fails to compile is an internal
+// error; a non-matching URI is a structural ErrInvalidURI.
+//
+// Full-match semantics (FindString(uri) == uri) rather than a substring search
+// ensure a future pattern that drops its `$` anchor cannot accept a URI that
+// merely contains a matching prefix.
+func validateAuthorityURI(pattern, uri string) error {
+	re, err := compiledAuthorityPattern(pattern)
 	if err != nil {
 		return fmt.Errorf("identity: invalid authority pattern %q: %w", pattern, err)
 	}
-	if !re.MatchString(uri) {
+	if re.FindString(uri) != uri {
 		return fmt.Errorf("%w: %q does not match %q", ErrInvalidURI, uri, pattern)
 	}
 	return nil

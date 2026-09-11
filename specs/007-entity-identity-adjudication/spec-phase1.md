@@ -300,18 +300,22 @@ type IdentifierStore interface {
 }
 
 type NotDuplicateStore interface {
-    InsertNotDuplicate(ctx context.Context, arg postgres.InsertIdentityNotDuplicateParams) error
-    IsNotDuplicate(ctx context.Context, arg postgres.IsIdentityNotDuplicateParams) (bool, error)
+    // GetNotDuplicate returns the stored evidence fingerprint for a pair,
+    // canonicalizing the two ULIDs; found=false when not suppressed.
+    GetNotDuplicate(ctx context.Context, entityType EntityType, a, b string) (evidenceFingerprint string, found bool, err error)
+    // UpsertNotDuplicateTx records/refreshes a not-duplicate pair inside the caller's tx.
+    UpsertNotDuplicateTx(ctx context.Context, q *postgres.Queries, entityType EntityType, a, b, evidenceFingerprint, decisionID, actor string) error
 }
 
 type DecisionStore interface {
-    Append(ctx context.Context, rec DecisionRecord) (string, error)
+    Append(ctx context.Context, rec DecisionRecord) (DecisionRecord, error)                 // own-tx convenience
+    AppendTx(ctx context.Context, q *postgres.Queries, rec DecisionRecord) (DecisionRecord, error) // tx-scoped
     List(ctx context.Context, ref IdentityRef) ([]DecisionRecord, error)
     ListFeed(ctx context.Context, arg postgres.ListIdentityDecisionsParams) ([]DecisionRecord, error)
 }
 
 // Executor is a concrete struct.
-type Executor struct { /* ids, store, notDup, decisions, fp, clock */ }
+type Executor struct { /* tx, ids, decisions, notDup */ }
 func (e *Executor) LinkIdentifier(ctx context.Context, ref IdentityRef, obs IdentifierObservation, actor string) (DecisionRecord, error)
 func (e *Executor) Reject(ctx context.Context, a, b IdentityRef, actor, reason string) (DecisionRecord, error)
 ```
@@ -351,7 +355,11 @@ Entity-to-entity sameness is expressed by `Reject` (distinct) or, in Phase 2, by
 - `InsertNotDuplicate :exec` — `INSERT ... ON CONFLICT (entity_type,id_a,id_b) DO UPDATE SET
   evidence_fingerprint=EXCLUDED.evidence_fingerprint, decision_id=EXCLUDED.decision_id,
   created_at=now(), created_by=EXCLUDED.created_by`.
-- `ListIdentityDecisions :many` — keyset-paginated feed.
+- `GetIdentityNotDuplicate :one` — fetch a pair's suppression row for fingerprint comparison.
+- `InsertIdentityDecision :one` — append one `identity_decisions` row, `RETURNING created_at`.
+- `ListIdentityDecisionsByEntity :many` — one entity's decisions, `created_at DESC, id DESC`.
+- `ListIdentityDecisions :many` — keyset-paginated feed (`created_at DESC, id DESC`), filterable
+  by `entity_type`/`action` with an inclusive `since` lower bound and a `(created_at, id)` cursor.
 
 ### REST / CLI Schemas
 

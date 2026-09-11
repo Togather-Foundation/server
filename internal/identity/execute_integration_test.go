@@ -25,7 +25,7 @@ func newTestExecutor(t *testing.T) (*Executor, *pgxpool.Pool) {
 	pool := setupIdentity(t)
 	store := NewStore(pool)
 	decisions := NewDecisionStore(pool)
-	return NewExecutor(store, store, decisions), pool
+	return NewExecutor(store, store, decisions, NewNotDuplicateStore(pool)), pool
 }
 
 func countRows(t *testing.T, pool *pgxpool.Pool, query string, args ...any) int {
@@ -50,6 +50,9 @@ func countIdentifiers(t *testing.T, pool *pgxpool.Pool, entityType, entityID str
 // failure rolls back the election performed earlier in the same transaction.
 type failingDecisionStore struct{ err error }
 
+func (f failingDecisionStore) Append(_ context.Context, _ DecisionRecord) (DecisionRecord, error) {
+	return DecisionRecord{}, f.err
+}
 func (f failingDecisionStore) AppendTx(_ context.Context, _ *postgres.Queries, _ DecisionRecord) (DecisionRecord, error) {
 	return DecisionRecord{}, f.err
 }
@@ -58,6 +61,18 @@ func (f failingDecisionStore) List(_ context.Context, _ IdentityRef) ([]Decision
 }
 func (f failingDecisionStore) ListFeed(_ context.Context, _ postgres.ListIdentityDecisionsParams) ([]DecisionRecord, error) {
 	return nil, nil
+}
+
+// failingNotDuplicateStore aborts UpsertNotDuplicateTx so a test can prove a
+// not-duplicate upsert failure rolls back the decision appended earlier in the
+// same transaction.
+type failingNotDuplicateStore struct{ err error }
+
+func (f failingNotDuplicateStore) GetNotDuplicate(_ context.Context, _ EntityType, _, _ string) (string, bool, error) {
+	return "", false, nil
+}
+func (f failingNotDuplicateStore) UpsertNotDuplicateTx(_ context.Context, _ *postgres.Queries, _ EntityType, _, _, _, _, _ string) error {
+	return f.err
 }
 
 // TestLinkIdentifier_UpsertAndElect verifies that a link upserts the identifier,
@@ -298,7 +313,7 @@ func TestReject_StructuralErrors(t *testing.T) {
 func TestLinkIdentifier_AtomicRollback(t *testing.T) {
 	pool := setupIdentity(t)
 	store := NewStore(pool)
-	exec := NewExecutor(store, store, failingDecisionStore{err: errors.New("decision append failed")})
+	exec := NewExecutor(store, store, failingDecisionStore{err: errors.New("decision append failed")}, NewNotDuplicateStore(pool))
 
 	ref := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
 	_, err := exec.LinkIdentifier(context.Background(), ref, IdentifierObservation{
@@ -309,6 +324,71 @@ func TestLinkIdentifier_AtomicRollback(t *testing.T) {
 	require.Equal(t, 0, countIdentifiers(t, pool, string(ref.Type), ref.ULID),
 		"election must roll back when the decision append fails")
 	require.Equal(t, 0, countDecisions(t, pool))
+}
+
+// TestLinkIdentifier_InvalidEntityType verifies an unsupported entity type is a
+// structural error with no decision and no identifier written.
+func TestLinkIdentifier_InvalidEntityType(t *testing.T) {
+	exec, pool := newTestExecutor(t)
+	ctx := context.Background()
+
+	_, err := exec.LinkIdentifier(ctx, IdentityRef{Type: EntityType("event"), ULID: testPlaceA},
+		IdentifierObservation{Authority: "artsdata", URI: artsdataURI, Method: "manual"}, "agent-test")
+	require.ErrorIs(t, err, ErrInvalidEntityType)
+	require.Equal(t, 0, countDecisions(t, pool))
+	require.Equal(t, 0, countIdentifiers(t, pool, "event", testPlaceA))
+}
+
+// TestReject_AtomicRollback verifies a not-duplicate upsert failure rolls back the
+// decision appended earlier in the same transaction.
+func TestReject_AtomicRollback(t *testing.T) {
+	pool := setupIdentity(t)
+	store := NewStore(pool)
+	exec := NewExecutor(store, store, NewDecisionStore(pool), failingNotDuplicateStore{err: errors.New("not-duplicate upsert failed")})
+
+	a := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
+	b := IdentityRef{Type: EntityTypePlace, ULID: testPlaceB}
+
+	_, err := exec.Reject(context.Background(), a, b, "agent-test", "distinct")
+	require.Error(t, err)
+
+	require.Equal(t, 0, countDecisions(t, pool), "decision must roll back when the not-duplicate upsert fails")
+	require.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM identity_not_duplicates`))
+}
+
+// TestNotDuplicateStore_GetNotDuplicate verifies the read half: a Reject writes a
+// not-duplicate row, and GetNotDuplicate returns the stored fingerprint (with
+// canonicalization) or found=false before any suppression.
+func TestNotDuplicateStore_GetNotDuplicate(t *testing.T) {
+	exec, pool := newTestExecutor(t)
+	ctx := context.Background()
+	nds := NewNotDuplicateStore(pool)
+
+	a := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
+	b := IdentityRef{Type: EntityTypePlace, ULID: testPlaceB}
+	for _, ref := range []IdentityRef{a, b} {
+		_, err := exec.LinkIdentifier(ctx, ref, IdentifierObservation{
+			Authority: "artsdata", URI: artsdataURI, Method: "auto_high", Confidence: 0.99, Source: "reconciliation",
+		}, "agent-test")
+		require.NoError(t, err)
+	}
+
+	_, found, err := nds.GetNotDuplicate(ctx, EntityTypePlace, testPlaceA, testPlaceB)
+	require.NoError(t, err)
+	require.False(t, found)
+
+	_, err = exec.Reject(ctx, a, b, "agent-test", "distinct")
+	require.NoError(t, err)
+
+	fp, found, err := nds.GetNotDuplicate(ctx, EntityTypePlace, testPlaceA, testPlaceB)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.NotEmpty(t, fp)
+
+	fpSwap, foundSwap, err := nds.GetNotDuplicate(ctx, EntityTypePlace, testPlaceB, testPlaceA)
+	require.NoError(t, err)
+	require.True(t, foundSwap)
+	require.Equal(t, fp, fpSwap, "GetNotDuplicate must canonicalize the pair")
 }
 
 func getNotDuplicateFingerprint(t *testing.T, pool *pgxpool.Pool, entityType, idA, idB string) string {
