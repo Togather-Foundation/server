@@ -6,13 +6,13 @@ import (
 	"fmt"
 
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // ErrInvalidEntityType is returned when an IdentityRef.Type is not a supported
-// entity type (place or organization). It is a BadRequest-class error that
-// handlers map to HTTP 400.
+// entity type (place or organization).
 var ErrInvalidEntityType = errors.New("invalid entity type")
 
 // TxManager runs a function against a single transaction-scoped *postgres.Queries,
@@ -48,14 +48,15 @@ var (
 	_ TxManager       = (*Store)(nil)
 )
 
-// WithTx executes fn in a new transaction, committing on success and rolling
-// back on error.
+// WithTx executes fn in a new READ COMMITTED transaction, committing on success
+// and rolling back on error. The isolation level is pinned explicitly because
+// RecordObservationTx's advisory-lock-then-reread election assumes it.
 func (s *Store) WithTx(ctx context.Context, fn func(q *postgres.Queries) error) error {
 	if s.pool == nil {
 		return fmt.Errorf("identity: database pool not configured")
 	}
 
-	tx, err := s.pool.Begin(ctx)
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
 		return fmt.Errorf("identity: begin transaction: %w", err)
 	}

@@ -371,11 +371,14 @@ func TestRecordObservation_LowerRankedDoesNotStealPrimary(t *testing.T) {
 	states := loadPrimaryStates(t, pool, string(ref.Type), ref.ULID)
 	require.Len(t, states, 2)
 
+	var primaries int
 	for i := range states {
 		if states[i].IsPrimary {
+			primaries++
 			require.Equal(t, high.URI, states[i].URI, "auto_high must remain primary over a later auto_low write")
 		}
 	}
+	require.Equal(t, 1, primaries, "exactly one primary must exist after a lower-ranked write")
 }
 
 // TestRecordObservation_RepromotionClearsSupersededByID verifies the A→B→A
