@@ -8,9 +8,9 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
-	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
@@ -375,17 +375,17 @@ func (m *mockEntityDereferencer) DereferenceEntity(ctx context.Context, uri stri
 	return nil, errors.New("not implemented")
 }
 
-type mockIdentifierUpserter struct {
-	upsertFunc func(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error)
+type mockIdentityRecorder struct {
+	recordFunc func(ctx context.Context, ref identity.IdentityRef, obs identity.IdentifierObservation) (identity.IdentifierObservation, error)
 	calls      int
 }
 
-func (m *mockIdentifierUpserter) UpsertEntityIdentifier(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error) {
+func (m *mockIdentityRecorder) RecordObservation(ctx context.Context, ref identity.IdentityRef, obs identity.IdentifierObservation) (identity.IdentifierObservation, error) {
 	m.calls++
-	if m.upsertFunc != nil {
-		return m.upsertFunc(ctx, arg)
+	if m.recordFunc != nil {
+		return m.recordFunc(ctx, ref, obs)
 	}
-	return postgres.EntityIdentifier{}, nil
+	return obs, nil
 }
 
 type mockPlaceUpdater struct {
@@ -522,7 +522,7 @@ func TestEnrichmentWorker_WorkEntityNotFound_404_ReturnsNil(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01J", "http://kg.artsdata.ca/resource/K-1"))
 	if err != nil {
@@ -541,7 +541,7 @@ func TestEnrichmentWorker_WorkEntityNotFound_OtherStatusCode_IsRetryable(t *test
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01J", "http://kg.artsdata.ca/resource/K-1"))
 	if err == nil {
@@ -559,7 +559,7 @@ func TestEnrichmentWorker_WorkDereferenceError_IsRetryable(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01J", "http://kg.artsdata.ca/resource/K-1"))
 	if err == nil {
@@ -588,7 +588,7 @@ func TestEnrichmentWorker_WorkPlace_HappyPath(t *testing.T) {
 			return entity, nil
 		},
 	}
-	idStore := &mockIdentifierUpserter{}
+	idStore := &mockIdentityRecorder{}
 	placeService := &mockPlaceUpdater{
 		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
 			return &places.Place{ULID: "01J"}, nil // all fields empty → should be filled
@@ -606,7 +606,7 @@ func TestEnrichmentWorker_WorkPlace_HappyPath(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if idStore.calls == 0 {
-		t.Error("expected UpsertEntityIdentifier to be called for wikidata sameAs")
+		t.Error("expected RecordObservation to be called for wikidata sameAs")
 	}
 	if placeService.updateCalls == 0 {
 		t.Error("expected place Update to be called")
@@ -638,7 +638,7 @@ func TestEnrichmentWorker_WorkPlace_AlreadyPopulated_NoUpdate(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01K", "http://kg.artsdata.ca/resource/K-2"))
@@ -676,7 +676,7 @@ func TestEnrichmentWorker_WorkOrg_HappyPath(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		OrgService:            orgService,
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("organization", "01L", "http://kg.artsdata.ca/resource/K-3"))
@@ -704,7 +704,7 @@ func TestEnrichmentWorker_WorkOrg_NoArtsdataFields_SkipsUpdate(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		OrgService:            orgService,
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("organization", "01M", "http://kg.artsdata.ca/resource/K-4"))
@@ -732,7 +732,7 @@ func TestEnrichmentWorker_WorkSameAs_UnknownAuthoritySkipped(t *testing.T) {
 			return entity, nil
 		},
 	}
-	idStore := &mockIdentifierUpserter{}
+	idStore := &mockIdentityRecorder{}
 
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
@@ -776,7 +776,7 @@ func TestEnrichmentWorker_WorkPlace_GetByULIDFails(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01P", "http://kg.artsdata.ca/resource/K-10"))
@@ -813,7 +813,7 @@ func TestEnrichmentWorker_WorkPlace_UpdateFails(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01Q", "http://kg.artsdata.ca/resource/K-11"))
@@ -859,7 +859,7 @@ func TestEnrichmentWorker_WorkPlace_PartialFieldUpdate(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01R", "http://kg.artsdata.ca/resource/K-12"))
@@ -902,7 +902,7 @@ func TestEnrichmentWorker_WorkSameAs_MultipleSameAsURIs(t *testing.T) {
 			return entity, nil
 		},
 	}
-	idStore := &mockIdentifierUpserter{}
+	idStore := &mockIdentityRecorder{}
 
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
@@ -915,7 +915,7 @@ func TestEnrichmentWorker_WorkSameAs_MultipleSameAsURIs(t *testing.T) {
 	}
 	// wikidata + musicbrainz = 2 known authorities; unknown-site is skipped.
 	if idStore.calls != 2 {
-		t.Errorf("expected 2 UpsertEntityIdentifier calls, got %d", idStore.calls)
+		t.Errorf("expected 2 RecordObservation calls, got %d", idStore.calls)
 	}
 }
 
@@ -933,7 +933,7 @@ func TestEnrichmentWorker_WorkNoSameAs_WithMetadata(t *testing.T) {
 			return entity, nil
 		},
 	}
-	idStore := &mockIdentifierUpserter{}
+	idStore := &mockIdentityRecorder{}
 	placeService := &mockPlaceUpdater{
 		getFunc: func(_ context.Context, _ string) (*places.Place, error) {
 			return &places.Place{ULID: "01T"}, nil
@@ -988,7 +988,7 @@ func TestEnrichmentWorker_WorkURLValidation(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 	}
 	err := worker.Work(context.Background(), makeEnrichmentJob("place", "01U", "http://kg.artsdata.ca/resource/K-15"))
@@ -1020,7 +1020,7 @@ func TestEnrichmentWorker_WorkPlace_FreshSkip(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 		EnrichmentRefreshDays: 30,
 	}
@@ -1053,7 +1053,7 @@ func TestEnrichmentWorker_WorkPlace_StaleEnrichedAt_ReDereferences(t *testing.T)
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 		EnrichmentRefreshDays: 30,
 	}
@@ -1085,7 +1085,7 @@ func TestEnrichmentWorker_WorkPlace_EnrichedAtNil_AlwaysEnriches(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 		EnrichmentRefreshDays: 30,
 	}
@@ -1115,7 +1115,7 @@ func TestEnrichmentWorker_WorkPlace_RefreshDaysZero_SkipsWhenEnriched(t *testing
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		PlaceService:          placeService,
 		EnrichmentRefreshDays: 0,
 	}
@@ -1141,7 +1141,7 @@ func TestEnrichmentWorker_WorkOrg_FreshSkip(t *testing.T) {
 	worker := EnrichmentWorker{
 		Pool:                  fakePool(),
 		ReconciliationService: deref,
-		IdentifierStore:       &mockIdentifierUpserter{},
+		IdentifierStore:       &mockIdentityRecorder{},
 		OrgService:            orgService,
 		EnrichmentRefreshDays: 30,
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -416,7 +417,7 @@ func setupReconciliation() (*pgxpool.Pool, *kg.ReconciliationService, error) {
 	artsdataClient := artsdata.NewClient(endpoint, artsdata.WithRateLimit(rateLimit))
 
 	// Create reconciliation service
-	service := kg.NewReconciliationService(artsdataClient, queries, logger, cacheTTL, failureTTL)
+	service := kg.NewReconciliationService(artsdataClient, queries, identity.NewStore(pool), logger, cacheTTL, failureTTL)
 
 	return pool, service, nil
 }

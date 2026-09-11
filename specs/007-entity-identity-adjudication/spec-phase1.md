@@ -316,8 +316,8 @@ observation** for one SEL entity, then elect the primary. It is *not* entity-to-
 Entity-to-entity sameness is expressed by `Reject` (distinct) or, in Phase 2, by merge.
 
 **SQLc queries to add** (`internal/storage/postgres/queries/identity.sql`):
-- `UpsertObservation :one` — **renames** the existing `UpsertEntityIdentifier` query. INSERT
-  sets `is_primary=false`; `ON CONFLICT DO UPDATE` refreshes `confidence`,
+- `UpsertObservation :one` — added in Task 1; **replaces** the deleted `UpsertEntityIdentifier`
+  query. INSERT sets `is_primary=false`; `ON CONFLICT DO UPDATE` refreshes `confidence`,
   `reconciliation_method`, `observed_at=now()`, `source`, `metadata`, `updated_at` and does
   **not** touch `is_primary`; `is_canonical` written `false`. Does **not** elect.
 - `GetEntityIdentifiers :many` — existing query extended to join
@@ -529,10 +529,11 @@ FROM entity_identifiers WHERE is_primary GROUP BY 1,2,3 HAVING count(*)>1` retur
 
 **What**: Implement `internal/identity/rank.go` (`ElectPrimary`) and
 `internal/identity/store.go` (`RecordObservation`: advisory lock → `UpsertObservation` →
-`GetEntityIdentifiers` (authority join) → Go `ElectPrimary` → demote+supersede →
-unconditional set primary, in one transaction). **Rename** the existing
-`UpsertEntityIdentifier` query to `UpsertObservation`; its `ON CONFLICT DO UPDATE` must not
-touch `is_primary`. Add the SQLc queries. Update `internal/kg/reconciliation.go` and
+group load with authority join → Go `ElectPrimary` → demote+supersede →
+unconditional set primary, in one transaction). **Delete** the existing
+`UpsertEntityIdentifier` query (do **not** rename it — `UpsertObservation` was already
+added in Task 1 and now replaces it); its `ON CONFLICT DO UPDATE` must not touch
+`is_primary`. Add the SQLc queries. Update `internal/kg/reconciliation.go` and
 `internal/jobs/workers.go` to call `RecordObservation`; remove `IsCanonical` from writer
 params; regenerate SQLc.
 **Test**: unit tests for `ElectPrimary` ordering with explicit ties (each tier, incl. `id`

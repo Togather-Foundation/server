@@ -31,6 +31,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/email"
 	"github.com/Togather-Foundation/server/internal/geocoding"
 	"github.com/Togather-Foundation/server/internal/geocoding/nominatim"
+	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/Togather-Foundation/server/internal/kg"
@@ -146,6 +147,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		reconciliationService = kg.NewReconciliationService(
 			artsdataClient,
 			queries,
+			identity.NewStore(pool),
 			slogLogger,
 			time.Duration(cfg.Artsdata.CacheTTLDays)*24*time.Hour,
 			time.Duration(cfg.Artsdata.FailureTTLDays)*24*time.Hour,

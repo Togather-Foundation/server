@@ -16,24 +16,15 @@ ORDER BY priority_order ASC;
 SELECT * FROM knowledge_graph_authorities
 WHERE authority_code = sqlc.arg('authority_code');
 
--- name: UpsertEntityIdentifier :one
--- Insert or update an entity identifier (sameAs link)
-INSERT INTO entity_identifiers (entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata)
-VALUES (sqlc.arg('entity_type'), sqlc.arg('entity_id'), sqlc.arg('authority_code'), sqlc.arg('identifier_uri'), sqlc.arg('confidence'), sqlc.arg('reconciliation_method'), sqlc.arg('is_canonical'), sqlc.arg('metadata'))
-ON CONFLICT (entity_type, entity_id, authority_code, identifier_uri)
-DO UPDATE SET
-    confidence = EXCLUDED.confidence,
-    reconciliation_method = EXCLUDED.reconciliation_method,
-    is_canonical = EXCLUDED.is_canonical,
-    metadata = EXCLUDED.metadata,
-    updated_at = now()
-RETURNING *;
-
 -- name: GetEntityIdentifiers :many
--- Get all external identifiers for an entity
-SELECT * FROM entity_identifiers
-WHERE entity_type = sqlc.arg('entity_type') AND entity_id = sqlc.arg('entity_id')
-ORDER BY confidence DESC;
+-- Get all external identifiers for an entity, joined with authority trust/priority.
+SELECT ei.id, ei.authority_code, ei.identifier_uri, ei.reconciliation_method,
+       ei.confidence, ei.observed_at, ei.is_primary, ei.source,
+       a.trust_level, a.priority_order
+FROM entity_identifiers ei
+JOIN knowledge_graph_authorities a ON a.authority_code = ei.authority_code
+WHERE ei.entity_type = sqlc.arg('entity_type') AND ei.entity_id = sqlc.arg('entity_id')
+ORDER BY ei.id;
 
 -- name: GetEntityIdentifiersByAuthority :many
 -- Get identifiers for an entity from a specific authority

@@ -16,6 +16,25 @@ DO UPDATE SET
     updated_at = now()
 RETURNING *;
 
+-- name: LockIdentityGroup :exec
+-- Serialize concurrent elections on one (entity_type, entity_id, authority_code) group.
+-- pg_advisory_xact_lock is released automatically at transaction end.
+SELECT pg_advisory_xact_lock(hashtextextended(sqlc.arg('key'), 0));
+
+-- name: ListGroupIdentifiersForUpdate :many
+-- Load one authority group's observations joined with authority trust/priority.
+-- FOR UPDATE OF ei serializes the group rows against concurrent elections.
+SELECT ei.id, ei.authority_code, ei.identifier_uri, ei.reconciliation_method,
+       ei.confidence, ei.observed_at, ei.is_primary, ei.source,
+       a.trust_level, a.priority_order
+FROM entity_identifiers ei
+JOIN knowledge_graph_authorities a ON a.authority_code = ei.authority_code
+WHERE ei.entity_type = sqlc.arg('entity_type')
+  AND ei.entity_id = sqlc.arg('entity_id')
+  AND ei.authority_code = sqlc.arg('authority_code')
+ORDER BY ei.id
+FOR UPDATE OF ei;
+
 -- name: SetPrimary :exec
 -- Unconditionally mark one identifier row as the group's primary and clear its supersession.
 UPDATE entity_identifiers SET is_primary = true, superseded_by_id = NULL, updated_at = now()

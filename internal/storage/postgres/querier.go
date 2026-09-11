@@ -148,8 +148,8 @@ type Querier interface {
 	GetDeveloperByID(ctx context.Context, id pgtype.UUID) (Developer, error)
 	GetDeveloperInvitationByTokenHash(ctx context.Context, tokenHash string) (DeveloperInvitation, error)
 	GetDeveloperUsageTotal(ctx context.Context, arg GetDeveloperUsageTotalParams) (GetDeveloperUsageTotalRow, error)
-	// Get all external identifiers for an entity
-	GetEntityIdentifiers(ctx context.Context, arg GetEntityIdentifiersParams) ([]EntityIdentifier, error)
+	// Get all external identifiers for an entity, joined with authority trust/priority.
+	GetEntityIdentifiers(ctx context.Context, arg GetEntityIdentifiersParams) ([]GetEntityIdentifiersRow, error)
 	// Get identifiers for an entity from a specific authority
 	GetEntityIdentifiersByAuthority(ctx context.Context, arg GetEntityIdentifiersByAuthorityParams) ([]EntityIdentifier, error)
 	// Federation Sync Queries
@@ -249,6 +249,9 @@ type Querier interface {
 	ListEventChanges(ctx context.Context, arg ListEventChangesParams) ([]ListEventChangesRow, error)
 	ListEventTombstones(ctx context.Context, arg ListEventTombstonesParams) ([]EventTombstone, error)
 	ListFederationNodes(ctx context.Context, arg ListFederationNodesParams) ([]FederationNode, error)
+	// Load one authority group's observations joined with authority trust/priority.
+	// FOR UPDATE OF ei serializes the group rows against concurrent elections.
+	ListGroupIdentifiersForUpdate(ctx context.Context, arg ListGroupIdentifiersForUpdateParams) ([]ListGroupIdentifiersForUpdateRow, error)
 	// List all events that have been confirmed as NOT duplicates of a given event.
 	// Returns both sides of the pair (the given event could be event_id_a or event_id_b).
 	ListNotDuplicatesForEvent(ctx context.Context, eventID string) ([]EventNotDuplicate, error)
@@ -292,6 +295,9 @@ type Querier interface {
 	ListUnreconciledPlaces(ctx context.Context, maxResults int32) ([]ListUnreconciledPlacesRow, error)
 	ListUsers(ctx context.Context) ([]ListUsersRow, error)
 	ListUsersWithFilters(ctx context.Context, arg ListUsersWithFiltersParams) ([]ListUsersWithFiltersRow, error)
+	// Serialize concurrent elections on one (entity_type, entity_id, authority_code) group.
+	// pg_advisory_xact_lock is released automatically at transaction end.
+	LockIdentityGroup(ctx context.Context, key string) error
 	MarkInvitationAccepted(ctx context.Context, id pgtype.UUID) error
 	MarkOrganizationEnriched(ctx context.Context, ulid string) error
 	MarkPlaceEnriched(ctx context.Context, ulid string) error
@@ -373,8 +379,6 @@ type Querier interface {
 	// SQLc queries for API key usage tracking.
 	UpsertAPIKeyUsage(ctx context.Context, arg UpsertAPIKeyUsageParams) error
 	UpsertAPIKeyUsageIP(ctx context.Context, arg UpsertAPIKeyUsageIPParams) error
-	// Insert or update an entity identifier (sameAs link)
-	UpsertEntityIdentifier(ctx context.Context, arg UpsertEntityIdentifierParams) (EntityIdentifier, error)
 	UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error)
 	// SQLc queries for entity identity primitives.
 	// See: specs/007-entity-identity-adjudication/spec-phase1.md (Task 1/2)

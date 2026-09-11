@@ -164,9 +164,13 @@ func (q *Queries) GetAuthorityByCode(ctx context.Context, authorityCode string) 
 }
 
 const getEntityIdentifiers = `-- name: GetEntityIdentifiers :many
-SELECT id, entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, created_at, updated_at, observed_at, is_primary, superseded_by_id, source FROM entity_identifiers
-WHERE entity_type = $1 AND entity_id = $2
-ORDER BY confidence DESC
+SELECT ei.id, ei.authority_code, ei.identifier_uri, ei.reconciliation_method,
+       ei.confidence, ei.observed_at, ei.is_primary, ei.source,
+       a.trust_level, a.priority_order
+FROM entity_identifiers ei
+JOIN knowledge_graph_authorities a ON a.authority_code = ei.authority_code
+WHERE ei.entity_type = $1 AND ei.entity_id = $2
+ORDER BY ei.id
 `
 
 type GetEntityIdentifiersParams struct {
@@ -174,32 +178,40 @@ type GetEntityIdentifiersParams struct {
 	EntityID   string `json:"entity_id"`
 }
 
-// Get all external identifiers for an entity
-func (q *Queries) GetEntityIdentifiers(ctx context.Context, arg GetEntityIdentifiersParams) ([]EntityIdentifier, error) {
+type GetEntityIdentifiersRow struct {
+	ID                   int32              `json:"id"`
+	AuthorityCode        string             `json:"authority_code"`
+	IdentifierUri        string             `json:"identifier_uri"`
+	ReconciliationMethod string             `json:"reconciliation_method"`
+	Confidence           pgtype.Numeric     `json:"confidence"`
+	ObservedAt           pgtype.Timestamptz `json:"observed_at"`
+	IsPrimary            bool               `json:"is_primary"`
+	Source               pgtype.Text        `json:"source"`
+	TrustLevel           int32              `json:"trust_level"`
+	PriorityOrder        int32              `json:"priority_order"`
+}
+
+// Get all external identifiers for an entity, joined with authority trust/priority.
+func (q *Queries) GetEntityIdentifiers(ctx context.Context, arg GetEntityIdentifiersParams) ([]GetEntityIdentifiersRow, error) {
 	rows, err := q.db.Query(ctx, getEntityIdentifiers, arg.EntityType, arg.EntityID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []EntityIdentifier{}
+	items := []GetEntityIdentifiersRow{}
 	for rows.Next() {
-		var i EntityIdentifier
+		var i GetEntityIdentifiersRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.EntityType,
-			&i.EntityID,
 			&i.AuthorityCode,
 			&i.IdentifierUri,
-			&i.Confidence,
 			&i.ReconciliationMethod,
-			&i.IsCanonical,
-			&i.Metadata,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Confidence,
 			&i.ObservedAt,
 			&i.IsPrimary,
-			&i.SupersededByID,
 			&i.Source,
+			&i.TrustLevel,
+			&i.PriorityOrder,
 		); err != nil {
 			return nil, err
 		}
@@ -389,63 +401,6 @@ func (q *Queries) ListUnreconciledPlaces(ctx context.Context, maxResults int32) 
 		return nil, err
 	}
 	return items, nil
-}
-
-const upsertEntityIdentifier = `-- name: UpsertEntityIdentifier :one
-INSERT INTO entity_identifiers (entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (entity_type, entity_id, authority_code, identifier_uri)
-DO UPDATE SET
-    confidence = EXCLUDED.confidence,
-    reconciliation_method = EXCLUDED.reconciliation_method,
-    is_canonical = EXCLUDED.is_canonical,
-    metadata = EXCLUDED.metadata,
-    updated_at = now()
-RETURNING id, entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, created_at, updated_at, observed_at, is_primary, superseded_by_id, source
-`
-
-type UpsertEntityIdentifierParams struct {
-	EntityType           string         `json:"entity_type"`
-	EntityID             string         `json:"entity_id"`
-	AuthorityCode        string         `json:"authority_code"`
-	IdentifierUri        string         `json:"identifier_uri"`
-	Confidence           pgtype.Numeric `json:"confidence"`
-	ReconciliationMethod string         `json:"reconciliation_method"`
-	IsCanonical          bool           `json:"is_canonical"`
-	Metadata             []byte         `json:"metadata"`
-}
-
-// Insert or update an entity identifier (sameAs link)
-func (q *Queries) UpsertEntityIdentifier(ctx context.Context, arg UpsertEntityIdentifierParams) (EntityIdentifier, error) {
-	row := q.db.QueryRow(ctx, upsertEntityIdentifier,
-		arg.EntityType,
-		arg.EntityID,
-		arg.AuthorityCode,
-		arg.IdentifierUri,
-		arg.Confidence,
-		arg.ReconciliationMethod,
-		arg.IsCanonical,
-		arg.Metadata,
-	)
-	var i EntityIdentifier
-	err := row.Scan(
-		&i.ID,
-		&i.EntityType,
-		&i.EntityID,
-		&i.AuthorityCode,
-		&i.IdentifierUri,
-		&i.Confidence,
-		&i.ReconciliationMethod,
-		&i.IsCanonical,
-		&i.Metadata,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.ObservedAt,
-		&i.IsPrimary,
-		&i.SupersededByID,
-		&i.Source,
-	)
-	return i, err
 }
 
 const upsertReconciliationCache = `-- name: UpsertReconciliationCache :one
