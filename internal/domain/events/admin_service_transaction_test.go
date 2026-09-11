@@ -256,6 +256,18 @@ func (m *mockTransactionalRepo) UpsertPlace(ctx context.Context, params PlaceCre
 func (m *mockTransactionalRepo) GetPlaceByULID(ctx context.Context, ulid string) (*PlaceRecord, error) {
 	return nil, ErrNotFound
 }
+func (m *mockTransactionalRepo) GetPlaceByID(ctx context.Context, id string) (*PlaceRecord, error) {
+	return nil, ErrNotFound
+}
+func (m *mockTransactionalRepo) GetOrganizationByID(ctx context.Context, id string) (*OrganizationRecord, error) {
+	return nil, ErrNotFound
+}
+func (m *mockTransactionalRepo) CreatePlaceTombstone(ctx context.Context, params PlaceTombstoneCreateParams) error {
+	return nil
+}
+func (m *mockTransactionalRepo) CreateOrganizationTombstone(ctx context.Context, params OrganizationTombstoneCreateParams) error {
+	return nil
+}
 func (m *mockTransactionalRepo) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {
 	return nil, errors.New("not implemented")
 }

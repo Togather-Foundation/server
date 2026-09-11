@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/domain/tombstones"
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 	"github.com/Togather-Foundation/server/internal/sanitize"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -446,7 +447,7 @@ func (h *AdminHandler) DeletePlace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := buildPlaceTombstonePayload(ulidValue, place.Name, req.Reason, h.BaseURL)
+	payload, err := tombstones.BuildPlaceTombstonePayload(ulidValue, place.Name, req.Reason, h.BaseURL)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
@@ -454,7 +455,7 @@ func (h *AdminHandler) DeletePlace(w http.ResponseWriter, r *http.Request) {
 
 	params := places.TombstoneCreateParams{
 		PlaceID:   place.ID,
-		PlaceURI:  buildPlaceURI(h.BaseURL, ulidValue),
+		PlaceURI:  tombstones.BuildPlaceURI(h.BaseURL, ulidValue),
 		DeletedAt: time.Now(),
 		Reason:    req.Reason,
 		Payload:   payload,
@@ -466,36 +467,6 @@ func (h *AdminHandler) DeletePlace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func buildPlaceTombstonePayload(ulid, name, reason, baseURL string) ([]byte, error) {
-	placeURI := buildPlaceURI(baseURL, ulid)
-	if placeURI == "" {
-		placeURI = "https://togather.foundation/places/" + strings.ToUpper(ulid)
-	}
-
-	payload := map[string]any{
-		"@context":           "https://schema.org",
-		"@type":              "Place",
-		"@id":                placeURI,
-		"name":               name,
-		"sel:tombstone":      true,
-		"sel:deletedAt":      time.Now().Format(time.RFC3339),
-		"sel:deletionReason": reason,
-	}
-
-	return json.Marshal(payload)
-}
-
-func buildPlaceURI(baseURL, ulid string) string {
-	if baseURL == "" || ulid == "" {
-		return ""
-	}
-	uri, err := ids.BuildCanonicalURI(baseURL, "places", ulid)
-	if err != nil {
-		return ""
-	}
-	return uri
 }
 
 // DeleteOrganization handles DELETE /api/v1/admin/organizations/{id}
@@ -535,7 +506,7 @@ func (h *AdminHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	payload, err := buildOrganizationTombstonePayload(ulidValue, org.Name, req.Reason, h.BaseURL)
+	payload, err := tombstones.BuildOrganizationTombstonePayload(ulidValue, org.Name, req.Reason, h.BaseURL)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
@@ -543,7 +514,7 @@ func (h *AdminHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request
 
 	params := organizations.TombstoneCreateParams{
 		OrgID:     org.ID,
-		OrgURI:    buildOrganizationURI(h.BaseURL, ulidValue),
+		OrgURI:    tombstones.BuildOrganizationURI(h.BaseURL, ulidValue),
 		DeletedAt: time.Now(),
 		Reason:    req.Reason,
 		Payload:   payload,
@@ -555,36 +526,6 @@ func (h *AdminHandler) DeleteOrganization(w http.ResponseWriter, r *http.Request
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func buildOrganizationTombstonePayload(ulid, name, reason, baseURL string) ([]byte, error) {
-	orgURI := buildOrganizationURI(baseURL, ulid)
-	if orgURI == "" {
-		orgURI = "https://togather.foundation/organizations/" + strings.ToUpper(ulid)
-	}
-
-	payload := map[string]any{
-		"@context":           "https://schema.org",
-		"@type":              "Organization",
-		"@id":                orgURI,
-		"name":               name,
-		"sel:tombstone":      true,
-		"sel:deletedAt":      time.Now().Format(time.RFC3339),
-		"sel:deletionReason": reason,
-	}
-
-	return json.Marshal(payload)
-}
-
-func buildOrganizationURI(baseURL, ulid string) string {
-	if baseURL == "" || ulid == "" {
-		return ""
-	}
-	uri, err := ids.BuildCanonicalURI(baseURL, "organizations", ulid)
-	if err != nil {
-		return ""
-	}
-	return uri
 }
 
 // mapToUpdateParams converts a map[string]any to UpdateEventParams
@@ -1010,7 +951,7 @@ func (h *AdminHandler) UpdatePlace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]any{
-		"@id":   buildPlaceURI(h.BaseURL, updated.ULID),
+		"@id":   tombstones.BuildPlaceURI(h.BaseURL, updated.ULID),
 		"@type": "Place",
 		"name":  updated.Name,
 	}
@@ -1140,7 +1081,7 @@ func (h *AdminHandler) UpdateOrganization(w http.ResponseWriter, r *http.Request
 	}
 
 	resp := map[string]any{
-		"@id":   buildOrganizationURI(h.BaseURL, updated.ULID),
+		"@id":   tombstones.BuildOrganizationURI(h.BaseURL, updated.ULID),
 		"@type": "Organization",
 		"name":  updated.Name,
 	}

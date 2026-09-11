@@ -79,6 +79,7 @@ UPDATE events
 UPDATE events e1
    SET merged_into_id = (SELECT e2.id FROM events e2 WHERE e2.ulid = $2),
        deleted_at = now(),
+       deletion_reason = 'merged',
        lifecycle_state = 'deleted',
        updated_at = now()
  WHERE e1.ulid = $1

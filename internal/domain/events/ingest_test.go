@@ -341,6 +341,38 @@ func (m *MockRepository) GetPlaceByULID(ctx context.Context, ulid string) (*Plac
 	return nil, ErrNotFound
 }
 
+func (m *MockRepository) GetPlaceByID(ctx context.Context, id string) (*PlaceRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, place := range m.places {
+		if place != nil && place.ID == id {
+			return place, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) GetOrganizationByID(ctx context.Context, id string) (*OrganizationRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, org := range m.organizations {
+		if org != nil && org.ID == id {
+			return org, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) CreatePlaceTombstone(ctx context.Context, params PlaceTombstoneCreateParams) error {
+	return nil
+}
+
+func (m *MockRepository) CreateOrganizationTombstone(ctx context.Context, params OrganizationTombstoneCreateParams) error {
+	return nil
+}
+
 func (m *MockRepository) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
