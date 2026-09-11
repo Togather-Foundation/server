@@ -278,6 +278,35 @@ func TestDecisions_FeedPassesSinceTypeAndCursor(t *testing.T) {
 	require.Equal(t, encodeDecisionsCursor(newer, "idn-newer"), *resp.NextCursor)
 }
 
+// TestConflicts_ZeroLimitClamped verifies a non-positive Limit is clamped to 1
+// rather than panicking in the limit+1 over-fetch.
+func TestConflicts_ZeroLimitClamped(t *testing.T) {
+	fq := &fakeReadQueries{conflicts: []postgres.ListConflictsRow{
+		{EntityType: "place", EntityIDA: "A", EntityIDB: "B", AuthorityCode: "artsdata", IdentifierUri: "https://kg.artsdata.ca/resource/K11-X", Score: 0.9},
+		{EntityType: "place", EntityIDA: "C", EntityIDB: "D", AuthorityCode: "artsdata", IdentifierUri: "https://kg.artsdata.ca/resource/K11-Y", Score: 0.8},
+	}}
+	svc := &service{q: fq, ids: &fakeIdentifierStore{}, decisions: &fakeDecisionStore{}}
+
+	resp, err := svc.Conflicts(context.Background(), ConflictsParams{Type: EntityTypePlace, Limit: 0})
+	require.NoError(t, err)
+	require.Len(t, resp.Items, 1, "Limit<=0 must be clamped to 1")
+	require.NotNil(t, resp.NextCursor)
+}
+
+// TestDecisions_ZeroLimitClamped verifies a non-positive Limit is clamped to 1.
+func TestDecisions_ZeroLimitClamped(t *testing.T) {
+	feed := &fakeDecisionStore{feed: []DecisionRecord{
+		{ID: "idn-1", CreatedAt: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)},
+		{ID: "idn-2", CreatedAt: time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC)},
+	}}
+	svc := &service{q: &fakeReadQueries{}, ids: &fakeIdentifierStore{}, decisions: feed}
+
+	resp, err := svc.Decisions(context.Background(), DecisionsParams{Limit: 0})
+	require.NoError(t, err)
+	require.Len(t, resp.Items, 1, "Limit<=0 must be clamped to 1")
+	require.NotNil(t, resp.NextCursor)
+}
+
 // --- view ------------------------------------------------------------------
 
 func TestView_NotFound(t *testing.T) {

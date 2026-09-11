@@ -174,6 +174,9 @@ func (s *service) Conflicts(ctx context.Context, arg ConflictsParams) (Conflicts
 	if err := validateEntityType(arg.Type); err != nil {
 		return ConflictsResponse{}, err
 	}
+	if arg.Limit < 1 {
+		arg.Limit = 1
+	}
 
 	var cur conflictsCursor
 	if arg.Cursor != "" {
@@ -288,6 +291,9 @@ func (s *service) Decisions(ctx context.Context, arg DecisionsParams) (Decisions
 		if err := validateEntityType(*arg.Type); err != nil {
 			return DecisionsResponse{}, err
 		}
+	}
+	if arg.Limit < 1 {
+		arg.Limit = 1
 	}
 
 	var cur decisionsCursor
