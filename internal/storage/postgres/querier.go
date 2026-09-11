@@ -174,6 +174,8 @@ type Querier interface {
 	// Retrieves field-level provenance for specific field paths on an event
 	GetFieldProvenanceForPaths(ctx context.Context, arg GetFieldProvenanceForPathsParams) ([]GetFieldProvenanceForPathsRow, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
+	// Fetch a pair's not-duplicate row (for evidence-fingerprint comparison on read).
+	GetIdentityNotDuplicate(ctx context.Context, arg GetIdentityNotDuplicateParams) (IdentityNotDuplicate, error)
 	// Get the most recent successful (completed) scraper run for a given source_name.
 	GetLastSuccessfulRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
 	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
@@ -218,6 +220,9 @@ type Querier interface {
 	// Records field-level provenance with source timestamp
 	InsertFieldProvenance(ctx context.Context, arg InsertFieldProvenanceParams) (FieldProvenance, error)
 	InsertIdempotencyKey(ctx context.Context, arg InsertIdempotencyKeyParams) (InsertIdempotencyKeyRow, error)
+	// Append one identity decision. created_at is returned from the database so the
+	// caller can populate the returned record.
+	InsertIdentityDecision(ctx context.Context, arg InsertIdentityDecisionParams) (pgtype.Timestamptz, error)
 	// Record a not-duplicate pair; re-decision refreshes the evidence fingerprint and decision.
 	InsertIdentityNotDuplicate(ctx context.Context, arg InsertIdentityNotDuplicateParams) error
 	// SQLc queries for event_not_duplicates table.
@@ -259,6 +264,12 @@ type Querier interface {
 	// Load one authority group's observations joined with authority trust/priority.
 	// FOR UPDATE OF ei serializes the group rows against concurrent elections.
 	ListGroupIdentifiersForUpdate(ctx context.Context, arg ListGroupIdentifiersForUpdateParams) ([]ListGroupIdentifiersForUpdateRow, error)
+	// Keyset-paginated feed over all decisions, newest first (created_at DESC, id DESC).
+	// Optional filters: entity_type, action, and an inclusive `since` lower bound on
+	// created_at. The keyset cursor is (created_at, id).
+	ListIdentityDecisions(ctx context.Context, arg ListIdentityDecisionsParams) ([]IdentityDecision, error)
+	// List one entity's decisions, newest first (matches idx_identity_decisions_entity).
+	ListIdentityDecisionsByEntity(ctx context.Context, arg ListIdentityDecisionsByEntityParams) ([]IdentityDecision, error)
 	// List all events that have been confirmed as NOT duplicates of a given event.
 	// Returns both sides of the pair (the given event could be event_id_a or event_id_b).
 	ListNotDuplicatesForEvent(ctx context.Context, eventID string) ([]EventNotDuplicate, error)
