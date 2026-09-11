@@ -1118,6 +1118,52 @@ build_docker_image() {
 # DATABASE FUNCTIONS (T017, T018)
 # ============================================================================
 
+# discover_env_file - Locates the environment file using the same precedence as
+# validate_config: config/environments/.env.<env> (remote), then deploy/docker/.env
+# (local Docker), then root .env (local development).
+# Args:
+#   $1 - environment (e.g., "development", "staging", "production")
+# Output:
+#   Absolute path to the environment file, or empty string if none found.
+discover_env_file() {
+    local env="$1"
+    if [[ -f "${CONFIG_DIR}/environments/.env.${env}" ]]; then
+        echo "${CONFIG_DIR}/environments/.env.${env}"
+    elif [[ -f "${PROJECT_ROOT}/deploy/docker/.env" ]]; then
+        echo "${PROJECT_ROOT}/deploy/docker/.env"
+    elif [[ -f "${PROJECT_ROOT}/.env" ]]; then
+        echo "${PROJECT_ROOT}/.env"
+    fi
+}
+
+# resolve_database_url - Builds a host-reachable DATABASE_URL for local/development
+# deploys, where deploy/docker/.env points DATABASE_URL at the in-network host
+# (togather-db:5432) that is unreachable from the host where the CLI (snapshot or
+# migrate) runs. Mirrors docker-compose defaults: POSTGRES_PORT=5433,
+# POSTGRES_USER=togather, POSTGRES_DB=togather; POSTGRES_PASSWORD is required
+# (empty output when missing). Prints nothing for non-development envs so remote
+# behaviour is unchanged.
+# NOTE: POSTGRES_PASSWORD is interpolated raw — it must not contain characters that
+#       break a postgresql:// URL ('@', ':', '/', '%', '?').
+# Args:
+#   $1 - environment (e.g., "development")
+# Output:
+#   Host-reachable DATABASE_URL, or empty string (remote env or missing password).
+resolve_database_url() {
+    local env="$1"
+    if [[ "$env" != "development" ]]; then
+        return 0
+    fi
+    local pg_password="${POSTGRES_PASSWORD:-}"
+    if [[ -z "$pg_password" ]]; then
+        return 0
+    fi
+    local pg_user="${POSTGRES_USER:-togather}"
+    local pg_port="${POSTGRES_PORT:-5433}"
+    local pg_db="${POSTGRES_DB:-togather}"
+    printf 'postgresql://%s:%s@127.0.0.1:%s/%s?sslmode=disable' "$pg_user" "$pg_password" "$pg_port" "$pg_db"
+}
+
 # Create database snapshot before migrations (T017, T041)
 create_db_snapshot() {
     local env="$1"
@@ -1139,12 +1185,52 @@ create_db_snapshot() {
         return 0
     fi
     
+    # Capture deployment metadata BEFORE sourcing the env file — env files set
+    # GIT_COMMIT=unknown, which would clobber the real value validate_git_commit set.
+    local deploy_commit="${GIT_COMMIT:-}"
+    local deploy_id="${DEPLOYMENT_ID:-}"
+    
+    local env_file
+    env_file=$(discover_env_file "$env")
+    if [[ -z "$env_file" ]]; then
+        log "ERROR" "No environment configuration found for snapshot"
+        log "ERROR" "Cannot determine DATABASE_URL"
+        return 1
+    fi
+    
+    # For local/development only, source the env file with export and build a
+    # host-reachable DATABASE_URL. Remote envs keep their existing behaviour (no
+    # sourcing here — the snapshot child loads config on its own).
+    local snapshot_database_url=""
+    if [[ "$env" == "development" ]]; then
+        log "INFO" "Sourcing environment for snapshot from: ${env_file}"
+        set -a; source "${env_file}"; set +a
+        snapshot_database_url=$(resolve_database_url "$env")
+        if [[ -n "$snapshot_database_url" ]]; then
+            log "INFO" "Using host-reachable DATABASE_URL for local snapshot (127.0.0.1:${POSTGRES_PORT:-5433})"
+        else
+            log "WARN" "POSTGRES_PASSWORD not set in ${env_file}; falling back to sourced DATABASE_URL"
+        fi
+    fi
+    
     # Create snapshot using CLI
     log "INFO" "Creating database snapshot before deployment"
     
     local snapshot_output
-    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1)
-    local snapshot_status=$?
+    local snapshot_status=0
+    
+    if [[ -n "${snapshot_database_url}" ]]; then
+        # Command-scoped overrides so the host-reachable URL and deployment
+        # metadata do not leak into the rest of the script or docker-compose.
+        snapshot_output=$(DATABASE_URL="${snapshot_database_url}" \
+            GIT_COMMIT="${deploy_commit}" \
+            DEPLOYMENT_ID="${deploy_id}" \
+            "${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1) || snapshot_status=$?
+    else
+        snapshot_output=$(GIT_COMMIT="${deploy_commit}" \
+            DEPLOYMENT_ID="${deploy_id}" \
+            "${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1) || snapshot_status=$?
+    fi
     
     if [[ $snapshot_status -ne 0 ]]; then
         log "ERROR" "Database snapshot creation failed: ${snapshot_output}"
@@ -1187,16 +1273,9 @@ run_migrations() {
     log "INFO" "Executing database migrations"
     
     # Load environment to get DATABASE_URL
-    # Use same logic as pre_flight_checks for environment file discovery
-    local env_file=""
-    
-    if [[ -f "${CONFIG_DIR}/environments/.env.${env}" ]]; then
-        env_file="${CONFIG_DIR}/environments/.env.${env}"
-    elif [[ -f "${PROJECT_ROOT}/deploy/docker/.env" ]]; then
-        env_file="${PROJECT_ROOT}/deploy/docker/.env"
-    elif [[ -f "${PROJECT_ROOT}/.env" ]]; then
-        env_file="${PROJECT_ROOT}/.env"
-    else
+    local env_file
+    env_file=$(discover_env_file "$env")
+    if [[ -z "$env_file" ]]; then
         log "ERROR" "No environment configuration found for migrations"
         log "ERROR" "Cannot determine DATABASE_URL"
         return 1
@@ -1204,6 +1283,22 @@ run_migrations() {
     
     log "INFO" "Sourcing environment from: ${env_file}"
     source "${env_file}"
+    
+    # For local/development deploys, the sourced DATABASE_URL points at the
+    # in-network host (togather-db:5432), unreachable from the host where the
+    # `migrate` binary runs. Build a host-reachable URL from POSTGRES_* vars
+    # instead. Remote envs keep the sourced DATABASE_URL untouched.
+    local migration_database_url="${DATABASE_URL}"
+    if [[ "$env" == "development" ]]; then
+        local host_url
+        host_url=$(resolve_database_url "$env")
+        if [[ -n "$host_url" ]]; then
+            migration_database_url="$host_url"
+            log "INFO" "Using host-reachable DATABASE_URL for local migrations (127.0.0.1:${POSTGRES_PORT:-5433})"
+        else
+            log "WARN" "POSTGRES_PASSWORD not set in ${env_file}; falling back to sourced DATABASE_URL"
+        fi
+    fi
     
     local migrations_dir="${PROJECT_ROOT}/internal/storage/postgres/migrations"
     
@@ -1216,7 +1311,7 @@ run_migrations() {
     acquire_named_lock "$migration_lock_dir" || return 1
     
     # Check current migration version
-    local current_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
+    local current_version=$(migrate -path "${migrations_dir}" -database "${migration_database_url}" version 2>&1 || echo "none")
     log "INFO" "Current migration version: ${current_version}"
     
     # Check for dirty migration state
@@ -1233,7 +1328,7 @@ run_migrations() {
     
     # Run migrations
     log "INFO" "Running forward migrations..."
-    if ! migrate -path "${migrations_dir}" -database "${DATABASE_URL}" up; then
+    if ! migrate -path "${migrations_dir}" -database "${migration_database_url}" up; then
         # T031: Migration failure detected - provide rollback instructions
         log "ERROR" "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         log "ERROR" "MIGRATION FAILED"
@@ -1272,7 +1367,7 @@ run_migrations() {
     fi
     
     # Get new migration version
-    local new_version=$(migrate -path "${migrations_dir}" -database "${DATABASE_URL}" version 2>&1 || echo "none")
+    local new_version=$(migrate -path "${migrations_dir}" -database "${migration_database_url}" version 2>&1 || echo "none")
     log "INFO" "New migration version: ${new_version}"
     
     if [[ "$current_version" != "$new_version" ]]; then
