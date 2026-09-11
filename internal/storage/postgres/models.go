@@ -87,6 +87,10 @@ type EntityIdentifier struct {
 	Metadata             []byte             `json:"metadata"`
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+	ObservedAt           pgtype.Timestamptz `json:"observed_at"`
+	IsPrimary            bool               `json:"is_primary"`
+	SupersededByID       pgtype.Int4        `json:"superseded_by_id"`
+	Source               pgtype.Text        `json:"source"`
 }
 
 type Event struct {
@@ -317,6 +321,33 @@ type IdempotencyKey struct {
 	EventUlid   pgtype.Text        `json:"event_ulid"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	ExpiresAt   pgtype.Timestamptz `json:"expires_at"`
+}
+
+type IdentityDecision struct {
+	ID              string             `json:"id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	EntityType      string             `json:"entity_type"`
+	EntityID        string             `json:"entity_id"`
+	Action          string             `json:"action"`
+	CounterpartType pgtype.Text        `json:"counterpart_type"`
+	CounterpartID   pgtype.Text        `json:"counterpart_id"`
+	Rationale       string             `json:"rationale"`
+	Citations       []byte             `json:"citations"`
+	Confidence      pgtype.Numeric     `json:"confidence"`
+	Actor           string             `json:"actor"`
+	Reversible      bool               `json:"reversible"`
+	UndoRef         pgtype.Text        `json:"undo_ref"`
+	Metadata        []byte             `json:"metadata"`
+}
+
+type IdentityNotDuplicate struct {
+	EntityType          string             `json:"entity_type"`
+	IDA                 string             `json:"id_a"`
+	IDB                 string             `json:"id_b"`
+	EvidenceFingerprint string             `json:"evidence_fingerprint"`
+	DecisionID          pgtype.Text        `json:"decision_id"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	CreatedBy           string             `json:"created_by"`
 }
 
 type KnowledgeGraphAuthority struct {

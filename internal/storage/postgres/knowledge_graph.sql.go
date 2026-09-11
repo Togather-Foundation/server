@@ -164,7 +164,7 @@ func (q *Queries) GetAuthorityByCode(ctx context.Context, authorityCode string) 
 }
 
 const getEntityIdentifiers = `-- name: GetEntityIdentifiers :many
-SELECT id, entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, created_at, updated_at FROM entity_identifiers
+SELECT id, entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, created_at, updated_at, observed_at, is_primary, superseded_by_id, source FROM entity_identifiers
 WHERE entity_type = $1 AND entity_id = $2
 ORDER BY confidence DESC
 `
@@ -196,6 +196,10 @@ func (q *Queries) GetEntityIdentifiers(ctx context.Context, arg GetEntityIdentif
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ObservedAt,
+			&i.IsPrimary,
+			&i.SupersededByID,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -208,7 +212,7 @@ func (q *Queries) GetEntityIdentifiers(ctx context.Context, arg GetEntityIdentif
 }
 
 const getEntityIdentifiersByAuthority = `-- name: GetEntityIdentifiersByAuthority :many
-SELECT id, entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, created_at, updated_at FROM entity_identifiers
+SELECT id, entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, created_at, updated_at, observed_at, is_primary, superseded_by_id, source FROM entity_identifiers
 WHERE entity_type = $1 AND entity_id = $2 AND authority_code = $3
 ORDER BY confidence DESC
 `
@@ -241,6 +245,10 @@ func (q *Queries) GetEntityIdentifiersByAuthority(ctx context.Context, arg GetEn
 			&i.Metadata,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ObservedAt,
+			&i.IsPrimary,
+			&i.SupersededByID,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}
@@ -393,7 +401,7 @@ DO UPDATE SET
     is_canonical = EXCLUDED.is_canonical,
     metadata = EXCLUDED.metadata,
     updated_at = now()
-RETURNING id, entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, created_at, updated_at
+RETURNING id, entity_type, entity_id, authority_code, identifier_uri, confidence, reconciliation_method, is_canonical, metadata, created_at, updated_at, observed_at, is_primary, superseded_by_id, source
 `
 
 type UpsertEntityIdentifierParams struct {
@@ -432,6 +440,10 @@ func (q *Queries) UpsertEntityIdentifier(ctx context.Context, arg UpsertEntityId
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ObservedAt,
+		&i.IsPrimary,
+		&i.SupersededByID,
+		&i.Source,
 	)
 	return i, err
 }
