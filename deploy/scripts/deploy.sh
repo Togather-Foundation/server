@@ -1139,12 +1139,61 @@ create_db_snapshot() {
         return 0
     fi
     
+    # Discover the environment file using the same logic as validate_config and
+    # run_migrations, so the snapshot child sees the same config the deploy uses.
+    local env_file=""
+    if [[ -f "${CONFIG_DIR}/environments/.env.${env}" ]]; then
+        env_file="${CONFIG_DIR}/environments/.env.${env}"
+    elif [[ -f "${PROJECT_ROOT}/deploy/docker/.env" ]]; then
+        env_file="${PROJECT_ROOT}/deploy/docker/.env"
+    elif [[ -f "${PROJECT_ROOT}/.env" ]]; then
+        env_file="${PROJECT_ROOT}/.env"
+    else
+        log "ERROR" "No environment configuration found for snapshot"
+        log "ERROR" "Cannot determine DATABASE_URL"
+        return 1
+    fi
+    
+    log "INFO" "Sourcing environment for snapshot from: ${env_file}"
+    
+    # Source with export so the child `server` process receives the vars
+    # config.Load() needs (DATABASE_URL, JWT_SECRET, etc.). Without export, the
+    # child only inherits the script's already-exported vars, not these sourced values.
+    set -a; source "${env_file}"; set +a
+    
+    # For local/development deploys, deploy/docker/.env points DATABASE_URL at the
+    # in-network host (togather-db:5432) which is unreachable from the host where
+    # this script and the snapshot child run. Build a host-reachable URL from the
+    # POSTGRES_* vars instead. Remote envs keep the sourced DATABASE_URL untouched.
+    local snapshot_database_url=""
+    if [[ "$env" == "development" ]]; then
+        if [[ -n "${POSTGRES_USER:-}" && -n "${POSTGRES_PASSWORD:-}" && -n "${POSTGRES_PORT:-}" && -n "${POSTGRES_DB:-}" ]]; then
+            snapshot_database_url="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
+            log "INFO" "Using host-reachable DATABASE_URL for local snapshot (localhost:${POSTGRES_PORT})"
+        else
+            log "WARN" "POSTGRES_USER/POSTGRES_PASSWORD/POSTGRES_PORT/POSTGRES_DB not all set in ${env_file}"
+            log "WARN" "Falling back to sourced DATABASE_URL for snapshot"
+        fi
+    fi
+    
     # Create snapshot using CLI
     log "INFO" "Creating database snapshot before deployment"
     
     local snapshot_output
-    snapshot_output=$("${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1)
-    local snapshot_status=$?
+    local snapshot_status=0
+    
+    if [[ -n "${snapshot_database_url}" ]]; then
+        # Command-scoped overrides so the host-reachable URL and deployment
+        # metadata do not leak into the rest of the script or docker-compose.
+        snapshot_output=$(DATABASE_URL="${snapshot_database_url}" \
+            GIT_COMMIT="${GIT_COMMIT:-}" \
+            DEPLOYMENT_ID="${DEPLOYMENT_ID:-}" \
+            "${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1) || snapshot_status=$?
+    else
+        snapshot_output=$(GIT_COMMIT="${GIT_COMMIT:-}" \
+            DEPLOYMENT_ID="${DEPLOYMENT_ID:-}" \
+            "${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1) || snapshot_status=$?
+    fi
     
     if [[ $snapshot_status -ne 0 ]]; then
         log "ERROR" "Database snapshot creation failed: ${snapshot_output}"
