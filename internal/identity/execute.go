@@ -44,6 +44,10 @@ func NewExecutor(tx TxManager, ids IdentifierStore, decisions DecisionStore, not
 	return &Executor{tx: tx, ids: ids, decisions: decisions, notDup: notDup}
 }
 
+// compile-time assertion: *Executor satisfies the Writer interface consumed by
+// the admin REST handlers.
+var _ Writer = (*Executor)(nil)
+
 // LinkIdentifier records/confirms an external identifier observation for one
 // SEL entity and elects the primary, appending a decision record in the same
 // transaction. It validates the actor, entity type, and URI against the
@@ -70,6 +74,10 @@ func (e *Executor) LinkIdentifier(ctx context.Context, ref IdentityRef, obs Iden
 			return fmt.Errorf("identity: lookup authority %q: %w", obs.Authority, err)
 		}
 		if err := validateAuthorityURI(authority.BaseUriPattern, obs.URI); err != nil {
+			return err
+		}
+
+		if err := requireEntityExistsTx(ctx, q, ref); err != nil {
 			return err
 		}
 
@@ -136,6 +144,13 @@ func (e *Executor) Reject(ctx context.Context, a, b IdentityRef, actor, reason s
 
 	var rec DecisionRecord
 	err := e.tx.WithTx(ctx, func(q *postgres.Queries) error {
+		if err := requireEntityExistsTx(ctx, q, a); err != nil {
+			return err
+		}
+		if err := requireEntityExistsTx(ctx, q, b); err != nil {
+			return err
+		}
+
 		// Read identifiers in canonical order so concurrent Rejects of the same
 		// pair with swapped arguments lock rows in the same sequence.
 		first, second := a, b
@@ -182,6 +197,24 @@ func (e *Executor) Reject(ctx context.Context, a, b IdentityRef, actor, reason s
 		return DecisionRecord{}, err
 	}
 	return rec, nil
+}
+
+// requireEntityExistsTx verifies that the referenced place/organization exists
+// (and is not soft-deleted). entity_identifiers.entity_id has no FK, so without
+// this guard a typo'd ULID would silently create an orphan row. It maps to
+// ErrEntityNotFound so the HTTP layer can return 404.
+func requireEntityExistsTx(ctx context.Context, q *postgres.Queries, ref IdentityRef) error {
+	exists, err := q.EntityExists(ctx, postgres.EntityExistsParams{
+		EntityType: string(ref.Type),
+		EntityID:   ref.ULID,
+	})
+	if err != nil {
+		return fmt.Errorf("identity: check entity existence: %w", err)
+	}
+	if !exists {
+		return fmt.Errorf("%w: %s %s", ErrEntityNotFound, ref.Type, ref.ULID)
+	}
+	return nil
 }
 
 // loadIdentifiersTx loads an entity's identifier observations inside the

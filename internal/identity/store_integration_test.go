@@ -93,13 +93,25 @@ func setupIdentity(t *testing.T) *pgxpool.Pool {
 	return identityPool
 }
 
-// resetIdentityTables truncates only the identity tables, preserving the seeded
-// knowledge_graph_authorities rows that entity_identifiers references.
+// resetIdentityTables truncates the identity tables plus the places/organizations
+// tables (which the existence checks and seedPlace helpers touch), preserving the
+// seeded knowledge_graph_authorities rows that entity_identifiers references.
 func resetIdentityTables(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_, err := pool.Exec(ctx, `TRUNCATE TABLE entity_identifiers, identity_decisions, identity_not_duplicates RESTART IDENTITY CASCADE`)
+	_, err := pool.Exec(ctx, `TRUNCATE TABLE entity_identifiers, identity_decisions, identity_not_duplicates, places, organizations RESTART IDENTITY CASCADE`)
+	require.NoError(t, err)
+}
+
+// seedPlace inserts a minimal place row (idempotent). LinkIdentifier/Reject and
+// the identity view require the referenced entity to exist, so tests that
+// exercise those paths seed the target entity here. Places are truncated by
+// resetIdentityTables, so ON CONFLICT is only a safety net for reused containers.
+func seedPlace(t *testing.T, pool *pgxpool.Pool, ulid string) {
+	t.Helper()
+	_, err := pool.Exec(context.Background(),
+		`INSERT INTO places (ulid, name) VALUES ($1, $2) ON CONFLICT (ulid) DO NOTHING`, ulid, "Test Place "+ulid)
 	require.NoError(t, err)
 }
 

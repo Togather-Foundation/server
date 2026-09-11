@@ -97,6 +97,10 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create SQLc queries instance for direct database access
 	queries := postgres.New(pool)
 
+	// Identity stores/service shared by the reconciliation writer and the admin
+	// read + link/reject surface.
+	identityStore := identity.NewStore(pool)
+
 	// Derive separate JWT signing keys for admin and developer tokens (srv-yuyg9)
 	// IMPORTANT: This is a breaking change - existing tokens will be invalidated when deployed
 	// Using HKDF-SHA256 to derive cryptographically independent keys prevents token confusion attacks
@@ -147,7 +151,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		reconciliationService = kg.NewReconciliationService(
 			artsdataClient,
 			queries,
-			identity.NewStore(pool),
+			identityStore,
 			slogLogger,
 			time.Duration(cfg.Artsdata.CacheTTLDays)*24*time.Hour,
 			time.Duration(cfg.Artsdata.FailureTTLDays)*24*time.Hour,
@@ -412,6 +416,13 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 
 	// Create API Key handler
 	apiKeyHandler := handlers.NewAPIKeyHandler(queries, cfg.Environment)
+
+	// Create identity read service + link/reject handler.
+	identityDecisionStore := identity.NewDecisionStore(pool)
+	identityNotDupStore := identity.NewNotDuplicateStore(pool)
+	identityExecutor := identity.NewExecutor(identityStore, identityStore, identityDecisionStore, identityNotDupStore)
+	identityService := identity.NewService(queries, identityStore, identityDecisionStore)
+	identityHandler := handlers.NewIdentityHandler(identityService, identityExecutor, cfg.Environment, cfg.Identity.ConflictLimitMax)
 
 	// Create Admin Review Queue handler (srv-bjo)
 	adminReviewQueueHandler := handlers.NewAdminReviewQueueHandler(repo.Events(), adminService, repo.Places(), repo.Organizations(), auditLogger, cfg.Environment, cfg.Server.BaseURL, logger.With().Str("component", "admin_review_queue").Logger())
@@ -723,6 +734,18 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/approve", adminApproveReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/reject", adminRejectReview)
 	mux.Handle("POST /api/v1/admin/review-queue/{id}/fix", adminFixReview)
+
+	// Admin identity read + link/reject endpoints (srv-007 P1 T5)
+	adminIdentityView := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(identityHandler.GetIdentityView))))
+	adminIdentityConflicts := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(identityHandler.ListConflicts))))
+	adminIdentityDecisions := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(identityHandler.ListDecisions))))
+	adminIdentityLink := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(identityHandler.LinkIdentifier))))
+	adminIdentityReject := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(identityHandler.Reject))))
+	mux.Handle("GET /api/v1/admin/identity/{type}/{id}", adminIdentityView)
+	mux.Handle("GET /api/v1/admin/identity/conflicts", adminIdentityConflicts)
+	mux.Handle("GET /api/v1/admin/identity/decisions", adminIdentityDecisions)
+	mux.Handle("POST /api/v1/admin/identity/link", adminIdentityLink)
+	mux.Handle("POST /api/v1/admin/identity/reject", adminIdentityReject)
 
 	// Admin geocoding backfill (srv-qq7o1)
 	adminGeocodingBackfill := jwtAuth(adminRateLimit(middleware.AdminRequestSize()(http.HandlerFunc(adminGeocodingHandler.Backfill))))

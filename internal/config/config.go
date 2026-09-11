@@ -31,6 +31,7 @@ type Config struct {
 	Reporting          ReportingConfig
 	Users              UsersConfig
 	GeographicBoundary GeographicBoundaryConfig
+	Identity           IdentityConfig
 	DefaultTimezone    string
 	Environment        string
 }
@@ -373,6 +374,14 @@ func (u UsersConfig) WithDefaults() UsersConfig {
 	return u
 }
 
+// IdentityConfig holds tunables for the entity identity subsystem.
+type IdentityConfig struct {
+	// ConflictLimitMax is the maximum `limit` accepted by the identity
+	// conflicts/decisions admin read endpoints.
+	// Environment variable: IDENTITY_CONFLICT_LIMIT_MAX (default: 200)
+	ConflictLimitMax int
+}
+
 // UsersConfig holds tunables for the end-user account subsystem.
 type UsersConfig struct {
 	// PasswordMinLength is the minimum byte length required for a user account
@@ -599,6 +608,9 @@ func Load() (Config, error) {
 		Users: UsersConfig{
 			PasswordMinLength: getEnvInt("USERS_PASSWORD_MIN_LENGTH", 12),
 			PasswordMaxLength: getEnvInt("USERS_PASSWORD_MAX_LENGTH", 128),
+		},
+		Identity: IdentityConfig{
+			ConflictLimitMax: getEnvInt("IDENTITY_CONFLICT_LIMIT_MAX", 200),
 		},
 		DefaultTimezone: getEnv("DEFAULT_TIMEZONE", "America/Toronto"),
 		Environment:     getEnv("ENVIRONMENT", "development"),

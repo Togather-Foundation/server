@@ -37,6 +37,60 @@ func (q *Queries) DemotePrimaryAndSupersede(ctx context.Context, arg DemotePrima
 	return err
 }
 
+const entityExists = `-- name: EntityExists :one
+SELECT EXISTS (
+    SELECT 1 FROM places p
+    WHERE p.ulid = $1 AND p.deleted_at IS NULL AND $2::text = 'place'
+    UNION ALL
+    SELECT 1 FROM organizations o
+    WHERE o.ulid = $1 AND o.deleted_at IS NULL AND $2::text = 'organization'
+)
+`
+
+type EntityExistsParams struct {
+	EntityID   string `json:"entity_id"`
+	EntityType string `json:"entity_type"`
+}
+
+// Reports whether a place or organization with the given ULID exists (and is
+// not soft-deleted). Used by the identity view to distinguish an absent entity
+// (404) from one that merely has no identifiers yet.
+func (q *Queries) EntityExists(ctx context.Context, arg EntityExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, entityExists, arg.EntityID, arg.EntityType)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const getIdentityDecision = `-- name: GetIdentityDecision :one
+SELECT id, created_at, entity_type, entity_id, action, counterpart_type, counterpart_id, rationale, citations, confidence, actor, reversible, undo_ref, metadata FROM identity_decisions
+WHERE id = $1
+`
+
+// Fetch a single decision by id (used to attach prior_decision to suppressed
+// conflict pairs).
+func (q *Queries) GetIdentityDecision(ctx context.Context, id string) (IdentityDecision, error) {
+	row := q.db.QueryRow(ctx, getIdentityDecision, id)
+	var i IdentityDecision
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.EntityType,
+		&i.EntityID,
+		&i.Action,
+		&i.CounterpartType,
+		&i.CounterpartID,
+		&i.Rationale,
+		&i.Citations,
+		&i.Confidence,
+		&i.Actor,
+		&i.Reversible,
+		&i.UndoRef,
+		&i.Metadata,
+	)
+	return i, err
+}
+
 const getIdentityNotDuplicate = `-- name: GetIdentityNotDuplicate :one
 SELECT entity_type, id_a, id_b, evidence_fingerprint, decision_id, created_at, created_by FROM identity_not_duplicates
 WHERE entity_type = $1 AND id_a = $2 AND id_b = $3
@@ -147,6 +201,99 @@ func (q *Queries) InsertIdentityNotDuplicate(ctx context.Context, arg InsertIden
 		arg.CreatedBy,
 	)
 	return err
+}
+
+const listConflicts = `-- name: ListConflicts :many
+SELECT a.entity_type,
+       a.entity_id AS entity_id_a,
+       b.entity_id AS entity_id_b,
+       a.authority_code,
+       a.identifier_uri,
+       (CASE WHEN a.confidence >= b.confidence THEN a.confidence ELSE b.confidence END)::float8 AS score,
+       nd.evidence_fingerprint,
+       nd.decision_id
+FROM entity_identifiers a
+JOIN entity_identifiers b
+  ON a.entity_type = b.entity_type
+ AND a.authority_code = b.authority_code
+ AND a.identifier_uri = b.identifier_uri
+ AND a.entity_id < b.entity_id
+LEFT JOIN identity_not_duplicates nd
+  ON nd.entity_type = a.entity_type
+ AND nd.id_a = LEAST(a.entity_id, b.entity_id)
+ AND nd.id_b = GREATEST(a.entity_id, b.entity_id)
+WHERE a.entity_type = $1
+  AND (
+    $2::text IS NULL
+    OR (a.authority_code, a.identifier_uri, a.entity_id, b.entity_id)
+       > ($2::text, $3::text,
+          $4::text, $5::text)
+  )
+ORDER BY a.authority_code, a.identifier_uri, a.entity_id, b.entity_id
+LIMIT $6
+`
+
+type ListConflictsParams struct {
+	EntityType      string      `json:"entity_type"`
+	CursorAuthority pgtype.Text `json:"cursor_authority"`
+	CursorUri       pgtype.Text `json:"cursor_uri"`
+	CursorIDA       pgtype.Text `json:"cursor_id_a"`
+	CursorIDB       pgtype.Text `json:"cursor_id_b"`
+	Limit           int32       `json:"limit"`
+}
+
+type ListConflictsRow struct {
+	EntityType          string      `json:"entity_type"`
+	EntityIDA           string      `json:"entity_id_a"`
+	EntityIDB           string      `json:"entity_id_b"`
+	AuthorityCode       string      `json:"authority_code"`
+	IdentifierUri       string      `json:"identifier_uri"`
+	Score               float64     `json:"score"`
+	EvidenceFingerprint pgtype.Text `json:"evidence_fingerprint"`
+	DecisionID          pgtype.Text `json:"decision_id"`
+}
+
+// Phase 1 conflict source: a self-join of entity_identifiers on equal
+// (entity_type, authority_code, identifier_uri) with entity_id_a < entity_id_b,
+// returning each unordered pair once. Keyset pagination on
+// (authority_code, identifier_uri, entity_id_a, entity_id_b). The stored
+// identity_not_duplicates row (matched on the canonical LEAST/GREATEST pair) is
+// left-joined so the caller can compare its evidence_fingerprint to the current
+// fingerprint in Go. score is the max confidence of the two observations.
+func (q *Queries) ListConflicts(ctx context.Context, arg ListConflictsParams) ([]ListConflictsRow, error) {
+	rows, err := q.db.Query(ctx, listConflicts,
+		arg.EntityType,
+		arg.CursorAuthority,
+		arg.CursorUri,
+		arg.CursorIDA,
+		arg.CursorIDB,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListConflictsRow{}
+	for rows.Next() {
+		var i ListConflictsRow
+		if err := rows.Scan(
+			&i.EntityType,
+			&i.EntityIDA,
+			&i.EntityIDB,
+			&i.AuthorityCode,
+			&i.IdentifierUri,
+			&i.Score,
+			&i.EvidenceFingerprint,
+			&i.DecisionID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listEntityIdentifiersForUpdate = `-- name: ListEntityIdentifiersForUpdate :many

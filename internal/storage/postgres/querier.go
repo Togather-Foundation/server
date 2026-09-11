@@ -113,6 +113,10 @@ type Querier interface {
 	// Narrower than DismissCompanionWarningMatch: targets exactly one row, preventing
 	// accidental modification of unrelated pending reviews on the same companion event.
 	DismissWarningMatchByReviewID(ctx context.Context, arg DismissWarningMatchByReviewIDParams) error
+	// Reports whether a place or organization with the given ULID exists (and is
+	// not soft-deleted). Used by the identity view to distinguish an absent entity
+	// (404) from one that merely has no identifiers yet.
+	EntityExists(ctx context.Context, arg EntityExistsParams) (bool, error)
 	// Expires all pending (non-accepted, non-expired) invitations for a user by
 	// setting accepted_at. This satisfies the unique partial index
 	// idx_user_invitations_active (WHERE accepted_at IS NULL), allowing a new
@@ -174,6 +178,9 @@ type Querier interface {
 	// Retrieves field-level provenance for specific field paths on an event
 	GetFieldProvenanceForPaths(ctx context.Context, arg GetFieldProvenanceForPathsParams) ([]GetFieldProvenanceForPathsRow, error)
 	GetIdempotencyKey(ctx context.Context, key string) (GetIdempotencyKeyRow, error)
+	// Fetch a single decision by id (used to attach prior_decision to suppressed
+	// conflict pairs).
+	GetIdentityDecision(ctx context.Context, id string) (IdentityDecision, error)
 	// Fetch a pair's not-duplicate row (for evidence-fingerprint comparison on read).
 	GetIdentityNotDuplicate(ctx context.Context, arg GetIdentityNotDuplicateParams) (IdentityNotDuplicate, error)
 	// Get the most recent successful (completed) scraper run for a given source_name.
@@ -249,6 +256,14 @@ type Querier interface {
 	LinkPlaceScraperSource(ctx context.Context, arg LinkPlaceScraperSourceParams) error
 	ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error)
 	ListActiveDeveloperInvitations(ctx context.Context) ([]DeveloperInvitation, error)
+	// Phase 1 conflict source: a self-join of entity_identifiers on equal
+	// (entity_type, authority_code, identifier_uri) with entity_id_a < entity_id_b,
+	// returning each unordered pair once. Keyset pagination on
+	// (authority_code, identifier_uri, entity_id_a, entity_id_b). The stored
+	// identity_not_duplicates row (matched on the canonical LEAST/GREATEST pair) is
+	// left-joined so the caller can compare its evidence_fingerprint to the current
+	// fingerprint in Go. score is the max confidence of the two observations.
+	ListConflicts(ctx context.Context, arg ListConflictsParams) ([]ListConflictsRow, error)
 	// Developer API key operations
 	ListDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) ([]ApiKey, error)
 	ListDevelopers(ctx context.Context, arg ListDevelopersParams) ([]Developer, error)
