@@ -37,6 +37,21 @@ WHERE ei.entity_type = sqlc.arg('entity_type')
 ORDER BY ei.id
 FOR UPDATE OF ei;
 
+-- name: ListEntityIdentifiersForUpdate :many
+-- Load all of an entity's identifier observations joined with authority
+-- trust/priority. FOR UPDATE OF ei serializes the entity's identifier rows against
+-- concurrent elections. Used by the transactional merge path to reassign, dedupe,
+-- and re-elect one primary per authority.
+SELECT ei.id, ei.authority_code, ei.identifier_uri, ei.reconciliation_method,
+       ei.confidence, ei.observed_at, ei.is_primary, ei.source,
+       a.trust_level, a.priority_order
+FROM entity_identifiers ei
+JOIN knowledge_graph_authorities a ON a.authority_code = ei.authority_code
+WHERE ei.entity_type = sqlc.arg('entity_type')
+  AND ei.entity_id = sqlc.arg('entity_id')
+ORDER BY ei.id
+FOR UPDATE OF ei;
+
 -- name: SetPrimary :exec
 -- Unconditionally mark one identifier row as the group's primary and clear its supersession.
 UPDATE entity_identifiers SET is_primary = true, superseded_by_id = NULL, updated_at = now()

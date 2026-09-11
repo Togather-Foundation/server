@@ -127,6 +127,32 @@ func (m *MockRepository) GetPlaceByULID(ctx context.Context, ulid string) (*even
 	return args.Get(0).(*events.PlaceRecord), args.Error(1)
 }
 
+func (m *MockRepository) GetPlaceByID(ctx context.Context, id string) (*events.PlaceRecord, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.PlaceRecord), args.Error(1)
+}
+
+func (m *MockRepository) GetOrganizationByID(ctx context.Context, id string) (*events.OrganizationRecord, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.OrganizationRecord), args.Error(1)
+}
+
+func (m *MockRepository) CreatePlaceTombstone(ctx context.Context, params events.PlaceTombstoneCreateParams) error {
+	args := m.Called(ctx, params)
+	return args.Error(0)
+}
+
+func (m *MockRepository) CreateOrganizationTombstone(ctx context.Context, params events.OrganizationTombstoneCreateParams) error {
+	args := m.Called(ctx, params)
+	return args.Error(0)
+}
+
 func (m *MockRepository) UpsertOrganization(ctx context.Context, params events.OrganizationCreateParams) (*events.OrganizationRecord, error) {
 	args := m.Called(ctx, params)
 	if args.Get(0) == nil {

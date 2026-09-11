@@ -11,6 +11,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/domain/tombstones"
 	"github.com/Togather-Foundation/server/internal/validation"
 	"github.com/rs/zerolog"
 )
@@ -1159,7 +1160,12 @@ func (s *AdminService) executeMerge(ctx context.Context, txRepo Repository, para
 		return fmt.Errorf("merge events: %w", err)
 	}
 
-	// Generate tombstone for the duplicate event
+	// Generate tombstone for the duplicate event.
+	//
+	// Note the intentional granularity difference: the event row's deletion_reason is
+	// 'merged' (set by MergeEventIntoDuplicate), while this tombstone records the more
+	// descriptive 'duplicate_merged' so downstream consumers can distinguish it from a
+	// place/organization merge. The two fields deliberately differ.
 	primaryURI, err := s.eventURI(params.PrimaryULID)
 	if err != nil {
 		return fmt.Errorf("canonical URI for primary event: %w", err)
@@ -2579,24 +2585,144 @@ func (s *AdminService) FindSimilarOrganizations(ctx context.Context, name string
 	return s.repo.FindSimilarOrganizations(ctx, name, locality, normalizeRegion(region), threshold)
 }
 
-// MergePlaces merges a duplicate place into a primary place.
-// Parameters are internal UUIDs (not ULIDs). The handler must resolve ULIDs to UUIDs
-// via Places.GetByULID() before calling this method.
+// MergePlaces merges a duplicate place into a primary place in a single transaction:
+// the place merge (including identifier reassignment/dedup/re-election) and the
+// duplicate's tombstone all commit or roll back together. Parameters are internal
+// UUIDs (not ULIDs); the duplicate's (ULID, name) are resolved inside the transaction.
 func (s *AdminService) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
 	if duplicateID == primaryID {
 		return nil, fmt.Errorf("cannot merge place with itself")
 	}
-	return s.repo.MergePlaces(ctx, duplicateID, primaryID)
+	return mergePlacesTombstoned(ctx, s.repo, s.baseURL, duplicateID, primaryID)
 }
 
-// MergeOrganizations merges a duplicate organization into a primary organization.
-// Parameters are internal UUIDs (not ULIDs). The handler must resolve ULIDs to UUIDs
-// via Organizations.GetByULID() before calling this method.
+// MergeOrganizations merges a duplicate organization into a primary organization in a
+// single transaction: the merge (including identifier reassignment/dedup/re-election)
+// and the duplicate's tombstone all commit or roll back together. Parameters are
+// internal UUIDs (not ULIDs); the duplicate's (ULID, name) are resolved in the transaction.
 func (s *AdminService) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error) {
 	if duplicateID == primaryID {
 		return nil, fmt.Errorf("cannot merge organization with itself")
 	}
-	return s.repo.MergeOrganizations(ctx, duplicateID, primaryID)
+	return mergeOrganizationsTombstoned(ctx, s.repo, s.baseURL, duplicateID, primaryID)
+}
+
+// mergePlacesTombstoned performs a place merge and writes the duplicate's tombstone in
+// one transaction. It is shared by the admin merge endpoint and the ingest auto-merge
+// path so every place merge is reversible + tombstoned. baseURL builds the tombstone URIs.
+func mergePlacesTombstoned(ctx context.Context, repo Repository, baseURL, duplicateID, primaryID string) (*MergeResult, error) {
+	txRepo, txCommitter, err := repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = txCommitter.Rollback(ctx) }()
+
+	result, err := txRepo.MergePlaces(ctx, duplicateID, primaryID)
+	if err != nil {
+		return nil, err
+	}
+	if result.AlreadyMerged {
+		return result, nil // no-op; deferred rollback releases the empty transaction
+	}
+
+	if err := writePlaceMergeTombstone(ctx, txRepo, baseURL, duplicateID, primaryID); err != nil {
+		return nil, err
+	}
+
+	if err := txCommitter.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+	return result, nil
+}
+
+// writePlaceMergeTombstone resolves the duplicate place's (ULID, name) and the survivor's
+// URI and writes the duplicate's tombstone inside the caller's transaction.
+func writePlaceMergeTombstone(ctx context.Context, txRepo Repository, baseURL, duplicateID, primaryID string) error {
+	dup, err := txRepo.GetPlaceByID(ctx, duplicateID)
+	if err != nil {
+		return fmt.Errorf("resolve duplicate place for tombstone: %w", err)
+	}
+	primary, err := txRepo.GetPlaceByID(ctx, primaryID)
+	if err != nil {
+		return fmt.Errorf("resolve primary place for tombstone: %w", err)
+	}
+
+	payload, err := tombstones.BuildPlaceTombstonePayload(dup.ULID, dup.Name, "merged", baseURL)
+	if err != nil {
+		return fmt.Errorf("build place tombstone: %w", err)
+	}
+
+	supersededBy := tombstones.BuildPlaceURI(baseURL, primary.ULID)
+	if err := txRepo.CreatePlaceTombstone(ctx, PlaceTombstoneCreateParams{
+		PlaceID:      dup.ID,
+		PlaceURI:     tombstones.BuildPlaceURI(baseURL, dup.ULID),
+		DeletedAt:    time.Now(),
+		Reason:       "merged",
+		SupersededBy: &supersededBy,
+		Payload:      payload,
+	}); err != nil {
+		return fmt.Errorf("create place tombstone: %w", err)
+	}
+	return nil
+}
+
+// mergeOrganizationsTombstoned performs an organization merge and writes the duplicate's
+// tombstone in one transaction. Shared by the admin merge endpoint and the ingest
+// auto-merge path so every organization merge is reversible + tombstoned.
+func mergeOrganizationsTombstoned(ctx context.Context, repo Repository, baseURL, duplicateID, primaryID string) (*MergeResult, error) {
+	txRepo, txCommitter, err := repo.BeginTx(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = txCommitter.Rollback(ctx) }()
+
+	result, err := txRepo.MergeOrganizations(ctx, duplicateID, primaryID)
+	if err != nil {
+		return nil, err
+	}
+	if result.AlreadyMerged {
+		return result, nil // no-op; deferred rollback releases the empty transaction
+	}
+
+	if err := writeOrganizationMergeTombstone(ctx, txRepo, baseURL, duplicateID, primaryID); err != nil {
+		return nil, err
+	}
+
+	if err := txCommitter.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+	return result, nil
+}
+
+// writeOrganizationMergeTombstone resolves the duplicate organization's (ULID, name) and
+// the survivor's URI and writes the duplicate's tombstone inside the caller's transaction.
+func writeOrganizationMergeTombstone(ctx context.Context, txRepo Repository, baseURL, duplicateID, primaryID string) error {
+	dup, err := txRepo.GetOrganizationByID(ctx, duplicateID)
+	if err != nil {
+		return fmt.Errorf("resolve duplicate organization for tombstone: %w", err)
+	}
+	primary, err := txRepo.GetOrganizationByID(ctx, primaryID)
+	if err != nil {
+		return fmt.Errorf("resolve primary organization for tombstone: %w", err)
+	}
+
+	payload, err := tombstones.BuildOrganizationTombstonePayload(dup.ULID, dup.Name, "merged", baseURL)
+	if err != nil {
+		return fmt.Errorf("build organization tombstone: %w", err)
+	}
+
+	supersededBy := tombstones.BuildOrganizationURI(baseURL, primary.ULID)
+	if err := txRepo.CreateOrganizationTombstone(ctx, OrganizationTombstoneCreateParams{
+		OrgID:        dup.ID,
+		OrgURI:       tombstones.BuildOrganizationURI(baseURL, dup.ULID),
+		DeletedAt:    time.Now(),
+		Reason:       "merged",
+		SupersededBy: &supersededBy,
+		Payload:      payload,
+	}); err != nil {
+		return fmt.Errorf("create organization tombstone: %w", err)
+	}
+	return nil
 }
 
 // CreateOccurrenceOnEvent adds a new occurrence to an existing event.

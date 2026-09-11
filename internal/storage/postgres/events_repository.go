@@ -8,6 +8,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	identityrank "github.com/Togather-Foundation/server/internal/identity/rank"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -1171,6 +1172,42 @@ SELECT id::text, ulid, name FROM places WHERE ulid = $1 AND deleted_at IS NULL
 	return &record, nil
 }
 
+// GetPlaceByID resolves a place by its internal UUID, returning the (UUID, ULID, Name)
+// triple. Used by the merge path to build tombstones from UUID-keyed merge parameters.
+// Returns events.ErrNotFound when no matching row exists.
+func (r *EventRepository) GetPlaceByID(ctx context.Context, id string) (*events.PlaceRecord, error) {
+	queryer := r.queryer()
+	var record events.PlaceRecord
+	err := queryer.QueryRow(ctx, `
+SELECT id::text, ulid, name FROM places WHERE id = $1
+`, id).Scan(&record.ID, &record.ULID, &record.Name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get place by id %q: %w", id, err)
+	}
+	return &record, nil
+}
+
+// GetOrganizationByID resolves an organization by its internal UUID, returning the
+// (UUID, ULID, Name) triple. Used by the merge path to build tombstones.
+// Returns events.ErrNotFound when no matching row exists.
+func (r *EventRepository) GetOrganizationByID(ctx context.Context, id string) (*events.OrganizationRecord, error) {
+	queryer := r.queryer()
+	var record events.OrganizationRecord
+	err := queryer.QueryRow(ctx, `
+SELECT id::text, ulid, name FROM organizations WHERE id = $1
+`, id).Scan(&record.ID, &record.ULID, &record.Name)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, events.ErrNotFound
+		}
+		return nil, fmt.Errorf("get organization by id %q: %w", id, err)
+	}
+	return &record, nil
+}
+
 func (r *EventRepository) UpsertOrganization(ctx context.Context, params events.OrganizationCreateParams) (*events.OrganizationRecord, error) {
 	queryer := r.queryer()
 
@@ -1715,6 +1752,31 @@ SELECT id, ulid, name, similarity(normalized_name, normalize_name($1)) AS sim,
 //   - Uses FOR UPDATE SKIP LOCKED to prevent two goroutines from merging the same
 //     duplicate simultaneously.
 func (r *EventRepository) MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	if r.tx != nil {
+		return r.mergePlacesTx(ctx, duplicateID, primaryID)
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	txRepo := &EventRepository{pool: r.pool, tx: tx, logger: r.logger}
+
+	result, err := txRepo.mergePlacesTx(ctx, duplicateID, primaryID)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+	return result, nil
+}
+
+// mergePlacesTx performs the place merge on the repository's current connection
+// (pool or transaction). Identifier reassignment, deduplication, and re-election
+// happen on the same connection so a failure rolls back the whole merge.
+func (r *EventRepository) mergePlacesTx(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
 	queryer := r.queryer()
 
 	// Step 1: Lock the duplicate row and check its current state.
@@ -1828,6 +1890,12 @@ UPDATE places SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'me
 		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
 	}
 
+	// Reassign the duplicate's entity identifiers onto the survivor, dedupe
+	// collisions, and re-elect exactly one primary per (survivor, authority).
+	if err := r.mergePlaceIdentifiers(ctx, duplicateID, primaryID); err != nil {
+		return nil, err
+	}
+
 	return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: false}, nil
 }
 
@@ -1837,6 +1905,31 @@ UPDATE places SET merged_into_id = $2, deleted_at = NOW(), deletion_reason = 'me
 //
 // Handles concurrent merge races gracefully (same pattern as MergePlaces).
 func (r *EventRepository) MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
+	if r.tx != nil {
+		return r.mergeOrganizationsTx(ctx, duplicateID, primaryID)
+	}
+
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	txRepo := &EventRepository{pool: r.pool, tx: tx, logger: r.logger}
+
+	result, err := txRepo.mergeOrganizationsTx(ctx, duplicateID, primaryID)
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		return nil, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit transaction: %w", err)
+	}
+	return result, nil
+}
+
+// mergeOrganizationsTx performs the organization merge on the repository's current
+// connection (pool or transaction). Identifier reassignment, deduplication, and
+// re-election happen on the same connection so a failure rolls back the whole merge.
+func (r *EventRepository) mergeOrganizationsTx(ctx context.Context, duplicateID string, primaryID string) (*events.MergeResult, error) {
 	queryer := r.queryer()
 
 	// Step 1: Lock the duplicate row and check its current state.
@@ -1930,6 +2023,12 @@ UPDATE organizations SET merged_into_id = $2, deleted_at = NOW(), deletion_reaso
 		return &events.MergeResult{CanonicalID: canonicalID, AlreadyMerged: true}, nil
 	}
 
+	// Reassign the duplicate's entity identifiers onto the survivor, dedupe
+	// collisions, and re-elect exactly one primary per (survivor, authority).
+	if err := r.mergeOrganizationIdentifiers(ctx, duplicateID, primaryID); err != nil {
+		return nil, err
+	}
+
 	return &events.MergeResult{CanonicalID: primaryID, AlreadyMerged: false}, nil
 }
 
@@ -1985,6 +2084,283 @@ SELECT merged_into_id::text FROM organizations WHERE id = $1
 	}
 
 	return currentID, nil
+}
+
+// mergePlaceIdentifiers reassigns the duplicate place's entity identifiers onto the
+// survivor and re-elects a primary, resolving the internal UUIDs to ULIDs first.
+func (r *EventRepository) mergePlaceIdentifiers(ctx context.Context, duplicateID, primaryID string) error {
+	queryer := r.queryer()
+
+	var dupULID string
+	err := queryer.QueryRow(ctx, `SELECT ulid FROM places WHERE id = $1`, duplicateID).Scan(&dupULID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil // duplicate no longer exists; nothing to reassign
+		}
+		return fmt.Errorf("resolve duplicate place ULID: %w", err)
+	}
+	var primaryULID string
+	err = queryer.QueryRow(ctx, `SELECT ulid FROM places WHERE id = $1`, primaryID).Scan(&primaryULID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("resolve primary place ULID: %w", err)
+	}
+
+	return r.mergeEntityIdentifiers(ctx, "place", dupULID, primaryULID)
+}
+
+// mergeOrganizationIdentifiers reassigns the duplicate organization's entity identifiers
+// onto the survivor and re-elects a primary, resolving the internal UUIDs to ULIDs first.
+func (r *EventRepository) mergeOrganizationIdentifiers(ctx context.Context, duplicateID, primaryID string) error {
+	queryer := r.queryer()
+
+	var dupULID string
+	err := queryer.QueryRow(ctx, `SELECT ulid FROM organizations WHERE id = $1`, duplicateID).Scan(&dupULID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("resolve duplicate organization ULID: %w", err)
+	}
+	var primaryULID string
+	err = queryer.QueryRow(ctx, `SELECT ulid FROM organizations WHERE id = $1`, primaryID).Scan(&primaryULID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil
+		}
+		return fmt.Errorf("resolve primary organization ULID: %w", err)
+	}
+
+	return r.mergeEntityIdentifiers(ctx, "organization", dupULID, primaryULID)
+}
+
+// mergeEntityIdentifiers moves all of the duplicate's entity identifiers onto the
+// survivor, dedupes collisions, and re-elects exactly one primary per
+// (survivor, authority). Must run inside the merge transaction.
+//
+// Collision handling: two rows that share (entity_type, authority_code, identifier_uri)
+// after the move are folded into a single survivor row — the better-ranked attributes
+// win and metadata is merged non-destructively — and the duplicate's redundant row is
+// deleted. Re-election reuses the canonical rank (identityrank.ElectPrimary) and the
+// same DemotePrimaryAndSupersede/SetPrimary primitives as RecordObservation, so
+// supersession provenance on the survivor is preserved rather than wiped.
+func (r *EventRepository) mergeEntityIdentifiers(ctx context.Context, entityType, duplicateULID, survivorULID string) error {
+	queryer := r.queryer()
+	q := &Queries{db: queryer}
+
+	dupRows, err := q.ListEntityIdentifiersForUpdate(ctx, ListEntityIdentifiersForUpdateParams{
+		EntityType: entityType,
+		EntityID:   duplicateULID,
+	})
+	if err != nil {
+		return fmt.Errorf("load duplicate identifiers: %w", err)
+	}
+	// If the duplicate has no identifiers there is nothing to move, dedupe, or
+	// re-elect — leave the survivor's primaries and supersession provenance untouched.
+	if len(dupRows) == 0 {
+		return nil
+	}
+
+	survRows, err := q.ListEntityIdentifiersForUpdate(ctx, ListEntityIdentifiersForUpdateParams{
+		EntityType: entityType,
+		EntityID:   survivorULID,
+	})
+	if err != nil {
+		return fmt.Errorf("load survivor identifiers: %w", err)
+	}
+
+	survByKey := make(map[string]ListEntityIdentifiersForUpdateRow, len(survRows))
+	for _, row := range survRows {
+		survByKey[row.AuthorityCode+"\x00"+row.IdentifierUri] = row
+	}
+
+	// Fold colliding rows into the survivor (and delete the duplicate's row), or
+	// reassign non-colliding rows onto the survivor (demoting them so the reassignment
+	// cannot momentarily create two primaries for one authority).
+	for _, d := range dupRows {
+		key := d.AuthorityCode + "\x00" + d.IdentifierUri
+		if s, ok := survByKey[key]; ok {
+			if err := r.foldCollidingIdentifier(ctx, queryer, s, d); err != nil {
+				return err
+			}
+		} else if err := r.reassignIdentifier(ctx, queryer, survivorULID, d); err != nil {
+			return err
+		}
+	}
+
+	return r.reelectEntityIdentifiers(ctx, q, entityType, survivorULID)
+}
+
+// foldCollidingIdentifier folds the duplicate's rank attributes into the survivor row
+// when the duplicate outranks it, merges metadata non-destructively, and deletes the
+// duplicate's row (clearing any superseded_by_id references into it first).
+func (r *EventRepository) foldCollidingIdentifier(ctx context.Context, queryer queryer, s, d ListEntityIdentifiersForUpdateRow) error {
+	dOutranks := identityrank.Outranks(identifierRowToObservation(d), identifierRowToObservation(s))
+
+	_, err := queryer.Exec(ctx, `
+UPDATE entity_identifiers s
+   SET reconciliation_method = CASE WHEN $3 THEN d.reconciliation_method ELSE s.reconciliation_method END,
+       source               = CASE WHEN $3 THEN d.source ELSE s.source END,
+       observed_at          = CASE WHEN $3 THEN d.observed_at ELSE s.observed_at END,
+       confidence           = CASE WHEN $3 THEN d.confidence ELSE s.confidence END,
+       metadata             = COALESCE(s.metadata, '{}'::jsonb) || COALESCE(d.metadata, '{}'::jsonb),
+       updated_at           = now()
+  FROM entity_identifiers d
+ WHERE s.id = $1 AND d.id = $2
+`, s.ID, d.ID, dOutranks)
+	if err != nil {
+		return fmt.Errorf("fold colliding identifier: %w", err)
+	}
+
+	if _, err := queryer.Exec(ctx, `
+UPDATE entity_identifiers SET superseded_by_id = NULL, updated_at = now()
+ WHERE superseded_by_id = $1
+`, d.ID); err != nil {
+		return fmt.Errorf("clear superseded references before dedupe: %w", err)
+	}
+
+	if _, err := queryer.Exec(ctx, `DELETE FROM entity_identifiers WHERE id = $1`, d.ID); err != nil {
+		return fmt.Errorf("delete colliding identifier: %w", err)
+	}
+	return nil
+}
+
+// reassignIdentifier moves a non-colliding duplicate identifier onto the survivor,
+// demoting it so the reassignment cannot create two primaries for one authority.
+func (r *EventRepository) reassignIdentifier(ctx context.Context, queryer queryer, survivorULID string, d ListEntityIdentifiersForUpdateRow) error {
+	_, err := queryer.Exec(ctx, `
+UPDATE entity_identifiers
+   SET entity_id = $1, is_primary = false, superseded_by_id = NULL, updated_at = now()
+ WHERE id = $2
+`, survivorULID, d.ID)
+	if err != nil {
+		return fmt.Errorf("reassign identifier %d: %w", d.ID, err)
+	}
+	return nil
+}
+
+// reelectEntityIdentifiers re-elects exactly one primary per (survivor, authority)
+// using the canonical rank. It mirrors RecordObservation's DemotePrimaryAndSupersede
+// then SetPrimary sequence so demoted rows record their superseding winner.
+func (r *EventRepository) reelectEntityIdentifiers(ctx context.Context, q *Queries, entityType, survivorULID string) error {
+	rows, err := q.ListEntityIdentifiersForUpdate(ctx, ListEntityIdentifiersForUpdateParams{
+		EntityType: entityType,
+		EntityID:   survivorULID,
+	})
+	if err != nil {
+		return fmt.Errorf("load survivor identifiers for re-election: %w", err)
+	}
+
+	byAuthority := make(map[string][]identityrank.IdentifierObservation)
+	for _, row := range rows {
+		obs := identifierRowToObservation(row)
+		byAuthority[row.AuthorityCode] = append(byAuthority[row.AuthorityCode], obs)
+	}
+
+	for authority, group := range byAuthority {
+		winner, ok := identityrank.ElectPrimary(group)
+		if !ok {
+			continue
+		}
+		if err := q.DemotePrimaryAndSupersede(ctx, DemotePrimaryAndSupersedeParams{
+			WinnerID:      pgtype.Int4{Int32: winner.ID, Valid: true},
+			EntityType:    entityType,
+			EntityID:      survivorULID,
+			AuthorityCode: authority,
+		}); err != nil {
+			return fmt.Errorf("demote primary for authority %s: %w", authority, err)
+		}
+		if err := q.SetPrimary(ctx, winner.ID); err != nil {
+			return fmt.Errorf("set primary for authority %s: %w", authority, err)
+		}
+	}
+	return nil
+}
+
+// identifierRowToObservation converts a ListEntityIdentifiersForUpdateRow into a
+// rank.IdentifierObservation for the shared election logic.
+func identifierRowToObservation(row ListEntityIdentifiersForUpdateRow) identityrank.IdentifierObservation {
+	return identityrank.IdentifierObservation{
+		ID:         row.ID,
+		Authority:  row.AuthorityCode,
+		URI:        row.IdentifierUri,
+		Method:     row.ReconciliationMethod,
+		Confidence: observationConfidence(row.Confidence),
+		ObservedAt: row.ObservedAt.Time,
+		TrustLevel: row.TrustLevel,
+		Priority:   row.PriorityOrder,
+		IsPrimary:  row.IsPrimary,
+		Source:     row.Source.String,
+	}
+}
+
+// observationConfidence converts a pgtype.Numeric confidence to float64 (0 when invalid/NULL).
+func observationConfidence(n pgtype.Numeric) float64 {
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return 0
+	}
+	return f.Float64
+}
+
+// CreatePlaceTombstone writes a place_tombstones row for a soft-deleted place.
+func (r *EventRepository) CreatePlaceTombstone(ctx context.Context, params events.PlaceTombstoneCreateParams) error {
+	queries := Queries{db: r.queryer()}
+
+	var placeIDUUID pgtype.UUID
+	if err := placeIDUUID.Scan(params.PlaceID); err != nil {
+		return fmt.Errorf("invalid place ID: %w", err)
+	}
+
+	var supersededBy pgtype.Text
+	if params.SupersededBy != nil {
+		supersededBy = pgtype.Text{String: *params.SupersededBy, Valid: true}
+	}
+
+	err := queries.CreatePlaceTombstone(ctx, CreatePlaceTombstoneParams{
+		PlaceID:         placeIDUUID,
+		PlaceUri:        params.PlaceURI,
+		DeletedAt:       pgtype.Timestamptz{Time: params.DeletedAt, Valid: true},
+		DeletionReason:  pgtype.Text{String: params.Reason, Valid: params.Reason != ""},
+		SupersededByUri: supersededBy,
+		Payload:         params.Payload,
+	})
+	if err != nil {
+		return fmt.Errorf("create place tombstone: %w", err)
+	}
+
+	return nil
+}
+
+// CreateOrganizationTombstone writes an organization_tombstones row for a soft-deleted org.
+func (r *EventRepository) CreateOrganizationTombstone(ctx context.Context, params events.OrganizationTombstoneCreateParams) error {
+	queries := Queries{db: r.queryer()}
+
+	var orgIDUUID pgtype.UUID
+	if err := orgIDUUID.Scan(params.OrgID); err != nil {
+		return fmt.Errorf("invalid organization ID: %w", err)
+	}
+
+	var supersededBy pgtype.Text
+	if params.SupersededBy != nil {
+		supersededBy = pgtype.Text{String: *params.SupersededBy, Valid: true}
+	}
+
+	err := queries.CreateOrganizationTombstone(ctx, CreateOrganizationTombstoneParams{
+		OrganizationID:  orgIDUUID,
+		OrganizationUri: params.OrgURI,
+		DeletedAt:       pgtype.Timestamptz{Time: params.DeletedAt, Valid: true},
+		DeletionReason:  pgtype.Text{String: params.Reason, Valid: params.Reason != ""},
+		SupersededByUri: supersededBy,
+		Payload:         params.Payload,
+	})
+	if err != nil {
+		return fmt.Errorf("create organization tombstone: %w", err)
+	}
+
+	return nil
 }
 
 // InsertNotDuplicate records that two events are confirmed as NOT duplicates.

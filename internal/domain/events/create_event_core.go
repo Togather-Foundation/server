@@ -451,7 +451,7 @@ func (s *IngestService) createEventCore(
 					if len(filtered) > 0 {
 						best := filtered[0]
 						if best.Similarity >= s.dedupConfig.PlaceAutoMergeThreshold {
-							mergeResult, mergeErr := s.repo.MergePlaces(ctx, place.ID, best.ID)
+							mergeResult, mergeErr := mergePlacesTombstoned(ctx, s.repo, s.nodeDomain, place.ID, best.ID)
 							if mergeErr != nil {
 								s.logger.Warn().Err(mergeErr).
 									Str("duplicate_place", place.ULID).
@@ -611,7 +611,7 @@ func (s *IngestService) createEventCore(
 				if len(filtered) > 0 {
 					best := filtered[0]
 					if best.Similarity >= s.dedupConfig.OrgAutoMergeThreshold {
-						mergeResult, mergeErr := s.repo.MergeOrganizations(ctx, org.ID, best.ID)
+						mergeResult, mergeErr := mergeOrganizationsTombstoned(ctx, s.repo, s.nodeDomain, org.ID, best.ID)
 						if mergeErr != nil {
 							s.logger.Warn().Err(mergeErr).
 								Str("duplicate_org", org.ULID).

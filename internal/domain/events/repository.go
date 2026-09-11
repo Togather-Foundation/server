@@ -273,6 +273,13 @@ type Repository interface {
 	GetPlaceByULID(ctx context.Context, ulid string) (*PlaceRecord, error)
 	UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error)
 
+	// GetPlaceByID resolves a place by its internal UUID, returning the ULID and name.
+	// Used by the merge path to build tombstones from UUID-keyed merge parameters.
+	GetPlaceByID(ctx context.Context, id string) (*PlaceRecord, error)
+	// GetOrganizationByID resolves an organization by its internal UUID, returning the
+	// ULID and name. Used by the merge path to build tombstones.
+	GetOrganizationByID(ctx context.Context, id string) (*OrganizationRecord, error)
+
 	// Trust level queries for auto-merge
 	GetSourceTrustLevel(ctx context.Context, eventID string) (int, error)
 	GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error)
@@ -296,6 +303,11 @@ type Repository interface {
 	FindSimilarOrganizations(ctx context.Context, name string, locality string, region string, threshold float64) ([]SimilarOrgCandidate, error)
 	MergePlaces(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
 	MergeOrganizations(ctx context.Context, duplicateID string, primaryID string) (*MergeResult, error)
+
+	// CreatePlaceTombstone writes a place_tombstones row (used by the merge path).
+	CreatePlaceTombstone(ctx context.Context, params PlaceTombstoneCreateParams) error
+	// CreateOrganizationTombstone writes an organization_tombstones row (merge path).
+	CreateOrganizationTombstone(ctx context.Context, params OrganizationTombstoneCreateParams) error
 
 	// Occurrence overlap check: returns true if [startTime, endTime) overlaps any
 	// existing occurrence on the event identified by eventID (UUID).
@@ -468,6 +480,27 @@ type OrganizationCreateParams struct {
 type OrganizationRecord struct {
 	ID   string
 	ULID string
+	Name string // canonical stored name; populated by GetOrganizationByID for tombstones
+}
+
+// PlaceTombstoneCreateParams contains data for creating a place tombstone.
+type PlaceTombstoneCreateParams struct {
+	PlaceID      string
+	PlaceURI     string
+	DeletedAt    time.Time
+	Reason       string
+	SupersededBy *string
+	Payload      []byte
+}
+
+// OrganizationTombstoneCreateParams contains data for creating an organization tombstone.
+type OrganizationTombstoneCreateParams struct {
+	OrgID        string
+	OrgURI       string
+	DeletedAt    time.Time
+	Reason       string
+	SupersededBy *string
+	Payload      []byte
 }
 
 // ReviewQueueEntry represents an event in the review queue

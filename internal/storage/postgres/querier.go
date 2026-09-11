@@ -247,6 +247,11 @@ type Querier interface {
 	// Developer API key operations
 	ListDeveloperAPIKeys(ctx context.Context, developerID pgtype.UUID) ([]ApiKey, error)
 	ListDevelopers(ctx context.Context, arg ListDevelopersParams) ([]Developer, error)
+	// Load all of an entity's identifier observations joined with authority
+	// trust/priority. FOR UPDATE OF ei serializes the entity's identifier rows against
+	// concurrent elections. Used by the transactional merge path to reassign, dedupe,
+	// and re-elect one primary per authority.
+	ListEntityIdentifiersForUpdate(ctx context.Context, arg ListEntityIdentifiersForUpdateParams) ([]ListEntityIdentifiersForUpdateRow, error)
 	// SQLc queries for change feeds.
 	ListEventChanges(ctx context.Context, arg ListEventChangesParams) ([]ListEventChangesRow, error)
 	ListEventTombstones(ctx context.Context, arg ListEventTombstonesParams) ([]EventTombstone, error)

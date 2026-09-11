@@ -47,6 +47,22 @@ func (s stubEventsRepo) GetTombstoneByEventULID(_ context.Context, ulid string) 
 	return s.tombstoneFn(ulid)
 }
 
+func (s stubEventsRepo) GetPlaceByID(_ context.Context, _ string) (*events.PlaceRecord, error) {
+	return nil, events.ErrNotFound
+}
+
+func (s stubEventsRepo) GetOrganizationByID(_ context.Context, _ string) (*events.OrganizationRecord, error) {
+	return nil, events.ErrNotFound
+}
+
+func (s stubEventsRepo) CreatePlaceTombstone(_ context.Context, _ events.PlaceTombstoneCreateParams) error {
+	return nil
+}
+
+func (s stubEventsRepo) CreateOrganizationTombstone(_ context.Context, _ events.OrganizationTombstoneCreateParams) error {
+	return nil
+}
+
 func (s stubEventsRepo) Create(_ context.Context, _ events.EventCreateParams) (*events.Event, error) {
 	return nil, errors.New("not implemented")
 }

@@ -49,6 +49,10 @@ type MockRepository struct {
 	mergePlacesDupID           string
 	mergePlacesPriID           string
 	getOrCreateSourceCallCount int
+	placeTombstoneCreated      bool
+	placeTombstoneParams       PlaceTombstoneCreateParams
+	orgTombstoneCreated        bool
+	orgTombstoneParams         OrganizationTombstoneCreateParams
 
 	// Behavior controls
 	shouldFailCreate                 bool
@@ -339,6 +343,48 @@ func (m *MockRepository) GetPlaceByULID(ctx context.Context, ulid string) (*Plac
 		return place, nil
 	}
 	return nil, ErrNotFound
+}
+
+func (m *MockRepository) GetPlaceByID(ctx context.Context, id string) (*PlaceRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, place := range m.places {
+		if place != nil && place.ID == id {
+			return place, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) GetOrganizationByID(ctx context.Context, id string) (*OrganizationRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, org := range m.organizations {
+		if org != nil && org.ID == id {
+			return org, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
+func (m *MockRepository) CreatePlaceTombstone(ctx context.Context, params PlaceTombstoneCreateParams) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.placeTombstoneCreated = true
+	m.placeTombstoneParams = params
+	return nil
+}
+
+func (m *MockRepository) CreateOrganizationTombstone(ctx context.Context, params OrganizationTombstoneCreateParams) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.orgTombstoneCreated = true
+	m.orgTombstoneParams = params
+	return nil
 }
 
 func (m *MockRepository) UpsertOrganization(ctx context.Context, params OrganizationCreateParams) (*OrganizationRecord, error) {

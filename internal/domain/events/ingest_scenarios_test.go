@@ -1673,6 +1673,57 @@ func TestScenario_S7_PlaceFuzzyDedup(t *testing.T) {
 	})
 }
 
+// TestScenario_S7_IngestAutoMergeWritesTombstone verifies the ingest auto-merge path
+// (createEventCore → mergePlacesTombstoned) writes a tombstone for the newly-created
+// duplicate place, so auto-merges are reversible + tombstoned like admin merges.
+func TestScenario_S7_IngestAutoMergeWritesTombstone(t *testing.T) {
+	repo := NewMockRepository()
+	existingPlaceID := "place-id-existing"
+	existingPlaceULID, _ := ids.NewULID()
+
+	// Seed the existing (primary) place so GetPlaceByID resolves it for the tombstone.
+	repo.SeedPlaceByULID(existingPlaceULID, existingPlaceID)
+	repo.SetSimilarPlaces([]SimilarPlaceCandidate{
+		{
+			ID:         existingPlaceID,
+			ULID:       existingPlaceULID,
+			Name:       "Rex Hotel Jazz Bar",
+			Similarity: 0.96,
+		},
+	})
+
+	service := newTestService(repo)
+
+	input := completeEventInput("Jazz Night")
+	input.Location = &PlaceInput{
+		Name:            "The Rex Jazz & Blues Bar",
+		AddressLocality: "Toronto",
+		AddressRegion:   "ON",
+	}
+
+	result, err := service.Ingest(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Ingest() unexpected error = %v", err)
+	}
+	_ = result
+
+	if !repo.mergePlacesCalled {
+		t.Fatal("Expected MergePlaces to be called for auto-merge")
+	}
+	if !repo.placeTombstoneCreated {
+		t.Fatal("Expected CreatePlaceTombstone to be called for the auto-merged duplicate")
+	}
+	if repo.placeTombstoneParams.PlaceURI == "" {
+		t.Error("Expected non-empty place_uri on the auto-merge tombstone")
+	}
+	if repo.placeTombstoneParams.Payload == nil {
+		t.Error("Expected non-nil payload on the auto-merge tombstone")
+	}
+	if repo.placeTombstoneParams.SupersededBy == nil {
+		t.Error("Expected SupersededBy (survivor URI) set on the auto-merge tombstone")
+	}
+}
+
 // --- S8: Org Fuzzy Dedup Scenarios ---
 
 func TestScenario_S8_OrgFuzzyDedup(t *testing.T) {
