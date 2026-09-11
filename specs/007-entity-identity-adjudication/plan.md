@@ -34,7 +34,7 @@ server — the interface is the seam.
 | Capability | Status | Code / location |
 |---|---|---|
 | Event near-dup + place/org fuzzy dedup | **Wired** | `internal/domain/events/create_event_core.go:432-533` (place), `:592-660` (org), `internal/domain/events/dedup.go`, `internal/config/config.go:213-238` |
-| Event/place/org merge | **Wired, incomplete** | `MergePlaces` `internal/storage/postgres/events_repository.go:1717`, `MergeOrganizations` `:1839`, `MergeEvents` `:2125`, `Consolidate` `internal/domain/events/admin_service.go:1562` |
+| Event/place/org merge | **Wired, incomplete** | `MergePlaces` `internal/storage/postgres/events_repository.go:1754`, `MergeOrganizations` `:1907`, `MergeEvents` `:2125`, `Consolidate` `internal/domain/events/admin_service.go:1562` |
 | Review queue (events) | **Wired** | `migrations/000025_create_event_review_queue.up.sql`, `internal/api/handlers/admin_review_queue.go` |
 | Not-duplicate suppression (events) | **Wired** | `migrations/000027_event_not_duplicates.up.sql`, writer `admin_review_queue.go:1029,1045`, reader `create_event_core.go:906` |
 | External identifiers (`entity_identifiers`) | **Write-only** | writers `internal/kg/reconciliation.go:332`, `internal/jobs/workers.go:422`; no live/domain reader (generated SQLc methods exist but are uncalled); only CLI raw SQL reads, `cmd/server/cmd/reconcile.go:307,443,571` |
@@ -286,10 +286,11 @@ type DecisionStore interface {
   one primary per `(entity_type, entity_id, authority_code)` by the D2 rank, then create
   `CREATE UNIQUE INDEX ... ON entity_identifiers(entity_type, entity_id, authority_code)
   WHERE is_primary`.
-- New `identity_review_queue` (**Phase 2**; entity-type-agnostic): subject ref, counterpart ref,
-  `evidence JSONB`, `score`, `status` (`pending|linked|merged|rejected|dismissed|escalated`),
-  `decided_by`, `decided_at`, `rationale`, `citations JSONB`, `reversible`, `undo_ref`.
-  Partial index on `status='pending'`; index on `(subject_type, subject_id)`.
+- New `identity_review_queue` (**Phase 2**; entity-type-agnostic): subject/counterpart refs
+  (canonical `subject_id < counterpart_id`), `evidence JSONB`, `score`, `status`
+  (`pending|merged|escalated`), `decided_by`, `decided_at`, `rationale`, `citations JSONB`,
+  `decision_id` (resolving decision). Partial unique index on the pair `WHERE status='pending'`;
+  index on `(entity_type, subject_id)`.
 - New `identity_decisions` (append-only) backing `DecisionRecord`; **never pruned by default**
   (tiny rows; `IDENTITY_DECISION_RETENTION_DAYS=0` = forever), covered by the deploy DB
   snapshot. Node-local, not federated.
@@ -315,11 +316,12 @@ Follow `docs/integration/tg-review.md` conventions. Endpoints (must be added to
 | GET | `/api/v1/admin/identity/queue` | 2 | List pending identity review items |
 | GET | `/api/v1/admin/identity/queue/{id}` | 2 | Full review item + evidence + prior decisions |
 | POST | `/api/v1/admin/identity/queue/{id}/merge` | 2 | Merge duplicate → primary (review-gated, reversible) |
-| POST | `/api/v1/admin/identity/queue/{id}/undo` | 2 | Reverse a prior reversible action |
+| POST | `/api/v1/admin/identity/decisions/{id}/undo` | 2 | Reverse a prior reversible merge decision |
 | GET | `/api/v1/admin/identity/policy` | 2 | Read-only enforced limits for agent alignment |
 
 CLI mirrors `server review`: Phase 1 `server identity check|conflicts|link|reject|tidy`;
-Phase 2 adds `queue|merge|undo` and batch; `--dry-run` on `tidy` (and merge in Phase 2).
+Phase 2 adds `queue|merge|undo`; batch actions deferred to Phase 3; `--dry-run` on `tidy`
+(and merge in Phase 2).
 
 ### Configuration (new fields in `internal/config/config.go`)
 
@@ -328,6 +330,9 @@ Phase 2 adds `queue|merge|undo` and batch; `--dry-run` on `tidy` (and merge in P
 | `IDENTITY_TRIGRAM_REVIEW_THRESHOLD` | `0.6` | Flag identity candidates for review |
 | `IDENTITY_TRIGRAM_LINK_THRESHOLD` | `0.95` | Auto-link (additive) threshold |
 | `IDENTITY_MERGE_MAX_FAN_OUT` | `25` | Max events on either entity before merge always escalates |
+| `IDENTITY_MERGE_MIN_SCORE` | `0.90` | Min server-computed `ReviewItem.Score` to merge |
+| `IDENTITY_REQUIRE_CITATIONS` | `true` | Require ≥1 citation for non-escalate actions |
+| `IDENTITY_QUEUE_REFRESH_MINUTES` | `60` | Periodic identity-queue generation interval |
 | `IDENTITY_CANDIDATE_MAX` | `5` | Max candidates surfaced per subject (Phase 2/3) |
 | `IDENTITY_CONFLICT_LIMIT_MAX` | `200` | Max `limit` accepted by the conflicts/decisions read endpoints (Phase 1) |
 | `IDENTITY_OBSERVATION_TTL_DAYS` | `180` | Re-verify staleness for external identifiers |
@@ -358,13 +363,16 @@ policy validator yet.
 ### Phase 2 — Agent adjudication loop
 
 **Delivers:** `identity_review_queue` + REST/CLI actions `merge`/`undo` (link/reject land in
-Phase 1); server-side policy validator (allowed set, citation requirement, red-lines, fan-out
-caps); a **read-only policy endpoint** (`GET /api/v1/admin/identity/policy`) exposing the
-enforced limits so agents/skills can align — *enforcement stays in config/code* (Q3); agent
-skill doc (`docs/integration/tg-identity.md` + a `skills/togather-identity` playbook).
+Phase 1); an **exported tx-scoped merge surface** (`MergeEntitiesTx`) returning a **reversal
+pre-image** so merges compose into the caller's transaction and are undoable; server-side policy
+validator (allowed set, citation requirement, score threshold, red-lines, fan-out caps); a
+**read-only policy endpoint** (`GET /api/v1/admin/identity/policy`) exposing the enforced limits
+so agents/skills can align — *enforcement stays in config/code* (Q3); agent skill doc
+(`docs/integration/tg-identity.md` + a `skills/togather-identity` playbook). Batch actions are
+deferred to Phase 3.
 
 **Undo model (Q5):** undo is a **new append-only decision** referencing the undone decision
-(`cancels`); history is never mutated. It is a reverse action, or — for a multi-step change
+(`undo_ref`); history is never mutated. It is a reverse action, or — for a multi-step change
 such as merge — a transaction over a series of reverse actions (restore the duplicate row,
 reassign its identifiers/events from recorded reversal material). The merge decision stores
 that material in its `metadata` (moved identifier ids, moved event/occurrence ULIDs, prior
@@ -375,7 +383,7 @@ field values). Exposed on both admin API and CLI.
 record; an invalid/unvalidated action is refused and converted to escalation; merge is
 reversible via an undo decision; `GET .../identity/policy` matches the enforced config.
 **Interface contracts:** action endpoints + policy endpoint, `ActionValidator.Validate`,
-`Executor.Merge/Undo`.
+`QueueStore`, `Executor.{PreviewMerge,Merge,Undo}`, `MergeEntitiesTx`, `ReversalMaterial`.
 
 ### Phase 3 — External KG integration + sameAs emission
 
