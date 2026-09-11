@@ -1,0 +1,12 @@
+Entity: place 01ARZ3NDEKTSV4RRFFQ69G5FAV
+
+Primary:
+  artsdata -> https://kg.artsdata.ca/resource/K11-24
+
+Identifiers (1):
+AUTHORITY  URI                                     METHOD  CONF  PRIMARY  SOURCE  OBSERVED AT
+artsdata   https://kg.artsdata.ca/resource/K11-24  manual  1.00  yes      manual  2026-09-01T12:00:00Z
+
+Decisions (1):
+ID                              ACTION  CREATED AT            ACTOR
+idn-01ARZ3NDEKTSV4RRFFQ69G5FAV  link    2026-09-01T12:00:00Z  admin
