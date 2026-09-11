@@ -291,7 +291,9 @@ type DecisionStore interface {
   `evidence JSONB`, `score`, `status` (`pending|linked|merged|rejected|dismissed|escalated`),
   `decided_by`, `decided_at`, `rationale`, `citations JSONB`, `reversible`, `undo_ref`.
   Partial index on `status='pending'`; index on `(subject_type, subject_id)`.
-- New `identity_decisions` (append-only) backing `DecisionRecord`.
+- New `identity_decisions` (append-only) backing `DecisionRecord`; **never pruned by default**
+  (tiny rows; `IDENTITY_DECISION_RETENTION_DAYS=0` = forever), covered by the deploy DB
+  snapshot. Node-local, not federated.
 - New `identity_not_duplicates` generalizing `event_not_duplicates`, but **signal-scoped**
   (`evidence_fingerprint`) and linked to the deciding row (`decision_id`); upserted on
   re-decision. Retained indefinitely and re-opened only when evidence changes. (Events use
@@ -315,6 +317,7 @@ Follow `docs/integration/tg-review.md` conventions. Endpoints (must be added to
 | GET | `/api/v1/admin/identity/queue/{id}` | 2 | Full review item + evidence + prior decisions |
 | POST | `/api/v1/admin/identity/queue/{id}/merge` | 2 | Merge duplicate → primary (review-gated, reversible) |
 | POST | `/api/v1/admin/identity/queue/{id}/undo` | 2 | Reverse a prior reversible action |
+| GET | `/api/v1/admin/identity/policy` | 2 | Read-only enforced limits for agent alignment |
 
 CLI mirrors `server review`: Phase 1 `server identity check|conflicts|link|reject|tidy`;
 Phase 2 adds `queue|merge|undo` and batch; `--dry-run` on `tidy` (and merge in Phase 2).
@@ -329,6 +332,7 @@ Phase 2 adds `queue|merge|undo` and batch; `--dry-run` on `tidy` (and merge in P
 | `IDENTITY_CANDIDATE_MAX` | `5` | Max candidates surfaced per subject (Phase 2/3) |
 | `IDENTITY_CONFLICT_LIMIT_MAX` | `200` | Max `limit` accepted by the conflicts/decisions read endpoints (Phase 1) |
 | `IDENTITY_OBSERVATION_TTL_DAYS` | `180` | Re-verify staleness for external identifiers |
+| `IDENTITY_DECISION_RETENTION_DAYS` | `0` | Decision retention; `0` = never prune (Q7) |
 
 ---
 
@@ -356,13 +360,23 @@ policy validator yet.
 
 **Delivers:** `identity_review_queue` + REST/CLI actions `merge`/`undo` (link/reject land in
 Phase 1); server-side policy validator (allowed set, citation requirement, red-lines, fan-out
-caps); agent skill doc (`docs/integration/tg-identity.md` + a `skills/togather-identity` playbook).
+caps); a **read-only policy endpoint** (`GET /api/v1/admin/identity/policy`) exposing the
+enforced limits so agents/skills can align — *enforcement stays in config/code* (Q3); agent
+skill doc (`docs/integration/tg-identity.md` + a `skills/togather-identity` playbook).
+
+**Undo model (Q5):** undo is a **new append-only decision** referencing the undone decision
+(`cancels`); history is never mutated. It is a reverse action, or — for a multi-step change
+such as merge — a transaction over a series of reverse actions (restore the duplicate row,
+reassign its identifiers/events from recorded reversal material). The merge decision stores
+that material in its `metadata` (moved identifier ids, moved event/occurrence ULIDs, prior
+field values). Exposed on both admin API and CLI.
 
 **Entry:** Phase 1 delivered.
 **Exit:** an external agent (scripted in test) can fetch queue → act → observe decision
 record; an invalid/unvalidated action is refused and converted to escalation; merge is
-reversible via `undo_ref`.
-**Interface contracts:** action endpoints, `ActionValidator.Validate`, `Executor.Merge/Undo`.
+reversible via an undo decision; `GET .../identity/policy` matches the enforced config.
+**Interface contracts:** action endpoints + policy endpoint, `ActionValidator.Validate`,
+`Executor.Merge/Undo`.
 
 ### Phase 3 — External KG integration + sameAs emission
 
@@ -379,6 +393,24 @@ cannot trigger an unreviewed merge.
 (reuse the phase-1 decision records); metrics.
 **Entry:** Phases 1–3 delivered and stable.
 **Exit:** defined per this plan when Phase 3 completes.
+
+---
+
+## Candidate Generation Evolution (Q6 gates)
+
+v1 uses exact external-ID join + pg_trgm. Vector/semantic candidate generation is **not**
+adopted until **all** of these gates hold, and is **opt-in per node, review-signal-only,
+never auto-merge**:
+
+1. **Cheap wins exhausted** — better blocking keys, higher exact-ID coverage, trigram tuning.
+2. **Measured recall gap** — a sustained audit shows true duplicates missed by ID+trigram above
+   an agreed threshold (e.g. >5–10%).
+3. **Scale** — corpus large enough that O(n) blocking is measurably slow (e.g. >100k
+   places/orgs), or the recall gap holds regardless of scale.
+4. **Node economics** — embedding compute/storage budget acceptable for a volunteer-run node.
+5. **Safety** — a golden-pairs evaluation shows precision ≥ threshold.
+
+Not before Phase 3. Vectors for decision-precedent search (Q7) follow the same gates.
 
 ---
 
@@ -428,10 +460,15 @@ routes. No identity action is exposed on the public/MCP surface.
 
 - ~~Q1~~ **Resolved (2026-09-10): v1 entity types = places + organizations only.**
 - ~~Q2~~ **Resolved (2026-09-10): the merge-orphaning fix is part of Phase 1.**
-- Q3 — Threshold/red-line governance: config only, or also agent-visible rules?
-- Q4 — Review surface: confirm dedicated `identity_review_queue` over generalizing
-  `event_review_queue`.
-- Q5 — Undo exposure: CLI, admin API, or both (and retention of undo material).
-- Q6 — Entry criteria for admitting vector candidate generation.
-- Q7 — Decision-record storage/lifecycle/retention and replay exposure.
+- ~~Q3~~ **Resolved (2026-09-10): config is the source of truth; enforcement is server-side
+  (code/config). A read-only `GET .../identity/policy` exposes limits to agents for alignment
+  only. No agent-editable rules in Phase 1.**
+- ~~Q4~~ **Resolved (2026-09-10): dedicated `identity_review_queue`.**
+- ~~Q5~~ **Resolved (2026-09-10): undo is a new append-only decision referencing the undone
+  one; a reverse action, or a transaction over reverse actions for multi-step changes; merge
+  records reversal material; exposed on API + CLI; history never mutated.**
+- ~~Q6~~ **Resolved (2026-09-10): vector candidate generation gated (see Candidate Generation
+  Evolution); opt-in, review-signal-only, not before Phase 3.**
+- ~~Q7~~ **Resolved (2026-09-10): `identity_decisions` is durable, node-local, never pruned by
+  default (`IDENTITY_DECISION_RETENTION_DAYS=0`); replay via the feed + per-entity history.**
 - Q8 — MCP public/admin split (deferred, separate problem).
