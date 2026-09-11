@@ -165,8 +165,8 @@ LIMIT sqlc.arg('limit');
 -- (404) from one that merely has no identifiers yet.
 SELECT EXISTS (
     SELECT 1 FROM places p
-    WHERE p.ulid = sqlc.arg('entity_id') AND p.deleted_at IS NULL AND sqlc.arg('entity_type') = 'place'
+    WHERE p.ulid = sqlc.arg('entity_id') AND p.deleted_at IS NULL AND sqlc.arg('entity_type')::text = 'place'
     UNION ALL
     SELECT 1 FROM organizations o
-    WHERE o.ulid = sqlc.arg('entity_id') AND o.deleted_at IS NULL AND sqlc.arg('entity_type') = 'organization'
+    WHERE o.ulid = sqlc.arg('entity_id') AND o.deleted_at IS NULL AND sqlc.arg('entity_type')::text = 'organization'
 );

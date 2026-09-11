@@ -80,6 +80,7 @@ func (f failingNotDuplicateStore) UpsertNotDuplicateTx(_ context.Context, _ *pos
 func TestLinkIdentifier_UpsertAndElect(t *testing.T) {
 	exec, pool := newTestExecutor(t)
 	ctx := context.Background()
+	seedPlace(t, pool, testPlaceA)
 
 	ref := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
 	rec, err := exec.LinkIdentifier(ctx, ref, IdentifierObservation{
@@ -123,6 +124,7 @@ func TestLinkIdentifier_UpsertAndElect(t *testing.T) {
 func TestLinkIdentifier_ElectsPrimary(t *testing.T) {
 	exec, pool := newTestExecutor(t)
 	ctx := context.Background()
+	seedPlace(t, pool, testPlaceA)
 
 	ref := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
 
@@ -200,6 +202,8 @@ func TestLinkIdentifier_UnknownAuthority(t *testing.T) {
 func TestReject_RecordsNotDuplicate(t *testing.T) {
 	exec, pool := newTestExecutor(t)
 	ctx := context.Background()
+	seedPlace(t, pool, testPlaceA)
+	seedPlace(t, pool, testPlaceB)
 
 	// Both entities assert the same artsdata identifier (a shared signal).
 	a := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
@@ -243,6 +247,8 @@ func TestReject_RecordsNotDuplicate(t *testing.T) {
 func TestReject_ReopensOnEvidenceChange(t *testing.T) {
 	exec, pool := newTestExecutor(t)
 	ctx := context.Background()
+	seedPlace(t, pool, testPlaceA)
+	seedPlace(t, pool, testPlaceB)
 
 	a := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
 	b := IdentityRef{Type: EntityTypePlace, ULID: testPlaceB}
@@ -312,6 +318,7 @@ func TestReject_StructuralErrors(t *testing.T) {
 // the election performed earlier in the same transaction.
 func TestLinkIdentifier_AtomicRollback(t *testing.T) {
 	pool := setupIdentity(t)
+	seedPlace(t, pool, testPlaceA)
 	store := NewStore(pool)
 	exec := NewExecutor(store, store, failingDecisionStore{err: errors.New("decision append failed")}, NewNotDuplicateStore(pool))
 
@@ -343,6 +350,8 @@ func TestLinkIdentifier_InvalidEntityType(t *testing.T) {
 // decision appended earlier in the same transaction.
 func TestReject_AtomicRollback(t *testing.T) {
 	pool := setupIdentity(t)
+	seedPlace(t, pool, testPlaceA)
+	seedPlace(t, pool, testPlaceB)
 	store := NewStore(pool)
 	exec := NewExecutor(store, store, NewDecisionStore(pool), failingNotDuplicateStore{err: errors.New("not-duplicate upsert failed")})
 
@@ -362,6 +371,8 @@ func TestReject_AtomicRollback(t *testing.T) {
 func TestNotDuplicateStore_GetNotDuplicate(t *testing.T) {
 	exec, pool := newTestExecutor(t)
 	ctx := context.Background()
+	seedPlace(t, pool, testPlaceA)
+	seedPlace(t, pool, testPlaceB)
 	nds := NewNotDuplicateStore(pool)
 
 	a := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
@@ -398,4 +409,34 @@ func getNotDuplicateFingerprint(t *testing.T, pool *pgxpool.Pool, entityType, id
 		`SELECT evidence_fingerprint FROM identity_not_duplicates WHERE entity_type=$1 AND id_a=$2 AND id_b=$3`,
 		entityType, idA, idB).Scan(&fp))
 	return fp
+}
+
+// TestLinkIdentifier_AbsentEntity verifies that linking an identifier to a
+// non-existent entity is a 404-class error and writes nothing (no orphan row).
+func TestLinkIdentifier_AbsentEntity(t *testing.T) {
+	exec, pool := newTestExecutor(t)
+	ctx := context.Background()
+
+	ref := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
+	_, err := exec.LinkIdentifier(ctx, ref, IdentifierObservation{
+		Authority: "artsdata", URI: artsdataURI, Method: "manual", Confidence: 1.0, Source: "manual",
+	}, "agent-test")
+	require.ErrorIs(t, err, ErrEntityNotFound)
+	require.Equal(t, 0, countDecisions(t, pool))
+	require.Equal(t, 0, countIdentifiers(t, pool, string(ref.Type), ref.ULID))
+}
+
+// TestReject_AbsentCounterpart verifies that rejecting a pair where the
+// counterpart does not exist is a 404-class error and writes nothing.
+func TestReject_AbsentCounterpart(t *testing.T) {
+	exec, pool := newTestExecutor(t)
+	ctx := context.Background()
+	seedPlace(t, pool, testPlaceA)
+
+	a := IdentityRef{Type: EntityTypePlace, ULID: testPlaceA}
+	b := IdentityRef{Type: EntityTypePlace, ULID: testPlaceB}
+	_, err := exec.Reject(ctx, a, b, "agent-test", "distinct")
+	require.ErrorIs(t, err, ErrEntityNotFound)
+	require.Equal(t, 0, countDecisions(t, pool))
+	require.Equal(t, 0, countRows(t, pool, `SELECT count(*) FROM identity_not_duplicates`))
 }

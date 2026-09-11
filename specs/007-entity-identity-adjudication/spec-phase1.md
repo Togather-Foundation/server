@@ -404,7 +404,9 @@ Phase 1 allow-list (`manual`) and otherwise normalised to `manual` — an agent 
   "reason":"different address/operator" }
 ```
 The server computes the **evidence fingerprint** from current observations; it is not
-client-supplied.
+client-supplied. The `reject` decision is canonicalized to the smaller ULID
+(`entity_id = min(a,b)`, `counterpart_id = max(a,b)`), so a per-entity `View`
+lists the decision only on the `min(a,b)` side.
 
 **CLI** (mirrors `server review`; STS exchange via `--key`/`--server`):
 ```

@@ -27,19 +27,23 @@ type stubIdentityService struct {
 	viewErr      error
 	conflicts    identity.ConflictsResponse
 	conflictsErr error
+	conflictsArg identity.ConflictsParams
 	decisions    identity.DecisionsResponse
 	decisionsErr error
+	decisionsArg identity.DecisionsParams
 }
 
 func (s *stubIdentityService) View(_ context.Context, _ identity.IdentityRef) (identity.IdentityView, error) {
 	return s.view, s.viewErr
 }
 
-func (s *stubIdentityService) Conflicts(_ context.Context, _ identity.ConflictsParams) (identity.ConflictsResponse, error) {
+func (s *stubIdentityService) Conflicts(_ context.Context, arg identity.ConflictsParams) (identity.ConflictsResponse, error) {
+	s.conflictsArg = arg
 	return s.conflicts, s.conflictsErr
 }
 
-func (s *stubIdentityService) Decisions(_ context.Context, _ identity.DecisionsParams) (identity.DecisionsResponse, error) {
+func (s *stubIdentityService) Decisions(_ context.Context, arg identity.DecisionsParams) (identity.DecisionsResponse, error) {
+	s.decisionsArg = arg
 	return s.decisions, s.decisionsErr
 }
 
@@ -224,6 +228,25 @@ func TestReject_400_BadULID(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestLinkIdentifier_404_AbsentEntity(t *testing.T) {
+	h := newTestIdentityHandler(&stubIdentityService{}, &stubIdentityWriter{linkErr: identity.ErrEntityNotFound})
+	body := `{"entity_type":"place","entity_id":"` + testULID + `","authority":"artsdata","uri":"https://kg.artsdata.ca/resource/K11-24"}`
+	w := postBody(t, h, "/api/v1/admin/identity/link", body, h.LinkIdentifier, func(r *http.Request) {
+		withAdminSubject(r, "test-admin")
+	})
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.Contains(t, w.Body.String(), "https://sel.events/problems/not-found")
+}
+
+func TestReject_404_AbsentCounterpart(t *testing.T) {
+	h := newTestIdentityHandler(&stubIdentityService{}, &stubIdentityWriter{rejectErr: identity.ErrEntityNotFound})
+	body := `{"entity_type":"place","entity_id":"` + testULID + `","counterpart_id":"` + testULID2 + `"}`
+	w := postBody(t, h, "/api/v1/admin/identity/reject", body, h.Reject, func(r *http.Request) {
+		withAdminSubject(r, "test-admin")
+	})
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
 // --- conflicts / decisions -------------------------------------------------
 
 func TestListConflicts_200(t *testing.T) {
@@ -250,6 +273,41 @@ func TestListConflicts_400_MissingType(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+func TestListConflicts_ForwardsParams(t *testing.T) {
+	svc := &stubIdentityService{}
+	h := newTestIdentityHandler(svc, &stubIdentityWriter{})
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/admin/identity/conflicts?type=place&limit=25&cursor=abc&include_suppressed=true", nil)
+	w := httptest.NewRecorder()
+	h.ListConflicts(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	require.Equal(t, identity.EntityTypePlace, svc.conflictsArg.Type)
+	require.Equal(t, 25, svc.conflictsArg.Limit)
+	require.Equal(t, "abc", svc.conflictsArg.Cursor)
+	require.True(t, svc.conflictsArg.IncludeSuppressed)
+}
+
+func TestListConflicts_400_BadLimit(t *testing.T) {
+	h := newTestIdentityHandler(&stubIdentityService{}, &stubIdentityWriter{})
+	for _, q := range []string{"limit=abc", "limit=0", "limit=201"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/identity/conflicts?type=place&"+q, nil)
+		w := httptest.NewRecorder()
+		h.ListConflicts(w, req)
+		require.Equal(t, http.StatusBadRequest, w.Code, "limit=%s must be rejected", q)
+	}
+}
+
+func TestListConflicts_400_InvalidCursor(t *testing.T) {
+	svc := &stubIdentityService{conflictsErr: identity.ErrInvalidCursor}
+	h := newTestIdentityHandler(svc, &stubIdentityWriter{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/identity/conflicts?type=place&cursor=bad", nil)
+	w := httptest.NewRecorder()
+	h.ListConflicts(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestListDecisions_200(t *testing.T) {
 	svc := &stubIdentityService{decisions: identity.DecisionsResponse{
 		Items: []identity.DecisionRecord{{ID: "idn-1"}},
@@ -266,10 +324,50 @@ func TestListDecisions_200(t *testing.T) {
 	require.Len(t, out.Items, 1)
 }
 
+func TestListDecisions_ForwardsParams(t *testing.T) {
+	svc := &stubIdentityService{}
+	h := newTestIdentityHandler(svc, &stubIdentityWriter{})
+
+	req := httptest.NewRequest(http.MethodGet,
+		"/api/v1/admin/identity/decisions?type=organization&since=2026-01-01T00:00:00Z&limit=10&cursor=xyz", nil)
+	w := httptest.NewRecorder()
+	h.ListDecisions(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	require.NotNil(t, svc.decisionsArg.Type)
+	require.Equal(t, identity.EntityTypeOrganization, *svc.decisionsArg.Type)
+	require.NotNil(t, svc.decisionsArg.Since)
+	require.Equal(t, 10, svc.decisionsArg.Limit)
+	require.Equal(t, "xyz", svc.decisionsArg.Cursor)
+}
+
 func TestListDecisions_400_BadSince(t *testing.T) {
 	h := newTestIdentityHandler(&stubIdentityService{}, &stubIdentityWriter{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/identity/decisions?since=not-a-date", nil)
 	w := httptest.NewRecorder()
 	h.ListDecisions(w, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestListDecisions_400_InvalidCursor(t *testing.T) {
+	svc := &stubIdentityService{decisionsErr: identity.ErrInvalidCursor}
+	h := newTestIdentityHandler(svc, &stubIdentityWriter{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/identity/decisions?cursor=bad", nil)
+	w := httptest.NewRecorder()
+	h.ListDecisions(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// TestIdentity_ContentType verifies the admin identity endpoints always emit
+// application/json (never JSON-LD), matching the OpenAPI contract.
+func TestIdentity_ContentType(t *testing.T) {
+	svc := &stubIdentityService{view: identity.IdentityView{}}
+	h := newTestIdentityHandler(svc, &stubIdentityWriter{})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/identity/place/"+testULID, nil)
+	req.Header.Set("Accept", "application/ld+json")
+	req.SetPathValue("type", "place")
+	req.SetPathValue("id", testULID)
+	w := httptest.NewRecorder()
+	h.GetIdentityView(w, req)
+	require.Equal(t, "application/json", w.Header().Get("Content-Type"))
 }

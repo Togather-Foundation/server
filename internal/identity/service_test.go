@@ -240,20 +240,17 @@ func TestConflicts_SuppressedOnChangedEvidence(t *testing.T) {
 // --- decisions feed --------------------------------------------------------
 
 func TestDecisions_FeedPassesSinceTypeAndCursor(t *testing.T) {
-	created := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
-	feed := &fakeDecisionStore{feed: []DecisionRecord{{
-		ID:         "idn-1",
-		CreatedAt:  created,
-		EntityType: EntityTypePlace,
-		EntityID:   "A",
-		Action:     ActionLink,
-		Reversible: true,
-	}}}
+	older := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	newer := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	feed := &fakeDecisionStore{feed: []DecisionRecord{
+		{ID: "idn-newer", CreatedAt: newer, EntityType: EntityTypePlace, EntityID: "A", Action: ActionLink},
+		{ID: "idn-older", CreatedAt: older, EntityType: EntityTypePlace, EntityID: "A", Action: ActionLink},
+	}}
 
 	svc := &service{q: &fakeReadQueries{}, ids: &fakeIdentifierStore{}, decisions: feed}
 
 	since := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	cursor := encodeDecisionsCursor(created, "idn-1")
+	cursor := encodeDecisionsCursor(newer, "idn-newer")
 	typ := EntityTypePlace
 
 	resp, err := svc.Decisions(context.Background(), DecisionsParams{
@@ -270,12 +267,15 @@ func TestDecisions_FeedPassesSinceTypeAndCursor(t *testing.T) {
 	require.True(t, feed.feedArgs.Since.Valid)
 	require.Equal(t, since, feed.feedArgs.Since.Time)
 	require.True(t, feed.feedArgs.CursorCreatedAt.Valid)
-	require.Equal(t, created, feed.feedArgs.CursorCreatedAt.Time)
-	require.Equal(t, "idn-1", feed.feedArgs.CursorID.String)
+	require.Equal(t, newer, feed.feedArgs.CursorCreatedAt.Time)
+	require.Equal(t, "idn-newer", feed.feedArgs.CursorID.String)
+	require.Equal(t, int32(2), feed.feedArgs.Limit, "must over-fetch limit+1")
 
-	// next_cursor round-trips the last row.
+	// Page returns one item; next_cursor encodes the last returned row.
+	require.Len(t, resp.Items, 1)
+	require.Equal(t, "idn-newer", resp.Items[0].ID)
 	require.NotNil(t, resp.NextCursor)
-	require.Equal(t, cursor, *resp.NextCursor)
+	require.Equal(t, encodeDecisionsCursor(newer, "idn-newer"), *resp.NextCursor)
 }
 
 // --- view ------------------------------------------------------------------

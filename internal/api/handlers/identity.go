@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -59,7 +60,7 @@ func (h *IdentityHandler) GetIdentityView(w http.ResponseWriter, r *http.Request
 		writeIdentityError(w, r, err, h.Env)
 		return
 	}
-	writeJSON(w, http.StatusOK, view, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, view, "application/json")
 }
 
 // ListConflicts handles GET /api/v1/admin/identity/conflicts.
@@ -76,9 +77,15 @@ func (h *IdentityHandler) ListConflicts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	limit, err := parseIdentityLimit(q, h.ConflictLimitMax)
+	if err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid limit", err, h.Env)
+		return
+	}
+
 	resp, err := h.Identity.Conflicts(r.Context(), identity.ConflictsParams{
 		Type:              typ,
-		Limit:             parseIdentityLimit(q, h.ConflictLimitMax),
+		Limit:             limit,
 		Cursor:            q.Get("cursor"),
 		IncludeSuppressed: parseIdentityBool(q, "include_suppressed"),
 	})
@@ -86,7 +93,7 @@ func (h *IdentityHandler) ListConflicts(w http.ResponseWriter, r *http.Request) 
 		writeIdentityError(w, r, err, h.Env)
 		return
 	}
-	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, resp, "application/json")
 }
 
 // ListDecisions handles GET /api/v1/admin/identity/decisions.
@@ -97,8 +104,13 @@ func (h *IdentityHandler) ListDecisions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	q := r.URL.Query()
+	limit, err := parseIdentityLimit(q, h.ConflictLimitMax)
+	if err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid limit", err, h.Env)
+		return
+	}
 	params := identity.DecisionsParams{
-		Limit:  parseIdentityLimit(q, h.ConflictLimitMax),
+		Limit:  limit,
 		Cursor: q.Get("cursor"),
 	}
 
@@ -125,7 +137,7 @@ func (h *IdentityHandler) ListDecisions(w http.ResponseWriter, r *http.Request) 
 		writeIdentityError(w, r, err, h.Env)
 		return
 	}
-	writeJSON(w, http.StatusOK, resp, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusOK, resp, "application/json")
 }
 
 // LinkIdentifier handles POST /api/v1/admin/identity/link.
@@ -197,7 +209,7 @@ func (h *IdentityHandler) LinkIdentifier(w http.ResponseWriter, r *http.Request)
 		writeIdentityError(w, r, err, h.Env)
 		return
 	}
-	writeJSON(w, http.StatusCreated, rec, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusCreated, rec, "application/json")
 }
 
 // Reject handles POST /api/v1/admin/identity/reject.
@@ -245,7 +257,7 @@ func (h *IdentityHandler) Reject(w http.ResponseWriter, r *http.Request) {
 		writeIdentityError(w, r, err, h.Env)
 		return
 	}
-	writeJSON(w, http.StatusCreated, rec, contentTypeFromRequest(r))
+	writeJSON(w, http.StatusCreated, rec, "application/json")
 }
 
 // actorFromRequest extracts the admin JWT subject. The actor is always taken
@@ -269,23 +281,25 @@ func parseIdentityType(s string) (identity.EntityType, bool) {
 	}
 }
 
-// parseIdentityLimit parses and clamps the `limit` query parameter.
-func parseIdentityLimit(q map[string][]string, max int) int {
+// parseIdentityLimit parses and validates the `limit` query parameter. A
+// missing value yields the default; a non-numeric or out-of-range value is a
+// structural (400) error.
+func parseIdentityLimit(q map[string][]string, max int) (int, error) {
 	v := ""
 	if vals, ok := q["limit"]; ok && len(vals) > 0 {
 		v = vals[0]
 	}
 	if v == "" {
-		return defaultIdentityLimit
+		return defaultIdentityLimit, nil
 	}
 	n, err := strconv.Atoi(v)
-	if err != nil || n < 1 {
-		return defaultIdentityLimit
+	if err != nil {
+		return 0, fmt.Errorf("limit must be an integer, got %q", v)
 	}
-	if n > max {
-		return max
+	if n < 1 || n > max {
+		return 0, fmt.Errorf("limit must be between 1 and %d, got %d", max, n)
 	}
-	return n
+	return n, nil
 }
 
 // parseIdentityBool parses a boolean query parameter (default false).

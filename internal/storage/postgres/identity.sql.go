@@ -40,16 +40,16 @@ func (q *Queries) DemotePrimaryAndSupersede(ctx context.Context, arg DemotePrima
 const entityExists = `-- name: EntityExists :one
 SELECT EXISTS (
     SELECT 1 FROM places p
-    WHERE p.ulid = $1 AND p.deleted_at IS NULL AND $2 = 'place'
+    WHERE p.ulid = $1 AND p.deleted_at IS NULL AND $2::text = 'place'
     UNION ALL
     SELECT 1 FROM organizations o
-    WHERE o.ulid = $1 AND o.deleted_at IS NULL AND $2 = 'organization'
+    WHERE o.ulid = $1 AND o.deleted_at IS NULL AND $2::text = 'organization'
 )
 `
 
 type EntityExistsParams struct {
-	EntityID   string      `json:"entity_id"`
-	EntityType interface{} `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+	EntityType string `json:"entity_type"`
 }
 
 // Reports whether a place or organization with the given ULID exists (and is

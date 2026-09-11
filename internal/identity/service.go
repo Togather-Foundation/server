@@ -190,74 +190,87 @@ func (s *service) Conflicts(ctx context.Context, arg ConflictsParams) (Conflicts
 		CursorUri:       textOrNull(cur.URI),
 		CursorIDA:       textOrNull(cur.IDA),
 		CursorIDB:       textOrNull(cur.IDB),
-		Limit:           int32(arg.Limit),
+		Limit:           int32(arg.Limit) + 1,
 	})
 	if err != nil {
 		return ConflictsResponse{}, fmt.Errorf("identity: list conflicts: %w", err)
 	}
 
+	// Over-fetch one row to detect a next page; the +1th row is never returned.
+	hasMore := len(rows) > arg.Limit
+	if hasMore {
+		rows = rows[:arg.Limit]
+	}
+
+	// Preload identifier observations for every entity referenced by a row that
+	// carries a stored evidence fingerprint (the only rows that need a current
+	// fingerprint), loading each entity exactly once to avoid N+1 loads.
+	memo := map[string][]IdentifierObservation{}
+	load := func(ref IdentityRef) ([]IdentifierObservation, error) {
+		key := string(ref.Type) + "|" + ref.ULID
+		if obs, ok := memo[key]; ok {
+			return obs, nil
+		}
+		obs, err := s.ids.GetEntityIdentifiers(ctx, ref)
+		if err != nil {
+			return nil, err
+		}
+		memo[key] = obs
+		return obs, nil
+	}
+
 	items := make([]ConflictItem, 0, len(rows))
 	for _, row := range rows {
-		item, suppressed, err := s.buildConflictItem(ctx, arg.Type, row)
+		item := ConflictItem{
+			Ref:       IdentityRef{Type: arg.Type, ULID: row.EntityIDA},
+			Candidate: IdentityRef{Type: arg.Type, ULID: row.EntityIDB},
+			Authority: row.AuthorityCode,
+			URI:       row.IdentifierUri,
+			Score:     row.Score,
+		}
+
+		// No suppression row → never suppressed.
+		if !row.EvidenceFingerprint.Valid || row.EvidenceFingerprint.String == "" {
+			items = append(items, item)
+			continue
+		}
+
+		obsA, err := load(IdentityRef{Type: arg.Type, ULID: row.EntityIDA})
 		if err != nil {
 			return ConflictsResponse{}, err
 		}
-		if suppressed && !arg.IncludeSuppressed {
+		obsB, err := load(IdentityRef{Type: arg.Type, ULID: row.EntityIDB})
+		if err != nil {
+			return ConflictsResponse{}, err
+		}
+
+		// Evidence changed → not suppressed.
+		if row.EvidenceFingerprint.String != Fingerprint(obsA, obsB) {
+			items = append(items, item)
 			continue
 		}
-		items = append(items, item)
+
+		item.Suppressed = true
+		if arg.IncludeSuppressed && row.DecisionID.Valid && row.DecisionID.String != "" {
+			rec, err := s.decisionByID(ctx, row.DecisionID.String)
+			if err != nil {
+				return ConflictsResponse{}, err
+			}
+			item.PriorDecision = &rec
+		}
+
+		if arg.IncludeSuppressed {
+			items = append(items, item)
+		}
 	}
 
 	resp := ConflictsResponse{Items: items}
-	if len(rows) == arg.Limit && len(rows) > 0 {
+	if hasMore && len(rows) > 0 {
 		last := rows[len(rows)-1]
 		next := encodeConflictsCursor(last.AuthorityCode, last.IdentifierUri, last.EntityIDA, last.EntityIDB)
 		resp.NextCursor = &next
 	}
 	return resp, nil
-}
-
-// buildConflictItem assembles one ConflictItem and reports whether the pair is
-// suppressed (stored fingerprint still matches the current shared signals).
-func (s *service) buildConflictItem(ctx context.Context, typ EntityType, row postgres.ListConflictsRow) (ConflictItem, bool, error) {
-	ref := IdentityRef{Type: typ, ULID: row.EntityIDA}
-	candidate := IdentityRef{Type: typ, ULID: row.EntityIDB}
-
-	item := ConflictItem{
-		Ref:       ref,
-		Candidate: candidate,
-		Authority: row.AuthorityCode,
-		URI:       row.IdentifierUri,
-		Score:     row.Score,
-	}
-
-	if !row.EvidenceFingerprint.Valid || row.EvidenceFingerprint.String == "" {
-		return item, false, nil
-	}
-
-	obsA, err := s.ids.GetEntityIdentifiers(ctx, ref)
-	if err != nil {
-		return ConflictItem{}, false, err
-	}
-	obsB, err := s.ids.GetEntityIdentifiers(ctx, candidate)
-	if err != nil {
-		return ConflictItem{}, false, err
-	}
-
-	suppressed := row.EvidenceFingerprint.String == Fingerprint(obsA, obsB)
-	if !suppressed {
-		return item, false, nil
-	}
-
-	item.Suppressed = true
-	if row.DecisionID.Valid && row.DecisionID.String != "" {
-		rec, err := s.decisionByID(ctx, row.DecisionID.String)
-		if err != nil {
-			return ConflictItem{}, false, err
-		}
-		item.PriorDecision = &rec
-	}
-	return item, true, nil
 }
 
 // decisionByID loads a single decision record by its id.
@@ -286,7 +299,7 @@ func (s *service) Decisions(ctx context.Context, arg DecisionsParams) (Decisions
 		}
 	}
 
-	params := postgres.ListIdentityDecisionsParams{Limit: int32(arg.Limit)}
+	params := postgres.ListIdentityDecisionsParams{Limit: int32(arg.Limit) + 1}
 	if arg.Type != nil {
 		params.EntityType = pgtype.Text{String: string(*arg.Type), Valid: true}
 	}
@@ -303,8 +316,11 @@ func (s *service) Decisions(ctx context.Context, arg DecisionsParams) (Decisions
 		return DecisionsResponse{}, err
 	}
 
+	// Over-fetch one row to detect a next page; the +1th row is never returned.
 	resp := DecisionsResponse{Items: recs}
-	if len(recs) == arg.Limit && len(recs) > 0 {
+	if len(recs) > arg.Limit {
+		recs = recs[:arg.Limit]
+		resp.Items = recs
 		last := recs[len(recs)-1]
 		next := encodeDecisionsCursor(last.CreatedAt, last.ID)
 		resp.NextCursor = &next
