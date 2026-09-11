@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"text/tabwriter"
 	"time"
@@ -65,7 +67,10 @@ Examples:
   server snapshot create --reason "manual-backup" --retention-days 30
 
   # Create and validate snapshot integrity
-  server snapshot create --reason "important" --validate`,
+  server snapshot create --reason "important" --validate
+
+  # Create snapshot with machine-readable JSON output
+  server snapshot create --reason "pre-deploy" --format json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return createSnapshot()
 	},
@@ -137,6 +142,7 @@ func init() {
 	snapshotCreateCmd.Flags().StringVar(&snapshotReason, "reason", "manual", "reason for snapshot (used in filename)")
 	snapshotCreateCmd.Flags().IntVar(&snapshotRetentionDays, "retention-days", 7, "retention period in days")
 	snapshotCreateCmd.Flags().BoolVar(&snapshotValidate, "validate", false, "validate snapshot integrity after creation")
+	snapshotCreateCmd.Flags().StringVar(&snapshotFormat, "format", "table", "output format (table, json)")
 
 	// List flags
 	snapshotListCmd.Flags().StringVar(&snapshotFormat, "format", "table", "output format (table, json)")
@@ -179,12 +185,16 @@ func createSnapshot() error {
 		deploymentID = "manual"
 	}
 
-	fmt.Printf("Creating database snapshot...\n")
-	fmt.Printf("  Database: %s\n", database)
-	fmt.Printf("  Reason: %s\n", snapshotReason)
-	fmt.Printf("  Retention: %d days\n", snapshotRetentionDays)
-	fmt.Printf("  Directory: %s\n", dir)
-	fmt.Println()
+	jsonMode := snapshotFormat == "json"
+
+	if !jsonMode {
+		fmt.Printf("Creating database snapshot...\n")
+		fmt.Printf("  Database: %s\n", database)
+		fmt.Printf("  Reason: %s\n", snapshotReason)
+		fmt.Printf("  Retention: %d days\n", snapshotRetentionDays)
+		fmt.Printf("  Directory: %s\n", dir)
+		fmt.Println()
+	}
 
 	// Create snapshot
 	ctx := context.Background()
@@ -206,6 +216,10 @@ func createSnapshot() error {
 		return fmt.Errorf("failed to create snapshot: %w", err)
 	}
 
+	if jsonMode {
+		return writeSnapshotCreatedJSON(os.Stdout, snap)
+	}
+
 	fmt.Printf("✓ Snapshot created successfully\n")
 	fmt.Printf("  Path: %s\n", snap.Path)
 	fmt.Printf("  Size: %dMB (compressed)\n", snap.SizeMB)
@@ -215,6 +229,38 @@ func createSnapshot() error {
 	}
 	fmt.Println()
 
+	return nil
+}
+
+// snapshotCreatedResult is the JSON object emitted by `snapshot create --format json`.
+// snapshot_path is the field deploy.sh reads to recover the snapshot location.
+type snapshotCreatedResult struct {
+	SnapshotPath string    `json:"snapshot_path"`
+	Name         string    `json:"name"`
+	SizeBytes    int64     `json:"size_bytes"`
+	CreatedAt    time.Time `json:"created_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	Reason       string    `json:"reason"`
+	GitCommit    string    `json:"git_commit,omitempty"`
+	DeploymentID string    `json:"deployment_id,omitempty"`
+}
+
+func writeSnapshotCreatedJSON(w io.Writer, snap *snapshot.Snapshot) error {
+	result := snapshotCreatedResult{
+		SnapshotPath: snap.Path,
+		Name:         snap.Metadata.SnapshotName,
+		SizeBytes:    snap.SizeBytes,
+		CreatedAt:    snap.Metadata.Timestamp,
+		ExpiresAt:    snap.Metadata.ExpiresAt,
+		Reason:       snap.Metadata.Reason,
+		GitCommit:    snap.Metadata.GitCommit,
+		DeploymentID: snap.Metadata.DeploymentID,
+	}
+
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(result); err != nil {
+		return fmt.Errorf("failed to encode snapshot JSON: %w", err)
+	}
 	return nil
 }
 

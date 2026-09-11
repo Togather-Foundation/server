@@ -2,9 +2,12 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Togather-Foundation/server/internal/snapshot"
 )
 
 func TestSnapshotCommandHelp(t *testing.T) {
@@ -53,6 +56,7 @@ func TestSnapshotCreateCommandHelp(t *testing.T) {
 		"--reason",
 		"--retention-days",
 		"--validate",
+		"--format",
 	}
 
 	for _, expected := range expectedStrings {
@@ -116,7 +120,7 @@ func TestSnapshotCleanupCommandHelp(t *testing.T) {
 
 func TestSnapshotCommandFlags(t *testing.T) {
 	// Test create flags
-	createFlags := []string{"reason", "retention-days", "validate"}
+	createFlags := []string{"reason", "retention-days", "validate", "format"}
 	for _, flag := range createFlags {
 		if f := snapshotCreateCmd.Flags().Lookup(flag); f == nil {
 			t.Errorf("expected flag %q to be defined on snapshot create command", flag)
@@ -145,6 +149,68 @@ func TestSnapshotCommandFlags(t *testing.T) {
 		if f := snapshotCmd.PersistentFlags().Lookup(flag); f == nil {
 			t.Errorf("expected persistent flag %q to be defined on snapshot command", flag)
 		}
+	}
+}
+
+func TestWriteSnapshotCreatedJSON(t *testing.T) {
+	now := time.Now().UTC()
+	snap := &snapshot.Snapshot{
+		Path:      "/var/lib/togather/db-snapshots/togather_testdb_20240101_120000_pre-deploy.sql.gz",
+		SizeBytes: 42 * 1024 * 1024,
+		SizeMB:    42,
+		Metadata: snapshot.Metadata{
+			SnapshotName:  "togather_testdb_20240101_120000_pre-deploy.sql.gz",
+			Database:      "testdb",
+			Timestamp:     now,
+			Reason:        "pre-deploy",
+			GitCommit:     "abc123def456",
+			DeploymentID:  "deploy-001",
+			RetentionDays: 7,
+			ExpiresAt:     now.Add(7 * 24 * time.Hour),
+		},
+	}
+
+	var buf bytes.Buffer
+	if err := writeSnapshotCreatedJSON(&buf, snap); err != nil {
+		t.Fatalf("writeSnapshotCreatedJSON() error: %v", err)
+	}
+
+	// The only output must be a single JSON object (no trailing progress text).
+	dec := json.NewDecoder(&buf)
+	var result map[string]any
+	if err := dec.Decode(&result); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, buf.String())
+	}
+
+	// snapshot_path is the field deploy.sh reads; it must be non-empty.
+	path, ok := result["snapshot_path"].(string)
+	if !ok || path == "" {
+		t.Fatalf("snapshot_path missing or empty in JSON: %v", result)
+	}
+	if path != snap.Path {
+		t.Errorf("snapshot_path = %q, want %q", path, snap.Path)
+	}
+
+	if _, ok := result["name"].(string); !ok {
+		t.Errorf("name missing from JSON: %v", result)
+	}
+	if _, ok := result["size_bytes"].(float64); !ok {
+		t.Errorf("size_bytes missing from JSON: %v", result)
+	}
+	if _, ok := result["created_at"].(string); !ok {
+		t.Errorf("created_at missing from JSON: %v", result)
+	}
+	if _, ok := result["expires_at"].(string); !ok {
+		t.Errorf("expires_at missing from JSON: %v", result)
+	}
+	if _, ok := result["reason"].(string); !ok {
+		t.Errorf("reason missing from JSON: %v", result)
+	}
+
+	// Ensure a second decode yields EOF (single JSON object, nothing trailing).
+	var extra any
+	if err := dec.Decode(&extra); err == nil {
+		t.Errorf("expected a single JSON object, but found trailing content: %v", extra)
 	}
 }
 
