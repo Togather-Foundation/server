@@ -15,6 +15,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/geocoding"
+	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/metrics"
@@ -276,14 +277,14 @@ type KGService interface {
 // compile-time assertion: *kg.ReconciliationService must satisfy KGService.
 var _ KGService = (*kg.ReconciliationService)(nil)
 
-// IdentifierUpserter handles upsert of entity identifiers for EnrichmentWorker.
+// IdentityRecorder records identifier observations via the atomic primary election.
 // Defined here by the consumer to allow mock injection in tests.
-type IdentifierUpserter interface {
-	UpsertEntityIdentifier(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error)
+type IdentityRecorder interface {
+	RecordObservation(ctx context.Context, ref identity.IdentityRef, obs identity.IdentifierObservation) (identity.IdentifierObservation, error)
 }
 
-// compile-time assertion: *postgres.Queries must satisfy IdentifierUpserter.
-var _ IdentifierUpserter = (*postgres.Queries)(nil)
+// compile-time assertion: *identity.Store must satisfy IdentityRecorder.
+var _ IdentityRecorder = (*identity.Store)(nil)
 
 // PlaceUpdater is the subset of places.Service used by EnrichmentWorker.
 // Defined here by the consumer to allow mock injection in tests.
@@ -309,7 +310,7 @@ type EnrichmentWorker struct {
 	river.WorkerDefaults[EnrichmentArgs]
 	Pool                  *pgxpool.Pool
 	ReconciliationService EntityDereferencer
-	IdentifierStore       IdentifierUpserter // optional: defaults to postgres.New(Pool) if nil
+	IdentifierStore       IdentityRecorder // optional: defaults to identity.NewStore(Pool) if nil
 	PlaceService          PlaceUpdater
 	OrgService            OrgUpdater
 	Logger                *slog.Logger
@@ -396,21 +397,11 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 	sameAsURIs := artsdata.ExtractSameAsURIs(entity)
 
 	// Resolve identifier store: prefer injected stub (for tests), fall back to pool.
-	var identifierStore IdentifierUpserter
+	var identifierStore IdentityRecorder
 	if w.IdentifierStore != nil {
 		identifierStore = w.IdentifierStore
 	} else {
-		identifierStore = postgres.New(w.Pool)
-	}
-
-	var confidence pgtype.Numeric
-	if err := confidence.Scan("1.000000"); err != nil {
-		return fmt.Errorf("build confidence value: %w", err)
-	}
-
-	metadataJSON, err := json.Marshal(map[string]interface{}{"source": "enrichment_sameas"})
-	if err != nil {
-		return fmt.Errorf("marshal sameAs metadata: %w", err)
+		identifierStore = identity.NewStore(w.Pool)
 	}
 
 	storedSameAs := 0
@@ -419,15 +410,15 @@ func (w EnrichmentWorker) Work(ctx context.Context, job *river.Job[EnrichmentArg
 		if authCode == "" {
 			continue // Unknown authority – skip.
 		}
-		_, err := identifierStore.UpsertEntityIdentifier(ctx, postgres.UpsertEntityIdentifierParams{
-			EntityType:           args.EntityType,
-			EntityID:             args.EntityID,
-			AuthorityCode:        authCode,
-			IdentifierUri:        uri,
-			Confidence:           confidence,
-			ReconciliationMethod: "enrichment_sameas",
-			IsCanonical:          false,
-			Metadata:             metadataJSON,
+		_, err := identifierStore.RecordObservation(ctx, identity.IdentityRef{
+			Type: identity.EntityType(args.EntityType),
+			ULID: args.EntityID,
+		}, identity.IdentifierObservation{
+			Authority:  authCode,
+			URI:        uri,
+			Method:     "enrichment_sameas",
+			Confidence: 1.0,
+			Source:     "enrichment_sameas",
 		})
 		if err != nil {
 			logger.Warn("failed to store sameAs identifier",

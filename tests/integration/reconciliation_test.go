@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
@@ -181,6 +182,7 @@ func TestReconciliationServiceDirectly(t *testing.T) {
 	service := kg.NewReconciliationService(
 		artsdataClient,
 		queries,
+		identity.NewStore(env.Pool),
 		slog.Default(),
 		30*24*time.Hour, // 30 days cache TTL
 		7*24*time.Hour,  // 7 days failure TTL
@@ -277,6 +279,7 @@ func TestReconciliationCacheHit(t *testing.T) {
 	service := kg.NewReconciliationService(
 		artsdataClient,
 		queries,
+		identity.NewStore(env.Pool),
 		slog.Default(),
 		30*24*time.Hour,
 		7*24*time.Hour,
@@ -346,6 +349,7 @@ func TestReconciliationNegativeCache(t *testing.T) {
 	service := kg.NewReconciliationService(
 		artsdataClient,
 		queries,
+		identity.NewStore(env.Pool),
 		slog.Default(),
 		30*24*time.Hour,
 		7*24*time.Hour,

@@ -3,6 +3,7 @@ package kg
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"regexp"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
@@ -55,16 +57,29 @@ var _ ArtsdataClient = (*artsdata.Client)(nil)
 type ReconciliationCacheStore interface {
 	GetReconciliationCache(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error)
 	UpsertReconciliationCache(ctx context.Context, arg postgres.UpsertReconciliationCacheParams) (postgres.ReconciliationCache, error)
-	UpsertEntityIdentifier(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error)
 }
 
 // compile-time assertion: *postgres.Queries must satisfy ReconciliationCacheStore.
 var _ ReconciliationCacheStore = (*postgres.Queries)(nil)
 
+// IdentityRecorder records identifier observations via the atomic primary election.
+// Defined by the consumer (idiomatic Go); *identity.Store satisfies it.
+type IdentityRecorder interface {
+	RecordObservation(ctx context.Context, ref identity.IdentityRef, obs identity.IdentifierObservation) (identity.IdentifierObservation, error)
+}
+
+// ErrIdentityRecorderNotConfigured is returned when a reconciliation runs without
+// an identity recorder injected.
+var ErrIdentityRecorderNotConfigured = errors.New("identity recorder not configured")
+
+// compile-time assertion: *identity.Store must satisfy IdentityRecorder.
+var _ IdentityRecorder = (*identity.Store)(nil)
+
 // ReconciliationService orchestrates entity reconciliation against knowledge graphs.
 type ReconciliationService struct {
 	artsdataClient ArtsdataClient
 	cache          ReconciliationCacheStore
+	identities     IdentityRecorder
 	logger         *slog.Logger
 	cacheTTL       time.Duration // positive cache TTL (default 30 days)
 	failureTTL     time.Duration // negative cache TTL (default 7 days)
@@ -74,6 +89,7 @@ type ReconciliationService struct {
 func NewReconciliationService(
 	artsdataClient ArtsdataClient,
 	cache ReconciliationCacheStore,
+	identities IdentityRecorder,
 	logger *slog.Logger,
 	cacheTTL time.Duration,
 	failureTTL time.Duration,
@@ -84,6 +100,7 @@ func NewReconciliationService(
 	return &ReconciliationService{
 		artsdataClient: artsdataClient,
 		cache:          cache,
+		identities:     identities,
 		logger:         logger,
 		cacheTTL:       cacheTTL,
 		failureTTL:     failureTTL,
@@ -307,39 +324,22 @@ func (s *ReconciliationService) ReconcileEntity(ctx context.Context, req Reconci
 	return matches, nil
 }
 
-// storeIdentifier stores an entity identifier in the database.
+// storeIdentifier records an identifier observation via the atomic primary election.
 func (s *ReconciliationService) storeIdentifier(ctx context.Context, entityID, entityType string, match *MatchResult) error {
-	// Convert confidence to pgtype.Numeric
-	confidenceStr := fmt.Sprintf("%.6f", match.Confidence)
-	var confidence pgtype.Numeric
-	if err := confidence.Scan(confidenceStr); err != nil {
-		return fmt.Errorf("convert confidence: %w", err)
+	if s.identities == nil {
+		return ErrIdentityRecorderNotConfigured
 	}
 
-	// Store metadata as JSON
-	metadata := map[string]interface{}{
-		"same_as": match.SameAsURIs,
-	}
-	metadataJSON, err := json.Marshal(metadata)
-	if err != nil {
-		return fmt.Errorf("marshal metadata: %w", err)
-	}
-
-	// Determine if this is the canonical identifier
-	// For now, use the highest confidence match as canonical
-	isCanonical := match.Method == "auto_high"
-
-	_, err = s.cache.UpsertEntityIdentifier(ctx, postgres.UpsertEntityIdentifierParams{
-		EntityType:           entityType,
-		EntityID:             entityID,
-		AuthorityCode:        match.AuthorityCode,
-		IdentifierUri:        match.IdentifierURI,
-		Confidence:           confidence,
-		ReconciliationMethod: match.Method,
-		IsCanonical:          isCanonical,
-		Metadata:             metadataJSON,
+	_, err := s.identities.RecordObservation(ctx, identity.IdentityRef{
+		Type: identity.EntityType(entityType),
+		ULID: entityID,
+	}, identity.IdentifierObservation{
+		Authority:  match.AuthorityCode,
+		URI:        match.IdentifierURI,
+		Method:     match.Method,
+		Confidence: match.Confidence,
+		Source:     "reconciliation",
 	})
-
 	return err
 }
 

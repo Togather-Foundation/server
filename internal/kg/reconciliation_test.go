@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/jackc/pgx/v5"
@@ -40,12 +41,10 @@ func (m *mockArtsdataClient) Dereference(ctx context.Context, uri string) (*arts
 
 // mockReconciliationCacheStore is a test double for ReconciliationCacheStore.
 type mockReconciliationCacheStore struct {
-	getFunc               func(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error)
-	upsertCacheFunc       func(ctx context.Context, arg postgres.UpsertReconciliationCacheParams) (postgres.ReconciliationCache, error)
-	upsertIdentifierFunc  func(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error)
-	getCalls              atomic.Int32
-	upsertCacheCalls      atomic.Int32
-	upsertIdentifierCalls atomic.Int32
+	getFunc          func(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error)
+	upsertCacheFunc  func(ctx context.Context, arg postgres.UpsertReconciliationCacheParams) (postgres.ReconciliationCache, error)
+	getCalls         atomic.Int32
+	upsertCacheCalls atomic.Int32
 }
 
 func (m *mockReconciliationCacheStore) GetReconciliationCache(ctx context.Context, arg postgres.GetReconciliationCacheParams) (postgres.ReconciliationCache, error) {
@@ -64,12 +63,18 @@ func (m *mockReconciliationCacheStore) UpsertReconciliationCache(ctx context.Con
 	return postgres.ReconciliationCache{}, nil
 }
 
-func (m *mockReconciliationCacheStore) UpsertEntityIdentifier(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error) {
-	m.upsertIdentifierCalls.Add(1)
-	if m.upsertIdentifierFunc != nil {
-		return m.upsertIdentifierFunc(ctx, arg)
+// mockIdentityRecorder is a test double for IdentityRecorder.
+type mockIdentityRecorder struct {
+	recordFunc  func(ctx context.Context, ref identity.IdentityRef, obs identity.IdentifierObservation) (identity.IdentifierObservation, error)
+	recordCalls atomic.Int32
+}
+
+func (m *mockIdentityRecorder) RecordObservation(ctx context.Context, ref identity.IdentityRef, obs identity.IdentifierObservation) (identity.IdentifierObservation, error) {
+	m.recordCalls.Add(1)
+	if m.recordFunc != nil {
+		return m.recordFunc(ctx, ref, obs)
 	}
-	return postgres.EntityIdentifier{}, nil
+	return obs, nil
 }
 
 // TestExpandArtsdataID verifies that short IDs returned by the W3C Reconciliation
@@ -150,14 +155,15 @@ func TestReconcileEntities_ShortIDExpanded(t *testing.T) {
 	}
 
 	var upsertedIdentifierURI string
-	mockCache := &mockReconciliationCacheStore{
-		upsertIdentifierFunc: func(ctx context.Context, arg postgres.UpsertEntityIdentifierParams) (postgres.EntityIdentifier, error) {
-			upsertedIdentifierURI = arg.IdentifierUri // capture DB write URI
-			return postgres.EntityIdentifier{}, nil
+	mockIdentities := &mockIdentityRecorder{
+		recordFunc: func(ctx context.Context, ref identity.IdentityRef, obs identity.IdentifierObservation) (identity.IdentifierObservation, error) {
+			upsertedIdentifierURI = obs.URI // capture DB write URI
+			return obs, nil
 		},
 	}
+	mockCache := &mockReconciliationCacheStore{}
 
-	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
+	svc := NewReconciliationService(mockClient, mockCache, mockIdentities, nil, 30*24*time.Hour, 7*24*time.Hour)
 	results, err := svc.ReconcileEntity(context.Background(), ReconcileRequest{
 		EntityType: "place",
 		EntityID:   "01ARZ3NDEKTSV4RRFFQ69G5FAV",
@@ -167,7 +173,7 @@ func TestReconcileEntities_ShortIDExpanded(t *testing.T) {
 	require.Len(t, results, 1)
 	assert.Equal(t, fullURI, results[0].IdentifierURI, "IdentifierURI must be the expanded full URI, not the short ID")
 	assert.Equal(t, fullURI, dereferencedURI, "Dereference must be called with the expanded full URI, not the short ID")
-	assert.Equal(t, fullURI, upsertedIdentifierURI, "DB write (UpsertEntityIdentifier) must use the expanded full URI, not the short ID")
+	assert.Equal(t, fullURI, upsertedIdentifierURI, "DB write (RecordObservation) must use the expanded full URI, not the short ID")
 }
 
 // TestReconcileEntities_WithMockClient tests ReconcileEntity end-to-end with mock client and cache store.
@@ -198,8 +204,9 @@ func TestReconcileEntities_WithMockClient(t *testing.T) {
 	mockCache := &mockReconciliationCacheStore{
 		// Default getFunc returns pgx.ErrNoRows (cache miss) — already the default behaviour.
 	}
+	mockIdentities := &mockIdentityRecorder{}
 
-	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
+	svc := NewReconciliationService(mockClient, mockCache, mockIdentities, nil, 30*24*time.Hour, 7*24*time.Hour)
 	require.NotNil(t, svc)
 
 	ctx := context.Background()
@@ -218,7 +225,7 @@ func TestReconcileEntities_WithMockClient(t *testing.T) {
 	assert.Equal(t, int32(1), mockClient.dereferenceCalls.Load())
 	assert.Equal(t, int32(1), mockCache.getCalls.Load())
 	assert.Equal(t, int32(1), mockCache.upsertCacheCalls.Load())
-	assert.Equal(t, int32(1), mockCache.upsertIdentifierCalls.Load())
+	assert.Equal(t, int32(1), mockIdentities.recordCalls.Load())
 }
 
 func TestBuildPlaceQuery(t *testing.T) {
@@ -561,7 +568,7 @@ func TestReconcileEntity_CacheHit(t *testing.T) {
 	}
 	mockClient := &mockArtsdataClient{}
 
-	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
+	svc := NewReconciliationService(mockClient, mockCache, &mockIdentityRecorder{}, nil, 30*24*time.Hour, 7*24*time.Hour)
 
 	ctx := context.Background()
 	results, err := svc.ReconcileEntity(ctx, ReconcileRequest{
@@ -599,7 +606,7 @@ func TestReconcileEntity_NegativeCache(t *testing.T) {
 	}
 	mockClient := &mockArtsdataClient{}
 
-	svc := NewReconciliationService(mockClient, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
+	svc := NewReconciliationService(mockClient, mockCache, &mockIdentityRecorder{}, nil, 30*24*time.Hour, 7*24*time.Hour)
 
 	ctx := context.Background()
 	results, err := svc.ReconcileEntity(ctx, ReconcileRequest{
@@ -680,6 +687,7 @@ func TestNewReconciliationService(t *testing.T) {
 	service := NewReconciliationService(
 		nil, // artsdataClient (would be real client in production)
 		nil, // queries
+		nil, // identities
 		nil, // logger
 		30*24*time.Hour,
 		7*24*time.Hour,

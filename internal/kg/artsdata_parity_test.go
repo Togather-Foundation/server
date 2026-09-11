@@ -85,7 +85,7 @@ func runClassificationReplay(t *testing.T, f *artsdata.Fixture, deref *artsdata.
 	)
 
 	mockCache := &mockReconciliationCacheStore{}
-	svc := NewReconciliationService(client, mockCache, nil, 30*24*time.Hour, 7*24*time.Hour)
+	svc := NewReconciliationService(client, mockCache, &mockIdentityRecorder{}, nil, 30*24*time.Hour, 7*24*time.Hour)
 
 	q0, ok := f.Request.Queries["q0"]
 	require.True(t, ok, "fixture %s missing q0 query", f.Name)
