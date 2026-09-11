@@ -1378,6 +1378,225 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
+  /admin/identity/{type}/{id}:
+    get:
+      operationId: getIdentityView
+      summary: Get entity identity view
+      description: |
+        Returns an entity's identity state: its external identifiers, the primary
+        identifier per authority, and its link/reject decision history (newest first).
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: path
+          required: true
+          description: Entity type
+          schema:
+            type: string
+            enum: [place, organization]
+        - name: id
+          in: path
+          required: true
+          description: Entity ULID
+          schema:
+            type: string
+            pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+      responses:
+        '200':
+          description: Entity identity view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IdentityView'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /admin/identity/conflicts:
+    get:
+      operationId: listIdentityConflicts
+      summary: List identity conflicts
+      description: |
+        Lists unordered pairs of entities that share an external identifier (a self-join
+        of entity_identifiers on equal authority/URI). Pairs whose stored evidence
+        fingerprint still matches the current shared signals are marked `suppressed` and
+        excluded by default; pass `include_suppressed=true` to include them with their
+        `prior_decision`. The maximum `limit` is configurable via
+        `IDENTITY_CONFLICT_LIMIT_MAX` (default 200).
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          required: true
+          description: Entity type to scan for conflicts
+          schema:
+            type: string
+            enum: [place, organization]
+        - name: include_suppressed
+          in: query
+          description: Include suppressed pairs with their prior_decision (default false)
+          schema:
+            type: boolean
+            default: false
+        - name: cursor
+          in: query
+          description: Opaque keyset cursor from a previous response's `next_cursor`
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum results per page (default 50, max configurable via IDENTITY_CONFLICT_LIMIT_MAX, default 200)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated list of identity conflicts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConflictsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/identity/decisions:
+    get:
+      operationId: listIdentityDecisions
+      summary: List identity decisions
+      description: |
+        Returns the append-only identity decisions feed, newest first. Optionally filter
+        by entity type and an inclusive `since` RFC3339 lower bound on `created_at`. The
+        maximum `limit` is configurable via `IDENTITY_CONFLICT_LIMIT_MAX` (default 200).
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          description: Filter by entity type
+          schema:
+            type: string
+            enum: [place, organization]
+        - name: since
+          in: query
+          description: Inclusive RFC3339 lower bound on decision `created_at`
+          schema:
+            type: string
+            format: date-time
+        - name: cursor
+          in: query
+          description: Opaque keyset cursor from a previous response's `next_cursor`
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum results per page (default 50, max configurable via IDENTITY_CONFLICT_LIMIT_MAX, default 200)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Paginated list of identity decisions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/identity/link:
+    post:
+      operationId: linkIdentifier
+      summary: Record an identifier link decision
+      description: |
+        Records/confirms an external identifier observation for one SEL entity and
+        elects the primary, appending a `link` decision. The `actor` is taken from the
+        admin JWT subject, never the request body. Client-supplied `method`/`source` are
+        restricted to the Phase 1 allow-list (`manual`); anything else is normalised to
+        `manual`. `confidence` is clamped to `[0,1]` and never affects the method rank.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: Link request
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityLinkRequest'
+      responses:
+        '201':
+          description: Link decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/identity/reject:
+    post:
+      operationId: rejectIdentifier
+      summary: Record a reject decision
+      description: |
+        Records that two entities are judged distinct, appending a `reject` decision and
+        suppressing the pair unless its evidence fingerprint changes. The evidence
+        fingerprint is computed server-side from current observations, not client-supplied.
+        The `actor` is taken from the admin JWT subject, never the request body.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        description: Reject request
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IdentityRejectRequest'
+      responses:
+        '201':
+          description: Reject decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DecisionRecord'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
   /admin/login:
     post:
       operationId: login
@@ -4625,6 +4844,185 @@ components:
         'sel:supersededBy':
           type: string
           format: uri
+
+    IdentityRef:
+      type: object
+      description: Reference to a SEL entity by type and ULID
+      required: [entity_type, entity_id]
+      properties:
+        entity_type:
+          type: string
+          enum: [place, organization]
+        entity_id:
+          type: string
+          description: Entity ULID
+
+    IdentifierView:
+      type: object
+      description: A single external identifier observation
+      properties:
+        authority:
+          type: string
+        uri:
+          type: string
+        method:
+          type: string
+        confidence:
+          type: number
+        is_primary:
+          type: boolean
+        source:
+          type: string
+        observed_at:
+          type: string
+          format: date-time
+
+    DecisionRecord:
+      type: object
+      description: One identity_decisions ledger row
+      required: [id, created_at, entity_type, entity_id, action, rationale, citations, confidence, actor, reversible]
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        entity_type:
+          type: string
+          enum: [place, organization]
+        entity_id:
+          type: string
+        action:
+          type: string
+          enum: [link, reject]
+        counterpart_type:
+          type: string
+          enum: [place, organization]
+        counterpart_id:
+          type: string
+        rationale:
+          type: string
+        citations:
+          type: array
+          items:
+            type: string
+        confidence:
+          type: number
+        actor:
+          type: string
+        reversible:
+          type: boolean
+        undo_ref:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+
+    IdentityView:
+      type: object
+      description: An entity's identity state (identifiers, primaries, decisions)
+      properties:
+        ref:
+          $ref: '#/components/schemas/IdentityRef'
+        identifiers:
+          type: array
+          items:
+            $ref: '#/components/schemas/IdentifierView'
+        primary:
+          type: object
+          additionalProperties:
+            type: string
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionRecord'
+
+    ConflictItem:
+      type: object
+      description: One unordered pair of entities sharing an identifier
+      properties:
+        ref:
+          $ref: '#/components/schemas/IdentityRef'
+        candidate:
+          $ref: '#/components/schemas/IdentityRef'
+        authority:
+          type: string
+        uri:
+          type: string
+        score:
+          type: number
+        suppressed:
+          type: boolean
+        prior_decision:
+          $ref: '#/components/schemas/DecisionRecord'
+
+    ConflictsResponse:
+      type: object
+      description: Paginated identity conflicts feed
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConflictItem'
+        next_cursor:
+          type: [string, 'null']
+
+    DecisionsResponse:
+      type: object
+      description: Paginated identity decisions feed
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DecisionRecord'
+        next_cursor:
+          type: [string, 'null']
+
+    IdentityLinkRequest:
+      type: object
+      description: Request body for recording an identifier link decision
+      required: [entity_type, entity_id, authority, uri]
+      properties:
+        entity_type:
+          type: string
+          enum: [place, organization]
+        entity_id:
+          type: string
+          description: Entity ULID
+        authority:
+          type: string
+        uri:
+          type: string
+        method:
+          type: string
+          description: Restricted to `manual` in Phase 1 (anything else is normalised to manual)
+        confidence:
+          type: number
+          description: Clamped to [0,1] (default 1.0)
+        source:
+          type: string
+          description: Restricted to `manual` in Phase 1 (anything else is normalised to manual)
+        rationale:
+          type: string
+
+    IdentityRejectRequest:
+      type: object
+      description: Request body for recording a reject decision
+      required: [entity_type, entity_id, counterpart_id]
+      properties:
+        entity_type:
+          type: string
+          enum: [place, organization]
+        entity_id:
+          type: string
+          description: Entity ULID
+        counterpart_id:
+          type: string
+          description: Counterpart entity ULID
+        reason:
+          type: string
 
   responses:
     BadRequest:

@@ -69,6 +69,10 @@ var openapiConfigEntries = []struct {
 		envVar:     "DAILY_REPORT_EXCLUDE_IPS",
 		wantSubstr: "DAILY_REPORT_EXCLUDE_IPS",
 	},
+	{
+		envVar:     "IDENTITY_CONFLICT_LIMIT_MAX",
+		wantSubstr: "IDENTITY_CONFLICT_LIMIT_MAX",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

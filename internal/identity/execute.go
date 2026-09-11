@@ -44,6 +44,10 @@ func NewExecutor(tx TxManager, ids IdentifierStore, decisions DecisionStore, not
 	return &Executor{tx: tx, ids: ids, decisions: decisions, notDup: notDup}
 }
 
+// compile-time assertion: *Executor satisfies the Writer interface consumed by
+// the admin REST handlers.
+var _ Writer = (*Executor)(nil)
+
 // LinkIdentifier records/confirms an external identifier observation for one
 // SEL entity and elects the primary, appending a decision record in the same
 // transaction. It validates the actor, entity type, and URI against the

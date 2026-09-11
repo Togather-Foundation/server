@@ -116,3 +116,57 @@ WHERE (sqlc.narg('entity_type')::text IS NULL OR entity_type = sqlc.narg('entity
   )
 ORDER BY created_at DESC, id DESC
 LIMIT sqlc.arg('limit');
+
+-- name: GetIdentityDecision :one
+-- Fetch a single decision by id (used to attach prior_decision to suppressed
+-- conflict pairs).
+SELECT * FROM identity_decisions
+WHERE id = sqlc.arg('id');
+
+-- name: ListConflicts :many
+-- Phase 1 conflict source: a self-join of entity_identifiers on equal
+-- (entity_type, authority_code, identifier_uri) with entity_id_a < entity_id_b,
+-- returning each unordered pair once. Keyset pagination on
+-- (authority_code, identifier_uri, entity_id_a, entity_id_b). The stored
+-- identity_not_duplicates row (matched on the canonical LEAST/GREATEST pair) is
+-- left-joined so the caller can compare its evidence_fingerprint to the current
+-- fingerprint in Go. score is the max confidence of the two observations.
+SELECT a.entity_type,
+       a.entity_id AS entity_id_a,
+       b.entity_id AS entity_id_b,
+       a.authority_code,
+       a.identifier_uri,
+       (CASE WHEN a.confidence >= b.confidence THEN a.confidence ELSE b.confidence END)::float8 AS score,
+       nd.evidence_fingerprint,
+       nd.decision_id
+FROM entity_identifiers a
+JOIN entity_identifiers b
+  ON a.entity_type = b.entity_type
+ AND a.authority_code = b.authority_code
+ AND a.identifier_uri = b.identifier_uri
+ AND a.entity_id < b.entity_id
+LEFT JOIN identity_not_duplicates nd
+  ON nd.entity_type = a.entity_type
+ AND nd.id_a = LEAST(a.entity_id, b.entity_id)
+ AND nd.id_b = GREATEST(a.entity_id, b.entity_id)
+WHERE a.entity_type = sqlc.arg('entity_type')
+  AND (
+    sqlc.narg('cursor_authority')::text IS NULL
+    OR (a.authority_code, a.identifier_uri, a.entity_id, b.entity_id)
+       > (sqlc.narg('cursor_authority')::text, sqlc.narg('cursor_uri')::text,
+          sqlc.narg('cursor_id_a')::text, sqlc.narg('cursor_id_b')::text)
+  )
+ORDER BY a.authority_code, a.identifier_uri, a.entity_id, b.entity_id
+LIMIT sqlc.arg('limit');
+
+-- name: EntityExists :one
+-- Reports whether a place or organization with the given ULID exists (and is
+-- not soft-deleted). Used by the identity view to distinguish an absent entity
+-- (404) from one that merely has no identifiers yet.
+SELECT EXISTS (
+    SELECT 1 FROM places p
+    WHERE p.ulid = sqlc.arg('entity_id') AND p.deleted_at IS NULL AND sqlc.arg('entity_type') = 'place'
+    UNION ALL
+    SELECT 1 FROM organizations o
+    WHERE o.ulid = sqlc.arg('entity_id') AND o.deleted_at IS NULL AND sqlc.arg('entity_type') = 'organization'
+);
