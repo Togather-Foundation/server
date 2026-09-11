@@ -37,6 +37,86 @@ func (q *Queries) DemotePrimaryAndSupersede(ctx context.Context, arg DemotePrima
 	return err
 }
 
+const getIdentityNotDuplicate = `-- name: GetIdentityNotDuplicate :one
+SELECT entity_type, id_a, id_b, evidence_fingerprint, decision_id, created_at, created_by FROM identity_not_duplicates
+WHERE entity_type = $1 AND id_a = $2 AND id_b = $3
+`
+
+type GetIdentityNotDuplicateParams struct {
+	EntityType string `json:"entity_type"`
+	IDA        string `json:"id_a"`
+	IDB        string `json:"id_b"`
+}
+
+// Fetch a pair's not-duplicate row (for evidence-fingerprint comparison on read).
+func (q *Queries) GetIdentityNotDuplicate(ctx context.Context, arg GetIdentityNotDuplicateParams) (IdentityNotDuplicate, error) {
+	row := q.db.QueryRow(ctx, getIdentityNotDuplicate, arg.EntityType, arg.IDA, arg.IDB)
+	var i IdentityNotDuplicate
+	err := row.Scan(
+		&i.EntityType,
+		&i.IDA,
+		&i.IDB,
+		&i.EvidenceFingerprint,
+		&i.DecisionID,
+		&i.CreatedAt,
+		&i.CreatedBy,
+	)
+	return i, err
+}
+
+const insertIdentityDecision = `-- name: InsertIdentityDecision :one
+INSERT INTO identity_decisions (
+    id, entity_type, entity_id, action, counterpart_type, counterpart_id,
+    rationale, citations, confidence, actor, reversible, undo_ref, metadata
+)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7,
+    $8, $9, $10,
+    $11, $12, $13
+)
+RETURNING created_at
+`
+
+type InsertIdentityDecisionParams struct {
+	ID              string         `json:"id"`
+	EntityType      string         `json:"entity_type"`
+	EntityID        string         `json:"entity_id"`
+	Action          string         `json:"action"`
+	CounterpartType pgtype.Text    `json:"counterpart_type"`
+	CounterpartID   pgtype.Text    `json:"counterpart_id"`
+	Rationale       string         `json:"rationale"`
+	Citations       []byte         `json:"citations"`
+	Confidence      pgtype.Numeric `json:"confidence"`
+	Actor           string         `json:"actor"`
+	Reversible      bool           `json:"reversible"`
+	UndoRef         pgtype.Text    `json:"undo_ref"`
+	Metadata        []byte         `json:"metadata"`
+}
+
+// Append one identity decision. created_at is returned from the database so the
+// caller can populate the returned record.
+func (q *Queries) InsertIdentityDecision(ctx context.Context, arg InsertIdentityDecisionParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, insertIdentityDecision,
+		arg.ID,
+		arg.EntityType,
+		arg.EntityID,
+		arg.Action,
+		arg.CounterpartType,
+		arg.CounterpartID,
+		arg.Rationale,
+		arg.Citations,
+		arg.Confidence,
+		arg.Actor,
+		arg.Reversible,
+		arg.UndoRef,
+		arg.Metadata,
+	)
+	var created_at pgtype.Timestamptz
+	err := row.Scan(&created_at)
+	return created_at, err
+}
+
 const insertIdentityNotDuplicate = `-- name: InsertIdentityNotDuplicate :exec
 INSERT INTO identity_not_duplicates (entity_type, id_a, id_b, evidence_fingerprint, decision_id, created_by)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -188,6 +268,121 @@ func (q *Queries) ListGroupIdentifiersForUpdate(ctx context.Context, arg ListGro
 			&i.Source,
 			&i.TrustLevel,
 			&i.PriorityOrder,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIdentityDecisions = `-- name: ListIdentityDecisions :many
+SELECT id, created_at, entity_type, entity_id, action, counterpart_type, counterpart_id, rationale, citations, confidence, actor, reversible, undo_ref, metadata FROM identity_decisions
+WHERE ($1::text IS NULL OR entity_type = $1::text)
+  AND ($2::text IS NULL OR action = $2::text)
+  AND ($3::timestamptz IS NULL OR created_at >= $3::timestamptz)
+  AND (
+    $4::timestamptz IS NULL
+    OR created_at < $4::timestamptz
+    OR (created_at = $4::timestamptz AND id < $5::text)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT $6
+`
+
+type ListIdentityDecisionsParams struct {
+	EntityType      pgtype.Text        `json:"entity_type"`
+	Action          pgtype.Text        `json:"action"`
+	Since           pgtype.Timestamptz `json:"since"`
+	CursorCreatedAt pgtype.Timestamptz `json:"cursor_created_at"`
+	CursorID        pgtype.Text        `json:"cursor_id"`
+	Limit           int32              `json:"limit"`
+}
+
+// Keyset-paginated feed over all decisions, newest first (created_at DESC, id DESC).
+// Optional filters: entity_type, action, and an inclusive `since` lower bound on
+// created_at. The keyset cursor is (created_at, id).
+func (q *Queries) ListIdentityDecisions(ctx context.Context, arg ListIdentityDecisionsParams) ([]IdentityDecision, error) {
+	rows, err := q.db.Query(ctx, listIdentityDecisions,
+		arg.EntityType,
+		arg.Action,
+		arg.Since,
+		arg.CursorCreatedAt,
+		arg.CursorID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityDecision{}
+	for rows.Next() {
+		var i IdentityDecision
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Action,
+			&i.CounterpartType,
+			&i.CounterpartID,
+			&i.Rationale,
+			&i.Citations,
+			&i.Confidence,
+			&i.Actor,
+			&i.Reversible,
+			&i.UndoRef,
+			&i.Metadata,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIdentityDecisionsByEntity = `-- name: ListIdentityDecisionsByEntity :many
+SELECT id, created_at, entity_type, entity_id, action, counterpart_type, counterpart_id, rationale, citations, confidence, actor, reversible, undo_ref, metadata FROM identity_decisions
+WHERE entity_type = $1 AND entity_id = $2
+ORDER BY created_at DESC, id DESC
+`
+
+type ListIdentityDecisionsByEntityParams struct {
+	EntityType string `json:"entity_type"`
+	EntityID   string `json:"entity_id"`
+}
+
+// List one entity's decisions, newest first (matches idx_identity_decisions_entity).
+func (q *Queries) ListIdentityDecisionsByEntity(ctx context.Context, arg ListIdentityDecisionsByEntityParams) ([]IdentityDecision, error) {
+	rows, err := q.db.Query(ctx, listIdentityDecisionsByEntity, arg.EntityType, arg.EntityID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []IdentityDecision{}
+	for rows.Next() {
+		var i IdentityDecision
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.EntityType,
+			&i.EntityID,
+			&i.Action,
+			&i.CounterpartType,
+			&i.CounterpartID,
+			&i.Rationale,
+			&i.Citations,
+			&i.Confidence,
+			&i.Actor,
+			&i.Reversible,
+			&i.UndoRef,
+			&i.Metadata,
 		); err != nil {
 			return nil, err
 		}

@@ -74,3 +74,45 @@ ON CONFLICT (entity_type, id_a, id_b) DO UPDATE SET
     decision_id = EXCLUDED.decision_id,
     created_at = now(),
     created_by = EXCLUDED.created_by;
+
+-- name: GetIdentityNotDuplicate :one
+-- Fetch a pair's not-duplicate row (for evidence-fingerprint comparison on read).
+SELECT * FROM identity_not_duplicates
+WHERE entity_type = sqlc.arg('entity_type') AND id_a = sqlc.arg('id_a') AND id_b = sqlc.arg('id_b');
+
+-- name: InsertIdentityDecision :one
+-- Append one identity decision. created_at is returned from the database so the
+-- caller can populate the returned record.
+INSERT INTO identity_decisions (
+    id, entity_type, entity_id, action, counterpart_type, counterpart_id,
+    rationale, citations, confidence, actor, reversible, undo_ref, metadata
+)
+VALUES (
+    sqlc.arg('id'), sqlc.arg('entity_type'), sqlc.arg('entity_id'), sqlc.arg('action'),
+    sqlc.arg('counterpart_type'), sqlc.arg('counterpart_id'), sqlc.arg('rationale'),
+    sqlc.arg('citations'), sqlc.arg('confidence'), sqlc.arg('actor'),
+    sqlc.arg('reversible'), sqlc.arg('undo_ref'), sqlc.arg('metadata')
+)
+RETURNING created_at;
+
+-- name: ListIdentityDecisionsByEntity :many
+-- List one entity's decisions, newest first (matches idx_identity_decisions_entity).
+SELECT * FROM identity_decisions
+WHERE entity_type = sqlc.arg('entity_type') AND entity_id = sqlc.arg('entity_id')
+ORDER BY created_at DESC, id DESC;
+
+-- name: ListIdentityDecisions :many
+-- Keyset-paginated feed over all decisions, newest first (created_at DESC, id DESC).
+-- Optional filters: entity_type, action, and an inclusive `since` lower bound on
+-- created_at. The keyset cursor is (created_at, id).
+SELECT * FROM identity_decisions
+WHERE (sqlc.narg('entity_type')::text IS NULL OR entity_type = sqlc.narg('entity_type')::text)
+  AND (sqlc.narg('action')::text IS NULL OR action = sqlc.narg('action')::text)
+  AND (sqlc.narg('since')::timestamptz IS NULL OR created_at >= sqlc.narg('since')::timestamptz)
+  AND (
+    sqlc.narg('cursor_created_at')::timestamptz IS NULL
+    OR created_at < sqlc.narg('cursor_created_at')::timestamptz
+    OR (created_at = sqlc.narg('cursor_created_at')::timestamptz AND id < sqlc.narg('cursor_id')::text)
+  )
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg('limit');
