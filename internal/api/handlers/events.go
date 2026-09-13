@@ -19,6 +19,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/jobs"
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/Togather-Foundation/server/internal/timeutil"
 	"github.com/jackc/pgx/v5"
 	"github.com/riverqueue/river"
 	"github.com/rs/zerolog"
@@ -79,6 +80,7 @@ type listResponse struct {
 	NextCursor string   `json:"next_cursor"`
 	Total      int64    `json:"total,omitempty"`    // Optional: total count for filtered results
 	Warnings   []string `json:"warnings,omitempty"` // Alias warnings from query param parsing
+	TimeZone   string   `json:"timeZone,omitempty"` // Node IANA zone once per result set
 }
 
 // listContextMode controls where the JSON-LD @context is emitted in list responses.
@@ -146,9 +148,9 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 		// Add startDate (required per Interop Profile §3.1)
 		if len(event.Occurrences) > 0 {
-			item.StartDate = event.Occurrences[0].StartTime.Format(time.RFC3339)
+			item.StartDate = timeutil.RFC3339In(event.Occurrences[0].StartTime, h.Loc)
 			if event.Occurrences[0].EndTime != nil {
-				item.EndDate = event.Occurrences[0].EndTime.Format(time.RFC3339)
+				item.EndDate = timeutil.RFC3339InPtr(event.Occurrences[0].EndTime, h.Loc)
 			}
 		}
 
@@ -156,12 +158,12 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		item.EventSchedule = schema.ScheduleFromRecurrence(event.Recurrence, h.Logger)
 		if item.EventSchedule != nil && event.Recurrence != nil {
 			if event.Recurrence.SeriesStart != nil {
-				item.EventSchedule.StartDate = event.Recurrence.SeriesStart.Format("2006-01-02")
+				item.EventSchedule.StartDate = timeutil.DateIn(*event.Recurrence.SeriesStart, h.Loc)
 			} else if len(event.Occurrences) > 0 {
-				item.EventSchedule.StartDate = event.Occurrences[0].StartTime.Format("2006-01-02")
+				item.EventSchedule.StartDate = timeutil.DateIn(event.Occurrences[0].StartTime, h.Loc)
 			}
 			if event.Recurrence.SeriesEnd != nil {
-				item.EventSchedule.EndDate = event.Recurrence.SeriesEnd.Format("2006-01-02")
+				item.EventSchedule.EndDate = timeutil.DateIn(*event.Recurrence.SeriesEnd, h.Loc)
 			}
 		}
 
@@ -174,6 +176,9 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Link", icsAlternateLink(h.BaseURL, "/api/v1/events.ics"))
 	resp := listResponse{Items: items, NextCursor: result.NextCursor, Warnings: warnings}
+	if h.Loc != nil {
+		resp.TimeZone = h.Loc.String()
+	}
 	if contextMode == contextDocument {
 		resp.Context = contextValue
 	}
@@ -391,14 +396,13 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Add startDate/endDate/doorTime from first occurrence (required per Interop Profile §3.1)
 	if len(item.Occurrences) > 0 {
 		occ := item.Occurrences[0]
-		event.StartDate = occ.StartTime.Format(time.RFC3339)
+		event.StartDate = timeutil.RFC3339In(occ.StartTime, h.Loc)
 		if occ.EndTime != nil {
-			event.EndDate = occ.EndTime.Format(time.RFC3339)
+			event.EndDate = timeutil.RFC3339InPtr(occ.EndTime, h.Loc)
 		}
 		if occ.DoorTime != nil {
-			event.DoorTime = occ.DoorTime.Format(time.RFC3339)
+			event.DoorTime = timeutil.RFC3339InPtr(occ.DoorTime, h.Loc)
 		}
-
 		// Build offers from first occurrence
 		if occ.TicketURL != "" || occ.PriceMin != nil {
 			offer := schema.NewOffer()
@@ -408,6 +412,9 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			offer.Availability = occ.Availability
 			event.Offers = []schema.Offer{*offer}
 		}
+	}
+	if h.Loc != nil {
+		event.TimeZone = h.Loc.String()
 	}
 
 	// Populate subEvent array for all occurrences so the admin UI can display
@@ -420,7 +427,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			sub := schema.EventSummary{
 				Type:      "Event",
 				Name:      item.Name,
-				StartDate: occ.StartTime.Format(time.RFC3339),
+				StartDate: timeutil.RFC3339In(occ.StartTime, h.Loc),
 				Timezone:  occ.Timezone,
 			}
 			// Populate @id so the admin UI can extract the occurrence UUID for
@@ -429,10 +436,10 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 				sub.ID = h.BaseURL + "/api/v1/admin/events/" + item.ULID + "/occurrences/" + occ.ID
 			}
 			if occ.EndTime != nil {
-				sub.EndDate = occ.EndTime.Format(time.RFC3339)
+				sub.EndDate = timeutil.RFC3339InPtr(occ.EndTime, h.Loc)
 			}
 			if occ.DoorTime != nil {
-				sub.DoorTime = occ.DoorTime.Format(time.RFC3339)
+				sub.DoorTime = timeutil.RFC3339InPtr(occ.DoorTime, h.Loc)
 			}
 			// Serialize per-occurrence location override:
 			//   1. Physical venue (VenueULID) takes priority — resolve to embedded Place
@@ -455,12 +462,12 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	event.EventSchedule = schema.ScheduleFromRecurrence(item.Recurrence, h.Logger)
 	if event.EventSchedule != nil && item.Recurrence != nil {
 		if item.Recurrence.SeriesStart != nil {
-			event.EventSchedule.StartDate = item.Recurrence.SeriesStart.Format("2006-01-02")
+			event.EventSchedule.StartDate = timeutil.DateIn(*item.Recurrence.SeriesStart, h.Loc)
 		} else if len(item.Occurrences) > 0 {
-			event.EventSchedule.StartDate = item.Occurrences[0].StartTime.Format("2006-01-02")
+			event.EventSchedule.StartDate = timeutil.DateIn(item.Occurrences[0].StartTime, h.Loc)
 		}
 		if item.Recurrence.SeriesEnd != nil {
-			event.EventSchedule.EndDate = item.Recurrence.SeriesEnd.Format("2006-01-02")
+			event.EventSchedule.EndDate = timeutil.DateIn(*item.Recurrence.SeriesEnd, h.Loc)
 		}
 	}
 

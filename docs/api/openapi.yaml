@@ -2400,6 +2400,12 @@ paths:
                   updated:
                     type: string
                     format: date-time
+                  timeZone:
+                    type: string
+                    description: |
+                      The node's IANA civil timezone (e.g. America/Toronto) used to render
+                      event times in local civil time (configurable via DEFAULT_TIMEZONE,
+                      default America/Toronto).
 
   /openapi.json:
     get:
@@ -3699,12 +3705,26 @@ components:
         startDate:
           type: string
           format: date-time
+          description: |
+            Event start time in the node's local civil time with a DST-correct RFC3339
+            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
         endDate:
           type: string
           format: date-time
+          description: |
+            Event end time in the node's local civil time with a DST-correct RFC3339
+            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
         doorTime:
           type: string
           format: date-time
+          description: |
+            Door time in the node's local civil time with a DST-correct RFC3339
+            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+        timeZone:
+          type: string
+          description: |
+            The node's IANA civil timezone (e.g. America/Toronto). Advertised once per
+            event detail response (configurable via DEFAULT_TIMEZONE, default America/Toronto).
         location:
           $ref: '#/components/schemas/Place'
         organizer:
@@ -3814,9 +3834,15 @@ components:
         startDate:
           type: string
           format: date-time
+          description: |
+            Event start time. On output, rendered in the node's local civil time with a
+            DST-correct RFC3339 offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
         endDate:
           type: string
           format: date-time
+          description: |
+            Event end time. On output, rendered in the node's local civil time with a
+            DST-correct RFC3339 offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
         doorTime:
           type: string
           format: date-time
@@ -4131,9 +4157,15 @@ components:
         startDate:
           type: string
           format: date-time
+          description: |
+            Event start time in the node's local civil time with a DST-correct RFC3339
+            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
         endDate:
           type: string
           format: date-time
+          description: |
+            Event end time in the node's local civil time with a DST-correct RFC3339
+            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
         location:
           $ref: '#/components/schemas/Place'
         eventSchedule:
@@ -4165,6 +4197,11 @@ components:
         next_cursor:
           type: string
           description: Cursor for next page
+        timeZone:
+          type: string
+          description: |
+            The node's IANA civil timezone (e.g. America/Toronto), advertised once per
+            result set (configurable via DEFAULT_TIMEZONE, default America/Toronto).
         warnings:
           type: array
           items:

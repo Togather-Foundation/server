@@ -473,7 +473,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	federationHandler := handlers.NewFederationHandler(federationService, syncService, cfg.Environment)
 
 	// Well-known endpoints (Interoperability Profile §1.7)
-	wellKnownHandler := handlers.NewWellKnownHandler(cfg.Server.BaseURL, "0.1.0", time.Now())
+	wellKnownHandler := handlers.NewWellKnownHandler(cfg.Server.BaseURL, "0.1.0", time.Now(), loc.String())
 
 	// Health check endpoints (T011)
 	healthChecker := handlers.NewHealthChecker(pool, riverClient, version, gitCommit)
@@ -578,6 +578,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	publicOrgs := rateLimitPublic(http.HandlerFunc(orgHandler.List))
 	publicOrgGet := rateLimitPublic(http.HandlerFunc(orgHandler.Get))
 	publicPages := handlers.NewPublicPagesHandler(eventsService, placesService, orgService, cfg.Environment, cfg.Server.BaseURL)
+	publicPages.Loc = loc
 	publicEventPage := rateLimitPublic(http.HandlerFunc(publicPages.GetEvent))
 	publicPlacePage := rateLimitPublic(http.HandlerFunc(publicPages.GetPlace))
 	publicOrgPage := rateLimitPublic(http.HandlerFunc(publicPages.GetOrganization))

@@ -492,7 +492,7 @@ func TestBuildListItem(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := buildListItem(tt.event, tt.baseURL, nil, nil, zerolog.Nop(), true)
+			result := buildListItem(tt.event, tt.baseURL, nil, nil, nil, zerolog.Nop(), true)
 
 			if result["@type"] != "Event" {
 				t.Errorf("expected @type Event, got %v", result["@type"])
@@ -514,7 +514,7 @@ func TestBuildListItem(t *testing.T) {
 // includeContext=false emits no per-item @context (the compact form used by the
 // events tool's ?context=document mode).
 func TestBuildListItemOmitsContextInDocumentMode(t *testing.T) {
-	result := buildListItem(events.Event{ULID: "01HX1234567890ABCDEFGHJKMN", Name: "Test Event"}, "https://test.example.com", nil, nil, zerolog.Nop(), false)
+	result := buildListItem(events.Event{ULID: "01HX1234567890ABCDEFGHJKMN", Name: "Test Event"}, "https://test.example.com", nil, nil, nil, zerolog.Nop(), false)
 
 	if _, hasCtx := result["@context"]; hasCtx {
 		t.Error("expected no per-item @context in document mode")
@@ -543,7 +543,7 @@ func TestBuildEventPayloadIncludesProvenanceFields(t *testing.T) {
 		},
 	}
 
-	payload := buildEventPayload(context.Background(), event, "https://test.example.com", nil, nil, zerolog.Nop())
+	payload := buildEventPayload(context.Background(), event, "https://test.example.com", nil, nil, nil, zerolog.Nop())
 
 	if got, ok := payload["url"]; !ok || got != event.PublicURL {
 		t.Errorf("expected url %q, got %v (present=%v)", event.PublicURL, got, ok)
@@ -568,11 +568,116 @@ func TestBuildEventPayloadOmitsEmptyOptionalFields(t *testing.T) {
 		},
 	}
 
-	payload := buildEventPayload(context.Background(), event, "https://test.example.com", nil, nil, zerolog.Nop())
+	payload := buildEventPayload(context.Background(), event, "https://test.example.com", nil, nil, nil, zerolog.Nop())
 
 	for _, field := range []string{"url", "description", "endDate"} {
 		if _, present := payload[field]; present {
 			t.Errorf("expected %q to be omitted when empty, but it was present: %v", field, payload[field])
 		}
+	}
+}
+
+func torontoLoc(t *testing.T) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatalf("America/Toronto must be loadable (tzdata required): %v", err)
+	}
+	return loc
+}
+
+// listStubRepo embeds events.Repository and overrides List so listEvents can be
+// exercised without a full repository implementation.
+type listStubRepo struct {
+	events.Repository
+}
+
+func (listStubRepo) List(_ context.Context, _ events.Filters, _ events.Pagination) (events.ListResult, error) {
+	start := time.Date(2026, 7, 10, 23, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 7, 11, 1, 0, 0, 0, time.UTC)
+	return events.ListResult{
+		Events: []events.Event{{
+			Name:        "Summer Concert",
+			Occurrences: []events.Occurrence{{StartTime: start, EndTime: &end}},
+		}},
+		NextCursor: "cursor",
+	}, nil
+}
+
+// TestBuildListItemEmitsNodeTimeZoneAndEndDate verifies list items render
+// startDate (and the previously-omitted endDate) in the node's local civil time.
+func TestBuildListItemEmitsNodeTimeZoneAndEndDate(t *testing.T) {
+	loc := torontoLoc(t)
+	start := time.Date(2026, 7, 10, 23, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 7, 11, 1, 0, 0, 0, time.UTC)
+
+	item := buildListItem(events.Event{
+		ULID: "01HX1234567890ABCDEFGHJKMN",
+		Name: "Summer Concert",
+		Occurrences: []events.Occurrence{
+			{StartTime: start, EndTime: &end},
+		},
+	}, "https://test.example.com", nil, nil, loc, zerolog.Nop(), true)
+
+	if item["startDate"] != "2026-07-10T19:00:00-04:00" {
+		t.Errorf("expected startDate %q, got %v", "2026-07-10T19:00:00-04:00", item["startDate"])
+	}
+	if item["endDate"] != "2026-07-10T21:00:00-04:00" {
+		t.Errorf("expected endDate %q, got %v", "2026-07-10T21:00:00-04:00", item["endDate"])
+	}
+}
+
+// TestBuildEventPayloadEmitsNodeTimeZone verifies the detail payload carries a
+// timeZone field and a DST-correct startDate offset.
+func TestBuildEventPayloadEmitsNodeTimeZone(t *testing.T) {
+	loc := torontoLoc(t)
+	start := time.Date(2026, 7, 10, 23, 0, 0, 0, time.UTC)
+
+	payload := buildEventPayload(context.Background(), &events.Event{
+		ULID: "01HX1234567890ABCDEFGHJKMN",
+		Name: "Summer Concert",
+		Occurrences: []events.Occurrence{
+			{StartTime: start},
+		},
+	}, "https://test.example.com", nil, nil, loc, zerolog.Nop())
+
+	if payload["timeZone"] != "America/Toronto" {
+		t.Errorf("expected timeZone %q, got %v", "America/Toronto", payload["timeZone"])
+	}
+	if payload["startDate"] != "2026-07-10T19:00:00-04:00" {
+		t.Errorf("expected startDate %q, got %v", "2026-07-10T19:00:00-04:00", payload["startDate"])
+	}
+}
+
+// TestListEventsEnvelopeTimeZone verifies the list response envelope advertises
+// the node's IANA zone once and that items carry a DST-correct offset.
+func TestListEventsEnvelopeTimeZone(t *testing.T) {
+	loc := torontoLoc(t)
+	svc := events.NewService(listStubRepo{})
+	et := NewEventTools(svc, nil, "https://test.example.com").WithLoc(loc).WithLogger(zerolog.Nop())
+
+	res, err := et.listEvents(context.Background(), "", "", "", "", "", "", 50, "", "document")
+	if err != nil {
+		t.Fatalf("listEvents returned error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("listEvents returned nil result")
+	}
+
+	payload, ok := res.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured content map, got %T", res.StructuredContent)
+	}
+	if payload["timeZone"] != "America/Toronto" {
+		t.Errorf("expected envelope timeZone %q, got %v", "America/Toronto", payload["timeZone"])
+	}
+
+	items, ok := payload["items"].([]map[string]any)
+	if !ok || len(items) != 1 {
+		t.Fatalf("expected 1 item, got %T %v", payload["items"], payload["items"])
+	}
+	item0 := items[0]
+	if item0["startDate"] != "2026-07-10T19:00:00-04:00" {
+		t.Errorf("expected item startDate %q, got %v", "2026-07-10T19:00:00-04:00", item0["startDate"])
 	}
 }

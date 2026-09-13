@@ -37,6 +37,7 @@ func TestWellKnownSELProfile(t *testing.T) {
 	assert.NotEmpty(t, profile["version"], "version should be present")
 	assert.NotEmpty(t, profile["node"], "node should be present")
 	assert.NotEmpty(t, profile["updated"], "updated should be present")
+	assert.Equal(t, "America/Toronto", profile["timeZone"], "timeZone should be the node's IANA civil timezone")
 
 	// Verify version format
 	version, ok := profile["version"].(string)

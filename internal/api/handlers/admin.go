@@ -17,6 +17,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
 	"github.com/Togather-Foundation/server/internal/sanitize"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/Togather-Foundation/server/internal/timeutil"
 	"github.com/Togather-Foundation/server/internal/validation"
 	"github.com/google/uuid"
 )
@@ -141,7 +142,7 @@ func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		// Add start date from first occurrence
 		if len(event.Occurrences) > 0 {
-			item.StartDateAdmin = event.Occurrences[0].StartTime.Format(time.RFC3339)
+			item.StartDateAdmin = timeutil.RFC3339In(event.Occurrences[0].StartTime, h.Loc)
 		}
 		items = append(items, item)
 	}
@@ -1822,7 +1823,7 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 		ReviewEntriesDismissed []int                      `json:"review_entries_dismissed"`
 	}
 
-	eventPayload := buildEventPayload(result.Event, h.BaseURL)
+	eventPayload := buildEventPayload(result.Event, h.BaseURL, h.Loc)
 
 	resp := consolidateResponse{
 		Event:                  eventPayload,
