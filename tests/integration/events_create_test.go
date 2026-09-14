@@ -176,6 +176,82 @@ func TestCreateAllDayEventWithTimeRoundTrip(t *testing.T) {
 	require.Equal(t, true, got["allDay"])
 }
 
+// TestCreateMixedAllDayAndTimedOccurrencesRoundTrip verifies a multi-occurrence
+// event whose first occurrence is date-only but whose later occurrence is timed
+// keeps the timed occurrence's clock time and does not mark it all-day.
+// Regression for t_2fffdfe8.
+func TestCreateMixedAllDayAndTimedOccurrencesRoundTrip(t *testing.T) {
+	env := setupTestEnv(t)
+
+	key := insertAPIKey(t, env, "agent-mixed-all-day")
+	payload := map[string]any{
+		"name":        "Mixed Listing Probe",
+		"description": "A mixed schedule with one all-day date and one timed performance.",
+		"startDate":   "2026-11-01",
+		"occurrences": []any{
+			map[string]any{"startDate": "2026-11-01"},
+			map[string]any{"startDate": "2026-11-02T19:00:00-05:00"},
+		},
+		"location": map[string]any{
+			"name":            "Centennial Park",
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/ld+json")
+	req.Header.Set("Accept", "application/ld+json")
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusCreated {
+		var failure map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "status=%d response=%v", resp.StatusCode, failure)
+	}
+
+	var created map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
+
+	idStr, _ := created["@id"].(string)
+	require.NotEmpty(t, idStr, "create response must include @id")
+	parts := strings.Split(idStr, "/")
+	ulid := parts[len(parts)-1]
+	require.NotEmpty(t, ulid)
+
+	getReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+ulid, nil)
+	require.NoError(t, err)
+	getReq.Header.Set("Accept", "application/ld+json")
+	getResp, err := env.Server.Client().Do(getReq)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = getResp.Body.Close() })
+	require.Equal(t, http.StatusOK, getResp.StatusCode)
+
+	var got map[string]any
+	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&got))
+
+	subEvents, ok := got["subEvent"].([]any)
+	require.True(t, ok, "response must contain subEvent array")
+	require.Len(t, subEvents, 2, "expected 2 subEvents")
+
+	s0, ok := subEvents[0].(map[string]any)
+	require.True(t, ok, "subEvent[0] must be an object")
+	require.Equal(t, "2026-11-01", s0["startDate"], "subEvent[0] date-only startDate")
+	require.Equal(t, true, s0["allDay"], "subEvent[0] must be all-day")
+
+	s1, ok := subEvents[1].(map[string]any)
+	require.True(t, ok, "subEvent[1] must be an object")
+	require.Equal(t, "2026-11-02T19:00:00-05:00", s1["startDate"], "subEvent[1] must keep its clock time")
+	require.NotEqual(t, true, s1["allDay"], "subEvent[1] must not be marked all-day")
+}
+
 func TestCreateEventMissingRequiredFields(t *testing.T) {
 	env := setupTestEnv(t)
 

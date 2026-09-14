@@ -606,6 +606,68 @@ func TestValidateEventInput_WithOccurrences(t *testing.T) {
 	}
 }
 
+// TestValidateEventInput_AllDayOccurrenceScope pins the decision that the
+// event-level all-day marker inferred from a date-only startDate must NOT be
+// propagated to every occurrence, while an explicit client allDay:true still is.
+func TestValidateEventInput_AllDayOccurrenceScope(t *testing.T) {
+	nodeDomain := "example.com"
+	cfg := config.ValidationConfig{AllowTestDomains: true}
+
+	t.Run("mixed_occurrence_list_keeps_timed_occurrence", func(t *testing.T) {
+		// Repro for t_2fffdfe8: first occurrence date-only, later occurrence timed.
+		input := EventInput{
+			Name:      "Mixed Listing Probe",
+			StartDate: "2026-11-01",
+			Occurrences: []OccurrenceInput{
+				{StartDate: "2026-11-01"},
+				{StartDate: "2026-11-02T19:00:00-05:00"},
+			},
+			Location: &PlaceInput{
+				Name:            "Centennial Park",
+				AddressLocality: "Toronto",
+				AddressRegion:   "ON",
+			},
+		}
+
+		result, err := ValidateEventInputWithWarnings(input, nodeDomain, nil, cfg)
+		require.NoError(t, err)
+
+		// The inferred event marker (from the date-only startDate, which is just
+		// the first occurrence) still lands on the event itself…
+		require.True(t, result.Input.AllDay, "event-level marker inferred from date-only startDate")
+		// …but must NOT be propagated to the timed occurrence.
+		require.Len(t, result.Input.Occurrences, 2)
+		assert.True(t, result.Input.Occurrences[0].AllDay, "occurrences[0] date-only -> all-day")
+		assert.False(t, result.Input.Occurrences[1].AllDay, "occurrences[1] timed -> not all-day")
+	})
+
+	t.Run("explicit_event_allDay_propagates_to_all_occurrences", func(t *testing.T) {
+		// Pins the D2 decision: an EXPLICIT client allDay:true propagates.
+		input := EventInput{
+			Name:      "Explicit All-Day Series",
+			StartDate: "2026-11-01",
+			AllDay:    true,
+			Occurrences: []OccurrenceInput{
+				{StartDate: "2026-11-01T09:00:00-05:00"},
+				{StartDate: "2026-11-02T19:00:00-05:00"},
+			},
+			Location: &PlaceInput{
+				Name:            "Centennial Park",
+				AddressLocality: "Toronto",
+				AddressRegion:   "ON",
+			},
+		}
+
+		result, err := ValidateEventInputWithWarnings(input, nodeDomain, nil, cfg)
+		require.NoError(t, err)
+
+		require.True(t, result.Input.AllDay)
+		require.Len(t, result.Input.Occurrences, 2)
+		assert.True(t, result.Input.Occurrences[0].AllDay, "occurrences[0] marked by explicit event allDay")
+		assert.True(t, result.Input.Occurrences[1].AllDay, "occurrences[1] marked by explicit event allDay")
+	})
+}
+
 func TestValidateOccurrences_ZeroDuration(t *testing.T) {
 	t.Parallel()
 	nodeDomain := "example.com"
