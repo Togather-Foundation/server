@@ -410,6 +410,10 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
   - `superEvent` = series `@id`
   - `startDate`, `endDate`, `doorTime`
   - `location` = occurrence override (`venue_id` or `virtual_url`), otherwise series default
+- Child/subEvent (occurrence) dates are rendered in the occurrence's own IANA
+  zone and labelled with a matching `timezone`, while the top-level event
+  `startDate` and the list envelope use the node zone; all-day values are
+  date-only.
 - The `EventSeries` MAY include `subEvent` with a bounded list of upcoming occurrences (configurable window), and MUST expose `eventSchedule` for recurrence rules.
 
 ### 2.3 Place Output

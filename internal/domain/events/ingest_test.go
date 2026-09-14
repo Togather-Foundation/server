@@ -1844,6 +1844,59 @@ func TestNearDuplicateWarningsWithDetails(t *testing.T) {
 	})
 }
 
+// TestIngestService_MixedAllDayAndTimedOccurrences verifies that a multi-occurrence
+// event whose first occurrence is date-only (all-day) but whose later occurrence is
+// timed keeps the timed occurrence's clock time and all-day flag independent of the
+// event-level marker. Regression for t_2fffdfe8.
+func TestIngestService_MixedAllDayAndTimedOccurrences(t *testing.T) {
+	ctx := context.Background()
+	repo := NewMockRepository()
+	svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+		config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop())
+
+	input := EventInput{
+		Name:      "Mixed Listing Probe",
+		StartDate: "2026-11-01",
+		Occurrences: []OccurrenceInput{
+			{StartDate: "2026-11-01"},
+			{StartDate: "2026-11-02T19:00:00-05:00"},
+		},
+		Location: &PlaceInput{
+			Name:            "Centennial Park",
+			AddressLocality: "Toronto",
+			AddressRegion:   "ON",
+		},
+	}
+
+	result, err := svc.Ingest(ctx, input)
+	if err != nil {
+		t.Fatalf("Ingest() error = %v; want nil", err)
+	}
+	if result == nil || result.Event == nil {
+		t.Fatal("Ingest() returned nil result or event")
+	}
+
+	occs := repo.occurrences[result.Event.ID]
+	if len(occs) != 2 {
+		t.Fatalf("expected 2 occurrences, got %d", len(occs))
+	}
+
+	if !occs[0].IsAllDay {
+		t.Error("occurrences[0] should be all-day (date-only startDate)")
+	}
+	if occs[1].IsAllDay {
+		t.Error("occurrences[1] should NOT be all-day (timed startDate)")
+	}
+
+	wantStart, err := time.Parse(time.RFC3339, "2026-11-02T19:00:00-05:00")
+	if err != nil {
+		t.Fatalf("parse expected time: %v", err)
+	}
+	if !occs[1].StartTime.Equal(wantStart) {
+		t.Errorf("occurrences[1].StartTime = %v; want %v (time must not be re-anchored to midnight)", occs[1].StartTime, wantStart)
+	}
+}
+
 // TestIngestService_MultiOccurrenceParentVenue is a regression test for the staging bug where
 // fixture events with an occurrences array and a parent-only location failed with
 // "occurrence_location_required" DB constraint violation.

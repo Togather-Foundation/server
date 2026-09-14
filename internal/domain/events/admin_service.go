@@ -2149,11 +2149,16 @@ func (s *AdminService) consolidateResolvePending(
 	}
 
 	if existingReview != nil {
-		// Update existing review entry with new warnings
+		// Update existing review entry with new warnings. EventAllDay is
+		// refreshed alongside the payload so the review snapshot's all-day
+		// marker does not go stale (mirrors the create path below and the
+		// resubmission path in create_event_core.go).
+		allDay := eventAllDayFromEvent(canonical)
 		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
 			OriginalPayload:   &payloadJSON,
 			NormalizedPayload: &payloadJSON,
 			Warnings:          &warningsJSON,
+			EventAllDay:       &allDay,
 		}); err != nil {
 			return fmt.Errorf("update review queue entry for canonical event: %w", err)
 		}

@@ -221,7 +221,13 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 			tz = s.defaultTZ
 		}
 		loc := locationOrUTC(tz)
-		allDay := input.AllDay || occ.AllDay
+		// Derive the per-occurrence marker from the occurrence itself, not the
+		// event. The event-level marker may be inferred from a date-only
+		// startDate (which for an occurrence list is only the first occurrence);
+		// inheriting it here would re-anchor later timed occurrences to local
+		// midnight and drop their time. This also keeps ingest correct when fed
+		// unvalidated input.
+		allDay := occ.AllDay || isDateOnly(occ.StartDate)
 		var start time.Time
 		var end *time.Time
 		var err error

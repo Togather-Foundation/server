@@ -758,6 +758,9 @@ func TestEventsHandlerListDefaultStartDate(t *testing.T) {
 // It also pins the full serialization of name, endDate, doorTime, and
 // virtualLocation so regressions in those fields are caught immediately.
 func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
+	toronto, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+
 	t0 := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
 	t0end := time.Date(2026, 7, 10, 22, 0, 0, 0, time.UTC)
 	t0door := time.Date(2026, 7, 10, 18, 30, 0, 0, time.UTC)
@@ -809,9 +812,9 @@ func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
 	m0, ok := subEvents[0].(map[string]any)
 	require.True(t, ok, "subEvent[0] must be an object")
 	require.Equal(t, "Weekly Jazz", m0["name"], "subEvent[0].name must equal event name")
-	require.Equal(t, t0.Format(time.RFC3339), m0["startDate"], "subEvent[0].startDate mismatch")
-	require.Equal(t, t0end.Format(time.RFC3339), m0["endDate"], "subEvent[0].endDate mismatch")
-	require.Equal(t, t0door.Format(time.RFC3339), m0["doorTime"], "subEvent[0].doorTime mismatch")
+	require.Equal(t, t0.In(toronto).Format(time.RFC3339), m0["startDate"], "subEvent[0].startDate mismatch")
+	require.Equal(t, t0end.In(toronto).Format(time.RFC3339), m0["endDate"], "subEvent[0].endDate mismatch")
+	require.Equal(t, t0door.In(toronto).Format(time.RFC3339), m0["doorTime"], "subEvent[0].doorTime mismatch")
 	require.Equal(t, "America/Toronto", m0["timezone"], "subEvent[0].timezone mismatch")
 	loc0, ok := m0["location"].(map[string]any)
 	require.True(t, ok, "subEvent[0].location must be an object (VirtualLocation)")
@@ -824,11 +827,68 @@ func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
 		m, ok := entry.(map[string]any)
 		require.True(t, ok, "subEvent[%d] must be an object", idx)
 		require.Equal(t, "Weekly Jazz", m["name"], "subEvent[%d].name must equal event name", idx)
-		require.Equal(t, []time.Time{t1, t2}[i].Format(time.RFC3339), m["startDate"], "subEvent[%d].startDate mismatch", idx)
+		require.Equal(t, []time.Time{t1, t2}[i].In(toronto).Format(time.RFC3339), m["startDate"], "subEvent[%d].startDate mismatch", idx)
 		require.Equal(t, "America/Toronto", m["timezone"], "subEvent[%d].timezone mismatch", idx)
 		require.Empty(t, m["endDate"], "subEvent[%d].endDate should be absent for minimal occurrence", idx)
 		require.Empty(t, m["doorTime"], "subEvent[%d].doorTime should be absent for minimal occurrence", idx)
 		require.Nil(t, m["location"], "subEvent[%d].location should be absent for non-virtual occurrence", idx)
+	}
+}
+
+// TestEventsHandlerGetSubEventMixedZoneLabel verifies that each subEvent entry's
+// timezone label matches the numeric offset in its startDate, even when an
+// occurrence's stored per-occurrence zone differs from the node zone. This
+// guards the fix where the subEvent timezone label used to be the stored
+// per-occurrence zone while startDate was rendered in the node zone, so the
+// offset and the label disagreed for mixed-zone occurrences.
+func TestEventsHandlerGetSubEventMixedZoneLabel(t *testing.T) {
+	toronto, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+
+	start := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+
+	repo := stubEventsRepo{
+		getFn: func(_ string) (*events.Event, error) {
+			return &events.Event{
+				Name: "Cross-Canada Series",
+				Occurrences: []events.Occurrence{
+					{StartTime: start, Timezone: "America/Toronto"},
+					{StartTime: start, Timezone: "America/Vancouver"},
+				},
+			}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+	h.Loc = toronto
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
+	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
+	res := httptest.NewRecorder()
+
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+
+	subEvent, ok := payload["subEvent"].([]any)
+	require.True(t, ok, "response must contain a subEvent array")
+
+	zones := []string{"America/Toronto", "America/Vancouver"}
+	require.Len(t, subEvent, len(zones), "subEvent should contain one entry per occurrence")
+
+	for i, zone := range zones {
+		loc, err := time.LoadLocation(zone)
+		require.NoError(t, err)
+
+		m, ok := subEvent[i].(map[string]any)
+		require.True(t, ok, "subEvent[%d] must be an object", i)
+
+		// The label and the offset in startDate must agree.
+		require.Equal(t, zone, m["timezone"], "subEvent[%d].timezone label mismatch", i)
+		require.Equal(t, start.In(loc).Format(time.RFC3339), m["startDate"],
+			"subEvent[%d].startDate must be rendered in the occurrence zone", i)
 	}
 }
 

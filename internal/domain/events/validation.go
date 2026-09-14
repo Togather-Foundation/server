@@ -184,14 +184,22 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 	}
 
 	// All-day detection: an explicit allDay flag, or a bare YYYY-MM-DD
-	// startDate, marks the event as date-only. The flag is propagated to
-	// occurrences below so ingest stores an explicit marker instead of a
-	// genuine-midnight instant.
-	if input.AllDay || isDateOnly(input.StartDate) {
+	// startDate, marks the event as date-only.
+	//
+	// The event-level marker and the per-occurrence marker are inferred
+	// independently. Only the CLIENT's explicit event-level allDay flag is
+	// propagated to occurrences — the event marker inferred from a date-only
+	// startDate is NOT. For an occurrence list, the event startDate is just the
+	// first occurrence's date; propagating that inferred marker to every
+	// occurrence would wrongly mark later timed occurrences (e.g. a date-only
+	// first show followed by a 19:00 second show) as all-day and re-anchor
+	// their time to local midnight.
+	explicitEventAllDay := input.AllDay
+	if explicitEventAllDay || isDateOnly(input.StartDate) {
 		input.AllDay = true
 	}
 	for i := range input.Occurrences {
-		if input.AllDay || input.Occurrences[i].AllDay || isDateOnly(input.Occurrences[i].StartDate) {
+		if explicitEventAllDay || input.Occurrences[i].AllDay || isDateOnly(input.Occurrences[i].StartDate) {
 			input.Occurrences[i].AllDay = true
 		}
 	}

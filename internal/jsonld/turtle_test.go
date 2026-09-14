@@ -255,6 +255,76 @@ func TestSerializeToTurtle_ArrayValues(t *testing.T) {
 	}
 }
 
+func TestSerializeToTurtle_SELTermsUseSELNamespace(t *testing.T) {
+	data := map[string]any{
+		"@context": "https://schema.org",
+		"@id":      "https://example.org/events/test",
+		"@type":    "Event",
+		"name":     "All-Day Event",
+		"allDay":   true,
+		"timeZone": "America/Toronto",
+	}
+
+	turtle, err := SerializeToTurtle(data)
+	if err != nil {
+		t.Fatalf("SerializeToTurtle failed: %v", err)
+	}
+
+	// SEL terms must be emitted with the sel: prefix, not schema:.
+	if !strings.Contains(turtle, "sel:allDay true") {
+		t.Errorf("allDay must serialize as sel:allDay, got:\n%s", turtle)
+	}
+	if !strings.Contains(turtle, `sel:timeZone "America/Toronto"`) {
+		t.Errorf("timeZone must serialize as sel:timeZone, got:\n%s", turtle)
+	}
+	// The schema.org term must still use schema:.
+	if !strings.Contains(turtle, `schema:name "All-Day Event"`) {
+		t.Errorf("name must serialize as schema:name, got:\n%s", turtle)
+	}
+}
+
+func TestSerializeToTurtle_SELPrefixIRI(t *testing.T) {
+	data := map[string]any{
+		"@context": "https://schema.org",
+		"@id":      "https://example.org/events/test",
+		"@type":    "Event",
+		"name":     "Test",
+	}
+
+	turtle, err := SerializeToTurtle(data)
+	if err != nil {
+		t.Fatalf("SerializeToTurtle failed: %v", err)
+	}
+
+	if !strings.Contains(turtle, "@prefix sel: <https://schema.togather.foundation/ns#>") {
+		t.Errorf("sel: prefix must use the SEL namespace, got:\n%s", turtle)
+	}
+}
+
+func TestSerializeToTurtle_AlreadyPrefixedSELKeys(t *testing.T) {
+	data := map[string]any{
+		"@context":      "https://schema.org",
+		"@id":           "https://example.org/events/test",
+		"@type":         "Event",
+		"name":          "Tombstoned Event",
+		"sel:tombstone": true,
+		"sel:deletedAt": "2026-07-10T19:00:00Z",
+	}
+
+	turtle, err := SerializeToTurtle(data)
+	if err != nil {
+		t.Fatalf("SerializeToTurtle failed: %v", err)
+	}
+
+	// Literal sel:-prefixed keys must not be double-prefixed (schema:sel:...).
+	if !strings.Contains(turtle, "sel:tombstone true") {
+		t.Errorf("sel:tombstone must serialize as sel:tombstone, got:\n%s", turtle)
+	}
+	if strings.Contains(turtle, "schema:sel:") {
+		t.Errorf("sel:-prefixed keys must not be double-prefixed, got:\n%s", turtle)
+	}
+}
+
 func TestEscapeLiteral(t *testing.T) {
 	tests := []struct {
 		input    string

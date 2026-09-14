@@ -3746,8 +3746,11 @@ components:
         timeZone:
           type: string
           description: |
-            The node's IANA civil timezone (e.g. America/Toronto). Advertised once per
+            The node's IANA civil timezone (e.g. America/Toronto), advertised once per
             event detail response (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+            It scopes the top-level event startDate/endDate/doorTime. Each subEvent entry
+            is instead rendered in its own occurrence's timezone and labelled with the
+            matching `timezone` value (see subEvent).
         location:
           $ref: '#/components/schemas/Place'
         organizer:
@@ -3791,6 +3794,18 @@ components:
             belongs to a series with a canonical RRULE. Derived from the RRULE
             FREQ/INTERVAL/BYDAY/BYMONTHDAY parameters mapped to ISO 8601 durations
             and schema.org Schedule vocabulary.
+        subEvent:
+          type: array
+          items:
+            $ref: '#/components/schemas/EventSummary'
+          description: |
+            Per-occurrence sub-events (EventSeries serialisation). Each entry is
+            rendered in its own occurrence's IANA timezone and labelled with the
+            matching `timezone` value, so the numeric offset in startDate/endDate
+            (and doorTime) always agrees with the `timezone` label — even for a
+            mixed-zone occurrence whose stored per-occurrence zone differs from the
+            node zone. The top-level event startDate/endDate/doorTime and the list
+            envelope `timeZone` instead use the node's civil timezone.
 
     Schedule:
       type: object
@@ -4194,22 +4209,38 @@ components:
         startDate:
           type: string
           description: |
-            Event start time. Timed events are rendered in the node's local civil time
-            with a DST-correct RFC3339 numeric offset (configurable via DEFAULT_TIMEZONE,
-            default America/Toronto). All-day events (allDay: true) are emitted as a
-            date-only YYYY-MM-DD value instead.
+            Event start time. For list items, timed events are rendered in the node's
+            local civil time with a DST-correct RFC3339 numeric offset (configurable
+            via DEFAULT_TIMEZONE, default America/Toronto). When this schema is used
+            for a `subEvent` entry (see Event.subEvent), the value is instead rendered
+            in that occurrence's own IANA zone and matches the `timezone` label below.
+            All-day events (allDay: true) are emitted as a date-only YYYY-MM-DD value.
         endDate:
           type: string
           description: |
-            Event end time. Timed events are rendered in the node's local civil time
-            with a DST-correct RFC3339 numeric offset (configurable via DEFAULT_TIMEZONE,
-            default America/Toronto). All-day events (allDay: true) are emitted as a
-            date-only YYYY-MM-DD value instead.
+            Event end time. For list items, timed events are rendered in the node's
+            local civil time with a DST-correct RFC3339 numeric offset (configurable
+            via DEFAULT_TIMEZONE, default America/Toronto). When this schema is used
+            for a `subEvent` entry (see Event.subEvent), the value is instead rendered
+            in that occurrence's own IANA zone and matches the `timezone` label below.
+            All-day events (allDay: true) are emitted as a date-only YYYY-MM-DD value.
         allDay:
           type: boolean
           description: |
             True for an all-day / date-only event. When true, startDate and endDate are
             date-only YYYY-MM-DD values rather than date-times.
+        timezone:
+          type: string
+          description: |
+            IANA timezone identifier for this entry. Present on `subEvent` entries,
+            where it always matches the numeric offset in startDate/endDate/doorTime
+            (each occurrence is rendered in its own zone and labelled accordingly).
+        doorTime:
+          type: string
+          format: date-time
+          description: |
+            Doors-open time. Present on `subEvent` entries, rendered in the same
+            occurrence zone as startDate (see timezone).
         location:
           $ref: '#/components/schemas/Place'
         eventSchedule:
