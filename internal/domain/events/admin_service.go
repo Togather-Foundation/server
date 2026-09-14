@@ -914,50 +914,6 @@ func (s *AdminService) UpdateEvent(ctx context.Context, ulid string, params Upda
 	return updated, nil
 }
 
-// FixEventOccurrenceDates updates occurrence dates for an event during the fix review workflow.
-// If only startDate is provided, the existing end_time is preserved.
-// If only endDate is provided, the existing start_time is preserved.
-func (s *AdminService) FixEventOccurrenceDates(ctx context.Context, eventULID string, startDate *time.Time, endDate *time.Time) error {
-	if eventULID == "" {
-		return ErrInvalidUpdateParams
-	}
-
-	// Verify the event exists and get current occurrence data
-	existing, err := s.repo.GetByULID(ctx, eventULID)
-	if err != nil {
-		return fmt.Errorf("get event for fix: %w", err)
-	}
-
-	if len(existing.Occurrences) == 0 {
-		return fmt.Errorf("event %s has no occurrences to fix", eventULID)
-	}
-
-	// Determine the effective start and end times
-	var effectiveStart time.Time
-	var effectiveEnd *time.Time
-
-	if startDate != nil {
-		effectiveStart = *startDate
-	} else {
-		// Keep existing start time
-		effectiveStart = existing.Occurrences[0].StartTime
-	}
-
-	if endDate != nil {
-		effectiveEnd = endDate
-	} else {
-		// Keep existing end time
-		effectiveEnd = existing.Occurrences[0].EndTime
-	}
-
-	// Validate: end must not be before start
-	if effectiveEnd != nil && effectiveEnd.Before(effectiveStart) {
-		return FilterError{Field: "endDate", Message: "end date cannot be before start date"}
-	}
-
-	return s.repo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd, existing.Occurrences[0].IsAllDay)
-}
-
 // PublishEvent changes lifecycle_state from draft to published
 func (s *AdminService) PublishEvent(ctx context.Context, ulid string) (*Event, error) {
 	if ulid == "" {
@@ -1501,11 +1457,19 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 		effectiveStart = *startDate
 		effectiveEnd = endDate
 
+		// All-day invariant (see NormalizeOccurrenceAllDay): the marker and the
+		// instant are written together. The row is created in the service
+		// default zone, so that is the zone it is anchored in.
+		createStart, createEnd, err := NormalizeOccurrenceAllDay(effectiveStart, effectiveEnd, review.EventAllDay, occurrenceZone("", "", s.defaultTZ))
+		if err != nil {
+			return nil, fmt.Errorf("normalize all-day occurrence dates: %w", err)
+		}
+
 		// Create the missing occurrence using event metadata (venue, timezone, etc.)
 		err = txRepo.CreateOccurrence(ctx, OccurrenceCreateParams{
 			EventID:    existing.ID,
-			StartTime:  effectiveStart,
-			EndTime:    effectiveEnd,
+			StartTime:  createStart,
+			EndTime:    createEnd,
 			Timezone:   s.defaultTZ,
 			IsAllDay:   review.EventAllDay,
 			VenueID:    existing.PrimaryVenueID,
@@ -1515,17 +1479,22 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 			return nil, fmt.Errorf("create missing occurrence: %w", err)
 		}
 	} else {
-		// Event has existing occurrences - update them with corrected dates
+		// Existing occurrences. A correction addresses the EVENT's own dates,
+		// which mirror occurrences[0] (see the event-level startDate/endDate in
+		// docs/api/openapi.yaml), so only that row may move.
+		first := existing.Occurrences[0]
+
+		// Determine effective start and end times for the corrected row.
 		if startDate != nil {
 			effectiveStart = *startDate
 		} else {
-			effectiveStart = existing.Occurrences[0].StartTime
+			effectiveStart = first.StartTime
 		}
 
 		if endDate != nil {
 			effectiveEnd = endDate
 		} else {
-			effectiveEnd = existing.Occurrences[0].EndTime
+			effectiveEnd = first.EndTime
 		}
 
 		// Validate: end must not be before start
@@ -1533,10 +1502,51 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 			return nil, FilterError{Field: "endDate", Message: "end date cannot be before start date"}
 		}
 
-		// Fix occurrence dates within the transaction
-		err = txRepo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd, review.EventAllDay)
-		if err != nil {
-			return nil, fmt.Errorf("fix occurrence dates: %w", err)
+		// All-day invariant (see NormalizeOccurrenceAllDay): the marker and the
+		// instant are normalised together on whichever row is written.
+		zone := occurrenceZone("", first.Timezone, s.defaultTZ)
+
+		switch {
+		case startDate == nil && endDate == nil:
+			// Nothing was asked for: approve and publish only. The previous
+			// behaviour rewrote EVERY occurrence row to occurrences[0]'s
+			// start/end plus the event-level all-day flag, collapsing a
+			// multi-date series into N identical rows and re-stamping timed
+			// rows as date-only. Approving a review entry is not a request to
+			// rewrite occurrence rows.
+		case len(existing.Occurrences) == 1:
+			// Single-occurrence event: the event's own dates ARE this row's
+			// dates, so the whole-event update is exact. The marker comes from
+			// this row's own is_all_day, never OR'd with the event-level flag:
+			// a stale event-level marker (inferred from a bare listing date)
+			// must not re-mark a genuinely timed row as date-only. For a
+			// date-only event the row itself already carries is_all_day, so the
+			// marker still survives the review path on its own.
+			allDay := first.IsAllDay
+			normalizedStart, normalizedEnd, err := NormalizeOccurrenceAllDay(effectiveStart, effectiveEnd, allDay, zone)
+			if err != nil {
+				return nil, fmt.Errorf("normalize all-day occurrence dates: %w", err)
+			}
+			err = txRepo.UpdateOccurrenceDates(ctx, eventULID, normalizedStart, normalizedEnd, allDay)
+			if err != nil {
+				return nil, fmt.Errorf("fix occurrence dates: %w", err)
+			}
+		default:
+			// Multi-occurrence series: one date correction cannot address N
+			// rows. Correct only the row the event's own dates mirror and leave
+			// every sibling row exactly as it was. The marker comes from that
+			// row, never from the event-level flag: an event-level marker
+			// inferred from a bare listing date (occurrences[0]) must not turn a
+			// genuinely timed occurrence into a date-only one.
+			allDay := first.IsAllDay
+			normalizedStart, normalizedEnd, err := NormalizeOccurrenceAllDay(effectiveStart, effectiveEnd, allDay, zone)
+			if err != nil {
+				return nil, fmt.Errorf("normalize all-day occurrence dates: %w", err)
+			}
+			err = txRepo.UpdateOccurrenceDatesByOccurrenceID(ctx, eventULID, first.ID, normalizedStart, normalizedEnd, allDay)
+			if err != nil {
+				return nil, fmt.Errorf("fix occurrence dates: %w", err)
+			}
 		}
 	}
 
@@ -2798,6 +2808,19 @@ func (s *AdminService) CreateOccurrenceOnEvent(ctx context.Context, eventULID st
 		}
 	}
 
+	// All-day invariant (see NormalizeOccurrenceAllDay): normalise the marker
+	// and the instants together BEFORE the overlap check, so the check sees the
+	// instant that will actually be stored. A POST with all_day:true and a timed
+	// start_time must store local midnight in the occurrence's zone, never a
+	// timed instant carrying the marker.
+	zone := occurrenceZone(params.Timezone, "", s.defaultTZ)
+	normalizedStart, normalizedEnd, err := NormalizeOccurrenceAllDay(params.StartTime, params.EndTime, params.IsAllDay, zone)
+	if err != nil {
+		return nil, fmt.Errorf("normalize all-day occurrence: %w", err)
+	}
+	params.StartTime = normalizedStart
+	params.EndTime = normalizedEnd
+
 	overlaps, err := txRepo.CheckOccurrenceOverlap(ctx, event.ID, params.StartTime, params.EndTime)
 	if err != nil {
 		return nil, fmt.Errorf("check overlap: %w", err)
@@ -2862,6 +2885,94 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 	current, err := txRepo.GetOccurrenceByID(ctx, event.ID, occurrenceID)
 	if err != nil {
 		return nil, fmt.Errorf("get occurrence %s: %w", occurrenceID, err)
+	}
+
+	// All-day invariant (see NormalizeOccurrenceAllDay): normalise the marker
+	// and the instants together BEFORE the overlap check, so the check sees the
+	// instant that will actually be stored. Three rules make the pair impossible
+	// to split:
+	//
+	//   - an explicit all_day in the request decides the marker, and a true
+	//     marker re-anchors start/end to local midnight in the occurrence zone
+	//     (so changing the timezone of a date-only row keeps its civil date);
+	//   - a retime with no explicit all_day clears a stale true marker, because
+	//     a row whose instant just moved off local midnight may not keep
+	//     claiming to be date-only;
+	//   - an unrelated PATCH writes neither the marker nor the instants.
+	zone := occurrenceZone(stringOrEmpty(params.Timezone), current.Timezone, s.defaultTZ)
+
+	effectiveStart := current.StartTime
+	if params.StartTime != nil {
+		effectiveStart = *params.StartTime
+	}
+	var effectiveEnd *time.Time
+	if params.EndTimeSet {
+		effectiveEnd = params.EndTime
+	} else {
+		effectiveEnd = current.EndTime
+	}
+
+	effectiveAllDay := current.IsAllDay
+	if params.IsAllDay != nil {
+		effectiveAllDay = *params.IsAllDay
+	} else if current.IsAllDay {
+		// The row was date-only. Retiming EITHER edge off local midnight makes
+		// it a timed row, so clear the marker — not just when the start moves.
+		// A timed end alone makes the row timed too (the invariant requires
+		// start and, when present, end to be local midnight).
+		startTimed := params.StartTime != nil && !isLocalMidnight(*params.StartTime, zone)
+		endTimed := params.EndTimeSet && params.EndTime != nil && !isLocalMidnight(*params.EndTime, zone)
+		if startTimed || endTimed {
+			effectiveAllDay = false
+		}
+	}
+
+	// A timezone change on a date-only row keeps its civil date. The row's date
+	// is defined in its CURRENT zone, so derive it there and let Normalize
+	// re-anchor it to local midnight in the new zone; deriving the date in the
+	// new zone instead could shift the event a day (an instant that is late
+	// evening in an east zone is the previous calendar day in a west zone).
+	if params.Timezone != nil && effectiveAllDay {
+		oldZone := locationOrUTC(current.Timezone)
+		if params.StartTime == nil {
+			y, m, d := effectiveStart.In(oldZone).Date()
+			effectiveStart = time.Date(y, m, d, 0, 0, 0, 0, zone)
+		}
+		if effectiveEnd != nil && !params.EndTimeSet {
+			ey, em, ed := effectiveEnd.In(oldZone).Date()
+			e := time.Date(ey, em, ed, 0, 0, 0, 0, zone)
+			effectiveEnd = &e
+		}
+	}
+
+	normalizedStart, normalizedEnd, err := NormalizeOccurrenceAllDay(effectiveStart, effectiveEnd, effectiveAllDay, zone)
+	if err != nil {
+		return nil, fmt.Errorf("normalize all-day occurrence %s: %w", occurrenceID, err)
+	}
+
+	if effectiveAllDay {
+		// Write only what the canonical pair actually moves relative to the
+		// STORED row; an unrelated PATCH must not drag an unchanged occurrence
+		// through the overlap check. Comparing against current.StartTime (not
+		// effectiveStart) also makes a timezone change write the re-anchored
+		// instant: the civil date is preserved (above) but the instant still
+		// moves to midnight in the new zone.
+		if !normalizedStart.Equal(current.StartTime) {
+			params.StartTime = &normalizedStart
+		}
+		if params.EndTimeSet || !sameInstant(normalizedEnd, current.EndTime) {
+			params.EndTime = normalizedEnd
+			params.EndTimeSet = true
+		}
+		if params.IsAllDay != nil || !current.IsAllDay {
+			marker := true
+			params.IsAllDay = &marker
+		}
+	} else if current.IsAllDay {
+		// Marker clear: the client said all_day:false, or the row used to be
+		// date-only and no longer is.
+		cleared := false
+		params.IsAllDay = &cleared
 	}
 
 	// Only check overlap if time fields are being updated.

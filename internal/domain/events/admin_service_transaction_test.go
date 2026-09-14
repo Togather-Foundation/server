@@ -231,7 +231,10 @@ type mockTransactionalRepo struct {
 	rejectReviewFunc                                func(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
 	updateEventFunc                                 func(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	updateOccurrenceDatesFunc                       func(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error
+	updateOccurrenceDatesByOccurrenceIDFunc         func(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error
 	lockEventForUpdateFunc                          func(ctx context.Context, eventID string) error
+	getOccurrenceByIDFunc                           func(ctx context.Context, eventID string, occurrenceID string) (*Occurrence, error)
+	updateOccurrenceFunc                            func(ctx context.Context, eventID string, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error)
 	getPendingReviewByEventUlidFunc                 func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
 	getPendingReviewByEventUlidAndDuplicateUlidFunc func(ctx context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error)
 	deleteOccurrencesByEventULIDFunc                func(ctx context.Context, eventULID string) error
@@ -358,6 +361,12 @@ func (m *mockTransactionalRepo) DeleteOccurrencesByEventULID(ctx context.Context
 func (m *mockTransactionalRepo) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 	if m.updateOccurrenceDatesFunc != nil {
 		return m.updateOccurrenceDatesFunc(ctx, eventULID, startTime, endTime, isAllDay)
+	}
+	return nil
+}
+func (m *mockTransactionalRepo) UpdateOccurrenceDatesByOccurrenceID(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
+	if m.updateOccurrenceDatesByOccurrenceIDFunc != nil {
+		return m.updateOccurrenceDatesByOccurrenceIDFunc(ctx, eventULID, occurrenceID, startTime, endTime, isAllDay)
 	}
 	return nil
 }
@@ -520,10 +529,16 @@ func (m *mockTransactionalRepo) InsertOccurrence(ctx context.Context, params Occ
 }
 
 func (m *mockTransactionalRepo) GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*Occurrence, error) {
+	if m.getOccurrenceByIDFunc != nil {
+		return m.getOccurrenceByIDFunc(ctx, eventID, occurrenceID)
+	}
 	return nil, ErrNotFound
 }
 
 func (m *mockTransactionalRepo) UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error) {
+	if m.updateOccurrenceFunc != nil {
+		return m.updateOccurrenceFunc(ctx, eventID, occurrenceID, params)
+	}
 	return &Occurrence{ID: occurrenceID}, nil
 }
 
@@ -1299,6 +1314,13 @@ func TestFixAndApproveEventWithReview_PreservesAllDayMarker(t *testing.T) {
 		repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
 			return &ReviewQueueEntry{ID: id, EventULID: "01HEVENT000000000000000001", Status: "pending", EventAllDay: true}, nil
 		}
+		// The row itself is date-only, so the marker survives the review path on
+		// its own (from the row's own is_all_day), not via an OR with the
+		// event-level flag.
+		repo.getByULIDFunc = func(_ context.Context, _ string) (*Event, error) {
+			return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", Name: "Test", LifecycleState: "draft",
+				Occurrences: []Occurrence{{StartTime: time.Now(), IsAllDay: true}}}, nil
+		}
 		repo.updateOccurrenceDatesFunc = func(_ context.Context, _ string, _ time.Time, _ *time.Time, isAllDay bool) error {
 			capturedIsAllDay = isAllDay
 			return nil
@@ -1310,7 +1332,7 @@ func TestFixAndApproveEventWithReview_PreservesAllDayMarker(t *testing.T) {
 			t.Fatalf("expected success, got: %v", err)
 		}
 		if !capturedIsAllDay {
-			t.Error("UpdateOccurrenceDates must carry isAllDay=true from the review entry")
+			t.Error("UpdateOccurrenceDates must carry isAllDay=true from the row's own marker")
 		}
 	})
 }

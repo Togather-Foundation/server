@@ -352,6 +352,11 @@ type Repository interface {
 
 	// Admin operations
 	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error
+	// UpdateOccurrenceDatesByOccurrenceID is the per-row variant of
+	// UpdateOccurrenceDates: it rewrites exactly one occurrence row (by UUID).
+	// Use it whenever the correction is about a single row — the whole-event
+	// form is only correct for events that have exactly one occurrence.
+	UpdateOccurrenceDatesByOccurrenceID(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error
 	DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
