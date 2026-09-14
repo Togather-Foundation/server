@@ -72,9 +72,7 @@ func TestTurtlePrefixDeclarations(t *testing.T) {
 	// Verify standard prefixes
 	require.Contains(t, turtle, "@prefix schema:", "Turtle must declare schema.org prefix")
 	require.Contains(t, turtle, "https://schema.org/", "Turtle must include schema.org URI")
-
-	// May also include other standard prefixes
-	// Note: Not requiring prov or sel prefixes as they may not be in all responses
+	require.Contains(t, turtle, "@prefix sel: <https://schema.togather.foundation/ns#>", "Turtle must declare the SEL namespace with the correct IRI")
 }
 
 // TestTurtleEventProperties verifies that Turtle includes expected event properties
@@ -235,6 +233,54 @@ func TestTurtleValidSyntax(t *testing.T) {
 	// Verify proper statement termination (at least one statement)
 	statementEndings := strings.Count(turtle, ".")
 	require.Greater(t, statementEndings, 0, "Turtle must have statements ending with period")
+}
+
+// TestTurtleAllDayEmitsSELTerm verifies that an all-day event's Turtle output
+// declares the correct SEL namespace IRI and emits the all-day marker as the
+// sel:allDay predicate (not schema:allDay), matching the JSON-LD context and
+// SHACL shapes.
+func TestTurtleAllDayEmitsSELTerm(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "Toronto Arts Org")
+	place := insertPlace(t, env, "Centennial Park", "Toronto")
+
+	eventName := "All-Day Festival"
+	eventULID := "01J0KXMQZ8RPXJPN8J9Q6TK0WP"
+	var eventID string
+	err := env.Pool.QueryRow(env.Context,
+		`INSERT INTO events (ulid, name, organizer_id, primary_venue_id, event_domain, lifecycle_state)
+		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+		eventULID, eventName, org.ID, place.ID, "community", "published",
+	).Scan(&eventID)
+	require.NoError(t, err)
+
+	// Local midnight in America/Toronto on 2026-07-10 (EDT = UTC-04:00).
+	start := time.Date(2026, 7, 10, 4, 0, 0, 0, time.UTC)
+	_, err = env.Pool.Exec(env.Context,
+		`INSERT INTO event_occurrences (event_id, start_time, end_time, venue_id, timezone, is_all_day)
+		 VALUES ($1, $2, $3, $4, $5, $6)`,
+		eventID, start, start.Add(24*time.Hour), place.ID, "America/Toronto", true,
+	)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", "text/turtle")
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	turtle := string(body)
+
+	require.Contains(t, turtle, "@prefix sel: <https://schema.togather.foundation/ns#>", "Turtle must declare the SEL namespace IRI")
+	require.Contains(t, turtle, "sel:allDay true", "All-day event must emit sel:allDay, not schema:allDay")
+	require.NotContains(t, turtle, "schema:allDay", "allDay must not be emitted under the schema: prefix")
 }
 
 // TestTurtleConsistencyWithJSONLD verifies that Turtle and JSON-LD contain same core data

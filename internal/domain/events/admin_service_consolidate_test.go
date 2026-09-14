@@ -1906,6 +1906,56 @@ func TestConsolidate_PromotePath_WithEventPatch_RefreshesReviewPayload(t *testin
 	}
 }
 
+// TestConsolidate_ResolvePending_RefreshesEventAllDay verifies that the review
+// UPDATE path in consolidateResolvePending refreshes EventAllDay on the existing
+// review queue entry (matching the create path and the resubmission path). This
+// guards against a stale all-day marker when the canonical's all-day state
+// changed but the review snapshot still reflected the old value.
+func TestConsolidate_ResolvePending_RefreshesEventAllDay(t *testing.T) {
+	ctx := context.Background()
+
+	canonical := makePublishedEvent("uuid-canon", consolidateCanonULID, "All-Day Fringe Show")
+	canonical.Occurrences[0].IsAllDay = true
+
+	repo := makeConsolidateRepo(map[string]*Event{consolidateCanonULID: canonical})
+
+	repo.updateEventFunc = func(_ context.Context, _ string, _ UpdateEventParams) (*Event, error) {
+		return canonical, nil
+	}
+
+	existingReviewID := 77
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == consolidateCanonULID {
+			return &ReviewQueueEntry{ID: existingReviewID, EventULID: consolidateCanonULID}, nil
+		}
+		return nil, ErrNotFound
+	}
+
+	allDayRefreshed := false
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id != existingReviewID {
+			t.Errorf("UpdateReviewQueueEntry called with wrong id: got %d, want %d", id, existingReviewID)
+		}
+		if params.EventAllDay == nil {
+			t.Error("expected EventAllDay to be set on the review update, but it was nil")
+		} else if !*params.EventAllDay {
+			t.Errorf("expected EventAllDay=true on the review update, got false")
+		}
+		allDayRefreshed = true
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	svc := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{}, consolidateBaseURL, zerolog.Nop())
+
+	warnings := []ValidationWarning{{Field: "name", Code: "x", Message: "y"}}
+	if err := svc.consolidateResolvePending(ctx, repo, canonical, warnings); err != nil {
+		t.Fatalf("consolidateResolvePending failed: %v", err)
+	}
+	if !allDayRefreshed {
+		t.Error("expected UpdateReviewQueueEntry to be called with EventAllDay, but it was not")
+	}
+}
+
 // ── Step 6c.5: consolidateUpdateThirdPartyCompanionWarnings ────────────────────
 
 // TestConsolidate_UpdateThirdPartyCompanionWarnings verifies that when a
