@@ -305,6 +305,75 @@ func TestUpdateOccurrenceOnEvent_AllDayInvariant(t *testing.T) {
 		}
 	})
 
+	t.Run("retiming only the end off midnight clears the stale marker", func(t *testing.T) {
+		var captured OccurrenceUpdateParams
+		midnight := time.Date(2026, 11, 5, 0, 0, 0, 0, loc)
+		timedEnd := time.Date(2026, 11, 5, 21, 0, 0, 0, loc)
+		repo := &mockTransactionalRepo{}
+		repo.getByULIDFunc = func(_ context.Context, _ string) (*Event, error) {
+			return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", LifecycleState: "draft", PrimaryVenueID: &venueID}, nil
+		}
+		repo.getOccurrenceByIDFunc = func(_ context.Context, _ string, _ string) (*Occurrence, error) {
+			return &Occurrence{
+				ID: "occ-uuid", StartTime: midnight, EndTime: &midnight,
+				Timezone: "America/Toronto", IsAllDay: true,
+			}, nil
+		}
+		repo.updateOccurrenceFunc = func(_ context.Context, _, _ string, params OccurrenceUpdateParams) (*Occurrence, error) {
+			captured = params
+			return &Occurrence{ID: "occ-uuid"}, nil
+		}
+
+		service := newAdminServiceForOccurrenceTest(repo)
+		_, err := service.UpdateOccurrenceOnEvent(ctx, "01HEVENT000000000000000001", "occ-uuid", OccurrenceUpdateParams{
+			EndTime: &timedEnd, EndTimeSet: true,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if captured.IsAllDay == nil || *captured.IsAllDay {
+			t.Fatalf("retiming only the end off midnight must clear the marker, got %v", captured.IsAllDay)
+		}
+		if !captured.EndTimeSet || captured.EndTime == nil || !captured.EndTime.Equal(timedEnd) {
+			t.Fatalf("the requested end must be preserved verbatim, got set=%v end=%v", captured.EndTimeSet, captured.EndTime)
+		}
+	})
+
+	t.Run("all_day true with only a timed end anchors it to midnight", func(t *testing.T) {
+		var captured OccurrenceUpdateParams
+		midnight := time.Date(2026, 11, 5, 0, 0, 0, 0, loc)
+		timedEnd := time.Date(2026, 11, 5, 21, 0, 0, 0, loc)
+		repo := &mockTransactionalRepo{}
+		repo.getByULIDFunc = func(_ context.Context, _ string) (*Event, error) {
+			return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", LifecycleState: "draft", PrimaryVenueID: &venueID}, nil
+		}
+		repo.getOccurrenceByIDFunc = func(_ context.Context, _ string, _ string) (*Occurrence, error) {
+			return &Occurrence{
+				ID: "occ-uuid", StartTime: midnight, EndTime: &midnight,
+				Timezone: "America/Toronto", IsAllDay: true,
+			}, nil
+		}
+		repo.updateOccurrenceFunc = func(_ context.Context, _, _ string, params OccurrenceUpdateParams) (*Occurrence, error) {
+			captured = params
+			return &Occurrence{ID: "occ-uuid"}, nil
+		}
+
+		allDay := true
+		service := newAdminServiceForOccurrenceTest(repo)
+		_, err := service.UpdateOccurrenceOnEvent(ctx, "01HEVENT000000000000000001", "occ-uuid", OccurrenceUpdateParams{
+			IsAllDay: &allDay, EndTime: &timedEnd, EndTimeSet: true,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if captured.IsAllDay == nil || !*captured.IsAllDay {
+			t.Fatalf("an explicit all_day:true must keep the marker, got %v", captured.IsAllDay)
+		}
+		if captured.EndTime == nil || !isLocalMidnight(*captured.EndTime, loc) {
+			t.Fatalf("all_day:true must re-anchor the timed end to local midnight, got %v", captured.EndTime)
+		}
+	})
+
 	t.Run("timed row keeps its instant and marker when untouched", func(t *testing.T) {
 		var captured OccurrenceUpdateParams
 		repo := &mockTransactionalRepo{}

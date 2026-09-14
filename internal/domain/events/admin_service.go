@@ -2910,9 +2910,16 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 	effectiveAllDay := current.IsAllDay
 	if params.IsAllDay != nil {
 		effectiveAllDay = *params.IsAllDay
-	} else if current.IsAllDay && params.StartTime != nil && !isLocalMidnight(*params.StartTime, zone) {
-		// The row was date-only and the client moved it to a timed instant.
-		effectiveAllDay = false
+	} else if current.IsAllDay {
+		// The row was date-only. Retiming EITHER edge off local midnight makes
+		// it a timed row, so clear the marker — not just when the start moves.
+		// A timed end alone makes the row timed too (the invariant requires
+		// start and, when present, end to be local midnight).
+		startTimed := params.StartTime != nil && !isLocalMidnight(*params.StartTime, zone)
+		endTimed := params.EndTimeSet && params.EndTime != nil && !isLocalMidnight(*params.EndTime, zone)
+		if startTimed || endTimed {
+			effectiveAllDay = false
+		}
 	}
 
 	// A timezone change on a date-only row keeps its civil date. The row's date

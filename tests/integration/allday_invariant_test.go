@@ -367,6 +367,64 @@ func TestAdminPutOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 	assertAllDayRowsAreAnchored(t, env)
 }
 
+// TestAdminPutOccurrenceEndOnlyRetimeClearsMarker pins the end-only retime rule:
+// moving only end_time off local midnight on an all-day row clears the marker and
+// preserves the requested instant (it is not silently snapped back to midnight).
+func TestAdminPutOccurrenceEndOnlyRetimeClearsMarker(t *testing.T) {
+	env := setupTestEnv(t)
+
+	insertAdminUser(t, env, alldayTestAdminUser, alldayTestAdminPassword, "allday-admin@example.com", "admin")
+	adminToken := adminLogin(t, env, alldayTestAdminUser, alldayTestAdminPassword)
+	agentKey := insertAPIKey(t, env, "allday-agent-end-only")
+
+	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
+		"name":        "End-Only Retime Event",
+		"description": "An all-day occurrence whose end is retimed off midnight.",
+		"startDate":   "2026-11-05T19:00:00-05:00",
+		"occurrences": []map[string]any{
+			{"startDate": "2026-11-05T19:00:00-05:00", "endDate": "2026-11-05T21:00:00-05:00"},
+		},
+		"location": map[string]any{
+			"name":            "Hart House",
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+		},
+	})
+
+	subs := subEvents(t, getEventAsAgent(t, env, ulid))
+	require.Len(t, subs, 1)
+	occurrenceUUID := occurrenceUUIDFromSubEvent(t, subs[0])
+
+	// Make the row all-day (anchored to local midnight).
+	resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+		"all_day":    true,
+		"start_time": "2026-11-05T19:00:00-05:00",
+		"end_time":   "2026-11-05T23:00:00-05:00",
+	})
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	_ = resp.Body.Close()
+
+	// Retime only the end off midnight.
+	retime := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+		"end_time": "2026-11-05T21:00:00-05:00",
+	})
+	defer func() { _ = retime.Body.Close() }()
+	require.Equal(t, http.StatusOK, retime.StatusCode)
+
+	var updated map[string]any
+	require.NoError(t, json.NewDecoder(retime.Body).Decode(&updated))
+	require.Equal(t, "2026-11-05T21:00:00-05:00", updated["end_time"],
+		"a timed end must be preserved verbatim, not snapped to midnight")
+	require.NotContains(t, updated, "all_day", "the all-day marker must be cleared by an end-only retime")
+
+	_, _, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
+	require.False(t, isAllDay, "is_all_day must be false after an end-only retime")
+	require.Equal(t, "2026-11-05", endDate)
+	require.Equal(t, "21:00:00", endClock)
+
+	assertAllDayRowsAreAnchored(t, env)
+}
+
 // TestAdminFixReviewSingleAllDayEventRoundTrip keeps the single-occurrence
 // all-day path honest end to end: the marker survives the review path AND the
 // stored instant is local midnight.
