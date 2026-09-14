@@ -174,9 +174,14 @@ func putOccurrence(t *testing.T, env *testEnv, adminToken, eventULID, occurrence
 // holding a non-midnight local instant. local_start_time is a generated column
 // (start_time AT TIME ZONE timezone), so the start half is the invariant
 // expressed exactly as the schema sees it; there is no generated local_end_time,
-// so the end half is expressed the same way by hand. Sweeping both ends is what
-// makes the helper able to catch a row that kept the marker while its END moved
-// — the failure mode an end-only retime would leave behind.
+// so the end half is expressed the same way by hand. The end half closes a
+// coverage gap rather than guarding a known writer: nothing in the schema ties
+// is_all_day to the end, so a row claiming is_all_day while holding a timed end
+// is reachable (proved by forcing one with raw SQL), and this sweep is what
+// catches it whichever writer leaves it there. It is NOT the guard for the
+// end-only retime bug itself: with that clear rule reverted the row keeps the
+// marker and its end is snapped back to midnight, i.e. it stays anchored — the
+// "stored verbatim" assertions are what catch that.
 func assertAllDayRowsAreAnchored(t *testing.T, env *testEnv) {
 	t.Helper()
 
@@ -443,8 +448,9 @@ func TestAdminPutOccurrenceEndOnlyRetimeClearsMarker(t *testing.T) {
 //   - the end is cleared outright with end_time: null (a date-only occurrence
 //     may have no end) — the boundary docs/api/openapi.yaml states.
 //
-// These are over-clear guards for the widened rule: dropping the local-midnight
-// test or the nil test from the end-only condition turns cases 2 and 3 red.
+// These are over-clear guards for the widened rule, one case per half of the
+// condition: dropping the local-midnight test turns case 2 red, dropping the nil
+// test turns case 3 red (both measured with mutation probes).
 func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 	env := setupTestEnv(t)
 
@@ -569,6 +575,7 @@ func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 
 	var clearedBody map[string]any
 	require.NoError(t, json.NewDecoder(cleared.Body).Decode(&clearedBody))
+	// Response-side corroboration only; the stored row below is the guard.
 	if marker, present := clearedBody["all_day"]; present {
 		require.Equal(t, true, marker, "clearing the end must not report a cleared marker")
 	}
