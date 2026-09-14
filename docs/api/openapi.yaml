@@ -3364,8 +3364,10 @@ components:
             Sending all_day: true anchors start_time and end_time to local midnight
             of their civil date in the occurrence's timezone (the civil date is the
             date in the occurrence's own zone); retiming an all-day occurrence to a
-            time off local midnight clears the marker, so a stored row can never
-            claim is_all_day while holding a timed instant. This is the same
+            time off local midnight — on either start_time or end_time — clears the
+            marker, so a stored row can never claim is_all_day while holding a timed
+            instant. Clearing the end with end_time: null does not clear the marker:
+            a date-only occurrence may have no end. This is the same
             normalisation ingestion applies to a bare YYYY-MM-DD startDate.
         venue_ulid:
           type: [string, 'null']
