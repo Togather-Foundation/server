@@ -406,6 +406,10 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 	occStartTime := matchedOcc.StartTime
 	occEndTime := matchedOcc.EndTime
 
+	// The all-day marker travels with the source occurrence so absorbing an
+	// all-day occurrence into a reviewed series does not silently drop it.
+	occIsAllDay := matchedOcc.IsAllDay
+
 	// Occurrence-level metadata defaults seeded from the target series.
 	occTimezone := s.defaultTZ
 	occVenueID := target.PrimaryVenueID
@@ -466,6 +470,7 @@ func (s *AdminService) AddOccurrenceFromReview(ctx context.Context, reviewID int
 		StartTime:     occStartTime,
 		EndTime:       occEndTime,
 		Timezone:      occTimezone,
+		IsAllDay:      occIsAllDay,
 		DoorTime:      occDoorTime,
 		VenueID:       occVenueID,
 		VirtualURL:    occVirtualURL,
@@ -743,6 +748,7 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 	// Collect occurrence-level metadata from the source event's sole occurrence.
 	occTimezone := s.defaultTZ
 	occVenueID := target.PrimaryVenueID
+	occIsAllDay := false
 	var occVirtualURL *string
 	var occDoorTime *time.Time
 	var occTicketURL *string
@@ -753,6 +759,9 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 
 	if len(sourceEvent.Occurrences) > 0 {
 		occ := &sourceEvent.Occurrences[0]
+		// The all-day marker travels with the source occurrence so absorbing an
+		// all-day occurrence into a reviewed series does not silently drop it.
+		occIsAllDay = occ.IsAllDay
 		if occ.Timezone != "" {
 			occTimezone = occ.Timezone
 		}
@@ -788,6 +797,7 @@ func (s *AdminService) AddOccurrenceFromReviewNearDup(ctx context.Context, revie
 		StartTime:     occStartTime,
 		EndTime:       occEndTime,
 		Timezone:      occTimezone,
+		IsAllDay:      occIsAllDay,
 		DoorTime:      occDoorTime,
 		VenueID:       occVenueID,
 		VirtualURL:    occVirtualURL,
@@ -945,7 +955,7 @@ func (s *AdminService) FixEventOccurrenceDates(ctx context.Context, eventULID st
 		return FilterError{Field: "endDate", Message: "end date cannot be before start date"}
 	}
 
-	return s.repo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd)
+	return s.repo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd, existing.Occurrences[0].IsAllDay)
 }
 
 // PublishEvent changes lifecycle_state from draft to published
@@ -1497,6 +1507,7 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 			StartTime:  effectiveStart,
 			EndTime:    effectiveEnd,
 			Timezone:   s.defaultTZ,
+			IsAllDay:   review.EventAllDay,
 			VenueID:    existing.PrimaryVenueID,
 			VirtualURL: nil, // Use event's VirtualURL if set
 		})
@@ -1523,7 +1534,7 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 		}
 
 		// Fix occurrence dates within the transaction
-		err = txRepo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd)
+		err = txRepo.UpdateOccurrenceDates(ctx, eventULID, effectiveStart, effectiveEnd, review.EventAllDay)
 		if err != nil {
 			return nil, fmt.Errorf("fix occurrence dates: %w", err)
 		}
@@ -2144,6 +2155,7 @@ func (s *AdminService) consolidateResolvePending(
 			NormalizedPayload: payloadJSON,
 			Warnings:          warningsJSON,
 			EventStartTime:    eventStartTime,
+			EventAllDay:       eventAllDayFromEvent(canonical),
 		}); err != nil {
 			return fmt.Errorf("create review queue entry for canonical event: %w", err)
 		}
@@ -2236,6 +2248,7 @@ func (s *AdminService) consolidateSyncSeriesCompanion(
 		NormalizedPayload: reconstructedPayload,
 		EventStartTime:    companionStart,
 		EventEndTime:      companionEnd,
+		EventAllDay:       eventAllDayFromEvent(companionEvent),
 		Warnings:          warningJSON,
 	}); err != nil {
 		return nil, fmt.Errorf("create companion review entry for event %s: %w", companion.ULID, err)

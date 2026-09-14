@@ -681,3 +681,54 @@ func isDigits(s string) bool {
 	}
 	return len(s) > 0
 }
+
+// sourceValueIsAllDay reports whether a raw source date value carries no time
+// component, i.e. it is a bare calendar date. Such values are normalised to
+// local midnight and must be marked all-day rather than treated as a genuine
+// midnight instant.
+func sourceValueIsAllDay(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	// Full RFC 3339 → timed instant.
+	if _, err := time.Parse(time.RFC3339, s); err == nil {
+		return false
+	}
+	// Partial ISO 8601: date-only (len 10) → all-day; datetime → timed.
+	if isPartialISO8601(s) {
+		return len(s) == 10
+	}
+	// Human-readable: all-day unless an explicit time pattern is present.
+	return !hasTimePattern(s)
+}
+
+// datePartsAreAllDay reports whether a set of extracted date parts describes a
+// date without a time component. Any part carrying a time makes the event timed.
+func datePartsAreAllDay(parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+	hasDate := false
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, err := time.Parse(time.RFC3339, p); err == nil {
+			return false
+		}
+		if isPartialISO8601(p) {
+			if len(p) != 10 {
+				return false
+			}
+			hasDate = true
+			continue
+		}
+		if hasTimePattern(p) {
+			return false
+		}
+		hasDate = true
+	}
+	return hasDate
+}

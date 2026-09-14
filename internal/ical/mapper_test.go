@@ -143,6 +143,11 @@ func TestMapToEventInputs_BasicFieldMapping(t *testing.T) {
 	if ei.License != "CC0-1.0" {
 		t.Errorf("License = %q", ei.License)
 	}
+
+	// Timed event must not be marked all-day.
+	if ei.AllDay {
+		t.Error("AllDay = true, want false for a timed event")
+	}
 }
 
 func TestMapToEventInputs_FloatingTimeWithFallback(t *testing.T) {
@@ -209,6 +214,11 @@ func TestMapToEventInputs_AllDayEvent(t *testing.T) {
 	}
 
 	ei := results[0]
+
+	// All-day marker must be preserved through the mapper.
+	if !ei.AllDay {
+		t.Errorf("AllDay = false, want true")
+	}
 
 	// All-day: floating time re-interpreted in source TZ.
 	// Should produce midnight in America/Toronto as RFC 3339.

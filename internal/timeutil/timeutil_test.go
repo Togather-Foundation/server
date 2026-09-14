@@ -108,3 +108,69 @@ func TestDateInNilLocationFallsBackToUTC(t *testing.T) {
 	ts := mustParse(t, "2026-07-11T02:30:00Z")
 	require.Equal(t, "2026-07-11", DateIn(ts, nil))
 }
+
+func TestDateInPtr(t *testing.T) {
+	loc := toronto(t)
+
+	require.Equal(t, "", DateInPtr(nil, loc))
+
+	ts := mustParse(t, "2026-11-01T05:30:00Z")
+	require.Equal(t, "2026-11-01", DateInPtr(&ts, loc))
+}
+
+func TestOccLoc(t *testing.T) {
+	torontoLoc := toronto(t)
+
+	tests := []struct {
+		name     string
+		timezone string
+		fallback *time.Location
+		wantName string
+	}{
+		{
+			name:     "empty zone falls back",
+			timezone: "",
+			fallback: torontoLoc,
+			wantName: "America/Toronto",
+		},
+		{
+			name:     "unloadable zone falls back",
+			timezone: "Not/AZone",
+			fallback: torontoLoc,
+			wantName: "America/Toronto",
+		},
+		{
+			name:     "valid zone wins over node zone",
+			timezone: "Europe/Paris",
+			fallback: torontoLoc,
+			wantName: "Europe/Paris",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			got := OccLoc(tc.timezone, tc.fallback)
+			require.NotNil(t, got)
+			require.Equal(t, tc.wantName, got.String())
+		})
+	}
+}
+
+// TestOccLocAllDayNoOffByOne is the regression test for the node-zone off-by-one:
+// an all-day occurrence anchored to local midnight in Europe/Paris must still
+// render 2026-11-01 when the node zone is America/Toronto, not 2026-10-31.
+func TestOccLocAllDayNoOffByOne(t *testing.T) {
+	torontoLoc := toronto(t)
+	parisLoc, err := time.LoadLocation("Europe/Paris")
+	require.NoError(t, err)
+
+	// Local midnight in Paris on 2026-11-01 = 2026-10-31T23:00:00Z (CET, +01:00).
+	parisMidnight := time.Date(2026, 11, 1, 0, 0, 0, 0, parisLoc)
+
+	// Rendering in the node zone would shift the date back a day.
+	require.Equal(t, "2026-10-31", DateIn(parisMidnight, torontoLoc))
+
+	// Rendering in the occurrence's own zone (OccLoc) yields the intended date.
+	require.Equal(t, "2026-11-01", DateIn(parisMidnight, OccLoc("Europe/Paris", torontoLoc)))
+}

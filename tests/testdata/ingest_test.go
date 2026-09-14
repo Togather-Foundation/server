@@ -279,7 +279,7 @@ func (m *IngestMockRepository) UpdateEvent(ctx context.Context, ulid string, par
 	return event, nil
 }
 
-func (m *IngestMockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+func (m *IngestMockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 	return nil
 }
 

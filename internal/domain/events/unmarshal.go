@@ -32,6 +32,7 @@ func (e *EventInput) UnmarshalJSON(data []byte) error {
 		StartDate                     string                `json:"startDate,omitempty"`
 		EndDate                       string                `json:"endDate,omitempty"`
 		DoorTime                      string                `json:"doorTime,omitempty"`
+		AllDay                        bool                  `json:"allDay,omitempty"`
 		EventDomain                   string                `json:"eventDomain,omitempty"`
 		Location                      json.RawMessage       `json:"location,omitempty"`
 		VirtualLocation               *VirtualLocationInput `json:"virtualLocation,omitempty"`
@@ -66,6 +67,7 @@ func (e *EventInput) UnmarshalJSON(data []byte) error {
 	e.StartDate = raw.StartDate
 	e.EndDate = raw.EndDate
 	e.DoorTime = raw.DoorTime
+	e.AllDay = raw.AllDay
 	e.EventDomain = raw.EventDomain
 	e.VirtualLocation = raw.VirtualLocation
 	e.URL = raw.URL

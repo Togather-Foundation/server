@@ -350,9 +350,23 @@ func buildEventPayload(event *events.Event, baseURL string, loc *time.Location) 
 	ev.ID = buildEventURI(baseURL, event.ULID)
 	ev.Description = event.Description
 
-	// Extract startDate from first occurrence if available
-	if len(event.Occurrences) > 0 && !event.Occurrences[0].StartTime.IsZero() {
-		ev.StartDate = timeutil.RFC3339In(event.Occurrences[0].StartTime, loc)
+	// Extract startDate from first occurrence if available.
+	// All-day occurrences render date-only and carry the allDay marker, mirroring
+	// the JSON-LD shape emitted by the events API.
+	if len(event.Occurrences) > 0 {
+		occ := event.Occurrences[0]
+		if !occ.StartTime.IsZero() {
+			if occ.IsAllDay {
+				ev.StartDate = timeutil.DateIn(occ.StartTime, timeutil.OccLoc(occ.Timezone, loc))
+				ev.EndDate = timeutil.DateInPtr(occ.EndTime, timeutil.OccLoc(occ.Timezone, loc))
+				ev.AllDay = true
+			} else {
+				ev.StartDate = timeutil.RFC3339In(occ.StartTime, loc)
+				if occ.EndTime != nil {
+					ev.EndDate = timeutil.RFC3339InPtr(occ.EndTime, loc)
+				}
+			}
+		}
 	}
 	if loc != nil {
 		ev.TimeZone = loc.String()

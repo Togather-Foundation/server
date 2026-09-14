@@ -173,6 +173,7 @@ type EventOccurrence struct {
 	Availability       pgtype.Text        `json:"availability"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	IsAllDay           bool               `json:"is_all_day"`
 }
 
 type EventReviewQueue struct {
@@ -194,6 +195,7 @@ type EventReviewQueue struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
+	EventAllDay        bool               `json:"event_all_day"`
 }
 
 type EventSeries struct {

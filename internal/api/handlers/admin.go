@@ -126,6 +126,7 @@ func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 		Confidence     *float64 `json:"confidence,omitempty"`
 		LifecycleState string   `json:"lifecycle_state,omitempty"`
 		StartDateAdmin string   `json:"start_date,omitempty"`
+		AllDay         bool     `json:"all_day,omitempty"`
 	}
 
 	items := make([]adminEventListItem, 0, len(result.Events))
@@ -140,9 +141,16 @@ func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 			Confidence:     event.Confidence,
 			LifecycleState: event.LifecycleState,
 		}
-		// Add start date from first occurrence
+		// Add start date from first occurrence. All-day occurrences render a
+		// date-only value and expose the all_day marker.
 		if len(event.Occurrences) > 0 {
-			item.StartDateAdmin = timeutil.RFC3339In(event.Occurrences[0].StartTime, h.Loc)
+			occ := event.Occurrences[0]
+			if occ.IsAllDay {
+				item.StartDateAdmin = timeutil.DateIn(occ.StartTime, timeutil.OccLoc(occ.Timezone, h.Loc))
+				item.AllDay = true
+			} else {
+				item.StartDateAdmin = timeutil.RFC3339In(occ.StartTime, h.Loc)
+			}
 		}
 		items = append(items, item)
 	}
@@ -1300,6 +1308,7 @@ type occurrenceResponse struct {
 	EndTime       string   `json:"end_time,omitempty"`
 	Timezone      string   `json:"timezone,omitempty"`
 	DoorTime      string   `json:"door_time,omitempty"`
+	AllDay        bool     `json:"all_day,omitempty"`
 	VenueID       *string  `json:"venue_id,omitempty"`
 	VenueULID     *string  `json:"venue_ulid,omitempty"`
 	VirtualURL    *string  `json:"virtual_url,omitempty"`
@@ -1314,6 +1323,7 @@ func occurrenceToResponse(occ *events.Occurrence) occurrenceResponse {
 	resp := occurrenceResponse{
 		ID:            occ.ID,
 		Timezone:      occ.Timezone,
+		AllDay:        occ.IsAllDay,
 		VenueID:       occ.VenueID,
 		VenueULID:     occ.VenueULID,
 		VirtualURL:    occ.VirtualURL,
@@ -1364,6 +1374,7 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 		EndTime       *string  `json:"end_time"`
 		Timezone      string   `json:"timezone"`
 		DoorTime      *string  `json:"door_time"`
+		AllDay        bool     `json:"all_day"`
 		VenueULID     *string  `json:"venue_ulid"`
 		VirtualURL    *string  `json:"virtual_url"`
 		TicketURL     *string  `json:"ticket_url"`
@@ -1435,6 +1446,7 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 		StartTime:     startTime,
 		EndTime:       endTime,
 		Timezone:      req.Timezone,
+		IsAllDay:      req.AllDay,
 		DoorTime:      doorTime,
 		VenueID:       venueID,
 		VirtualURL:    req.VirtualURL,
@@ -1636,6 +1648,14 @@ func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		params.Availability = &s
+	}
+	if v, ok := raw["all_day"]; ok {
+		var b bool
+		if err := json.Unmarshal(v, &b); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "all_day must be a boolean", err, h.Env)
+			return
+		}
+		params.IsAllDay = &b
 	}
 
 	occ, err := h.AdminService.UpdateOccurrenceOnEvent(r.Context(), eventULID, occIDStr, params)

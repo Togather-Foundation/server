@@ -254,6 +254,7 @@ The SEL context defines `sel:*` terms for provenance and lifecycle metadata not 
 | `sel:licenseStatus` | License classification | xsd:string |
 | `sel:takedownRequested` | Takedown flag | xsd:boolean |
 | `sel:takedownRequestedAt` | Takedown timestamp | xsd:dateTime |
+| `sel:allDay` | All-day / date-only marker (startDate/endDate emitted as xsd:date) | xsd:boolean |
 
 ### 2.2 Event Output
 
@@ -568,12 +569,23 @@ sel:EventShape
         sh:path schema:startDate ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
+        # Either a timed RFC 3339 value (time component required, optional
+        # fractional seconds) or a bare date. A bare date is only valid for
+        # all-day events — see the sh:not gate below.
         sh:or (
-            [ sh:datatype xsd:dateTime ]
-            [ sh:datatype xsd:date ]
+            [ sh:pattern "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d+)?)?([+-]\\d{2}:\\d{2}|Z)?$" ]
+            [ sh:pattern "^\\d{4}-\\d{2}-\\d{2}$" ]
         ) ;
-        sh:pattern "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}" ;
-        sh:message "Event must have startDate in ISO8601 with time" ;
+        sh:message "Event must have startDate as an RFC 3339 date-time, or a date-only value for all-day events" ;
+    ] ;
+
+    # A date-only startDate is only valid when sel:allDay is true. Timed events
+    # (and non-all-day events) must still carry a time component.
+    sh:not [
+        sh:and (
+            [ sh:property [ sh:path schema:startDate ; sh:pattern "^\\d{4}-\\d{2}-\\d{2}$" ] ]
+            [ sh:not [ sh:property [ sh:path sel:allDay ; sh:hasValue true ] ] ]
+        )
     ] ;
     
     # Required: location

@@ -391,8 +391,9 @@ type Querier interface {
 	// Only non-NULL arguments are applied (COALESCE pattern).
 	// venue_id, virtual_url, ticket_url use explicit NULLability via CASE WHEN *_set pattern.
 	UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrenceByIDParams) (UpdateOccurrenceByIDRow, error)
-	// Update the start_time and end_time of all occurrences for an event identified by ULID.
-	// Used by the FixReview workflow to correct occurrence dates during admin review.
+	// Update the start_time, end_time, and is_all_day of all occurrences for an event
+	// identified by ULID. Used by the FixReview workflow to correct occurrence dates
+	// during admin review.
 	UpdateOccurrenceDatesByEventULID(ctx context.Context, arg UpdateOccurrenceDatesByEventULIDParams) error
 	UpdateOrganization(ctx context.Context, arg UpdateOrganizationParams) (UpdateOrganizationRow, error)
 	UpdatePlace(ctx context.Context, arg UpdatePlaceParams) (UpdatePlaceRow, error)

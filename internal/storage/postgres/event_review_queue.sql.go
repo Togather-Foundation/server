@@ -20,7 +20,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = $3
    AND status = 'pending'
-RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day
 `
 
 type ApproveReviewParams struct {
@@ -52,6 +52,7 @@ func (q *Queries) ApproveReview(ctx context.Context, arg ApproveReviewParams) (E
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DuplicateOfEventID,
+		&i.EventAllDay,
 	)
 	return i, err
 }
@@ -120,6 +121,7 @@ INSERT INTO event_review_queue (
   dedup_hash,
   event_start_time,
   event_end_time,
+  event_all_day,
   duplicate_of_event_id
 ) VALUES (
   $1,
@@ -131,9 +133,10 @@ INSERT INTO event_review_queue (
   $7,
   $8,
   $9,
-  $10
+  $10,
+  $11
 )
-RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day
 `
 
 type CreateReviewQueueEntryParams struct {
@@ -146,6 +149,7 @@ type CreateReviewQueueEntryParams struct {
 	DedupHash          pgtype.Text        `json:"dedup_hash"`
 	EventStartTime     pgtype.Timestamptz `json:"event_start_time"`
 	EventEndTime       pgtype.Timestamptz `json:"event_end_time"`
+	EventAllDay        bool               `json:"event_all_day"`
 	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
 }
 
@@ -161,6 +165,7 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 		arg.DedupHash,
 		arg.EventStartTime,
 		arg.EventEndTime,
+		arg.EventAllDay,
 		arg.DuplicateOfEventID,
 	)
 	var i EventReviewQueue
@@ -183,6 +188,7 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DuplicateOfEventID,
+		&i.EventAllDay,
 	)
 	return i, err
 }
@@ -387,6 +393,7 @@ SELECT r.id,
        r.dedup_hash,
        r.event_start_time,
        r.event_end_time,
+       r.event_all_day,
        r.status,
        r.reviewed_by,
        r.reviewed_at,
@@ -431,6 +438,7 @@ type FindReviewByDedupRow struct {
 	DedupHash            pgtype.Text        `json:"dedup_hash"`
 	EventStartTime       pgtype.Timestamptz `json:"event_start_time"`
 	EventEndTime         pgtype.Timestamptz `json:"event_end_time"`
+	EventAllDay          bool               `json:"event_all_day"`
 	Status               string             `json:"status"`
 	ReviewedBy           pgtype.Text        `json:"reviewed_by"`
 	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
@@ -460,6 +468,7 @@ func (q *Queries) FindReviewByDedup(ctx context.Context, arg FindReviewByDedupPa
 		&i.DedupHash,
 		&i.EventStartTime,
 		&i.EventEndTime,
+		&i.EventAllDay,
 		&i.Status,
 		&i.ReviewedBy,
 		&i.ReviewedAt,
@@ -485,6 +494,7 @@ SELECT r.id,
        r.dedup_hash,
        r.event_start_time,
        r.event_end_time,
+       r.event_all_day,
        r.status,
        r.reviewed_by,
        r.reviewed_at,
@@ -514,6 +524,7 @@ type GetPendingReviewByEventUlidRow struct {
 	DedupHash            pgtype.Text        `json:"dedup_hash"`
 	EventStartTime       pgtype.Timestamptz `json:"event_start_time"`
 	EventEndTime         pgtype.Timestamptz `json:"event_end_time"`
+	EventAllDay          bool               `json:"event_all_day"`
 	Status               string             `json:"status"`
 	ReviewedBy           pgtype.Text        `json:"reviewed_by"`
 	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
@@ -541,6 +552,7 @@ func (q *Queries) GetPendingReviewByEventUlid(ctx context.Context, eventUlid str
 		&i.DedupHash,
 		&i.EventStartTime,
 		&i.EventEndTime,
+		&i.EventAllDay,
 		&i.Status,
 		&i.ReviewedBy,
 		&i.ReviewedAt,
@@ -566,6 +578,7 @@ SELECT r.id,
        r.dedup_hash,
        r.event_start_time,
        r.event_end_time,
+       r.event_all_day,
        r.status,
        r.reviewed_by,
        r.reviewed_at,
@@ -601,6 +614,7 @@ type GetPendingReviewByEventUlidAndDuplicateUlidRow struct {
 	DedupHash            pgtype.Text        `json:"dedup_hash"`
 	EventStartTime       pgtype.Timestamptz `json:"event_start_time"`
 	EventEndTime         pgtype.Timestamptz `json:"event_end_time"`
+	EventAllDay          bool               `json:"event_all_day"`
 	Status               string             `json:"status"`
 	ReviewedBy           pgtype.Text        `json:"reviewed_by"`
 	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
@@ -631,6 +645,7 @@ func (q *Queries) GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Contex
 		&i.DedupHash,
 		&i.EventStartTime,
 		&i.EventEndTime,
+		&i.EventAllDay,
 		&i.Status,
 		&i.ReviewedBy,
 		&i.ReviewedAt,
@@ -656,6 +671,7 @@ SELECT r.id,
        r.dedup_hash,
        r.event_start_time,
        r.event_end_time,
+       r.event_all_day,
        r.status,
        r.reviewed_by,
        r.reviewed_at,
@@ -683,6 +699,7 @@ type GetReviewQueueEntryRow struct {
 	DedupHash            pgtype.Text        `json:"dedup_hash"`
 	EventStartTime       pgtype.Timestamptz `json:"event_start_time"`
 	EventEndTime         pgtype.Timestamptz `json:"event_end_time"`
+	EventAllDay          bool               `json:"event_all_day"`
 	Status               string             `json:"status"`
 	ReviewedBy           pgtype.Text        `json:"reviewed_by"`
 	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
@@ -710,6 +727,7 @@ func (q *Queries) GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQ
 		&i.DedupHash,
 		&i.EventStartTime,
 		&i.EventEndTime,
+		&i.EventAllDay,
 		&i.Status,
 		&i.ReviewedBy,
 		&i.ReviewedAt,
@@ -735,6 +753,7 @@ SELECT r.id,
        r.dedup_hash,
        r.event_start_time,
        r.event_end_time,
+       r.event_all_day,
        r.status,
        r.reviewed_by,
        r.reviewed_at,
@@ -771,6 +790,7 @@ type ListReviewQueueRow struct {
 	DedupHash            pgtype.Text        `json:"dedup_hash"`
 	EventStartTime       pgtype.Timestamptz `json:"event_start_time"`
 	EventEndTime         pgtype.Timestamptz `json:"event_end_time"`
+	EventAllDay          bool               `json:"event_all_day"`
 	Status               string             `json:"status"`
 	ReviewedBy           pgtype.Text        `json:"reviewed_by"`
 	ReviewedAt           pgtype.Timestamptz `json:"reviewed_at"`
@@ -804,6 +824,7 @@ func (q *Queries) ListReviewQueue(ctx context.Context, arg ListReviewQueueParams
 			&i.DedupHash,
 			&i.EventStartTime,
 			&i.EventEndTime,
+			&i.EventAllDay,
 			&i.Status,
 			&i.ReviewedBy,
 			&i.ReviewedAt,
@@ -852,7 +873,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = $3
    AND status = 'pending'
-RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day
 `
 
 type RejectReviewParams struct {
@@ -884,6 +905,7 @@ func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) (Eve
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DuplicateOfEventID,
+		&i.EventAllDay,
 	)
 	return i, err
 }
@@ -964,19 +986,21 @@ UPDATE event_review_queue
    SET original_payload = COALESCE($1, original_payload),
        normalized_payload = COALESCE($2, normalized_payload),
        warnings = COALESCE($3, warnings),
+       event_all_day = COALESCE($4, event_all_day),
        duplicate_of_event_id = CASE
-                                 WHEN $4::boolean IS TRUE THEN NULL
-                                 ELSE COALESCE($5, duplicate_of_event_id)
+                                 WHEN $5::boolean IS TRUE THEN NULL
+                                 ELSE COALESCE($6, duplicate_of_event_id)
                                END,
        updated_at = NOW()
- WHERE id = $6
-RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id
+ WHERE id = $7
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day
 `
 
 type UpdateReviewQueueEntryParams struct {
 	OriginalPayload    []byte      `json:"original_payload"`
 	NormalizedPayload  []byte      `json:"normalized_payload"`
 	Warnings           []byte      `json:"warnings"`
+	EventAllDay        pgtype.Bool `json:"event_all_day"`
 	ClearDuplicateOf   pgtype.Bool `json:"clear_duplicate_of"`
 	DuplicateOfEventID pgtype.UUID `json:"duplicate_of_event_id"`
 	ID                 int32       `json:"id"`
@@ -990,6 +1014,7 @@ func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQu
 		arg.OriginalPayload,
 		arg.NormalizedPayload,
 		arg.Warnings,
+		arg.EventAllDay,
 		arg.ClearDuplicateOf,
 		arg.DuplicateOfEventID,
 		arg.ID,
@@ -1014,6 +1039,7 @@ func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQu
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DuplicateOfEventID,
+		&i.EventAllDay,
 	)
 	return i, err
 }

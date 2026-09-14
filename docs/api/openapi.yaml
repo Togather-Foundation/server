@@ -3354,6 +3354,12 @@ components:
         timezone:
           type: string
           description: IANA timezone identifier (e.g. America/New_York)
+        all_day:
+          type: boolean
+          description: >
+            True if this occurrence is an all-day (date-only) event. When set, the
+            occurrence is anchored to local midnight in its timezone and rendered as
+            a date-only start_time/end_time.
         venue_ulid:
           type: [string, 'null']
           description: ULID of the venue for this occurrence, or null to clear
@@ -3402,6 +3408,9 @@ components:
           format: date-time
         timezone:
           type: string
+        all_day:
+          type: boolean
+          description: True if the occurrence is an all-day (date-only) event
         venue_id:
           type: [string, 'null']
           description: Internal UUID of the venue
@@ -3704,22 +3713,29 @@ components:
           format: uri
         startDate:
           type: string
-          format: date-time
           description: |
-            Event start time in the node's local civil time with a DST-correct RFC3339
-            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+            Event start time. Timed events are rendered in the node's local civil time
+            with a DST-correct RFC3339 numeric offset (configurable via DEFAULT_TIMEZONE,
+            default America/Toronto). All-day events (allDay: true) are emitted as a
+            date-only YYYY-MM-DD value instead.
         endDate:
           type: string
-          format: date-time
           description: |
-            Event end time in the node's local civil time with a DST-correct RFC3339
-            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+            Event end time. Timed events are rendered in the node's local civil time
+            with a DST-correct RFC3339 numeric offset (configurable via DEFAULT_TIMEZONE,
+            default America/Toronto). All-day events (allDay: true) are emitted as a
+            date-only YYYY-MM-DD value instead.
         doorTime:
           type: string
           format: date-time
           description: |
             Door time in the node's local civil time with a DST-correct RFC3339
             numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+        allDay:
+          type: boolean
+          description: |
+            True for an all-day / date-only event. When true, startDate and endDate are
+            date-only YYYY-MM-DD values rather than date-times.
         timeZone:
           type: string
           description: |
@@ -3833,19 +3849,27 @@ components:
           maxLength: 10000
         startDate:
           type: string
-          format: date-time
           description: |
-            Event start time. On output, rendered in the node's local civil time with a
-            DST-correct RFC3339 offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+            Event start time, as either an RFC3339 date-time or a bare YYYY-MM-DD date.
+            A bare date (or allDay: true) marks the event as all-day and is stored as
+            local midnight in the occurrence/default timezone. On output, timed events
+            are rendered in the node's local civil time with a DST-correct RFC3339 offset
+            (configurable via DEFAULT_TIMEZONE, default America/Toronto); all-day events
+            are emitted as a date-only YYYY-MM-DD value.
         endDate:
           type: string
-          format: date-time
           description: |
-            Event end time. On output, rendered in the node's local civil time with a
-            DST-correct RFC3339 offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+            Event end time, as either an RFC3339 date-time or a bare YYYY-MM-DD date
+            (see startDate). All-day events are emitted as a date-only YYYY-MM-DD value.
         doorTime:
           type: string
           format: date-time
+        allDay:
+          type: boolean
+          description: |
+            Marks the event as all-day / date-only. When true, startDate and endDate are
+            treated (and emitted) as date-only YYYY-MM-DD values. Also set automatically
+            when startDate is a bare YYYY-MM-DD date.
         location:
           oneOf:
             - $ref: '#/components/schemas/PlaceInput'
@@ -4156,16 +4180,23 @@ components:
           description: Descriptive keyword tags. Present when the source provided them.
         startDate:
           type: string
-          format: date-time
           description: |
-            Event start time in the node's local civil time with a DST-correct RFC3339
-            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+            Event start time. Timed events are rendered in the node's local civil time
+            with a DST-correct RFC3339 numeric offset (configurable via DEFAULT_TIMEZONE,
+            default America/Toronto). All-day events (allDay: true) are emitted as a
+            date-only YYYY-MM-DD value instead.
         endDate:
           type: string
-          format: date-time
           description: |
-            Event end time in the node's local civil time with a DST-correct RFC3339
-            numeric offset (configurable via DEFAULT_TIMEZONE, default America/Toronto).
+            Event end time. Timed events are rendered in the node's local civil time
+            with a DST-correct RFC3339 numeric offset (configurable via DEFAULT_TIMEZONE,
+            default America/Toronto). All-day events (allDay: true) are emitted as a
+            date-only YYYY-MM-DD value instead.
+        allDay:
+          type: boolean
+          description: |
+            True for an all-day / date-only event. When true, startDate and endDate are
+            date-only YYYY-MM-DD values rather than date-times.
         location:
           $ref: '#/components/schemas/Place'
         eventSchedule:

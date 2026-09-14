@@ -50,6 +50,7 @@ type EventInput struct {
 	StartDate                     string                `json:"startDate,omitempty"`
 	EndDate                       string                `json:"endDate,omitempty"`
 	DoorTime                      string                `json:"doorTime,omitempty"`
+	AllDay                        bool                  `json:"allDay,omitempty"`
 	EventDomain                   string                `json:"eventDomain,omitempty"`
 	Location                      *PlaceInput           `json:"location,omitempty"`
 	VirtualLocation               *VirtualLocationInput `json:"virtualLocation,omitempty"`
@@ -141,6 +142,7 @@ type OccurrenceInput struct {
 	EndDate         string `json:"endDate,omitempty"`
 	Timezone        string `json:"timezone,omitempty"`
 	DoorTime        string `json:"doorTime,omitempty"`
+	AllDay          bool   `json:"allDay,omitempty"`
 	VenueID         string `json:"venueId,omitempty"`
 	VirtualURL      string `json:"virtualUrl,omitempty"`
 	YearWasInferred bool   `json:"yearWasInferred,omitempty"` // True when the occurrence date lacked an explicit year
@@ -181,20 +183,33 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 		return nil, ValidationError{Field: "description", Message: "too long"}
 	}
 
+	// All-day detection: an explicit allDay flag, or a bare YYYY-MM-DD
+	// startDate, marks the event as date-only. The flag is propagated to
+	// occurrences below so ingest stores an explicit marker instead of a
+	// genuine-midnight instant.
+	if input.AllDay || isDateOnly(input.StartDate) {
+		input.AllDay = true
+	}
+	for i := range input.Occurrences {
+		if input.AllDay || input.Occurrences[i].AllDay || isDateOnly(input.Occurrences[i].StartDate) {
+			input.Occurrences[i].AllDay = true
+		}
+	}
+
 	// Validate top-level dates if provided (optional if occurrences exist)
 	var startTime *time.Time
 	var endTime *time.Time
 	var err error
 
 	if input.StartDate != "" {
-		startTime, err = parseRFC3339("startDate", input.StartDate)
+		startTime, err = parseStartDate("startDate", input.StartDate)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	if input.EndDate != "" {
-		endTime, err = parseRFC3339Optional("endDate", input.EndDate)
+		endTime, err = parseEndDate("endDate", input.EndDate)
 		if err != nil {
 			return nil, err
 		}
@@ -394,11 +409,11 @@ func validateOccurrences(input EventInput, nodeDomain string, original *EventInp
 
 	for i, occ := range input.Occurrences {
 		fieldPrefix := fmt.Sprintf("occurrences[%d]", i)
-		startTime, err := parseRFC3339(fieldPrefix+".startDate", occ.StartDate)
+		startTime, err := parseStartDate(fieldPrefix+".startDate", occ.StartDate)
 		if err != nil {
 			return nil, fmt.Errorf("parse occurrence start date: %w", err)
 		}
-		endTime, err := parseRFC3339Optional(fieldPrefix+".endDate", occ.EndDate)
+		endTime, err := parseEndDate(fieldPrefix+".endDate", occ.EndDate)
 		if err != nil {
 			return nil, fmt.Errorf("parse occurrence end date: %w", err)
 		}
@@ -629,6 +644,60 @@ func parseRFC3339(field, value string) (*time.Time, error) {
 		return nil, ValidationError{Field: field, Message: "invalid date-time"}
 	}
 	return &parsed, nil
+}
+
+// isDateOnly reports whether s is a bare calendar date in YYYY-MM-DD form
+// (as opposed to an RFC 3339 date-time). Used to distinguish date-only/all-day
+// inputs from genuine midnight instants.
+func isDateOnly(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) != 10 {
+		return false
+	}
+	_, err := time.Parse("2006-01-02", s)
+	return err == nil
+}
+
+// parseStartDate parses a startDate that may be RFC 3339 or a bare YYYY-MM-DD
+// date. Bare dates are interpreted as UTC midnight for validation comparison
+// purposes only — the ingest layer re-parses them in the occurrence/default
+// timezone. The result is used solely for reversed-date and warning checks.
+func parseStartDate(field, value string) (*time.Time, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, ValidationError{Field: field, Message: "required"}
+	}
+	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return &parsed, nil
+	}
+	if isDateOnly(trimmed) {
+		parsed, err := time.Parse("2006-01-02", trimmed)
+		if err != nil {
+			return nil, ValidationError{Field: field, Message: "invalid date"}
+		}
+		return &parsed, nil
+	}
+	return nil, ValidationError{Field: field, Message: "invalid date-time"}
+}
+
+// parseEndDate parses an optional endDate that may be RFC 3339 or a bare
+// YYYY-MM-DD date (same semantics as parseStartDate, but optional).
+func parseEndDate(field, value string) (*time.Time, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return nil, nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return &parsed, nil
+	}
+	if isDateOnly(trimmed) {
+		parsed, err := time.Parse("2006-01-02", trimmed)
+		if err != nil {
+			return nil, ValidationError{Field: field, Message: "invalid date"}
+		}
+		return &parsed, nil
+	}
+	return nil, ValidationError{Field: field, Message: "invalid date-time"}
 }
 
 func parseRFC3339Optional(field, value string) (*time.Time, error) {

@@ -147,6 +147,75 @@ func TestAddOccurrenceFromReview_RollbackOnSoftDeleteFailure(t *testing.T) {
 	}
 }
 
+// TestAddOccurrenceFromReview_PreservesAllDayMarker verifies the all-day marker
+// on a source occurrence survives absorption into the target series, on both the
+// forward (potential_duplicate) and near-dup dispatch paths.
+func TestAddOccurrenceFromReview_PreservesAllDayMarker(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now()
+
+	t.Run("forward path", func(t *testing.T) {
+		var capturedIsAllDay bool
+		repo := makeOccurrenceRepo("target-uuid", "01HTARGET00000000000000001", "01HREV00000000000000000001", startTime)
+		repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+			if ulid == "01HTARGET00000000000000001" {
+				return &Event{ID: "target-uuid", ULID: "01HTARGET00000000000000001", Name: "Series", LifecycleState: "published"}, nil
+			}
+			return &Event{ID: "review-event-id", ULID: "01HREV00000000000000000001", Name: "Instance",
+				Occurrences: []Occurrence{{StartTime: startTime, IsAllDay: true}}}, nil
+		}
+		repo.createOccurrenceFunc = func(_ context.Context, p OccurrenceCreateParams) error {
+			capturedIsAllDay = p.IsAllDay
+			return nil
+		}
+
+		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
+		_, err := service.AddOccurrenceFromReview(ctx, 1, "01HTARGET00000000000000001", "admin")
+		if err != nil {
+			t.Fatalf("expected success, got: %v", err)
+		}
+		if !capturedIsAllDay {
+			t.Error("CreateOccurrence must carry IsAllDay=true from the source occurrence")
+		}
+	})
+
+	t.Run("near-dup path", func(t *testing.T) {
+		var capturedIsAllDay bool
+		repo := makeNearDupOccurrenceRepo("target-id", "01HTARGET00000000000000001", "01HSRC00000000000000000001", startTime)
+		repo.getByULIDFunc = func(_ context.Context, ulid string) (*Event, error) {
+			if ulid == "01HTARGET00000000000000001" {
+				return &Event{
+					ID:             "target-id",
+					ULID:           "01HTARGET00000000000000001",
+					Name:           "Series",
+					LifecycleState: "published",
+				}, nil
+			}
+			return &Event{
+				ID:   "source-event-id",
+				ULID: "01HSRC00000000000000000001",
+				Name: "New Instance",
+				Occurrences: []Occurrence{
+					{StartTime: startTime, IsAllDay: true},
+				},
+			}, nil
+		}
+		repo.createOccurrenceFunc = func(_ context.Context, p OccurrenceCreateParams) error {
+			capturedIsAllDay = p.IsAllDay
+			return nil
+		}
+
+		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
+		_, _, err := service.AddOccurrenceFromReviewNearDup(ctx, 1, "admin")
+		if err != nil {
+			t.Fatalf("expected success, got: %v", err)
+		}
+		if !capturedIsAllDay {
+			t.Error("CreateOccurrence must carry IsAllDay=true from the source occurrence")
+		}
+	})
+}
+
 // mockTransactionalRepo implements Repository with transaction support
 type mockTransactionalRepo struct {
 	getByULIDFunc                                   func(ctx context.Context, ulid string) (*Event, error)
@@ -161,7 +230,7 @@ type mockTransactionalRepo struct {
 	approveReviewFunc                               func(ctx context.Context, id int, reviewedBy string, notes *string) (*ReviewQueueEntry, error)
 	rejectReviewFunc                                func(ctx context.Context, id int, reviewedBy string, reason string) (*ReviewQueueEntry, error)
 	updateEventFunc                                 func(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
-	updateOccurrenceDatesFunc                       func(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
+	updateOccurrenceDatesFunc                       func(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error
 	lockEventForUpdateFunc                          func(ctx context.Context, eventID string) error
 	getPendingReviewByEventUlidFunc                 func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
 	getPendingReviewByEventUlidAndDuplicateUlidFunc func(ctx context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error)
@@ -286,9 +355,9 @@ func (m *mockTransactionalRepo) DeleteOccurrencesByEventULID(ctx context.Context
 	}
 	return nil
 }
-func (m *mockTransactionalRepo) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+func (m *mockTransactionalRepo) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 	if m.updateOccurrenceDatesFunc != nil {
-		return m.updateOccurrenceDatesFunc(ctx, eventULID, startTime, endTime)
+		return m.updateOccurrenceDatesFunc(ctx, eventULID, startTime, endTime, isAllDay)
 	}
 	return nil
 }
@@ -1189,6 +1258,61 @@ func TestFixAndApproveEventWithReview_SuccessLockFirst(t *testing.T) {
 	if !repo.commitCalled {
 		t.Error("commit should be called on success")
 	}
+}
+
+// TestFixAndApproveEventWithReview_PreservesAllDayMarker verifies the all-day
+// marker carried on the review queue entry survives the fix-and-approve path:
+// the created occurrence (no-occurrence case) and the date-fix query both
+// receive the review entry's event_all_day value instead of dropping it.
+func TestFixAndApproveEventWithReview_PreservesAllDayMarker(t *testing.T) {
+	ctx := context.Background()
+	startTime := time.Now().Add(1 * time.Hour)
+	endTime := time.Now().Add(2 * time.Hour)
+
+	t.Run("create occurrence carries all-day marker", func(t *testing.T) {
+		var capturedIsAllDay bool
+		repo := makeReviewLockRepo("01HEVENT000000000000000001")
+		repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+			return &ReviewQueueEntry{ID: id, EventULID: "01HEVENT000000000000000001", Status: "pending", EventAllDay: true}, nil
+		}
+		repo.getByULIDFunc = func(_ context.Context, _ string) (*Event, error) {
+			return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", Name: "Test", LifecycleState: "draft"}, nil
+		}
+		repo.createOccurrenceFunc = func(_ context.Context, p OccurrenceCreateParams) error {
+			capturedIsAllDay = p.IsAllDay
+			return nil
+		}
+
+		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
+		_, err := service.FixAndApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil, &startTime, &endTime)
+		if err != nil {
+			t.Fatalf("expected success, got: %v", err)
+		}
+		if !capturedIsAllDay {
+			t.Error("CreateOccurrence must carry IsAllDay=true from the review entry")
+		}
+	})
+
+	t.Run("date-fix carries all-day marker", func(t *testing.T) {
+		var capturedIsAllDay bool
+		repo := makeReviewLockRepo("01HEVENT000000000000000001")
+		repo.lockReviewQueueEntryForUpdateFunc = func(_ context.Context, id int) (*ReviewQueueEntry, error) {
+			return &ReviewQueueEntry{ID: id, EventULID: "01HEVENT000000000000000001", Status: "pending", EventAllDay: true}, nil
+		}
+		repo.updateOccurrenceDatesFunc = func(_ context.Context, _ string, _ time.Time, _ *time.Time, isAllDay bool) error {
+			capturedIsAllDay = isAllDay
+			return nil
+		}
+
+		service := NewAdminService(repo, false, "America/Toronto", config.ValidationConfig{MaxEventNameLength: 500}, "https://toronto.togather.foundation", zerolog.Nop())
+		_, err := service.FixAndApproveEventWithReview(ctx, "01HEVENT000000000000000001", 1, "admin", nil, &startTime, &endTime)
+		if err != nil {
+			t.Fatalf("expected success, got: %v", err)
+		}
+		if !capturedIsAllDay {
+			t.Error("UpdateOccurrenceDates must carry isAllDay=true from the review entry")
+		}
+	})
 }
 
 // ---------------------------------------------------------------------------

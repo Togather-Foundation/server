@@ -60,6 +60,122 @@ func TestCreateEventHappyPath(t *testing.T) {
 	require.Equal(t, "Centennial Park", eventNameFromPayload(location))
 }
 
+func TestCreateAllDayEventRoundTrip(t *testing.T) {
+	env := setupTestEnv(t)
+
+	key := insertAPIKey(t, env, "agent-all-day")
+	payload := map[string]any{
+		"name":        "All Day Exhibition",
+		"description": "A full-day gallery exhibition open from morning to close.",
+		"startDate":   "2026-11-01",
+		"location": map[string]any{
+			"name":            "Centennial Park",
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/ld+json")
+	req.Header.Set("Accept", "application/ld+json")
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusCreated {
+		var failure map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "status=%d response=%v", resp.StatusCode, failure)
+	}
+
+	var created map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
+
+	idStr, _ := created["@id"].(string)
+	require.NotEmpty(t, idStr, "create response must include @id")
+	parts := strings.Split(idStr, "/")
+	ulid := parts[len(parts)-1]
+	require.NotEmpty(t, ulid)
+
+	getReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+ulid, nil)
+	require.NoError(t, err)
+	getReq.Header.Set("Accept", "application/ld+json")
+	getResp, err := env.Server.Client().Do(getReq)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = getResp.Body.Close() })
+	require.Equal(t, http.StatusOK, getResp.StatusCode)
+
+	var got map[string]any
+	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&got))
+	require.Equal(t, "2026-11-01", got["startDate"])
+	require.Equal(t, true, got["allDay"])
+}
+
+// TestCreateAllDayEventWithTimeRoundTrip verifies an explicit allDay:true flag
+// with an RFC 3339 startDate (that includes a time/offset) is not silently
+// dropped on ingest and reads back as a date-only value.
+func TestCreateAllDayEventWithTimeRoundTrip(t *testing.T) {
+	env := setupTestEnv(t)
+
+	key := insertAPIKey(t, env, "agent-all-day-time")
+	payload := map[string]any{
+		"name":        "All Day Exhibition (explicit)",
+		"description": "A full-day gallery exhibition submitted with an explicit all-day flag.",
+		"allDay":      true,
+		"startDate":   "2026-11-01T00:00:00+01:00",
+		"location": map[string]any{
+			"name":            "Centennial Park",
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/events", bytes.NewReader(body))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/ld+json")
+	req.Header.Set("Accept", "application/ld+json")
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = resp.Body.Close() })
+	if resp.StatusCode != http.StatusCreated {
+		var failure map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "status=%d response=%v", resp.StatusCode, failure)
+	}
+
+	var created map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
+
+	idStr, _ := created["@id"].(string)
+	require.NotEmpty(t, idStr, "create response must include @id")
+	parts := strings.Split(idStr, "/")
+	ulid := parts[len(parts)-1]
+	require.NotEmpty(t, ulid)
+
+	getReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+ulid, nil)
+	require.NoError(t, err)
+	getReq.Header.Set("Accept", "application/ld+json")
+	getResp, err := env.Server.Client().Do(getReq)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = getResp.Body.Close() })
+	require.Equal(t, http.StatusOK, getResp.StatusCode)
+
+	var got map[string]any
+	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&got))
+	require.Equal(t, "2026-11-01", got["startDate"])
+	require.Equal(t, true, got["allDay"])
+}
+
 func TestCreateEventMissingRequiredFields(t *testing.T) {
 	env := setupTestEnv(t)
 

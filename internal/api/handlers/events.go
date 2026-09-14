@@ -148,22 +148,38 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 
 		// Add startDate (required per Interop Profile §3.1)
 		if len(event.Occurrences) > 0 {
-			item.StartDate = timeutil.RFC3339In(event.Occurrences[0].StartTime, h.Loc)
-			if event.Occurrences[0].EndTime != nil {
-				item.EndDate = timeutil.RFC3339InPtr(event.Occurrences[0].EndTime, h.Loc)
+			occ := event.Occurrences[0]
+			if occ.IsAllDay {
+				item.StartDate = timeutil.DateIn(occ.StartTime, timeutil.OccLoc(occ.Timezone, h.Loc))
+				item.EndDate = timeutil.DateInPtr(occ.EndTime, timeutil.OccLoc(occ.Timezone, h.Loc))
+				item.AllDay = true
+			} else {
+				item.StartDate = timeutil.RFC3339In(occ.StartTime, h.Loc)
+				if occ.EndTime != nil {
+					item.EndDate = timeutil.RFC3339InPtr(occ.EndTime, h.Loc)
+				}
 			}
 		}
 
 		// Populate eventSchedule from canonical recurrence data
 		item.EventSchedule = schema.ScheduleFromRecurrence(event.Recurrence, h.Logger)
 		if item.EventSchedule != nil && event.Recurrence != nil {
+			// Resolve the series zone from the recurrence TZID when present so
+			// all-day recurring series dates render in their own zone rather
+			// than the node zone (which can shift the civil date).
+			seriesLoc := h.Loc
+			if event.Recurrence.TZID != "" {
+				if l, err := time.LoadLocation(event.Recurrence.TZID); err == nil {
+					seriesLoc = l
+				}
+			}
 			if event.Recurrence.SeriesStart != nil {
-				item.EventSchedule.StartDate = timeutil.DateIn(*event.Recurrence.SeriesStart, h.Loc)
+				item.EventSchedule.StartDate = timeutil.DateIn(*event.Recurrence.SeriesStart, seriesLoc)
 			} else if len(event.Occurrences) > 0 {
-				item.EventSchedule.StartDate = timeutil.DateIn(event.Occurrences[0].StartTime, h.Loc)
+				item.EventSchedule.StartDate = timeutil.DateIn(event.Occurrences[0].StartTime, timeutil.OccLoc(event.Occurrences[0].Timezone, seriesLoc))
 			}
 			if event.Recurrence.SeriesEnd != nil {
-				item.EventSchedule.EndDate = timeutil.DateIn(*event.Recurrence.SeriesEnd, h.Loc)
+				item.EventSchedule.EndDate = timeutil.DateIn(*event.Recurrence.SeriesEnd, seriesLoc)
 			}
 		}
 
@@ -396,9 +412,15 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Add startDate/endDate/doorTime from first occurrence (required per Interop Profile §3.1)
 	if len(item.Occurrences) > 0 {
 		occ := item.Occurrences[0]
-		event.StartDate = timeutil.RFC3339In(occ.StartTime, h.Loc)
-		if occ.EndTime != nil {
-			event.EndDate = timeutil.RFC3339InPtr(occ.EndTime, h.Loc)
+		if occ.IsAllDay {
+			event.StartDate = timeutil.DateIn(occ.StartTime, timeutil.OccLoc(occ.Timezone, h.Loc))
+			event.EndDate = timeutil.DateInPtr(occ.EndTime, timeutil.OccLoc(occ.Timezone, h.Loc))
+			event.AllDay = true
+		} else {
+			event.StartDate = timeutil.RFC3339In(occ.StartTime, h.Loc)
+			if occ.EndTime != nil {
+				event.EndDate = timeutil.RFC3339InPtr(occ.EndTime, h.Loc)
+			}
 		}
 		if occ.DoorTime != nil {
 			event.DoorTime = timeutil.RFC3339InPtr(occ.DoorTime, h.Loc)
@@ -425,18 +447,24 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		subEvents := make([]schema.EventSummary, 0, len(item.Occurrences))
 		for _, occ := range item.Occurrences {
 			sub := schema.EventSummary{
-				Type:      "Event",
-				Name:      item.Name,
-				StartDate: timeutil.RFC3339In(occ.StartTime, h.Loc),
-				Timezone:  occ.Timezone,
+				Type:     "Event",
+				Name:     item.Name,
+				Timezone: occ.Timezone,
+			}
+			if occ.IsAllDay {
+				sub.StartDate = timeutil.DateIn(occ.StartTime, timeutil.OccLoc(occ.Timezone, h.Loc))
+				sub.EndDate = timeutil.DateInPtr(occ.EndTime, timeutil.OccLoc(occ.Timezone, h.Loc))
+				sub.AllDay = true
+			} else {
+				sub.StartDate = timeutil.RFC3339In(occ.StartTime, h.Loc)
+				if occ.EndTime != nil {
+					sub.EndDate = timeutil.RFC3339InPtr(occ.EndTime, h.Loc)
+				}
 			}
 			// Populate @id so the admin UI can extract the occurrence UUID for
 			// PUT/DELETE /api/v1/admin/events/{id}/occurrences/{occurrenceId}.
 			if occ.ID != "" {
 				sub.ID = h.BaseURL + "/api/v1/admin/events/" + item.ULID + "/occurrences/" + occ.ID
-			}
-			if occ.EndTime != nil {
-				sub.EndDate = timeutil.RFC3339InPtr(occ.EndTime, h.Loc)
 			}
 			if occ.DoorTime != nil {
 				sub.DoorTime = timeutil.RFC3339InPtr(occ.DoorTime, h.Loc)
@@ -461,13 +489,21 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Only present for events that belong to a series with an RRULE.
 	event.EventSchedule = schema.ScheduleFromRecurrence(item.Recurrence, h.Logger)
 	if event.EventSchedule != nil && item.Recurrence != nil {
+		// Resolve the series zone from the recurrence TZID when present so
+		// all-day recurring series dates render in their own zone.
+		seriesLoc := h.Loc
+		if item.Recurrence.TZID != "" {
+			if l, err := time.LoadLocation(item.Recurrence.TZID); err == nil {
+				seriesLoc = l
+			}
+		}
 		if item.Recurrence.SeriesStart != nil {
-			event.EventSchedule.StartDate = timeutil.DateIn(*item.Recurrence.SeriesStart, h.Loc)
+			event.EventSchedule.StartDate = timeutil.DateIn(*item.Recurrence.SeriesStart, seriesLoc)
 		} else if len(item.Occurrences) > 0 {
-			event.EventSchedule.StartDate = timeutil.DateIn(item.Occurrences[0].StartTime, h.Loc)
+			event.EventSchedule.StartDate = timeutil.DateIn(item.Occurrences[0].StartTime, timeutil.OccLoc(item.Occurrences[0].Timezone, seriesLoc))
 		}
 		if item.Recurrence.SeriesEnd != nil {
-			event.EventSchedule.EndDate = timeutil.DateIn(*item.Recurrence.SeriesEnd, h.Loc)
+			event.EventSchedule.EndDate = timeutil.DateIn(*item.Recurrence.SeriesEnd, seriesLoc)
 		}
 	}
 

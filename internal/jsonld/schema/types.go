@@ -13,6 +13,7 @@ type Event struct {
 	StartDate           string         `json:"startDate,omitempty"`
 	EndDate             string         `json:"endDate,omitempty"`
 	DoorTime            string         `json:"doorTime,omitempty"`
+	AllDay              bool           `json:"allDay,omitempty"`
 	TimeZone            string         `json:"timeZone,omitempty"`
 	Location            any            `json:"location,omitempty"`
 	Organizer           any            `json:"organizer,omitempty"`
@@ -52,6 +53,7 @@ type EventSummary struct {
 	StartDate     string    `json:"startDate,omitempty"`
 	EndDate       string    `json:"endDate,omitempty"`
 	DoorTime      string    `json:"doorTime,omitempty"`
+	AllDay        bool      `json:"allDay,omitempty"`
 	Timezone      string    `json:"timezone,omitempty"`
 	Location      any       `json:"location,omitempty"`
 	EventSchedule *Schedule `json:"eventSchedule,omitempty"`

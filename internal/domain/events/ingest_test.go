@@ -80,6 +80,7 @@ type MockRepository struct {
 type occurrenceDateUpdate struct {
 	startTime time.Time
 	endTime   *time.Time
+	isAllDay  bool
 }
 
 // updateEventCall tracks calls to UpdateEvent for verification
@@ -459,13 +460,14 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params Up
 func (m *MockRepository) DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error {
 	return nil
 }
-func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.occurrenceDates[eventULID] = &occurrenceDateUpdate{
 		startTime: startTime,
 		endTime:   endTime,
+		isAllDay:  isAllDay,
 	}
 	return nil
 }
