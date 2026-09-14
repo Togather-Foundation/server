@@ -186,7 +186,7 @@ func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID st
 	return args.Error(0)
 }
 
-func (m *MockRepository) UpdateOccurrenceDatesForOccurrence(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
+func (m *MockRepository) UpdateOccurrenceDatesByOccurrenceID(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 	args := m.Called(ctx, eventULID, occurrenceID, startTime, endTime, isAllDay)
 	return args.Error(0)
 }

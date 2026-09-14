@@ -49,7 +49,7 @@ func TestFixAndApproveEventWithReview_DoesNotRewriteSiblingOccurrences(t *testin
 			wholeEventCalls = append(wholeEventCalls, "whole-event")
 			return nil
 		}
-		repo.updateOccurrenceDatesForOccurrenceFunc = func(_ context.Context, _ string, occurrenceID string, _ time.Time, _ *time.Time, _ bool) error {
+		repo.updateOccurrenceDatesByOccurrenceIDFunc = func(_ context.Context, _ string, occurrenceID string, _ time.Time, _ *time.Time, _ bool) error {
 			perRowCalls = append(perRowCalls, occurrenceID)
 			return nil
 		}
@@ -81,7 +81,7 @@ func TestFixAndApproveEventWithReview_DoesNotRewriteSiblingOccurrences(t *testin
 		var capturedStart time.Time
 		var capturedEnd *time.Time
 		var capturedIsAllDay bool
-		repo.updateOccurrenceDatesForOccurrenceFunc = func(_ context.Context, _ string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
+		repo.updateOccurrenceDatesByOccurrenceIDFunc = func(_ context.Context, _ string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 			capturedOccurrenceID = occurrenceID
 			capturedStart = startTime
 			capturedEnd = endTime
@@ -132,7 +132,7 @@ func TestFixAndApproveEventWithReview_DoesNotRewriteSiblingOccurrences(t *testin
 
 		var capturedStart time.Time
 		var capturedIsAllDay bool
-		repo.updateOccurrenceDatesForOccurrenceFunc = func(_ context.Context, _ string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
+		repo.updateOccurrenceDatesByOccurrenceIDFunc = func(_ context.Context, _ string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 			capturedStart = startTime
 			capturedIsAllDay = isAllDay
 			*perRowCalls = append(*perRowCalls, occurrenceID)
@@ -159,6 +159,15 @@ func TestFixAndApproveEventWithReview_DoesNotRewriteSiblingOccurrences(t *testin
 	t.Run("single-occurrence correction still carries the review marker", func(t *testing.T) {
 		event := seriesEvent()
 		event.Occurrences = event.Occurrences[:1]
+		// The row itself is date-only, so the marker survives the review path on
+		// its own merit (from the row's own is_all_day), not via the event-level
+		// flag.
+		event.Occurrences[0] = Occurrence{
+			ID:        "occ-0",
+			StartTime: time.Date(2026, 11, 1, 0, 0, 0, 0, loc),
+			Timezone:  "America/Toronto",
+			IsAllDay:  true,
+		}
 		repo, wholeEventCalls, perRowCalls := newRepo(event)
 
 		var capturedStart time.Time
@@ -170,6 +179,9 @@ func TestFixAndApproveEventWithReview_DoesNotRewriteSiblingOccurrences(t *testin
 			return nil
 		}
 
+		// Corrected to a timed value; because the row is all-day, it must be
+		// re-anchored to local midnight rather than stored as a timed instant
+		// carrying the marker.
 		correctedStart := time.Date(2026, 11, 1, 19, 0, 0, 0, loc)
 		service := newAdminServiceForOccurrenceTest(repo)
 		if _, err := service.FixAndApproveEventWithReview(ctx, eventULID, 1, "admin", nil, &correctedStart, nil); err != nil {

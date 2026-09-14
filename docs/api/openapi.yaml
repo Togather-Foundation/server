@@ -3357,14 +3357,15 @@ components:
         all_day:
           type: boolean
           description: >
-            True if this occurrence is an all-day (date-only) event. The marker and
-            the instant are stored together: sending all_day: true anchors
-            start_time and end_time to local midnight of their civil date in the
-            occurrence's timezone (the civil date is taken from the value as
-            expressed in its own offset), and the occurrence is rendered as a
-            date-only start_time/end_time. Retiming an all-day occurrence to a time
-            off local midnight clears the marker, so a stored row can never claim
-            is_all_day while holding a timed instant. This is the same
+            Marker for an all-day (date-only) occurrence. When true, the occurrence
+            is anchored to local midnight in its timezone. This marker does not
+            change the wire encoding: start_time and end_time are always RFC3339
+            date-times in the admin occurrence API (both request and response).
+            Sending all_day: true anchors start_time and end_time to local midnight
+            of their civil date in the occurrence's timezone (the civil date is the
+            date in the occurrence's own zone); retiming an all-day occurrence to a
+            time off local midnight clears the marker, so a stored row can never
+            claim is_all_day while holding a timed instant. This is the same
             normalisation ingestion applies to a bare YYYY-MM-DD startDate.
         venue_ulid:
           type: [string, 'null']

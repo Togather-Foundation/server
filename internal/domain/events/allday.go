@@ -22,7 +22,7 @@ import "time"
 // and recurrence all see 19:00 — every "all-day rows are local midnight"
 // assumption downstream becomes false.
 //
-// NormalizeOccurrenceAllDay returns the canonical (start, end, marker) triple
+// NormalizeOccurrenceAllDay returns the canonical (start, end, error) tuple
 // for a single occurrence write:
 //
 //   - allDay true  → start and end are re-anchored to local midnight of their
@@ -60,13 +60,20 @@ func NormalizeOccurrenceAllDay(start time.Time, end *time.Time, allDay bool, loc
 // same function ingestion uses — so exactly one implementation decides "which
 // civil date, and midnight in which zone".
 //
-// The civil date is taken from the value as expressed in its own offset/zone
-// (t.Date() inside parseAllDayDate), then re-anchored to midnight in the
-// occurrence's zone. Round-tripping through RFC3339 is lossless for that
-// decision: the layout keeps the value's own offset, and only the date part is
-// used.
+// The civil date is the date in the occurrence's own (target) zone, not in the
+// value's own offset. A DB-read instant carries the server's local zone (pgx
+// ScanLocation is nil → time.Unix → time.Local), so formatting it verbatim
+// would take the civil date a day early for any row east of the server zone.
+// We therefore re-express the instant in loc first (nil → UTC), then
+// round-trip through RFC3339 so parseAllDayDate picks the date in that zone and
+// re-anchors to midnight there. This is idempotent for canonical rows (already
+// midnight in loc) and correct for client instants interpreted in the
+// occurrence zone.
 func anchorAllDayInstant(t time.Time, loc *time.Location) (time.Time, error) {
-	return parseAllDayDate(t.Format(time.RFC3339), loc)
+	if loc == nil {
+		loc = time.UTC
+	}
+	return parseAllDayDate(t.In(loc).Format(time.RFC3339), loc)
 }
 
 // isLocalMidnight reports whether t is exactly midnight in loc. It is the

@@ -135,7 +135,7 @@ func (s stubEventsRepo) UpdateOccurrenceDates(_ context.Context, _ string, _ tim
 	return errors.New("not implemented")
 }
 
-func (s stubEventsRepo) UpdateOccurrenceDatesForOccurrence(_ context.Context, _ string, _ string, _ time.Time, _ *time.Time, _ bool) error {
+func (s stubEventsRepo) UpdateOccurrenceDatesByOccurrenceID(_ context.Context, _ string, _ string, _ time.Time, _ *time.Time, _ bool) error {
 	return errors.New("not implemented")
 }
 

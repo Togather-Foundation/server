@@ -472,10 +472,10 @@ func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID st
 	return nil
 }
 
-// UpdateOccurrenceDatesForOccurrence is the per-row variant (see the Repository
+// UpdateOccurrenceDatesByOccurrenceID is the per-row variant (see the Repository
 // interface). Records the update under the occurrence ID so tests can assert
 // that a correction touched exactly one row.
-func (m *MockRepository) UpdateOccurrenceDatesForOccurrence(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
+func (m *MockRepository) UpdateOccurrenceDatesByOccurrenceID(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

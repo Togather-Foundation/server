@@ -196,11 +196,10 @@ func TestAdminFixReviewKeepsMultiOccurrenceSeries(t *testing.T) {
 	agentKey := insertAPIKey(t, env, "allday-agent-series")
 
 	// A listing with three genuinely timed occurrences. The event-level startDate
-	// is timed here because on this base the ingest validation still propagates
-	// an inferred event-level all-day flag down to the occurrences (that
-	// over-reach is fixed on the separate F1 branch, t_2fffdfe8, which is not
-	// merged). The state the fix must survive is the same either way and is set
-	// up explicitly below: event-level marker true, every occurrence row timed.
+	// is timed here so the ingest validation leaves every occurrence timed (the
+	// inferred event-level all-day over-reach was fixed in t_2fffdfe8, which is
+	// now merged). The state the fix must survive is set up explicitly below:
+	// event-level marker true, every occurrence row timed.
 	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
 		"name":        "Three Night Run",
 		"description": "A three-date series, every date timed at 19:00.",
@@ -418,4 +417,217 @@ func TestAdminFixReviewSingleAllDayEventRoundTrip(t *testing.T) {
 	require.Equal(t, "2026-11-08", eventLevelStartDate(t, env, ulid))
 
 	assertAllDayRowsAreAnchored(t, env)
+}
+
+// postOccurrence creates a new occurrence on an event as an admin.
+func postOccurrence(t *testing.T, env *testEnv, adminToken, eventULID string, body map[string]any) *http.Response {
+	t.Helper()
+
+	payload, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	url := fmt.Sprintf("%s/api/v1/admin/events/%s/occurrences", env.Server.URL, eventULID)
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
+	return resp
+}
+
+// occurrenceLocalWindow reads the occurrence's local civil window straight from
+// the database: local_date/local_start_time are generated columns (start_time AT
+// TIME ZONE timezone), and the end is read the same way. This is the invariant
+// expressed exactly as the schema sees it.
+func occurrenceLocalWindow(t *testing.T, env *testEnv, occurrenceUUID string) (startDate, startClock, endDate, endClock string, isAllDay bool) {
+	t.Helper()
+
+	require.NoError(t, env.Pool.QueryRow(env.Context, `
+		SELECT to_char(local_date, 'YYYY-MM-DD'),
+		       to_char(local_start_time, 'HH24:MI:SS'),
+		       to_char((end_time AT TIME ZONE timezone)::date, 'YYYY-MM-DD'),
+		       to_char((end_time AT TIME ZONE timezone)::time, 'HH24:MI:SS'),
+		       is_all_day
+		  FROM event_occurrences
+		 WHERE id = $1::uuid
+	`, occurrenceUUID).Scan(&startDate, &startClock, &endDate, &endClock, &isAllDay))
+	return startDate, startClock, endDate, endClock, isAllDay
+}
+
+// newParisAllDayOccurrence creates a single-occurrence event and re-anchors it
+// as a correctly-anchored all-day row in Europe/Paris (a positive-offset zone)
+// on the given civil date. It returns the event ULID and the occurrence UUID.
+// The name and date must be unique per caller to avoid the ingest near-duplicate
+// detector flagging sibling test events.
+func newParisAllDayOccurrence(t *testing.T, env *testEnv, adminToken, agentKey, name, date string) (string, string) {
+	t.Helper()
+
+	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
+		"name":        name,
+		"description": "A single all-day occurrence anchored in Europe/Paris.",
+		"startDate":   date + "T19:00:00-05:00",
+		"occurrences": []map[string]any{
+			{"startDate": date + "T19:00:00-05:00", "endDate": date + "T21:00:00-05:00"},
+		},
+		"location": map[string]any{
+			"name":            "Le Marais " + name,
+			"addressLocality": "Paris",
+			"addressRegion":   "IDF",
+		},
+	})
+
+	subs := subEvents(t, getEventAsAgent(t, env, ulid))
+	require.Len(t, subs, 1)
+	occurrenceUUID := occurrenceUUIDFromSubEvent(t, subs[0])
+
+	resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+		"all_day":    true,
+		"timezone":   "Europe/Paris",
+		"start_time": date + "T19:00:00+01:00",
+		"end_time":   date + "T23:00:00+01:00",
+	})
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "anchor Paris all-day row")
+
+	var updated map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
+	require.Equal(t, date+"T00:00:00+01:00", updated["start_time"])
+	require.Equal(t, date+"T00:00:00+01:00", updated["end_time"])
+	return ulid, occurrenceUUID
+}
+
+// TestAdminPostOccurrenceAllDayAnchorsToMidnight pins the POST create writer:
+// all_day:true with a timed instant must store local midnight in the
+// occurrence's zone, so the stored instant and the date-only rendering agree.
+func TestAdminPostOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
+	env := setupTestEnv(t)
+
+	insertAdminUser(t, env, alldayTestAdminUser, alldayTestAdminPassword, "allday-admin@example.com", "admin")
+	adminToken := adminLogin(t, env, alldayTestAdminUser, alldayTestAdminPassword)
+	agentKey := insertAPIKey(t, env, "allday-agent-post")
+
+	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
+		"name":        "POST All-Day Event",
+		"description": "A base event to POST an all-day occurrence onto.",
+		"startDate":   "2026-11-05T19:00:00-05:00",
+		"occurrences": []map[string]any{
+			{"startDate": "2026-11-05T19:00:00-05:00", "endDate": "2026-11-05T21:00:00-05:00"},
+		},
+		"location": map[string]any{
+			"name":            "The Rex",
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+		},
+	})
+
+	resp := postOccurrence(t, env, adminToken, ulid, map[string]any{
+		"all_day":    true,
+		"timezone":   "America/Toronto",
+		"start_time": "2026-11-07T19:00:00-05:00",
+		"end_time":   "2026-11-07T21:00:00-05:00",
+	})
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusCreated, resp.StatusCode, "POST occurrence with all_day:true")
+
+	var created map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
+	require.Equal(t, true, created["all_day"])
+	require.Equal(t, "2026-11-07T00:00:00-05:00", created["start_time"],
+		"POST all_day:true must store local midnight, not the timed instant")
+	require.Equal(t, "2026-11-07T00:00:00-05:00", created["end_time"])
+
+	occUUID, ok := created["id"].(string)
+	require.True(t, ok, "POST response must include the occurrence id")
+
+	startDate, startClock, _, _, isAllDay := occurrenceLocalWindow(t, env, occUUID)
+	require.Equal(t, "2026-11-07", startDate, "stored row must be anchored to the requested civil date")
+	require.Equal(t, "00:00:00", startClock, "stored row must be local midnight")
+	require.True(t, isAllDay)
+
+	assertAllDayRowsAreAnchored(t, env)
+}
+
+// TestAdminAllDayInvariantPositiveOffsetZone pins the F1 fix in a
+// positive-offset zone (Europe/Paris). A DB-read instant carries the server's
+// local zone, not the occurrence's zone, so the civil date must come from the
+// occurrence's own zone — otherwise an unrelated PUT or a single-sided
+// correction would silently shift the date a day.
+func TestAdminAllDayInvariantPositiveOffsetZone(t *testing.T) {
+	env := setupTestEnv(t)
+
+	insertAdminUser(t, env, alldayTestAdminUser, alldayTestAdminPassword, "allday-admin@example.com", "admin")
+	adminToken := adminLogin(t, env, alldayTestAdminUser, alldayTestAdminPassword)
+	agentKey := insertAPIKey(t, env, "allday-agent-paris")
+
+	t.Run("unrelated PUT leaves a correctly-anchored Paris row unchanged", func(t *testing.T) {
+		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day A", "2026-11-06")
+
+		resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+			"ticket_url": "https://paris.example/tickets",
+		})
+		defer func() { _ = resp.Body.Close() }()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		startDate, startClock, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
+		require.Equal(t, "2026-11-06", startDate, "an unrelated PUT must not shift the civil date")
+		require.Equal(t, "00:00:00", startClock)
+		require.Equal(t, "2026-11-06", endDate, "an unrelated PUT must not shift the end")
+		require.Equal(t, "00:00:00", endClock)
+		require.True(t, isAllDay)
+	})
+
+	t.Run("correcting only the start must not shift the end", func(t *testing.T) {
+		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day B", "2026-11-07")
+
+		resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+			"all_day":    true,
+			"start_time": "2026-11-06T14:00:00+01:00",
+		})
+		defer func() { _ = resp.Body.Close() }()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		startDate, startClock, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
+		require.Equal(t, "2026-11-06", startDate, "correcting only the start must move the start")
+		require.Equal(t, "00:00:00", startClock)
+		require.Equal(t, "2026-11-07", endDate, "correcting only the start must not shift the end")
+		require.Equal(t, "00:00:00", endClock)
+		require.True(t, isAllDay)
+	})
+
+	t.Run("correcting only the end must not shift the start", func(t *testing.T) {
+		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day C", "2026-11-08")
+
+		resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+			"all_day":  true,
+			"end_time": "2026-11-09T14:00:00+01:00",
+		})
+		defer func() { _ = resp.Body.Close() }()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		startDate, startClock, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
+		require.Equal(t, "2026-11-08", startDate, "correcting only the end must not shift the start")
+		require.Equal(t, "00:00:00", startClock)
+		require.Equal(t, "2026-11-09", endDate, "correcting only the end must move the end")
+		require.Equal(t, "00:00:00", endClock)
+		require.True(t, isAllDay)
+	})
+
+	t.Run("tz change re-anchors preserving the civil date", func(t *testing.T) {
+		// January keeps every zone in standard time, so the host Go tzdata and
+		// the Postgres tzdata agree on the offset (no DST-boundary ambiguity).
+		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day D", "2026-01-10")
+
+		resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+			"timezone": "America/Vancouver",
+		})
+		defer func() { _ = resp.Body.Close() }()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		startDate, startClock, _, _, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
+		require.Equal(t, "2026-01-10", startDate, "the civil date must survive the zone change")
+		require.Equal(t, "00:00:00", startClock)
+		require.True(t, isAllDay)
+	})
 }

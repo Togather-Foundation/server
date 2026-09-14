@@ -60,15 +60,16 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 		}
 	})
 
-	t.Run("the civil date comes from the value's own offset", func(t *testing.T) {
-		// 2026-11-06T02:00:00Z is 2026-11-05 22:00 in Toronto but the value
-		// itself claims the 6th, so the 6th is the date that is anchored.
+	t.Run("the civil date is the date in the occurrence's own zone", func(t *testing.T) {
+		// 2026-11-06T02:00:00Z is 2026-11-05 22:00 in Toronto. The civil date is
+		// the one in the occurrence's own (target) zone, so the 5th — not the
+		// 6th the value's own UTC offset would suggest — is the date anchored.
 		start := time.Date(2026, 11, 6, 2, 0, 0, 0, time.UTC)
 		gotStart, _, err := NormalizeOccurrenceAllDay(start, nil, true, loc)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := time.Date(2026, 11, 6, 0, 0, 0, 0, loc)
+		want := time.Date(2026, 11, 5, 0, 0, 0, 0, loc)
 		if !gotStart.Equal(want) {
 			t.Errorf("start = %s, want %s", gotStart, want)
 		}
@@ -86,6 +87,89 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 			t.Errorf("start = %s, want local midnight on the 8th", gotStart)
 		}
 	})
+}
+
+// TestAnchorAllDayInstantPositiveOffset pins the F1 fix for a positive-offset
+// zone: a correctly-anchored Paris all-day row read back from the DB carries
+// the server's local zone (pgx ScanLocation nil → time.Unix → time.Local), not
+// Paris. The civil date must come from the occurrence's own zone (Paris), so
+// the 6th survives a DB round-trip — not the 5th the value's own UTC offset
+// would produce.
+func TestAnchorAllDayInstantPositiveOffset(t *testing.T) {
+	paris, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Fatalf("load Europe/Paris: %v", err)
+	}
+
+	midnightParis := time.Date(2026, 11, 6, 0, 0, 0, 0, paris)
+	dbValue := midnightParis.UTC() // what a pgx read yields (location UTC)
+
+	got, err := anchorAllDayInstant(dbValue, paris)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got.Equal(midnightParis) {
+		t.Errorf("anchor(%s, Europe/Paris) = %s, want %s (the civil date must survive a DB round-trip)",
+			dbValue.Format(time.RFC3339), got.Format(time.RFC3339), midnightParis.Format(time.RFC3339))
+	}
+
+	// nil loc is treated as UTC.
+	gotUTC, err := anchorAllDayInstant(dbValue, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if y, m, d := gotUTC.Date(); y != 2026 || m != time.November || d != 5 {
+		t.Errorf("anchor(nil loc → UTC) date = %04d-%02d-%02d, want 2026-11-05", y, m, d)
+	}
+}
+
+// TestUpdateOccurrenceOnEvent_TzChangePositiveOffsetPreservesCivilDate pins the
+// F1 fix end to end for a timezone change: a Paris all-day row read back with
+// the server's local (UTC) location must keep its civil date when the zone
+// changes, re-anchored to local midnight in the new zone.
+func TestUpdateOccurrenceOnEvent_TzChangePositiveOffsetPreservesCivilDate(t *testing.T) {
+	ctx := context.Background()
+	paris, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Fatalf("load Europe/Paris: %v", err)
+	}
+	vancouver, err := time.LoadLocation("America/Vancouver")
+	if err != nil {
+		t.Fatalf("load America/Vancouver: %v", err)
+	}
+
+	// midnight Paris Nov 6, as the DB would read it back (location UTC).
+	dbStart := time.Date(2026, 11, 6, 0, 0, 0, 0, paris).UTC()
+
+	var captured OccurrenceUpdateParams
+	venueID := "11111111-1111-1111-1111-111111111111"
+	repo := &mockTransactionalRepo{}
+	repo.getByULIDFunc = func(_ context.Context, _ string) (*Event, error) {
+		return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", LifecycleState: "draft", PrimaryVenueID: &venueID}, nil
+	}
+	repo.getOccurrenceByIDFunc = func(_ context.Context, _ string, _ string) (*Occurrence, error) {
+		return &Occurrence{ID: "occ-uuid", StartTime: dbStart, Timezone: "Europe/Paris", IsAllDay: true}, nil
+	}
+	repo.updateOccurrenceFunc = func(_ context.Context, _, _ string, params OccurrenceUpdateParams) (*Occurrence, error) {
+		captured = params
+		return &Occurrence{ID: "occ-uuid"}, nil
+	}
+
+	zone := "America/Vancouver"
+	service := newAdminServiceForOccurrenceTest(repo)
+	if _, err := service.UpdateOccurrenceOnEvent(ctx, "01HEVENT000000000000000001", "occ-uuid", OccurrenceUpdateParams{Timezone: &zone}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if captured.StartTime == nil {
+		t.Fatal("the re-anchored instant must be written on a zone change")
+	}
+	if !isLocalMidnight(*captured.StartTime, vancouver) {
+		t.Errorf("stored start %s must be local midnight in the new zone", captured.StartTime.Format(time.RFC3339))
+	}
+	if y, m, d := captured.StartTime.In(vancouver).Date(); y != 2026 || m != time.November || d != 6 {
+		t.Errorf("civil date = %04d-%02d-%02d, want 2026-11-06", y, m, d)
+	}
 }
 
 func TestIsLocalMidnight(t *testing.T) {
