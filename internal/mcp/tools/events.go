@@ -13,6 +13,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/timeutil"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/rs/zerolog"
 )
@@ -242,7 +243,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 		return resultJSON, nil
 	}
 
-	payload := buildEventPayload(ctx, event, t.baseURL, t.placeResolver, t.orgResolver, t.logger)
+	payload := buildEventPayload(ctx, event, t.baseURL, t.placeResolver, t.orgResolver, t.loc, t.logger)
 	resultJSON, err := mcp.NewToolResultJSON(payload)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("failed to build response", err), nil
@@ -306,12 +307,15 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		items = append(items, buildListItem(event, t.baseURL, t.placeResolver, t.orgResolver, t.logger, !documentMode))
+		items = append(items, buildListItem(event, t.baseURL, t.placeResolver, t.orgResolver, t.loc, t.logger, !documentMode))
 	}
 
 	response := map[string]any{
 		"items":       items,
 		"next_cursor": result.NextCursor,
+	}
+	if t.loc != nil {
+		response["timeZone"] = t.loc.String()
 	}
 	if documentMode {
 		response["@context"] = defaultContext()
@@ -415,7 +419,7 @@ func (t *EventTools) AddEventHandler(ctx context.Context, request mcp.CallToolRe
 	return resultJSON, nil
 }
 
-func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver, logger zerolog.Logger, includeContext bool) map[string]any {
+func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver, loc *time.Location, logger zerolog.Logger, includeContext bool) map[string]any {
 	item := map[string]any{
 		"@type": "Event",
 		"name":  event.Name,
@@ -428,7 +432,10 @@ func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, o
 	}
 
 	if len(event.Occurrences) > 0 {
-		item["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
+		item["startDate"] = timeutil.RFC3339In(event.Occurrences[0].StartTime, loc)
+		if event.Occurrences[0].EndTime != nil {
+			item["endDate"] = timeutil.RFC3339InPtr(event.Occurrences[0].EndTime, loc)
+		}
 	}
 
 	location := resolveEventLocation(context.Background(), event, baseURL, placeRes, logger)
@@ -444,7 +451,7 @@ func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, o
 	return item
 }
 
-func buildEventPayload(ctx context.Context, event *events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver, logger zerolog.Logger) map[string]any {
+func buildEventPayload(ctx context.Context, event *events.Event, baseURL string, placeRes PlaceResolver, orgRes OrgResolver, loc *time.Location, logger zerolog.Logger) map[string]any {
 	if event == nil {
 		return map[string]any{}
 	}
@@ -457,10 +464,13 @@ func buildEventPayload(ctx context.Context, event *events.Event, baseURL string,
 	}
 
 	if len(event.Occurrences) > 0 {
-		payload["startDate"] = event.Occurrences[0].StartTime.Format(time.RFC3339)
+		payload["startDate"] = timeutil.RFC3339In(event.Occurrences[0].StartTime, loc)
 		if event.Occurrences[0].EndTime != nil {
-			payload["endDate"] = event.Occurrences[0].EndTime.Format(time.RFC3339)
+			payload["endDate"] = timeutil.RFC3339InPtr(event.Occurrences[0].EndTime, loc)
 		}
+	}
+	if loc != nil {
+		payload["timeZone"] = loc.String()
 	}
 
 	if event.Description != "" {

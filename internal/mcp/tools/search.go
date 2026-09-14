@@ -173,6 +173,9 @@ func (t *SearchTools) SearchHandler(ctx context.Context, request mcp.CallToolReq
 		"items": items,
 		"count": len(items),
 	}
+	if t.loc != nil {
+		response["timeZone"] = t.loc.String()
+	}
 
 	return toolResultJSON(response)
 }
@@ -191,7 +194,7 @@ func (t *SearchTools) searchEvents(ctx context.Context, query string, limit int)
 	}
 	items := make([]map[string]any, 0, len(result.Events))
 	for _, event := range result.Events {
-		item := buildListItem(event, t.baseURL, t.placesService, t.orgService, t.logger, true)
+		item := buildListItem(event, t.baseURL, t.placesService, t.orgService, t.loc, t.logger, true)
 		item["type"] = "event"
 		items = append(items, item)
 	}

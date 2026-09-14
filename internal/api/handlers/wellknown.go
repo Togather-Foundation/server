@@ -7,17 +7,19 @@ import (
 
 // WellKnownHandler handles .well-known endpoints for node discovery
 type WellKnownHandler struct {
-	BaseURL string
-	Version string
-	Updated time.Time
+	BaseURL  string
+	Version  string
+	Updated  time.Time
+	TimeZone string
 }
 
 // NewWellKnownHandler creates a new well-known endpoint handler
-func NewWellKnownHandler(baseURL string, version string, updated time.Time) *WellKnownHandler {
+func NewWellKnownHandler(baseURL string, version string, updated time.Time, timeZone string) *WellKnownHandler {
 	return &WellKnownHandler{
-		BaseURL: baseURL,
-		Version: version,
-		Updated: updated,
+		BaseURL:  baseURL,
+		Version:  version,
+		Updated:  updated,
+		TimeZone: timeZone,
 	}
 }
 
@@ -34,6 +36,7 @@ func (h *WellKnownHandler) SELProfile(w http.ResponseWriter, r *http.Request) {
 		"version":           h.Version,
 		"node":              h.BaseURL,
 		"updated":           h.Updated.Format("2006-01-02"),
+		"timeZone":          h.TimeZone,
 		"api_documentation": h.BaseURL + "/api/docs", // Link to interactive API documentation (server-6lnc)
 	}
 

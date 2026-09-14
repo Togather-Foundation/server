@@ -1086,3 +1086,126 @@ func TestEventsHandlerGetEventScheduleWithInterval(t *testing.T) {
 	sched := es.(map[string]any)
 	require.Equal(t, "P2W", sched["repeatFrequency"], "INTERVAL=2 WEEKLY should produce P2W")
 }
+
+func torontoLoc(t *testing.T) *time.Location {
+	t.Helper()
+	loc, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err, "America/Toronto must be loadable (tzdata required)")
+	return loc
+}
+
+// TestEventsHandlerListEmitsNodeTimeZone verifies the list envelope advertises
+// the node's IANA zone once and that item startDate is rendered in local civil
+// time with a DST-correct offset (not the container's UTC "Z").
+func TestEventsHandlerListEmitsNodeTimeZone(t *testing.T) {
+	start := time.Date(2026, 7, 10, 23, 0, 0, 0, time.UTC)
+
+	repo := stubEventsRepo{
+		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+			return events.ListResult{
+				Events: []events.Event{{
+					Name:        "Summer Concert",
+					Occurrences: []events.Occurrence{{StartTime: start}},
+				}},
+			}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+	h.Loc = torontoLoc(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events?limit=1", nil)
+	res := httptest.NewRecorder()
+	h.List(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+
+	var payload listResponse
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	require.Equal(t, "America/Toronto", payload.TimeZone)
+
+	items, ok := payload.Items.([]any)
+	require.True(t, ok)
+	require.Len(t, items, 1)
+	item0, ok := items[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "2026-07-10T19:00:00-04:00", item0["startDate"])
+}
+
+// TestEventsHandlerListStartDateDSTBoundary verifies the local civil day and
+// offset flip correctly across the DST transitions.
+func TestEventsHandlerListStartDateDSTBoundary(t *testing.T) {
+	cases := []struct {
+		name     string
+		instant  string
+		expected string
+	}{
+		{"fall-back after transition", "2026-11-01T06:30:00Z", "2026-11-01T01:30:00-05:00"},
+		{"spring-forward after transition", "2027-03-14T07:30:00Z", "2027-03-14T03:30:00-04:00"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start, err := time.Parse(time.RFC3339, tc.instant)
+			require.NoError(t, err)
+
+			repo := stubEventsRepo{
+				listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+					return events.ListResult{
+						Events: []events.Event{{
+							Name:        "Boundary Event",
+							Occurrences: []events.Occurrence{{StartTime: start}},
+						}},
+					}, nil
+				},
+			}
+			h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+			h.Loc = torontoLoc(t)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/events", nil)
+			res := httptest.NewRecorder()
+			h.List(res, req)
+
+			require.Equal(t, http.StatusOK, res.Code)
+
+			var payload map[string]any
+			require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+			items, ok := payload["items"].([]any)
+			require.True(t, ok)
+			require.Len(t, items, 1)
+			item0, ok := items[0].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, tc.expected, item0["startDate"])
+		})
+	}
+}
+
+// TestEventsHandlerGetEmitsNodeTimeZone verifies single-event detail carries a
+// timeZone field and a DST-correct startDate offset.
+func TestEventsHandlerGetEmitsNodeTimeZone(t *testing.T) {
+	start := time.Date(2026, 7, 10, 23, 0, 0, 0, time.UTC)
+
+	repo := stubEventsRepo{
+		getFn: func(_ string) (*events.Event, error) {
+			return &events.Event{
+				Name:        "Summer Concert",
+				Occurrences: []events.Occurrence{{StartTime: start}},
+			}, nil
+		},
+	}
+
+	h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+	h.Loc = torontoLoc(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
+	req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
+	res := httptest.NewRecorder()
+	h.Get(res, req)
+
+	require.Equal(t, http.StatusOK, res.Code)
+
+	var payload map[string]any
+	require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+	require.Equal(t, "America/Toronto", payload["timeZone"])
+	require.Equal(t, "2026-07-10T19:00:00-04:00", payload["startDate"])
+}

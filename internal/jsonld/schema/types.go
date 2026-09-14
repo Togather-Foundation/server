@@ -13,6 +13,7 @@ type Event struct {
 	StartDate           string         `json:"startDate,omitempty"`
 	EndDate             string         `json:"endDate,omitempty"`
 	DoorTime            string         `json:"doorTime,omitempty"`
+	TimeZone            string         `json:"timeZone,omitempty"`
 	Location            any            `json:"location,omitempty"`
 	Organizer           any            `json:"organizer,omitempty"`
 	Image               string         `json:"image,omitempty"`

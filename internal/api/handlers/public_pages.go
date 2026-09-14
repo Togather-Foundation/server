@@ -15,6 +15,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/Togather-Foundation/server/internal/jsonld"
 	"github.com/Togather-Foundation/server/internal/jsonld/schema"
+	"github.com/Togather-Foundation/server/internal/timeutil"
 )
 
 // PublicPagesHandler handles dereferenceable URIs with content negotiation.
@@ -26,6 +27,7 @@ type PublicPagesHandler struct {
 	OrganizationsService *organizations.Service
 	Env                  string
 	BaseURL              string
+	Loc                  *time.Location
 }
 
 // NewPublicPagesHandler creates a new PublicPagesHandler.
@@ -89,7 +91,7 @@ func (h *PublicPagesHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build JSON-LD payload
-	payload := buildEventPayload(item, h.BaseURL)
+	payload := buildEventPayload(item, h.BaseURL, h.Loc)
 
 	// Perform content negotiation
 	h.serveWithContentNegotiation(w, r, payload)
@@ -342,7 +344,7 @@ func (h *PublicPagesHandler) serveOrganizationTombstone(w http.ResponseWriter, r
 
 // Helper functions to build payloads
 
-func buildEventPayload(event *events.Event, baseURL string) map[string]any {
+func buildEventPayload(event *events.Event, baseURL string, loc *time.Location) map[string]any {
 	ev := schema.NewEvent(event.Name)
 	ev.Context = loadDefaultContext()
 	ev.ID = buildEventURI(baseURL, event.ULID)
@@ -350,7 +352,10 @@ func buildEventPayload(event *events.Event, baseURL string) map[string]any {
 
 	// Extract startDate from first occurrence if available
 	if len(event.Occurrences) > 0 && !event.Occurrences[0].StartTime.IsZero() {
-		ev.StartDate = event.Occurrences[0].StartTime.Format(time.RFC3339)
+		ev.StartDate = timeutil.RFC3339In(event.Occurrences[0].StartTime, loc)
+	}
+	if loc != nil {
+		ev.TimeZone = loc.String()
 	}
 
 	// Add location if venue ULID is available (use ULID for URI building)
