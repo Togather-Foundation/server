@@ -527,6 +527,54 @@ func TestMCPCreateEvent(t *testing.T) {
 		require.Contains(t, textContent.Text, "event parameter is required")
 	})
 
+	t.Run("all_day_event", func(t *testing.T) {
+		eventPayload := map[string]any{
+			"@type":     "Event",
+			"name":      "All Day Test Concert",
+			"allDay":    true,
+			"startDate": "2026-11-01T00:00:00+01:00",
+			"location": map[string]any{
+				"@type": "VirtualLocation",
+				"name":  "Online Event",
+				"url":   "https://example.com/event-all-day",
+			},
+		}
+
+		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "add_event",
+				Arguments: map[string]any{
+					"event": eventPayload,
+				},
+			},
+		})
+		require.NoError(t, err)
+		require.NotNil(t, result)
+
+		textContent, isText := mcpTypes.AsTextContent(result.Content[0])
+		if isText && (strings.Contains(textContent.Text, "error") || strings.Contains(textContent.Text, "Error") || strings.Contains(textContent.Text, "failed")) {
+			t.Fatalf("Create all-day event failed: %s", textContent.Text)
+		}
+
+		payload := decodeToolText(t, result)
+		idStr, _ := payload["id"].(string)
+		require.NotEmpty(t, idStr, "should return event ID")
+
+		getResult, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{
+				Name: "events",
+				Arguments: map[string]any{
+					"id": idStr,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		got := decodeToolText(t, getResult)
+		require.Equal(t, true, got["allDay"])
+		require.Equal(t, "2026-11-01", got["startDate"])
+	})
+
 	t.Run("invalid_event_payload", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{

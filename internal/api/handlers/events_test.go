@@ -131,7 +131,7 @@ func (s stubEventsRepo) UpdateEvent(_ context.Context, _ string, _ events.Update
 func (s stubEventsRepo) DeleteOccurrencesByEventULID(_ context.Context, _ string) error {
 	return nil
 }
-func (s stubEventsRepo) UpdateOccurrenceDates(_ context.Context, _ string, _ time.Time, _ *time.Time) error {
+func (s stubEventsRepo) UpdateOccurrenceDates(_ context.Context, _ string, _ time.Time, _ *time.Time, _ bool) error {
 	return errors.New("not implemented")
 }
 
@@ -575,6 +575,92 @@ func TestEventsHandlerGetInvalidID(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, res.Code)
 }
 
+// TestEventsHandlerAllDayRendering verifies that an all-day occurrence emits a
+// date-only startDate (no time) with allDay=true, while a genuine midnight timed
+// occurrence still emits a full RFC 3339 instant with no allDay marker.
+func TestEventsHandlerAllDayRendering(t *testing.T) {
+	toronto, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+	paris, err := time.LoadLocation("Europe/Paris")
+	require.NoError(t, err)
+
+	midnight := time.Date(2026, 11, 1, 0, 0, 0, 0, toronto)
+
+	tests := []struct {
+		name       string
+		occ        events.Occurrence
+		wantStart  string
+		wantAllDay bool
+	}{
+		{
+			name: "all-day occurrence emits date-only",
+			occ: events.Occurrence{
+				StartTime: midnight,
+				IsAllDay:  true,
+				Timezone:  "America/Toronto",
+			},
+			wantStart:  "2026-11-01",
+			wantAllDay: true,
+		},
+		{
+			name: "all-day occurrence in source zone ahead of node zone",
+			occ: events.Occurrence{
+				StartTime: time.Date(2026, 11, 1, 0, 0, 0, 0, paris),
+				IsAllDay:  true,
+				Timezone:  "Europe/Paris",
+			},
+			wantStart:  "2026-11-01",
+			wantAllDay: true,
+		},
+		{
+			name: "timed midnight occurrence emits RFC 3339",
+			occ: events.Occurrence{
+				StartTime: midnight,
+				Timezone:  "America/Toronto",
+			},
+			wantStart:  "2026-11-01T00:00:00-04:00",
+			wantAllDay: false,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			repo := stubEventsRepo{
+				listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+					return events.ListResult{}, nil
+				},
+				getFn: func(_ string) (*events.Event, error) {
+					return &events.Event{
+						ULID:        "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+						Name:        "Art Show",
+						Occurrences: []events.Occurrence{tc.occ},
+					}, nil
+				},
+			}
+
+			h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+			h.Loc = toronto
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP", nil)
+			req.SetPathValue("id", "01J0KXMQZ8RPXJPN8J9Q6TK0WP")
+			res := httptest.NewRecorder()
+
+			h.Get(res, req)
+
+			require.Equal(t, http.StatusOK, res.Code)
+			var payload map[string]any
+			require.NoError(t, json.NewDecoder(res.Body).Decode(&payload))
+			require.Equal(t, tc.wantStart, payload["startDate"])
+
+			if tc.wantAllDay {
+				require.Equal(t, true, payload["allDay"])
+			} else {
+				require.NotContains(t, payload, "allDay", "timed occurrence must not emit allDay")
+			}
+		})
+	}
+}
+
 func TestEventsHandlerListServiceError(t *testing.T) {
 	repo := stubEventsRepo{
 		listFn: func(filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
@@ -927,8 +1013,12 @@ func TestEventsHandlerGetSubEventVenueURIFallback(t *testing.T) {
 }
 
 func TestEventsHandlerGetRecurringEventHasEventSchedule(t *testing.T) {
-	seriesStart := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
-	seriesEnd := time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC)
+	toronto, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+	// SeriesStart/SeriesEnd are stored as local-midnight instants in the
+	// recurrence TZID (see RecurrenceRule), so they are anchored to Toronto here.
+	seriesStart := time.Date(2026, 7, 1, 0, 0, 0, 0, toronto)
+	seriesEnd := time.Date(2026, 9, 30, 0, 0, 0, 0, toronto)
 
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {

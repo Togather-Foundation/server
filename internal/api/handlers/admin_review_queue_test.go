@@ -181,8 +181,8 @@ func (m *MockRepository) DeleteOccurrencesByEventULID(ctx context.Context, event
 	args := m.Called(ctx, eventULID)
 	return args.Error(0)
 }
-func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
-	args := m.Called(ctx, eventULID, startTime, endTime)
+func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
+	args := m.Called(ctx, eventULID, startTime, endTime, isAllDay)
 	return args.Error(0)
 }
 

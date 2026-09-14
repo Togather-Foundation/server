@@ -126,6 +126,46 @@ func TestEventRepositoryGetByULID(t *testing.T) {
 	require.Nil(t, missing)
 }
 
+func TestOccurrenceAllDayRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+
+	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
+	place := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
+	start := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	ulidValue := insertEvent(t, ctx, pool, "All Day Exhibition", "Full-day gallery", org, place, "arts", "published", []string{"exhibit"}, start)
+
+	var eventID string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM events WHERE ulid = $1`, ulidValue).Scan(&eventID))
+
+	occ, err := repo.InsertOccurrence(ctx, events.OccurrenceCreateParams{
+		EventID:   eventID,
+		StartTime: start.AddDate(0, 0, 1),
+		Timezone:  "America/Toronto",
+		IsAllDay:  true,
+		VenueID:   &place.ID,
+	})
+	require.NoError(t, err)
+	require.True(t, occ.IsAllDay, "InsertOccurrence must return IsAllDay")
+
+	got, err := repo.GetOccurrenceByID(ctx, eventID, occ.ID)
+	require.NoError(t, err)
+	require.True(t, got.IsAllDay, "GetOccurrenceByID must preserve IsAllDay")
+
+	ev, err := repo.GetByULID(ctx, ulidValue)
+	require.NoError(t, err)
+	require.Len(t, ev.Occurrences, 2)
+	found := false
+	for _, o := range ev.Occurrences {
+		if o.ID == occ.ID {
+			require.True(t, o.IsAllDay, "GetByULID must preserve IsAllDay")
+			found = true
+		}
+	}
+	require.True(t, found, "all-day occurrence must be present in GetByULID")
+}
+
 func TestFindSimilarPlacesReturnsAddressFields(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)

@@ -262,6 +262,7 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig, now time.Time) (events
 		Name:                          raw.Name,
 		StartDate:                     startDate,
 		EndDate:                       endDate,
+		AllDay:                        rawEventIsAllDay(raw),
 		Description:                   raw.Description,
 		URL:                           raw.URL,
 		Image:                         raw.Image,
@@ -278,6 +279,15 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig, now time.Time) (events
 		EventDomain:     source.Domain,
 		YearWasInferred: yearWasInferred,
 	}, nil
+}
+
+// rawEventIsAllDay reports whether a raw source event should be marked all-day:
+// either its DateParts or its StartDate carry no time component.
+func rawEventIsAllDay(raw RawEvent) bool {
+	if len(raw.DateParts) > 0 {
+		return datePartsAreAllDay(raw.DateParts)
+	}
+	return sourceValueIsAllDay(raw.StartDate)
 }
 
 // consolidateOccurrences takes a set of RawEvents that were extracted from the same
@@ -313,6 +323,7 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 		occ := events.OccurrenceInput{
 			StartDate:       startDate,
 			EndDate:         endDate,
+			AllDay:          rawEventIsAllDay(raw),
 			YearWasInferred: yearInferred,
 		}
 		occurrences = append(occurrences, occ)
@@ -356,10 +367,21 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 		startDate = occurrences[0].StartDate
 	}
 
+	// Event-level all-day marker: set when every consolidated occurrence is
+	// all-day, so a single-date table of date-only rows round-trips as all-day.
+	allDay := len(occurrences) > 0
+	for _, occ := range occurrences {
+		if !occ.AllDay {
+			allDay = false
+			break
+		}
+	}
+
 	input := events.EventInput{
 		Type:                          "Event",
 		Name:                          first.Name,
 		StartDate:                     startDate,
+		AllDay:                        allDay,
 		Description:                   first.Description,
 		URL:                           first.URL,
 		Image:                         first.Image,

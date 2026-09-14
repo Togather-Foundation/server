@@ -70,6 +70,7 @@ type eventRow struct {
 	StartTime           pgtype.Timestamptz
 	EndTime             pgtype.Timestamptz
 	Timezone            *string
+	IsAllDay            bool
 	OccVenueID          *string
 	OccVenueULID        *string
 	OccVirtualURL       *string
@@ -119,7 +120,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	   virtual_url, image_url, public_url, confidence, quality_score,
 	   keywords, in_language, is_accessible_for_free,
 	   created_at, updated_at, published_at,
-	   start_time, end_time, timezone, occ_venue_id, occ_venue_ulid, occ_virtual_url,
+	   start_time, end_time, timezone, is_all_day, occ_venue_id, occ_venue_ulid, occ_virtual_url,
 	   series_id, series_rrule, series_tzid, series_exdates, series_rdates,
 	   series_start_date, series_end_date
   FROM (
@@ -130,7 +131,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	       e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
 	       e.keywords, e.in_language, e.is_accessible_for_free,
 	       e.created_at, e.updated_at, e.published_at,
-	       o.start_time, o.end_time, o.timezone,
+	       o.start_time, o.end_time, o.timezone, o.is_all_day,
 	       o.venue_id AS occ_venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url AS occ_virtual_url,
 	       e.series_id::text AS series_id,
 	       es.rrule AS series_rrule, es.schedule_timezone AS series_tzid,
@@ -212,6 +213,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			&row.StartTime,
 			&row.EndTime,
 			&row.Timezone,
+			&row.IsAllDay,
 			&row.OccVenueID,
 			&row.OccVenueULID,
 			&row.OccVirtualURL,
@@ -265,6 +267,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			occ := events.Occurrence{
 				StartTime:  row.StartTime.Time,
 				Timezone:   derefString(row.Timezone),
+				IsAllDay:   row.IsAllDay,
 				VenueID:    row.OccVenueID,
 				VenueULID:  row.OccVenueULID,
 				VirtualURL: row.OccVirtualURL,
@@ -328,7 +331,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
 	   e.keywords, e.in_language, e.is_accessible_for_free,
 	   e.federation_uri, e.created_at, e.updated_at, e.published_at,
-	   o.id, o.start_time, o.end_time, o.timezone, o.door_time, o.venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url,
+	   o.id, o.start_time, o.end_time, o.timezone, o.is_all_day, o.door_time, o.venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url,
 	   o.ticket_url, o.price_min, o.price_max, o.price_currency, o.availability,
 	   org.ulid AS organizer_ulid,
 	   e.series_id::text AS series_id,
@@ -382,6 +385,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			startTime           pgtype.Timestamptz
 			endTime             pgtype.Timestamptz
 			timezone            *string
+			isAllDay            pgtype.Bool
 			doorTime            pgtype.Timestamptz
 			venueID             *string
 			venueULID           *string
@@ -432,6 +436,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&startTime,
 			&endTime,
 			&timezone,
+			&isAllDay,
 			&doorTime,
 			&venueID,
 			&venueULID,
@@ -527,6 +532,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			occ := events.Occurrence{
 				ID:            *occurrenceID,
 				Timezone:      derefString(timezone),
+				IsAllDay:      isAllDay.Bool,
 				VenueID:       venueID,
 				VenueULID:     venueULID,
 				VirtualURL:    occurrenceURL,
@@ -705,6 +711,7 @@ INSERT INTO event_occurrences (
 	start_time,
 	end_time,
 	timezone,
+	is_all_day,
 	door_time,
 	venue_id,
 	virtual_url,
@@ -713,12 +720,13 @@ INSERT INTO event_occurrences (
 	price_max,
 	price_currency,
 	availability
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), NULLIF($12, ''))
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NULLIF($12, ''), NULLIF($13, ''))
 `,
 		params.EventID,
 		params.StartTime,
 		params.EndTime,
 		params.Timezone,
+		params.IsAllDay,
 		params.DoorTime,
 		params.VenueID,
 		params.VirtualURL,
@@ -2383,14 +2391,16 @@ func (r *EventRepository) IsNotDuplicate(ctx context.Context, eventIDa string, e
 	})
 }
 
-// UpdateOccurrenceDates updates the start_time and end_time of all occurrences for an event.
-// Used by the FixReview workflow to correct occurrence dates during admin review.
-func (r *EventRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error {
+// UpdateOccurrenceDates updates the start_time, end_time, and is_all_day of all
+// occurrences for an event. Used by the FixReview workflow to correct occurrence
+// dates during admin review.
+func (r *EventRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 	queries := Queries{db: r.queryer()}
 
 	params := UpdateOccurrenceDatesByEventULIDParams{
 		EventUlid: eventULID,
 		StartTime: pgtype.Timestamptz{Time: startTime, Valid: true},
+		IsAllDay:  isAllDay,
 	}
 	if endTime != nil {
 		params.EndTime = pgtype.Timestamptz{Time: *endTime, Valid: true}
@@ -2704,6 +2714,7 @@ type reviewQueueRowFields interface {
 	GetDedupHash() pgtype.Text
 	GetEventStartTime() pgtype.Timestamptz
 	GetEventEndTime() pgtype.Timestamptz
+	GetEventAllDay() bool
 	GetStatus() string
 	GetReviewedBy() pgtype.Text
 	GetReviewedAt() pgtype.Timestamptz
@@ -2727,6 +2738,7 @@ func (r FindReviewByDedupRow) GetSourceExternalID() pgtype.Text      { return r.
 func (r FindReviewByDedupRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
 func (r FindReviewByDedupRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
 func (r FindReviewByDedupRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
+func (r FindReviewByDedupRow) GetEventAllDay() bool                  { return r.EventAllDay }
 func (r FindReviewByDedupRow) GetStatus() string                     { return r.Status }
 func (r FindReviewByDedupRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
 func (r FindReviewByDedupRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
@@ -2749,6 +2761,7 @@ func (r ListReviewQueueRow) GetSourceExternalID() pgtype.Text      { return r.So
 func (r ListReviewQueueRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
 func (r ListReviewQueueRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
 func (r ListReviewQueueRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
+func (r ListReviewQueueRow) GetEventAllDay() bool                  { return r.EventAllDay }
 func (r ListReviewQueueRow) GetStatus() string                     { return r.Status }
 func (r ListReviewQueueRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
 func (r ListReviewQueueRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
@@ -2771,6 +2784,7 @@ func (r GetReviewQueueEntryRow) GetSourceExternalID() pgtype.Text      { return 
 func (r GetReviewQueueEntryRow) GetDedupHash() pgtype.Text             { return r.DedupHash }
 func (r GetReviewQueueEntryRow) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
 func (r GetReviewQueueEntryRow) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
+func (r GetReviewQueueEntryRow) GetEventAllDay() bool                  { return r.EventAllDay }
 func (r GetReviewQueueEntryRow) GetStatus() string                     { return r.Status }
 func (r GetReviewQueueEntryRow) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
 func (r GetReviewQueueEntryRow) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
@@ -2793,6 +2807,7 @@ func (r EventReviewQueue) GetSourceExternalID() pgtype.Text      { return r.Sour
 func (r EventReviewQueue) GetDedupHash() pgtype.Text             { return r.DedupHash }
 func (r EventReviewQueue) GetEventStartTime() pgtype.Timestamptz { return r.EventStartTime }
 func (r EventReviewQueue) GetEventEndTime() pgtype.Timestamptz   { return r.EventEndTime }
+func (r EventReviewQueue) GetEventAllDay() bool                  { return r.EventAllDay }
 func (r EventReviewQueue) GetStatus() string                     { return r.Status }
 func (r EventReviewQueue) GetReviewedBy() pgtype.Text            { return r.ReviewedBy }
 func (r EventReviewQueue) GetReviewedAt() pgtype.Timestamptz     { return r.ReviewedAt }
@@ -2817,6 +2832,7 @@ func (r GetPendingReviewByEventUlidRow) GetEventStartTime() pgtype.Timestamptz {
 	return r.EventStartTime
 }
 func (r GetPendingReviewByEventUlidRow) GetEventEndTime() pgtype.Timestamptz { return r.EventEndTime }
+func (r GetPendingReviewByEventUlidRow) GetEventAllDay() bool                { return r.EventAllDay }
 func (r GetPendingReviewByEventUlidRow) GetStatus() string                   { return r.Status }
 func (r GetPendingReviewByEventUlidRow) GetReviewedBy() pgtype.Text          { return r.ReviewedBy }
 func (r GetPendingReviewByEventUlidRow) GetReviewedAt() pgtype.Timestamptz   { return r.ReviewedAt }
@@ -2855,7 +2871,8 @@ func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventStartTime() pgty
 func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventEndTime() pgtype.Timestamptz {
 	return r.EventEndTime
 }
-func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetStatus() string { return r.Status }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventAllDay() bool { return r.EventAllDay }
+func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetStatus() string    { return r.Status }
 func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetReviewedBy() pgtype.Text {
 	return r.ReviewedBy
 }
@@ -2915,6 +2932,7 @@ func convertReviewQueueRowGeneric(row reviewQueueRowFields) *events.ReviewQueueE
 	if eventEndTime := row.GetEventEndTime(); eventEndTime.Valid {
 		entry.EventEndTime = &eventEndTime.Time
 	}
+	entry.EventAllDay = row.GetEventAllDay()
 	if reviewedBy := row.GetReviewedBy(); reviewedBy.Valid {
 		entry.ReviewedBy = &reviewedBy.String
 	}
@@ -2958,6 +2976,7 @@ func (r *EventRepository) CreateReviewQueueEntry(ctx context.Context, params eve
 		NormalizedPayload: params.NormalizedPayload,
 		Warnings:          params.Warnings,
 		EventStartTime:    pgtype.Timestamptz{Time: params.EventStartTime, Valid: true},
+		EventAllDay:       params.EventAllDay,
 	}
 
 	if params.SourceID != nil {
@@ -3004,6 +3023,9 @@ func (r *EventRepository) UpdateReviewQueueEntry(ctx context.Context, id int, pa
 	}
 	if params.Warnings != nil {
 		updateParams.Warnings = *params.Warnings
+	}
+	if params.EventAllDay != nil {
+		updateParams.EventAllDay = pgtype.Bool{Bool: *params.EventAllDay, Valid: true}
 	}
 	if params.ClearDuplicateOf {
 		updateParams.ClearDuplicateOf = pgtype.Bool{Bool: true, Valid: true}
@@ -3458,6 +3480,7 @@ func occurrenceRowToOccurrence(
 	startTime pgtype.Timestamptz,
 	endTime pgtype.Timestamptz,
 	timezone string,
+	isAllDay bool,
 	doorTime pgtype.Timestamptz,
 	venueID pgtype.UUID,
 	venueULID pgtype.Text,
@@ -3470,6 +3493,7 @@ func occurrenceRowToOccurrence(
 ) *events.Occurrence {
 	occ := &events.Occurrence{
 		Timezone:      timezone,
+		IsAllDay:      isAllDay,
 		PriceCurrency: pgtextToString(priceCurrency),
 		Availability:  pgtextToString(availability),
 	}
@@ -3555,6 +3579,7 @@ func (r *EventRepository) InsertOccurrence(ctx context.Context, params events.Oc
 	}
 	p.PriceCurrency = params.PriceCurrency
 	p.Availability = params.Availability
+	p.IsAllDay = params.IsAllDay
 
 	row, err := queries.InsertOccurrence(ctx, p)
 	if err != nil {
@@ -3565,6 +3590,7 @@ func (r *EventRepository) InsertOccurrence(ctx context.Context, params events.Oc
 		row.ID, row.EventID,
 		row.StartTime, row.EndTime,
 		row.Timezone,
+		row.IsAllDay,
 		row.DoorTime,
 		row.VenueID, pgtype.Text{String: row.VenueUlid, Valid: row.VenueUlid != ""},
 		row.VirtualUrl, row.TicketUrl,
@@ -3597,6 +3623,7 @@ func (r *EventRepository) GetOccurrenceByID(ctx context.Context, eventID string,
 		row.ID, row.EventID,
 		row.StartTime, row.EndTime,
 		row.Timezone,
+		row.IsAllDay,
 		row.DoorTime,
 		row.VenueID, row.VenueUlid,
 		row.VirtualUrl, row.TicketUrl,
@@ -3663,6 +3690,9 @@ func (r *EventRepository) UpdateOccurrence(ctx context.Context, eventID string, 
 	if params.Availability != nil {
 		p.Availability = pgtype.Text{String: *params.Availability, Valid: true}
 	}
+	if params.IsAllDay != nil {
+		p.IsAllDay = pgtype.Bool{Bool: *params.IsAllDay, Valid: true}
+	}
 
 	row, err := queries.UpdateOccurrenceByID(ctx, p)
 	if err != nil {
@@ -3676,6 +3706,7 @@ func (r *EventRepository) UpdateOccurrence(ctx context.Context, eventID string, 
 		row.ID, row.EventID,
 		row.StartTime, row.EndTime,
 		row.Timezone,
+		row.IsAllDay,
 		row.DoorTime,
 		row.VenueID, pgtype.Text{String: row.VenueUlid, Valid: row.VenueUlid != ""},
 		row.VirtualUrl, row.TicketUrl,

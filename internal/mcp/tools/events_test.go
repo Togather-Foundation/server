@@ -649,6 +649,65 @@ func TestBuildEventPayloadEmitsNodeTimeZone(t *testing.T) {
 	}
 }
 
+// TestBuildListItemAllDayRendering verifies all-day occurrences emit a date-only
+// startDate and allDay=true, while a timed midnight occurrence emits RFC 3339.
+func TestBuildListItemAllDayRendering(t *testing.T) {
+	loc := torontoLoc(t)
+	midnight := time.Date(2026, 11, 1, 0, 0, 0, 0, loc)
+
+	allDayItem := buildListItem(events.Event{
+		ULID: "01HX1234567890ABCDEFGHJKMN",
+		Name: "Art Show",
+		Occurrences: []events.Occurrence{
+			{StartTime: midnight, IsAllDay: true, Timezone: "America/Toronto"},
+		},
+	}, "https://test.example.com", nil, nil, loc, zerolog.Nop(), true)
+
+	if allDayItem["startDate"] != "2026-11-01" {
+		t.Errorf("all-day startDate = %v, want %q", allDayItem["startDate"], "2026-11-01")
+	}
+	if allDayItem["allDay"] != true {
+		t.Errorf("all-day marker = %v, want true", allDayItem["allDay"])
+	}
+
+	timedItem := buildListItem(events.Event{
+		ULID: "01HX1234567890ABCDEFGHJKMN",
+		Name: "Art Show",
+		Occurrences: []events.Occurrence{
+			{StartTime: midnight, Timezone: "America/Toronto"},
+		},
+	}, "https://test.example.com", nil, nil, loc, zerolog.Nop(), true)
+
+	if timedItem["startDate"] != "2026-11-01T00:00:00-04:00" {
+		t.Errorf("timed startDate = %v, want %q", timedItem["startDate"], "2026-11-01T00:00:00-04:00")
+	}
+	if _, ok := timedItem["allDay"]; ok {
+		t.Error("timed occurrence must not emit allDay")
+	}
+}
+
+// TestBuildEventPayloadAllDayRendering verifies the detail payload emits date-only
+// values for all-day occurrences.
+func TestBuildEventPayloadAllDayRendering(t *testing.T) {
+	loc := torontoLoc(t)
+	midnight := time.Date(2026, 11, 1, 0, 0, 0, 0, loc)
+
+	payload := buildEventPayload(context.Background(), &events.Event{
+		ULID: "01HX1234567890ABCDEFGHJKMN",
+		Name: "Art Show",
+		Occurrences: []events.Occurrence{
+			{StartTime: midnight, IsAllDay: true, Timezone: "America/Toronto"},
+		},
+	}, "https://test.example.com", nil, nil, loc, zerolog.Nop())
+
+	if payload["startDate"] != "2026-11-01" {
+		t.Errorf("startDate = %v, want %q", payload["startDate"], "2026-11-01")
+	}
+	if payload["allDay"] != true {
+		t.Errorf("allDay = %v, want true", payload["allDay"])
+	}
+}
+
 // TestListEventsEnvelopeTimeZone verifies the list response envelope advertises
 // the node's IANA zone once and that items carry a DST-correct offset.
 func TestListEventsEnvelopeTimeZone(t *testing.T) {

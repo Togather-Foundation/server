@@ -97,6 +97,7 @@ type Occurrence struct {
 	StartTime     time.Time
 	EndTime       *time.Time
 	Timezone      string
+	IsAllDay      bool
 	DoorTime      *time.Time
 	VenueID       *string // UUID from event_occurrences.venue_id (for DB operations)
 	VenueULID     *string // ULID from places.ulid (for URI building)
@@ -157,6 +158,7 @@ type OccurrenceCreateParams struct {
 	StartTime     time.Time
 	EndTime       *time.Time
 	Timezone      string
+	IsAllDay      bool
 	DoorTime      *time.Time
 	VenueID       *string
 	VirtualURL    *string
@@ -176,6 +178,7 @@ type OccurrenceUpdateParams struct {
 	EndTime       *time.Time
 	EndTimeSet    bool
 	Timezone      *string
+	IsAllDay      *bool
 	DoorTime      *time.Time
 	DoorTimeSet   bool
 	VenueID       *string
@@ -348,7 +351,7 @@ type Repository interface {
 	CountOccurrences(ctx context.Context, eventID string) (int64, error)
 
 	// Admin operations
-	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time) error
+	UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error
 	DeleteOccurrencesByEventULID(ctx context.Context, eventULID string) error
 	UpdateEvent(ctx context.Context, ulid string, params UpdateEventParams) (*Event, error)
 	SoftDeleteEvent(ctx context.Context, ulid string, reason string) error
@@ -518,6 +521,7 @@ type ReviewQueueEntry struct {
 	DuplicateOfEventULID *string // ULID of the duplicate event (from JOIN)
 	EventStartTime       time.Time
 	EventEndTime         *time.Time
+	EventAllDay          bool
 	Status               string
 	ReviewedBy           *string
 	ReviewedAt           *time.Time
@@ -538,6 +542,7 @@ type ReviewQueueCreateParams struct {
 	DedupHash          *string
 	EventStartTime     time.Time
 	EventEndTime       *time.Time
+	EventAllDay        bool
 	DuplicateOfEventID *string // UUID of the event this is a potential duplicate of (for merge workflow)
 }
 
@@ -546,6 +551,7 @@ type ReviewQueueUpdateParams struct {
 	OriginalPayload    *[]byte
 	NormalizedPayload  *[]byte
 	Warnings           *[]byte
+	EventAllDay        *bool   // nil = leave unchanged
 	DuplicateOfEventID *string // UUID of the event this is a duplicate of (nil = no change)
 	ClearDuplicateOf   bool    // if true, set duplicate_of_event_id = NULL (takes precedence over DuplicateOfEventID)
 }

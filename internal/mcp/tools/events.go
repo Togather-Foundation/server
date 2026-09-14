@@ -432,9 +432,16 @@ func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, o
 	}
 
 	if len(event.Occurrences) > 0 {
-		item["startDate"] = timeutil.RFC3339In(event.Occurrences[0].StartTime, loc)
-		if event.Occurrences[0].EndTime != nil {
-			item["endDate"] = timeutil.RFC3339InPtr(event.Occurrences[0].EndTime, loc)
+		occ := event.Occurrences[0]
+		if occ.IsAllDay {
+			item["startDate"] = timeutil.DateIn(occ.StartTime, timeutil.OccLoc(occ.Timezone, loc))
+			item["endDate"] = timeutil.DateInPtr(occ.EndTime, timeutil.OccLoc(occ.Timezone, loc))
+			item["allDay"] = true
+		} else {
+			item["startDate"] = timeutil.RFC3339In(occ.StartTime, loc)
+			if occ.EndTime != nil {
+				item["endDate"] = timeutil.RFC3339InPtr(occ.EndTime, loc)
+			}
 		}
 	}
 
@@ -464,9 +471,16 @@ func buildEventPayload(ctx context.Context, event *events.Event, baseURL string,
 	}
 
 	if len(event.Occurrences) > 0 {
-		payload["startDate"] = timeutil.RFC3339In(event.Occurrences[0].StartTime, loc)
-		if event.Occurrences[0].EndTime != nil {
-			payload["endDate"] = timeutil.RFC3339InPtr(event.Occurrences[0].EndTime, loc)
+		occ := event.Occurrences[0]
+		if occ.IsAllDay {
+			payload["startDate"] = timeutil.DateIn(occ.StartTime, timeutil.OccLoc(occ.Timezone, loc))
+			payload["endDate"] = timeutil.DateInPtr(occ.EndTime, timeutil.OccLoc(occ.Timezone, loc))
+			payload["allDay"] = true
+		} else {
+			payload["startDate"] = timeutil.RFC3339In(occ.StartTime, loc)
+			if occ.EndTime != nil {
+				payload["endDate"] = timeutil.RFC3339InPtr(occ.EndTime, loc)
+			}
 		}
 	}
 	if loc != nil {

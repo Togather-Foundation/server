@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/rs/zerolog"
 
@@ -1012,6 +1013,75 @@ func TestNormalizeRawEvent(t *testing.T) {
 			}
 			if tc.check != nil {
 				tc.check(t, got)
+			}
+		})
+	}
+}
+
+// TestNormalizeRawEvent_AllDay verifies that a date-only source value marks the
+// event all-day, while a value with a time component does not.
+func TestNormalizeRawEvent_AllDay(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name       string
+		raw        RawEvent
+		wantAllDay bool
+	}{
+		{
+			name: "date-only ISO marks all-day",
+			raw: RawEvent{
+				Name:      "Art Opening",
+				StartDate: "2026-11-01",
+				Location:  "Gallery",
+				URL:       "https://example.com/opening",
+			},
+			wantAllDay: true,
+		},
+		{
+			name: "datetime ISO is timed",
+			raw: RawEvent{
+				Name:      "Film Screening",
+				StartDate: "2026-11-01T19:00:00Z",
+				Location:  "Cinema",
+				URL:       "https://example.com/film",
+			},
+			wantAllDay: false,
+		},
+		{
+			name: "human-readable date only marks all-day",
+			raw: RawEvent{
+				Name:      "Festival Day",
+				StartDate: "November 1, 2026",
+				Location:  "Park",
+				URL:       "https://example.com/festival",
+			},
+			wantAllDay: true,
+		},
+		{
+			name: "human-readable date with time is timed",
+			raw: RawEvent{
+				Name:      "Concert",
+				StartDate: "November 1, 2026 7:00 PM",
+				Location:  "Arena",
+				URL:       "https://example.com/concert",
+			},
+			wantAllDay: false,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := NormalizeRawEvent(tc.raw, testSource, now)
+			if err != nil {
+				t.Fatalf("NormalizeRawEvent returned error: %v", err)
+			}
+			if got.AllDay != tc.wantAllDay {
+				t.Errorf("AllDay = %v, want %v (StartDate %q)", got.AllDay, tc.wantAllDay, got.StartDate)
 			}
 		})
 	}

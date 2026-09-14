@@ -3,7 +3,10 @@
 // public API surface.
 package timeutil
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // RFC3339In renders t in loc using RFC3339 (with a DST-correct numeric offset).
 // A nil loc falls back to UTC.
@@ -29,4 +32,26 @@ func DateIn(t time.Time, loc *time.Location) string {
 		loc = time.UTC
 	}
 	return t.In(loc).Format("2006-01-02")
+}
+
+// DateInPtr renders *t in loc as a date-only string, returning "" for a nil
+// pointer.
+func DateInPtr(t *time.Time, loc *time.Location) string {
+	if t == nil {
+		return ""
+	}
+	return DateIn(*t, loc)
+}
+
+// OccLoc resolves an occurrence's IANA timezone to a *time.Location, falling
+// back to fallback when the zone is empty or unloadable. All-day occurrences
+// are stored as local midnight in their own target zone, so callers must render
+// them in that zone (not the node zone) to avoid off-by-one date shifts.
+func OccLoc(timezone string, fallback *time.Location) *time.Location {
+	if tz := strings.TrimSpace(timezone); tz != "" {
+		if loc, err := time.LoadLocation(tz); err == nil {
+			return loc
+		}
+	}
+	return fallback
 }

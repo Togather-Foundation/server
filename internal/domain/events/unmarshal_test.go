@@ -805,6 +805,7 @@ func TestEventInput_JSONRoundTrip_AllFields(t *testing.T) {
 		StartDate:             "2026-07-08T19:00:00-04:00",
 		EndDate:               "2026-07-08T21:00:00-04:00",
 		DoorTime:              "2026-07-08T18:30:00-04:00",
+		AllDay:                true,
 		EventDomain:           "arts",
 		Location:              &PlaceInput{Name: "Test Venue"},
 		VirtualLocation:       &VirtualLocationInput{Type: "VirtualLocation", URL: "https://example.com/stream"},
@@ -836,6 +837,7 @@ func TestEventInput_JSONRoundTrip_AllFields(t *testing.T) {
 	assert.Equal(t, original.StartDate, decoded.StartDate, "StartDate")
 	assert.Equal(t, original.EndDate, decoded.EndDate, "EndDate")
 	assert.Equal(t, original.DoorTime, decoded.DoorTime, "DoorTime")
+	assert.Equal(t, original.AllDay, decoded.AllDay, "AllDay")
 	assert.Equal(t, original.EventDomain, decoded.EventDomain, "EventDomain")
 	assert.NotNil(t, decoded.Location, "Location should not be nil")
 	assert.Equal(t, "Test Venue", decoded.Location.Name, "Location.Name")

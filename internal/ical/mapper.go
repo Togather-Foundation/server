@@ -318,6 +318,7 @@ func mapSingleEvent(ev ParsedEvent, startTime, endTime time.Time, fallbackLoc *t
 		Description:     description,
 		StartDate:       startDate,
 		EndDate:         endDate,
+		AllDay:          ev.AllDay,
 		URL:             eventURL,
 		Location:        location,
 		VirtualLocation: virtualLoc,

@@ -315,6 +315,7 @@ func (s *IngestService) createEventCore(
 					OriginalPayload:   &originalJSON,
 					NormalizedPayload: &normalizedJSON,
 					Warnings:          &warningsJSON,
+					EventAllDay:       &validated.AllDay,
 				})
 				if err != nil {
 					return nil, fmt.Errorf("update review queue entry: %w", err)
@@ -794,7 +795,7 @@ func (s *IngestService) createEventCore(
 			sourceIDPtr = &sourceID
 		}
 
-		startTime, endTime := parseEventTimes(validated)
+		startTime, endTime := parseEventTimes(validated, s.defaultTZ)
 		reviewEntry, err := dbRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
 			EventID:            event.ID,
 			OriginalPayload:    originalJSON,
@@ -805,6 +806,7 @@ func (s *IngestService) createEventCore(
 			DedupHash:          dedupHashPtr,
 			EventStartTime:     startTime,
 			EventEndTime:       endTime,
+			EventAllDay:        validated.AllDay,
 			DuplicateOfEventID: nearDuplicateOfID,
 		})
 		if err != nil {
@@ -1078,6 +1080,7 @@ func (s *IngestService) crossLinkSeriesCompanions(
 		NormalizedPayload: reconstructedPayload,
 		EventStartTime:    companionStart,
 		EventEndTime:      companionEnd,
+		EventAllDay:       eventAllDayFromEvent(companionEvent),
 		Warnings:          companionWarningJSON,
 	}); createErr != nil {
 		s.logger.Warn().Err(createErr).Str("companion_ulid", companion.ULID).
@@ -1185,6 +1188,7 @@ func (s *IngestService) crossLinkNearDuplicates(
 			NormalizedPayload:  reconstructedPayload,
 			EventStartTime:     existingStart,
 			EventEndTime:       existingEnd,
+			EventAllDay:        eventAllDayFromEvent(existingEvent),
 			Warnings:           existingWarnings,
 			DuplicateOfEventID: &newEventID,
 		}); createErr != nil {

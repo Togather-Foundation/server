@@ -17,9 +17,10 @@ SELECT e.id,
        o.start_time,
        o.end_time,
        o.timezone,
+       o.is_all_day,
        o.venue_id,
        o.virtual_url
-  FROM events e
+   FROM events e
   LEFT JOIN event_occurrences o ON o.event_id = e.id
  WHERE e.ulid = $1
   ORDER BY o.start_time ASC;
@@ -51,11 +52,13 @@ UPDATE events
 RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, created_at, updated_at;
 
 -- name: UpdateOccurrenceDatesByEventULID :exec
--- Update the start_time and end_time of all occurrences for an event identified by ULID.
--- Used by the FixReview workflow to correct occurrence dates during admin review.
+-- Update the start_time, end_time, and is_all_day of all occurrences for an event
+-- identified by ULID. Used by the FixReview workflow to correct occurrence dates
+-- during admin review.
 UPDATE event_occurrences
    SET start_time = sqlc.arg('start_time'),
        end_time = sqlc.narg('end_time'),
+       is_all_day = sqlc.arg('is_all_day'),
        updated_at = now()
  WHERE event_id = (SELECT id FROM events WHERE ulid = sqlc.arg('event_ulid'));
 
@@ -200,7 +203,8 @@ INSERT INTO event_occurrences (
     price_min,
     price_max,
     price_currency,
-    availability
+    availability,
+    is_all_day
 ) VALUES (
     sqlc.arg('event_id')::uuid,
     sqlc.arg('start_time'),
@@ -213,10 +217,11 @@ INSERT INTO event_occurrences (
     sqlc.narg('price_min'),
     sqlc.narg('price_max'),
     NULLIF(sqlc.arg('price_currency'), ''),
-    NULLIF(sqlc.arg('availability'), '')
+    NULLIF(sqlc.arg('availability'), ''),
+    sqlc.arg('is_all_day')
 )
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at,
+          ticket_url, price_min, price_max, price_currency, availability, is_all_day, created_at, updated_at,
           COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid;
 
 -- name: GetOccurrenceByID :one
@@ -235,6 +240,7 @@ SELECT o.id,
        o.price_max,
        o.price_currency,
        o.availability,
+       o.is_all_day,
        o.created_at,
        o.updated_at
   FROM event_occurrences o
@@ -258,11 +264,12 @@ UPDATE event_occurrences
        price_max      = CASE WHEN sqlc.narg('price_max_set')::boolean THEN sqlc.narg('price_max') ELSE price_max END,
        price_currency = COALESCE(sqlc.narg('price_currency'), price_currency),
        availability   = COALESCE(sqlc.narg('availability'), availability),
+       is_all_day     = COALESCE(sqlc.narg('is_all_day'), is_all_day),
        updated_at     = now()
  WHERE id = sqlc.arg('id')::uuid
    AND event_id = sqlc.arg('event_id')::uuid
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, created_at, updated_at,
+          ticket_url, price_min, price_max, price_currency, availability, is_all_day, created_at, updated_at,
           COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid;
 
 -- name: DeleteOccurrenceByID :one

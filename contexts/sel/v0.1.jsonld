@@ -49,6 +49,10 @@
     },
     "timeZone": {
       "@id": "sel:timeZone"
+    },
+    "allDay": {
+      "@id": "sel:allDay",
+      "@type": "http://www.w3.org/2001/XMLSchema#boolean"
     }
   }
 }
