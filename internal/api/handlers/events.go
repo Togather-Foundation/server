@@ -446,19 +446,43 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	if len(item.Occurrences) > 0 {
 		subEvents := make([]schema.EventSummary, 0, len(item.Occurrences))
 		for _, occ := range item.Occurrences {
+			// Resolve each occurrence's own zone and render every time field in
+			// it, then label the subEvent with that same zone. This keeps the
+			// `timezone` label truthful: the numeric offset in startDate (and
+			// endDate/doorTime) always matches the label, even for a mixed-zone
+			// occurrence whose stored per-occurrence zone differs from the node
+			// zone. On a single-zone node this is a rendering no-op.
+			//
+			// OccLoc silently falls back to the node zone when the stored zone is
+			// empty or unloadable. When a non-empty zone failed to load, emit a
+			// debug log so operators can spot corrupt zone data — the label below
+			// deliberately renders the fallback zone rather than the bad string.
+			if tz := strings.TrimSpace(occ.Timezone); tz != "" {
+				if _, err := time.LoadLocation(tz); err != nil {
+					h.Logger.Debug().
+						Str("event_ulid", item.ULID).
+						Str("occurrence_id", occ.ID).
+						Str("timezone", tz).
+						Err(err).
+						Msg("occurrence timezone unloadable; rendering subEvent in fallback zone")
+				}
+			}
+			loc := timeutil.OccLoc(occ.Timezone, h.Loc)
 			sub := schema.EventSummary{
-				Type:     "Event",
-				Name:     item.Name,
-				Timezone: occ.Timezone,
+				Type: "Event",
+				Name: item.Name,
+			}
+			if loc != nil {
+				sub.Timezone = loc.String()
 			}
 			if occ.IsAllDay {
-				sub.StartDate = timeutil.DateIn(occ.StartTime, timeutil.OccLoc(occ.Timezone, h.Loc))
-				sub.EndDate = timeutil.DateInPtr(occ.EndTime, timeutil.OccLoc(occ.Timezone, h.Loc))
+				sub.StartDate = timeutil.DateIn(occ.StartTime, loc)
+				sub.EndDate = timeutil.DateInPtr(occ.EndTime, loc)
 				sub.AllDay = true
 			} else {
-				sub.StartDate = timeutil.RFC3339In(occ.StartTime, h.Loc)
+				sub.StartDate = timeutil.RFC3339In(occ.StartTime, loc)
 				if occ.EndTime != nil {
-					sub.EndDate = timeutil.RFC3339InPtr(occ.EndTime, h.Loc)
+					sub.EndDate = timeutil.RFC3339InPtr(occ.EndTime, loc)
 				}
 			}
 			// Populate @id so the admin UI can extract the occurrence UUID for
@@ -467,7 +491,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 				sub.ID = h.BaseURL + "/api/v1/admin/events/" + item.ULID + "/occurrences/" + occ.ID
 			}
 			if occ.DoorTime != nil {
-				sub.DoorTime = timeutil.RFC3339InPtr(occ.DoorTime, h.Loc)
+				sub.DoorTime = timeutil.RFC3339InPtr(occ.DoorTime, loc)
 			}
 			// Serialize per-occurrence location override:
 			//   1. Physical venue (VenueULID) takes priority — resolve to embedded Place

@@ -19,7 +19,7 @@ func SerializeToTurtle(jsonldData map[string]any) (string, error) {
 
 	// Write common prefixes
 	builder.WriteString("@prefix schema: <https://schema.org/> .\n")
-	builder.WriteString("@prefix sel: <https://sharedevents.org/ns#> .\n")
+	builder.WriteString("@prefix sel: <https://schema.togather.foundation/ns#> .\n")
 	builder.WriteString("@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n")
 	builder.WriteString("\n")
 
@@ -89,6 +89,31 @@ func extractType(data map[string]any) string {
 	return ""
 }
 
+// selTerms are JSON-LD keys that the SEL context maps into the SEL namespace
+// (https://schema.togather.foundation/ns#). They must be emitted with the sel:
+// prefix in Turtle so the predicate agrees with the JSON-LD term definition —
+// otherwise e.g. allDay would serialize as schema:allDay, which is not a
+// schema.org term and would not match the SEL SHACL shapes.
+var selTerms = map[string]struct{}{
+	"allDay": {}, "timeZone": {}, "originNode": {}, "sourceUrl": {},
+	"ingestedAt": {}, "confidence": {}, "tombstone": {}, "licenseStatus": {},
+	"takedownRequested": {}, "takedownRequestedAt": {}, "scraperSource": {},
+	"tier": {}, "distanceKm": {},
+}
+
+// predicateFor returns the Turtle predicate (prefix + name) for a JSON-LD key.
+// SEL terms (see selTerms) and keys already written with a literal "sel:" prefix
+// map to the sel: namespace; everything else maps to schema:.
+func predicateFor(prop string) string {
+	if strings.HasPrefix(prop, "sel:") {
+		return "sel:" + strings.TrimPrefix(prop, "sel:")
+	}
+	if _, ok := selTerms[prop]; ok {
+		return "sel:" + prop
+	}
+	return "schema:" + prop
+}
+
 // serializeProperty serializes a single property to Turtle format
 func serializeProperty(prop string, value any) string {
 	// Skip null values
@@ -96,7 +121,7 @@ func serializeProperty(prop string, value any) string {
 		return ""
 	}
 
-	predicate := fmt.Sprintf("schema:%s", prop)
+	predicate := predicateFor(prop)
 
 	switch v := value.(type) {
 	case string:
