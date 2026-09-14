@@ -55,12 +55,32 @@ RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url,
 -- Update the start_time, end_time, and is_all_day of all occurrences for an event
 -- identified by ULID. Used by the FixReview workflow to correct occurrence dates
 -- during admin review.
+--
+-- Whole-event by design: a single (start, end, is_all_day) triple is meaningless
+-- for a multi-occurrence series, so callers MUST restrict it to events that have
+-- exactly one occurrence (where the event's own dates ARE that row's dates). Use
+-- UpdateOccurrenceDatesByOccurrenceID for anything else.
 UPDATE event_occurrences
    SET start_time = sqlc.arg('start_time'),
        end_time = sqlc.narg('end_time'),
        is_all_day = sqlc.arg('is_all_day'),
        updated_at = now()
  WHERE event_id = (SELECT id FROM events WHERE ulid = sqlc.arg('event_ulid'));
+
+-- name: UpdateOccurrenceDatesByOccurrenceID :exec
+-- Update the start_time, end_time, and is_all_day of ONE occurrence row,
+-- identified by its UUID and scoped to its event.
+--
+-- This is the per-row variant of UpdateOccurrenceDatesByEventULID: the review
+-- fix/approve path corrects the event's own dates, which mirror occurrences[0],
+-- and must leave every sibling series row untouched.
+UPDATE event_occurrences
+   SET start_time = sqlc.arg('start_time'),
+       end_time = sqlc.narg('end_time'),
+       is_all_day = sqlc.arg('is_all_day'),
+       updated_at = now()
+ WHERE id = sqlc.arg('occurrence_id')::uuid
+   AND event_id = (SELECT id FROM events WHERE ulid = sqlc.arg('event_ulid'));
 
 -- name: DeleteOccurrencesByEventULID :exec
 -- Remove all occurrence rows for a soft-deleted event.  Called after absorbing an

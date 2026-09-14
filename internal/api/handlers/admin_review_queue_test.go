@@ -186,6 +186,11 @@ func (m *MockRepository) UpdateOccurrenceDates(ctx context.Context, eventULID st
 	return args.Error(0)
 }
 
+func (m *MockRepository) UpdateOccurrenceDatesForOccurrence(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
+	args := m.Called(ctx, eventULID, occurrenceID, startTime, endTime, isAllDay)
+	return args.Error(0)
+}
+
 func (m *MockRepository) SoftDeleteEvent(ctx context.Context, ulid string, reason string) error {
 	args := m.Called(ctx, ulid, reason)
 	return args.Error(0)

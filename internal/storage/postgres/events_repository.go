@@ -2394,6 +2394,11 @@ func (r *EventRepository) IsNotDuplicate(ctx context.Context, eventIDa string, e
 // UpdateOccurrenceDates updates the start_time, end_time, and is_all_day of all
 // occurrences for an event. Used by the FixReview workflow to correct occurrence
 // dates during admin review.
+//
+// Whole-event by design: a single (start, end, is_all_day) triple is only
+// meaningful for an event that has exactly one occurrence (where the event's own
+// dates ARE that row's dates). Callers MUST enforce that restriction; use
+// UpdateOccurrenceDatesForOccurrence for anything else.
 func (r *EventRepository) UpdateOccurrenceDates(ctx context.Context, eventULID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
 	queries := Queries{db: r.queryer()}
 
@@ -2408,6 +2413,33 @@ func (r *EventRepository) UpdateOccurrenceDates(ctx context.Context, eventULID s
 
 	err := queries.UpdateOccurrenceDatesByEventULID(ctx, params)
 	if err != nil {
+		return fmt.Errorf("update occurrence dates: %w", err)
+	}
+	return nil
+}
+
+// UpdateOccurrenceDatesForOccurrence updates the start_time, end_time and
+// is_all_day of a single occurrence row (identified by its UUID) on the event
+// identified by ULID.
+//
+// Per-row variant of UpdateOccurrenceDates: the review fix/approve path corrects
+// the event's own dates, which mirror occurrences[0], and must leave every
+// sibling series row untouched.
+func (r *EventRepository) UpdateOccurrenceDatesForOccurrence(ctx context.Context, eventULID string, occurrenceID string, startTime time.Time, endTime *time.Time, isAllDay bool) error {
+	queries := Queries{db: r.queryer()}
+
+	var params UpdateOccurrenceDatesByOccurrenceIDParams
+	if err := params.OccurrenceID.Scan(occurrenceID); err != nil {
+		return fmt.Errorf("invalid occurrence ID: %w", err)
+	}
+	params.EventUlid = eventULID
+	params.StartTime = pgtype.Timestamptz{Time: startTime, Valid: true}
+	params.IsAllDay = isAllDay
+	if endTime != nil {
+		params.EndTime = pgtype.Timestamptz{Time: *endTime, Valid: true}
+	}
+
+	if err := queries.UpdateOccurrenceDatesByOccurrenceID(ctx, params); err != nil {
 		return fmt.Errorf("update occurrence dates: %w", err)
 	}
 	return nil

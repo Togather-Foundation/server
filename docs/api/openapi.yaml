@@ -3357,9 +3357,15 @@ components:
         all_day:
           type: boolean
           description: >
-            True if this occurrence is an all-day (date-only) event. When set, the
-            occurrence is anchored to local midnight in its timezone and rendered as
-            a date-only start_time/end_time.
+            True if this occurrence is an all-day (date-only) event. The marker and
+            the instant are stored together: sending all_day: true anchors
+            start_time and end_time to local midnight of their civil date in the
+            occurrence's timezone (the civil date is taken from the value as
+            expressed in its own offset), and the occurrence is rendered as a
+            date-only start_time/end_time. Retiming an all-day occurrence to a time
+            off local midnight clears the marker, so a stored row can never claim
+            is_all_day while holding a timed instant. This is the same
+            normalisation ingestion applies to a bare YYYY-MM-DD startDate.
         venue_ulid:
           type: [string, 'null']
           description: ULID of the venue for this occurrence, or null to clear
@@ -3870,6 +3876,12 @@ components:
             Marks the event as all-day / date-only. When true, startDate and endDate are
             treated (and emitted) as date-only YYYY-MM-DD values. Also set automatically
             when startDate is a bare YYYY-MM-DD date.
+
+            This is a statement about the event's OWN dates, which mirror the first
+            occurrence. It is not copied onto the other occurrences of a series: each
+            occurrence row carries its own all_day/marker and is anchored in its own
+            timezone (see the occurrence-level all_day). Review fixes address the
+            event's own dates and therefore correct only the occurrence they mirror.
         location:
           oneOf:
             - $ref: '#/components/schemas/PlaceInput'
