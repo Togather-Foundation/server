@@ -339,6 +339,86 @@ func TestUpdateOccurrenceOnEvent_AllDayInvariant(t *testing.T) {
 		}
 	})
 
+	// The two subtests below are the guards for the end-only condition itself.
+	// They pass on the pre-widening revision too (the end was ignored entirely
+	// there): they exist to fail if the condition is widened past a retime —
+	// dropping the local-midnight test, or the nil test, over-clears the marker.
+	t.Run("an end-only retime onto another civil midnight keeps the marker", func(t *testing.T) {
+		var captured OccurrenceUpdateParams
+		midnight := time.Date(2026, 11, 5, 0, 0, 0, 0, loc)
+		nextMidnight := time.Date(2026, 11, 6, 0, 0, 0, 0, loc)
+		repo := &mockTransactionalRepo{}
+		repo.getByULIDFunc = func(_ context.Context, _ string) (*Event, error) {
+			return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", LifecycleState: "draft", PrimaryVenueID: &venueID}, nil
+		}
+		repo.getOccurrenceByIDFunc = func(_ context.Context, _ string, _ string) (*Occurrence, error) {
+			return &Occurrence{
+				ID: "occ-uuid", StartTime: midnight, EndTime: &midnight,
+				Timezone: "America/Toronto", IsAllDay: true,
+			}, nil
+		}
+		repo.updateOccurrenceFunc = func(_ context.Context, _, _ string, params OccurrenceUpdateParams) (*Occurrence, error) {
+			captured = params
+			return &Occurrence{ID: "occ-uuid"}, nil
+		}
+
+		service := newAdminServiceForOccurrenceTest(repo)
+		_, err := service.UpdateOccurrenceOnEvent(ctx, "01HEVENT000000000000000001", "occ-uuid", OccurrenceUpdateParams{
+			EndTime: &nextMidnight, EndTimeSet: true,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		// The requested end is still local midnight (of another civil date), so
+		// the row is still date-only. No marker write is the correct outcome:
+		// the row's own is_all_day = true stands.
+		if captured.IsAllDay != nil {
+			t.Fatalf("an end that stays on local midnight must not rewrite the marker, got %v", *captured.IsAllDay)
+		}
+		if !captured.EndTimeSet || captured.EndTime == nil || !captured.EndTime.Equal(nextMidnight) {
+			t.Errorf("the end must stay local midnight of its civil date, got set=%v end=%v", captured.EndTimeSet, captured.EndTime)
+		}
+		if captured.StartTime != nil {
+			t.Errorf("an end-only edit must not rewrite the start, got %v", captured.StartTime)
+		}
+	})
+
+	t.Run("clearing the end of a date-only row keeps the marker", func(t *testing.T) {
+		var captured OccurrenceUpdateParams
+		midnight := time.Date(2026, 11, 5, 0, 0, 0, 0, loc)
+		repo := &mockTransactionalRepo{}
+		repo.getByULIDFunc = func(_ context.Context, _ string) (*Event, error) {
+			return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", LifecycleState: "draft", PrimaryVenueID: &venueID}, nil
+		}
+		repo.getOccurrenceByIDFunc = func(_ context.Context, _ string, _ string) (*Occurrence, error) {
+			return &Occurrence{
+				ID: "occ-uuid", StartTime: midnight, EndTime: &midnight,
+				Timezone: "America/Toronto", IsAllDay: true,
+			}, nil
+		}
+		repo.updateOccurrenceFunc = func(_ context.Context, _, _ string, params OccurrenceUpdateParams) (*Occurrence, error) {
+			captured = params
+			return &Occurrence{ID: "occ-uuid"}, nil
+		}
+
+		// EndTimeSet with a nil instant is what the handler produces for a
+		// literal end_time: null. Clearing the end is not a retime: a date-only
+		// occurrence may simply have no end.
+		service := newAdminServiceForOccurrenceTest(repo)
+		_, err := service.UpdateOccurrenceOnEvent(ctx, "01HEVENT000000000000000001", "occ-uuid", OccurrenceUpdateParams{
+			EndTimeSet: true,
+		})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if captured.IsAllDay != nil {
+			t.Fatalf("clearing the end must not rewrite the marker, got %v", *captured.IsAllDay)
+		}
+		if !captured.EndTimeSet || captured.EndTime != nil {
+			t.Errorf("end_time must be cleared, got set=%v end=%v", captured.EndTimeSet, captured.EndTime)
+		}
+	})
+
 	t.Run("all_day true with only a timed end anchors it to midnight", func(t *testing.T) {
 		var captured OccurrenceUpdateParams
 		midnight := time.Date(2026, 11, 5, 0, 0, 0, 0, loc)

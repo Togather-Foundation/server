@@ -171,18 +171,29 @@ func putOccurrence(t *testing.T, env *testEnv, adminToken, eventULID, occurrence
 }
 
 // assertAllDayRowsAreAnchored fails if any stored row claims is_all_day while
-// holding a non-midnight local start time. local_start_time is a generated
-// column (start_time AT TIME ZONE timezone), so this is the invariant expressed
-// exactly as the schema sees it.
+// holding a non-midnight local instant. local_start_time is a generated column
+// (start_time AT TIME ZONE timezone), so the start half is the invariant
+// expressed exactly as the schema sees it; there is no generated local_end_time,
+// so the end half is expressed the same way by hand. The end half closes a
+// coverage gap rather than guarding a known writer: nothing in the schema ties
+// is_all_day to the end, so a row claiming is_all_day while holding a timed end
+// is reachable (proved by forcing one with raw SQL), and this sweep is what
+// catches it whichever writer leaves it there. It is NOT the guard for the
+// end-only retime bug itself: with that clear rule reverted the row keeps the
+// marker and its end is snapped back to midnight, i.e. it stays anchored — the
+// "stored verbatim" assertions are what catch that.
 func assertAllDayRowsAreAnchored(t *testing.T, env *testEnv) {
 	t.Helper()
 
 	var offenders int
 	require.NoError(t, env.Pool.QueryRow(env.Context, `
 		SELECT COUNT(*) FROM event_occurrences
-		WHERE is_all_day AND local_start_time <> TIME '00:00:00'
+		WHERE is_all_day
+		  AND (local_start_time <> TIME '00:00:00'
+		       OR (end_time IS NOT NULL
+		           AND (end_time AT TIME ZONE timezone)::time <> TIME '00:00:00'))
 	`).Scan(&offenders))
-	require.Zero(t, offenders, "rows with is_all_day = true must be anchored to local midnight")
+	require.Zero(t, offenders, "rows with is_all_day = true must be anchored to local midnight at both ends")
 }
 
 // TestAdminFixReviewKeepsMultiOccurrenceSeries is the card's repro: a
@@ -421,6 +432,167 @@ func TestAdminPutOccurrenceEndOnlyRetimeClearsMarker(t *testing.T) {
 	require.False(t, isAllDay, "is_all_day must be false after an end-only retime")
 	require.Equal(t, "2026-11-05", endDate)
 	require.Equal(t, "21:00:00", endClock)
+
+	assertAllDayRowsAreAnchored(t, env)
+}
+
+// TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow drives the end-only rule
+// through the row the card's symptom describes: an occurrence that arrived
+// date-only from ingest (a bare YYYY-MM-DD startDate), edited with end_time
+// alone — no all_day, no start_time. TestAdminPutOccurrenceEndOnlyRetimeClearsMarker
+// covers the same rule starting from a timed row that a PUT re-marked all-day;
+// this one covers the ingest-born row and, crucially, the two shapes that must
+// NOT clear the marker:
+//
+//   - the end lands on another civil date's local midnight (still date-only);
+//   - the end is cleared outright with end_time: null (a date-only occurrence
+//     may have no end) — the boundary docs/api/openapi.yaml states.
+//
+// These are over-clear guards for the widened rule, one case per half of the
+// condition: dropping the local-midnight test turns case 2 red, dropping the nil
+// test turns case 3 red (both measured with mutation probes).
+func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
+	env := setupTestEnv(t)
+
+	insertAdminUser(t, env, alldayTestAdminUser, alldayTestAdminPassword, "allday-admin@example.com", "admin")
+	adminToken := adminLogin(t, env, alldayTestAdminUser, alldayTestAdminPassword)
+	agentKey := insertAPIKey(t, env, "allday-agent-end-only-date-only")
+
+	newDateOnlyEvent := func(name, date string) (string, string) {
+		t.Helper()
+
+		ulid := createEventAsAgent(t, env, agentKey, map[string]any{
+			"name":        name,
+			"description": "A date-only occurrence whose end is edited on its own.",
+			"startDate":   date,
+			"occurrences": []map[string]any{
+				{"startDate": date},
+			},
+			"location": map[string]any{
+				"name":            "Palmerston Library",
+				"addressLocality": "Toronto",
+				"addressRegion":   "ON",
+			},
+		})
+
+		subs := subEvents(t, getEventAsAgent(t, env, ulid))
+		require.Len(t, subs, 1)
+		require.Equal(t, date, subs[0]["startDate"], "a bare startDate must ingest as date-only")
+		require.Equal(t, true, subs[0]["allDay"])
+		return ulid, occurrenceUUIDFromSubEvent(t, subs[0])
+	}
+
+	// Case 1: the end moves off local midnight, so the row is timed now. The
+	// requested instant must be stored verbatim and the marker must clear.
+	ulid, occurrenceUUID := newDateOnlyEvent("Date Only Workshop", "2026-11-07")
+
+	retimed := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+		"end_time": "2026-11-07T21:00:00-05:00",
+	})
+	defer func() { _ = retimed.Body.Close() }()
+	if retimed.StatusCode != http.StatusOK {
+		var failure map[string]any
+		_ = json.NewDecoder(retimed.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "PUT end-only retime: status=%d response=%v", retimed.StatusCode, failure)
+	}
+
+	var retimedBody map[string]any
+	require.NoError(t, json.NewDecoder(retimed.Body).Decode(&retimedBody))
+	require.Equal(t, "2026-11-07T21:00:00-05:00", retimedBody["end_time"],
+		"the requested end must be stored verbatim, not re-anchored to midnight")
+	require.NotContains(t, retimedBody, "all_day", "the marker must clear when the end leaves local midnight")
+
+	var isAllDay bool
+	var storedEnd string
+	require.NoError(t, env.Pool.QueryRow(env.Context, `
+		SELECT is_all_day, to_char(end_time AT TIME ZONE timezone, 'YYYY-MM-DD"T"HH24:MI:SS')
+		  FROM event_occurrences
+		 WHERE id = $1::uuid
+	`, occurrenceUUID).Scan(&isAllDay, &storedEnd))
+	require.False(t, isAllDay, "is_all_day must not survive an end retimed off local midnight")
+	require.Equal(t, "2026-11-07T21:00:00", storedEnd)
+
+	rendered := subEvents(t, getEventAsAgent(t, env, ulid))
+	require.Len(t, rendered, 1)
+	require.NotContains(t, rendered[0], "allDay", "the row is timed now")
+
+	assertAllDayRowsAreAnchored(t, env)
+
+	// Case 2 (mirror): the end lands on ANOTHER civil date's local midnight.
+	// Still date-only, so the marker must survive, the row must stay anchored,
+	// and the date-only rendering must survive.
+	ulid2, occurrenceUUID2 := newDateOnlyEvent("Date Only Fair", "2026-11-09")
+
+	mirror := putOccurrence(t, env, adminToken, ulid2, occurrenceUUID2, map[string]any{
+		"end_time": "2026-11-10T00:00:00-05:00",
+	})
+	defer func() { _ = mirror.Body.Close() }()
+	if mirror.StatusCode != http.StatusOK {
+		var failure map[string]any
+		_ = json.NewDecoder(mirror.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "PUT end-only midnight retime: status=%d response=%v", mirror.StatusCode, failure)
+	}
+
+	var mirrored map[string]any
+	require.NoError(t, json.NewDecoder(mirror.Body).Decode(&mirrored))
+	require.Equal(t, true, mirrored["all_day"], "an end that stays on local midnight must keep the marker")
+	require.Equal(t, "2026-11-10T00:00:00-05:00", mirrored["end_time"],
+		"the end must be local midnight of the requested civil date")
+
+	var mirrorAllDay bool
+	var mirrorLocalStart, mirrorLocalEnd string
+	require.NoError(t, env.Pool.QueryRow(env.Context, `
+		SELECT is_all_day,
+		       to_char(local_start_time, 'HH24:MI:SS'),
+		       to_char((end_time AT TIME ZONE timezone)::time, 'HH24:MI:SS')
+		  FROM event_occurrences
+		 WHERE id = $1::uuid
+	`, occurrenceUUID2).Scan(&mirrorAllDay, &mirrorLocalStart, &mirrorLocalEnd))
+	require.True(t, mirrorAllDay, "the row is still date-only")
+	require.Equal(t, "00:00:00", mirrorLocalStart)
+	require.Equal(t, "00:00:00", mirrorLocalEnd)
+
+	mirrorRendered := subEvents(t, getEventAsAgent(t, env, ulid2))
+	require.Len(t, mirrorRendered, 1)
+	require.Equal(t, "2026-11-09", mirrorRendered[0]["startDate"], "date-only rendering must survive")
+	require.Equal(t, true, mirrorRendered[0]["allDay"])
+
+	assertAllDayRowsAreAnchored(t, env)
+
+	// Case 3: clearing the end outright is not a retime. The marker survives
+	// with end_time null, which is the boundary the API docs state.
+	ulid3, occurrenceUUID3 := newDateOnlyEvent("Date Only Cleanup", "2026-11-11")
+
+	cleared := putOccurrence(t, env, adminToken, ulid3, occurrenceUUID3, map[string]any{
+		"end_time": nil,
+	})
+	defer func() { _ = cleared.Body.Close() }()
+	if cleared.StatusCode != http.StatusOK {
+		var failure map[string]any
+		_ = json.NewDecoder(cleared.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "PUT end_time null: status=%d response=%v", cleared.StatusCode, failure)
+	}
+
+	var clearedBody map[string]any
+	require.NoError(t, json.NewDecoder(cleared.Body).Decode(&clearedBody))
+	// Response-side corroboration only; the stored row below is the guard.
+	if marker, present := clearedBody["all_day"]; present {
+		require.Equal(t, true, marker, "clearing the end must not report a cleared marker")
+	}
+
+	var endIsNull, clearedAllDay bool
+	require.NoError(t, env.Pool.QueryRow(env.Context, `
+		SELECT end_time IS NULL, is_all_day
+		  FROM event_occurrences
+		 WHERE id = $1::uuid
+	`, occurrenceUUID3).Scan(&endIsNull, &clearedAllDay))
+	require.True(t, endIsNull, "end_time must be cleared")
+	require.True(t, clearedAllDay, "clearing the end must not clear the marker")
+
+	clearedRendered := subEvents(t, getEventAsAgent(t, env, ulid3))
+	require.Len(t, clearedRendered, 1)
+	require.Equal(t, "2026-11-11", clearedRendered[0]["startDate"], "the row is still date-only")
+	require.Equal(t, true, clearedRendered[0]["allDay"])
 
 	assertAllDayRowsAreAnchored(t, env)
 }
