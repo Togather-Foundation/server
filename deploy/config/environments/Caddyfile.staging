@@ -25,6 +25,70 @@
 # ==============================================================================
 
 staging.toronto.togather.foundation {
+	# ======================================================================
+	# Probe hardening — 2026-10-03 (Hermes). Independently reviewed before apply.
+	# ======================================================================
+	# Why: the SPA fallback answers 200 + index.html for unknown paths, so a
+	# scanner hunting for secrets reads every hit as a finding and escalates.
+	# On 2026-10-02 one scanner IP sent 394 requests in ~2 seconds (/.env,
+	# /.ssh/id_rsa, /@fs/app/.env, /.htpasswd, /ssl/server.key, ...) and 366 of
+	# them got 200. Nothing leaked — the fallback serves HTML — but the signal
+	# was wrong. Probe paths observed in the logs include the secret file at
+	# any depth (/shop/.env, /static/app/.env) and under /ssl and /@fs.
+	#
+	# This is a PARTIAL mitigation, not a clean-up of the 200 signal: it covers
+	# dot-prefixed segments, bundler source-disclosure prefixes, and paths
+	# ending in a secret-bearing extension. Wordlist paths like /phpmyadmin or
+	# /serverless.yaml still reach the app. The durable fix is app-level —
+	# unknown non-SPA paths should 404 instead of returning index.html.
+	#
+	# Scope: response hygiene ONLY. This is not a crash fix and must not be
+	# treated as one. The 34-hour outage on the same day was Caddy 2.11.6 bug
+	# #8101 (panic while the reverse proxy was still reading a request body
+	# after the handler had returned), fixed upstream in #8107 and shipped in
+	# 2.11.7, which is what runs now; the systemd unit's Restart=on-failure
+	# drop-in is the control that keeps a repeat from becoming an outage.
+	#
+	# Placement: Caddy evaluates directives in its built-in order, not in file
+	# order — header runs first, then respond, then reverse_proxy. So these
+	# 404s short-circuit the upstream and still carry the security headers
+	# set further down. The @html_pages / @static_assets Cache-Control rules do
+	# NOT apply to them (they key on response Content-Type or /admin/static/*).
+
+	# 1) Dot-prefixed path SEGMENT at any depth — /.env, /.git/config,
+	#    /static/.env, /shop/.env, /.ENV — plus the once-encoded /%2Eenv form.
+	#    /.well-known* is carved out: ACME challenges, security.txt.
+	@probe_dotfiles {
+		path_regexp dotfile (?i)(^|/)(\.|%2e)[^/]+
+		not path /.well-known*
+	}
+	respond @probe_dotfiles 404
+
+	# 2) Bundler / dev-server source-disclosure prefixes, with a right boundary
+	#    so near-misses like /@identity are left alone.
+	@probe_tooling {
+		path_regexp tooling (?i)^/@(fs|vite|id|react-refresh)(/|$)
+	}
+	respond @probe_tooling 404
+
+	# 3) Secret-bearing file extensions anywhere in the path — catches
+	#    /ssl/server.key and /config.env, which rule 1 misses because the
+	#    segment does not begin with a dot. The list is evidence-based: no
+	#    legitimate path in the retained staging logs uses any of these.
+	#    Pre-compressed assets (.gz, .br) are deliberately excluded.
+	@probe_secrets {
+		path_regexp secrets (?i)\.(env|git|ssh|htpasswd|htaccess|pem|key|sql|bak|backup|old|swp|php)$
+	}
+	respond @probe_secrets 404
+
+	# Deliberately NOT here: a rule rejecting POST bodies on page routes. It was
+	# drafted, reviewed, and dropped, and it must not come back. It could not
+	# have prevented the 2.11.6 crash: the trigger request carried a Next-Action
+	# header, which that rule exempted by design, and it exempted /api/* and
+	# /mcp* as well. Default-deny on write methods across a vhost also risks
+	# silently breaking a legitimate route (admin UI, webhooks, no-JS form
+	# posts). The crash control is the 2.11.7 upgrade plus the Restart drop-in.
+
 	@metrics_block {
 		path /metrics
 		not remote_ip 127.0.0.1 ::1
@@ -173,10 +237,13 @@ staging.toronto.togather.foundation {
 # Blue-Green Traffic Switching:
 # -----------------------------
 # To switch traffic from blue to green:
-# 1. Update line 29: FROM localhost:8081 TO localhost:8082
-# 2. Update line 41: FROM "blue" TO "green"
-# 3. Reload Caddy: sudo systemctl reload caddy
-# 4. Verify: curl -I https://staging.toronto.togather.foundation/health | grep X-Togather-Slot
+# 1. Set the active upstream port (localhost:8081 <-> localhost:8082) and the
+#    X-Togather-Slot value ("blue" <-> "green") inside the
+#    BLUE_GREEN_SLOT_START / BLUE_GREEN_SLOT_END markers below.
+#    deploy.sh does this automatically — do not edit by line number, the file
+#    has moved on since this note was written.
+# 2. Reload Caddy: sudo systemctl reload caddy
+# 3. Verify: curl -I https://staging.toronto.togather.foundation/health | grep X-Togather-Slot
 #
 # Deploy this file:
 # ----------------
