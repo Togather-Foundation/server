@@ -327,6 +327,11 @@ HTTP_MAX_HEADER_BYTES=1048576
 
 ## Operational Security
 
+> Host-level practices live separately: reverse proxy resilience, response hygiene for
+> scanner probes, node sizing, host monitoring and the agent-operator lane are in
+> **[Node Hardening](../operations/node-hardening.md)**. This section covers the
+> application and configuration layer.
+
 ### 1. Generate Strong Secrets
 
 **JWT Secret**:
