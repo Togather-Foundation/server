@@ -888,6 +888,263 @@ func TestMapToEventInputs_NoLocationNoDefault(t *testing.T) {
 	}
 }
 
+// locationAsURL_test_cases covers the URL-vs-venue predicate directly.
+func TestLocationAsURL(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		location string
+		want     string
+		wantOK   bool
+	}{
+		{"https URL", "https://luma.com/event/evt-n703ze5h7r5P6tq", "https://luma.com/event/evt-n703ze5h7r5P6tq", true},
+		{"http URL", "http://example.com/events/1", "http://example.com/events/1", true},
+		{"webcal normalized to https", "webcal://example.com/events.ics", "https://example.com/events.ics", true},
+		{"surrounding whitespace trimmed", "  https://luma.com/event/x  ", "https://luma.com/event/x", true},
+		{"bare venue name", "Toronto Public Library", "", false},
+		{"short venue id", "1RG", "", false},
+		{"address with colon", "U of T: Schwartz Reisman Innovation Campus, 108 College St, Toronto", "", false},
+		{"comma address", "The Garrison, 1197 Dundas St W, Toronto, ON M6J 1X3, Canada", "", false},
+		{"escaped-comma address", `The Garrison\, 1197 Dundas St W\, Toronto\, ON`, "", false},
+		{"schemeless host and path", "www.luma.com/event/x", "", false},
+		{"mailto scheme", "mailto:calendar-invite@lu.ma", "", false},
+		{"empty", "", "", false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := locationAsURL(tc.location)
+			if ok != tc.wantOK {
+				t.Fatalf("locationAsURL(%q) ok = %v, want %v", tc.location, ok, tc.wantOK)
+			}
+			if got != tc.want {
+				t.Errorf("locationAsURL(%q) = %q, want %q", tc.location, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMapToEventInputs_LocationIsURL covers the URL-only-LOCATION regression:
+// Lu.ma puts the canonical event link in LOCATION and leaves the URL property
+// empty, and the mapper used to store that link in location.address.streetAddress
+// (observed on ULID 01M3N8VKTWSSGGXN4KWXFT3S61, which carried
+// streetAddress "https://luma.com/event/evt-n703ze5h7r5P6tq" and no url).
+// The link must land in EventInput.URL with no PlaceInput built from it.
+func TestMapToEventInputs_LocationIsURL(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		location string
+		hasGeo   bool
+		wantURL  string
+	}{
+		{
+			name:     "https location folded into url, no place",
+			location: "https://luma.com/event/evt-n703ze5h7r5P6tq",
+			wantURL:  "https://luma.com/event/evt-n703ze5h7r5P6tq",
+		},
+		{
+			name:     "webcal location normalized to https",
+			location: "webcal://luma.com/event/evt-xIZkxTwCbAi26nE",
+			wantURL:  "https://luma.com/event/evt-xIZkxTwCbAi26nE",
+		},
+		{
+			// Real URL-only Lu.ma events carry GEO; a coordinates-only place
+			// has no name and cannot pass location validation, so the
+			// coordinates are dropped rather than emitting an invalid place.
+			name:     "url location with geo stays a virtual location",
+			location: "https://luma.com/event/evt-GPbW3yjdshOserV",
+			hasGeo:   true,
+			wantURL:  "https://luma.com/event/evt-GPbW3yjdshOserV",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ev := ParsedEvent{
+				UID:      "luma-url-location",
+				Summary:  "URL-only LOCATION event",
+				Location: tc.location,
+				Start:    time.Date(2026, 10, 26, 22, 0, 0, 0, time.UTC),
+				End:      time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC),
+			}
+			if tc.hasGeo {
+				ev.HasGeo = true
+				ev.GeoLat = 43.64679708656368
+				ev.GeoLon = -79.39510338848798
+			}
+
+			cal := &ParsedCalendar{Events: []ParsedEvent{ev}}
+			results, warnings, err := MapToEventInputs(context.Background(), cal, defaultMapperOpts())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(warnings) != 0 {
+				t.Errorf("unexpected warnings: %v", warnings)
+			}
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+
+			ei := results[0]
+			if ei.URL != tc.wantURL {
+				t.Errorf("URL = %q, want %q", ei.URL, tc.wantURL)
+			}
+			if ei.Location != nil {
+				t.Errorf("Location = %+v, want nil (a URL is not a venue)", ei.Location)
+			}
+			if ei.VirtualLocation == nil {
+				t.Fatal("VirtualLocation is nil, want the LOCATION URL surfaced as virtual")
+			}
+			if ei.VirtualLocation.URL != tc.wantURL {
+				t.Errorf("VirtualLocation.URL = %q, want %q", ei.VirtualLocation.URL, tc.wantURL)
+			}
+		})
+	}
+}
+
+// TestMapToEventInputs_LocationIsAddress_Unchanged is the negative control for
+// the URL-only-LOCATION fix: a real venue/address LOCATION must still populate
+// Location (name + decomposed address) and must never be read as a URL.
+func TestMapToEventInputs_LocationIsAddress_Unchanged(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name         string
+		location     string
+		wantLocality string
+		wantRegion   string
+	}{
+		{
+			name:     "plain venue name",
+			location: "Toronto Public Library",
+		},
+		{
+			name:         "escaped-comma street address",
+			location:     `The Garrison\, 1197 Dundas St W\, Toronto\, ON M6J 1X3`,
+			wantLocality: "Toronto",
+			wantRegion:   "ON",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cal := &ParsedCalendar{
+				Events: []ParsedEvent{{
+					UID:      "luma-address-location",
+					Summary:  "Physical venue event",
+					Location: tc.location,
+					Start:    time.Date(2026, 10, 26, 22, 0, 0, 0, time.UTC),
+					End:      time.Date(2026, 10, 27, 0, 0, 0, 0, time.UTC),
+				}},
+			}
+
+			results, _, err := MapToEventInputs(context.Background(), cal, defaultMapperOpts())
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+
+			ei := results[0]
+			if ei.URL != "" {
+				t.Errorf("URL = %q, want empty (an address LOCATION must not become a URL)", ei.URL)
+			}
+			if ei.VirtualLocation != nil {
+				t.Errorf("VirtualLocation = %+v, want nil", ei.VirtualLocation)
+			}
+			if ei.Location == nil {
+				t.Fatal("Location is nil, want the real address preserved")
+			}
+			if ei.Location.Name != tc.location {
+				t.Errorf("Location.Name = %q, want %q", ei.Location.Name, tc.location)
+			}
+			if ei.Location.StreetAddress != tc.location {
+				t.Errorf("Location.StreetAddress = %q, want %q", ei.Location.StreetAddress, tc.location)
+			}
+			if ei.Location.AddressCountry != "CA" {
+				t.Errorf("Location.AddressCountry = %q, want CA", ei.Location.AddressCountry)
+			}
+			if ei.Location.AddressLocality != tc.wantLocality {
+				t.Errorf("Location.AddressLocality = %q, want %q", ei.Location.AddressLocality, tc.wantLocality)
+			}
+			if ei.Location.AddressRegion != tc.wantRegion {
+				t.Errorf("Location.AddressRegion = %q, want %q", ei.Location.AddressRegion, tc.wantRegion)
+			}
+		})
+	}
+}
+
+// TestMapToEventInputs_LumaURLLocation_EndToEnd runs a minimal Lu.ma-shaped ICS
+// through Parse + MapToEventInputs. It reproduces the observed shape (URL-only
+// LOCATION, no URL property, GEO present, a DESCRIPTION that contains an
+// "Address:" line with no venue) and asserts the link is not turned into a
+// venue and the description is not mined for a bogus one.
+func TestMapToEventInputs_LumaURLLocation_EndToEnd(t *testing.T) {
+	t.Parallel()
+
+	const raw = `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Lu.ma//EN
+BEGIN:VEVENT
+UID:evt-n703ze5h7r5P6tq@events.lu.ma
+DTSTART:20261026T220000Z
+DTEND:20261027T000000Z
+SUMMARY:Build Canada | Toronto presents: Ideas for a Bolder City
+DESCRIPTION:Get up-to-date information at: https://luma.com/boldercity\n\nAdd
+ ress:\nCheck event page for more details.
+LOCATION:https://luma.com/event/evt-n703ze5h7r5P6tq
+GEO:43.64679708656368;-79.39510338848798
+STATUS:TENTATIVE
+END:VEVENT
+END:VCALENDAR
+`
+
+	cal, err := Parse([]byte(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(cal.Events) != 1 {
+		t.Fatalf("expected 1 parsed event, got %d", len(cal.Events))
+	}
+	if cal.Events[0].Location != "https://luma.com/event/evt-n703ze5h7r5P6tq" {
+		t.Fatalf("parsed LOCATION = %q", cal.Events[0].Location)
+	}
+	if cal.Events[0].URL != "" {
+		t.Fatalf("parsed URL = %q, want empty (Lu.ma leaves URL unset)", cal.Events[0].URL)
+	}
+
+	results, _, err := MapToEventInputs(context.Background(), cal, defaultMapperOpts())
+	if err != nil {
+		t.Fatalf("map: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+
+	ei := results[0]
+	if ei.URL != "https://luma.com/event/evt-n703ze5h7r5P6tq" {
+		t.Errorf("URL = %q, want the canonical Luma event link", ei.URL)
+	}
+	if ei.Location != nil {
+		t.Errorf("Location = %+v, want nil (no venue: LOCATION was a URL and the description has none)", ei.Location)
+	}
+	if ei.VirtualLocation == nil || ei.VirtualLocation.URL != "https://luma.com/event/evt-n703ze5h7r5P6tq" {
+		t.Errorf("VirtualLocation = %+v, want the Luma event link", ei.VirtualLocation)
+	}
+}
+
 // containsHTML checks if a string contains HTML-like tags.
 func containsHTML(s string) bool {
 	for i := 0; i < len(s); i++ {

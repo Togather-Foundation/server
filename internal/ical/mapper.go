@@ -287,8 +287,16 @@ func mapSingleEvent(ev ParsedEvent, startTime, endTime time.Time, fallbackLoc *t
 	name := sanitize.Text(ev.Summary)
 	description := sanitize.Text(ev.Description)
 
-	// URL validation and normalization.
-	eventURL := normalizeURL(ev.URL, &warnings, ev.UID)
+	// URL validation and normalization. Some feeds (Lu.ma) put the canonical
+	// event link in LOCATION and leave the URL property empty, so fall back to
+	// a URL-shaped LOCATION when the URL property is absent.
+	rawURL := ev.URL
+	if strings.TrimSpace(rawURL) == "" {
+		if locURL, ok := locationAsURL(ev.Location); ok {
+			rawURL = locURL
+		}
+	}
+	eventURL := normalizeURL(rawURL, &warnings, ev.UID)
 
 	// Location.
 	location, virtualLoc := buildLocation(ev, opts)
@@ -368,6 +376,38 @@ func normalizeURL(rawURL string, warnings *[]string, uid string) string {
 	return rawURL
 }
 
+// locationAsURL reports whether an ICS LOCATION value is an http(s)/webcal URL
+// and returns it normalized to http(s). Feeds such as Lu.ma encode the
+// canonical event link in LOCATION, with no URL property and no venue name
+// (e.g. "LOCATION:https://luma.com/event/evt-n703ze5h7r5P6tq").
+//
+// Returns ("", false) for anything that is not a URL — bare venue names,
+// partial addresses, and schemeless host/path strings — so ordinary LOCATION
+// values keep flowing through DecomposeLocation unchanged.
+func locationAsURL(rawLocation string) (string, bool) {
+	trimmed := strings.TrimSpace(rawLocation)
+	if trimmed == "" {
+		return "", false
+	}
+
+	// Mirror normalizeURL's webcal:// → https:// handling so a webcal LOCATION
+	// is treated as a URL rather than a venue name.
+	if strings.HasPrefix(strings.ToLower(trimmed), "webcal://") {
+		trimmed = "https://" + trimmed[len("webcal://"):]
+	}
+
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return "", false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return trimmed, true
+	default:
+		return "", false
+	}
+}
+
 // buildLocation constructs a PlaceInput and/or VirtualLocationInput from the
 // parsed event. Resolution order:
 //  1. ev.Location present → PlaceInput (with Geo if also present)
@@ -377,6 +417,17 @@ func normalizeURL(rawURL string, warnings *[]string, uid string) string {
 //  5. nil, nil (reject)
 func buildLocation(ev ParsedEvent, opts MapperOptions) (*events.PlaceInput, *events.VirtualLocationInput) {
 	if ev.Location != "" {
+		// Some feeds (Lu.ma) put the canonical event link in LOCATION and
+		// leave the URL property empty ("~9 of 40 events have URL-only
+		// LOCATION"). A URL is not a venue: skip the PlaceInput and expose it
+		// as a virtual location instead; mapSingleEvent folds the same value
+		// into EventInput.URL. Any GEO coordinates on such an event are
+		// dropped, because a coordinates-only PlaceInput has no name/@id and
+		// fails location validation (and the occurrence_location_required DB
+		// constraint) — emitting it would reject the whole event.
+		if locURL, ok := locationAsURL(ev.Location); ok {
+			return nil, &events.VirtualLocationInput{URL: locURL}
+		}
 		var decomposeOpts DecomposeOpts
 		if opts.DefaultLocation != nil {
 			decomposeOpts.DefaultLocality = opts.DefaultLocation.AddressLocality
