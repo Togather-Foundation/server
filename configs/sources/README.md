@@ -48,11 +48,11 @@ directly. For detailed ICS configuration, see [ics-feeds.md](ics-feeds.md).
 | Source | Status | Events | Notes |
 |--------|--------|--------|-------|
 | harbourfront-centre | **enabled** | 106/page | CSS selectors on /whats-on/ |
-| toronto-reference-library | **enabled** | 21/page | tpl.bibliocommons.com/v2/events |
-| tpl-career-job-search | disabled (pending TPL terms check) | 33 | BiblioCommons RSS `types=68b050d1…` |
-| tpl-artificial-intelligence | disabled (pending TPL terms check) | 79 | BiblioCommons RSS `types=68caafcb…` |
-| tpl-career-coaches-in-residence | disabled (pending TPL terms check) | 12 | BiblioCommons RSS `programs=68b0553a…` |
-| tpl-innovator-in-residence | disabled (pending TPL terms check) | 44 | BiblioCommons RSS `programs=68b0559e…` |
+| toronto-reference-library | disabled (superseded by tpl-* RSS sources) | 21/page | tpl.bibliocommons.com/v2/events |
+| tpl-career-job-search | **enabled** | 33 | BiblioCommons RSS `types=68b050d1…` |
+| tpl-artificial-intelligence | **enabled** | 79 | BiblioCommons RSS `types=68caafcb…` |
+| tpl-career-coaches-in-residence | **enabled** | 12 | BiblioCommons RSS `programs=68b0553a…` |
+| tpl-innovator-in-residence | **enabled** | 44 | BiblioCommons RSS `programs=68b0559e…` |
 | gardiner-museum | **enabled** | 7/page | gardinermuseum.on.ca/whats-on/ |
 | soulpepper | **enabled** | 9/page | soulpepper.ca/performances |
 | moca | **enabled** | 20/page | moca.ca/events; Elementor template ID hook — fragile |

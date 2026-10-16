@@ -976,13 +976,13 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
   is recorded as provenance only.
 - Not legal advice; this reflects only the text retrieved on 2026-10-15.
 
-The TPL sources therefore ship `enabled: false` until that confirmation exists.
+The TPL RSS sources were enabled 2026-10-16 on the operator's instruction; the operator is confirming the terms with TPL directly. Disable them (YAML `enabled: false` + `server scrape sync`) if TPL objects.
 
 **Known examples:**
 - `tpl-career-job-search.yaml`, `tpl-artificial-intelligence.yaml`,
-  `tpl-career-coaches-in-residence.yaml`, `tpl-innovator-in-residence.yaml` — RSS, disabled
-- `toronto-reference-library.yaml` — **legacy HTML Tier 1** (enabled). Page 1 only, no times,
-  polluted names/locations; superseded by the RSS sources above.
+  `tpl-career-coaches-in-residence.yaml`, `tpl-innovator-in-residence.yaml` — RSS, enabled
+- `toronto-reference-library.yaml` — **legacy HTML Tier 1** (disabled 2026-10-16). Page 1 only,
+  no times, polluted names/locations; superseded by the RSS sources above.
 
 ---
 

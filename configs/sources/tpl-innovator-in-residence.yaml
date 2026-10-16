@@ -11,8 +11,10 @@ name: "tpl-innovator-in-residence"
 # Career Coaches in Residence, programs=68b0559e101e8736007ad740 Innovator in Residence.
 # 25 items per page; max_pages is headroom, paging stops at the first empty page.
 #
-# ENABLED: false until the licence/terms decision is made — see
-# docs/integration/event-platforms.md "BiblioCommons (public libraries)".
+# Enabled 2026-10-16 on the operator's instruction (they are working with TPL and are
+# confirming republication terms with TPL directly); the open terms question is recorded in
+# docs/integration/event-platforms.md "BiblioCommons (public libraries)". Disable here
+# (and `server scrape sync`) if TPL objects.
 # Organization: the feed channel title ("Events | Toronto Public Library") becomes the organizer.
 url: "https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events?programs=68b0559e101e8736007ad740"
 extraction_method: bibliocommons_rss
@@ -21,5 +23,5 @@ trust_level: 8
 license: "CC0-1.0"
 domain: education
 timezone: "America/Toronto"
-enabled: false
+enabled: true
 max_pages: 6
