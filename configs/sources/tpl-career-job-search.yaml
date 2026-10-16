@@ -1,0 +1,27 @@
+name: "tpl-career-job-search"
+# Toronto Public Library - Career & Job Search category (resume, interview, job-search workshops).
+# BiblioCommons events RSS (extraction_method: bibliocommons_rss). The RSS feed is the
+# surface BiblioCommons' terms expressly permit for automated access ("except as may be
+# specifically permitted using RSS/XML feeds"); the HTML listing is NOT, so do not
+# scrape tpl.bibliocommons.com/v2/events for this. The feed carries venue address +
+# coordinates, local start/end times, registration state, virtual flag and cancelled
+# flag (cancelled events are skipped), and is filtered server-side by the query below.
+# Filter ids (BiblioCommons, TPL): types=68b050d1023ff32800756704 Career & Job Search,
+# types=68caafcb023ff32800799b52 Artificial Intelligence, programs=68b0553aedabb62f00e295f3
+# Career Coaches in Residence, programs=68b0559e101e8736007ad740 Innovator in Residence.
+# 25 items per page; max_pages is headroom, paging stops at the first empty page.
+#
+# Enabled 2026-10-16 on the operator's instruction (they are working with TPL and are
+# confirming republication terms with TPL directly); the open terms question is recorded in
+# docs/integration/event-platforms.md "BiblioCommons (public libraries)". Disable here
+# (and `server scrape sync`) if TPL objects.
+# Organization: the feed channel title ("Events | Toronto Public Library") becomes the organizer.
+url: "https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events?types=68b050d1023ff32800756704"
+extraction_method: bibliocommons_rss
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: education
+timezone: "America/Toronto"
+enabled: true
+max_pages: 6

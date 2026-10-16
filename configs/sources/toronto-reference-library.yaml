@@ -1,3 +1,7 @@
+# DISABLED 2026-10-16: superseded by the tpl-* BiblioCommons RSS sources (extraction_method:
+# bibliocommons_rss). This HTML scraper only ever fetched page 1 (the pagination selector
+# matched nothing), had no times, produced polluted names/locations ("...Featured Event",
+# "...Event location: ..."), and BiblioCommons' terms permit automated access only via RSS/XML.
 name: "toronto-reference-library"
 # Tier 1 (Colly CSS selectors). Uses tpl.bibliocommons.com/v2/events — full static
 # HTML listing with 7,800+ events across all TPL branches.
@@ -14,7 +18,7 @@ schedule: "daily"
 trust_level: 7
 license: "CC0-1.0"
 domain: education
-enabled: true
+enabled: false
 max_pages: 10
 selectors:
   event_list: ".cp-events-search-item"

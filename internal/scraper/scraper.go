@@ -136,6 +136,7 @@ type Scraper struct {
 	scraperMetrics *metrics.ScraperMetrics // may be nil — falls back to package-level globals
 	rodExtractor   *RodExtractor           // nil when headless is disabled/unconfigured
 	icsConfig      config.ICSConfig        // ICS feed extraction defaults
+	bcPageDelay    *time.Duration          // pause between BiblioCommons RSS pages; nil = default (tests set 0)
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
@@ -361,8 +362,11 @@ func (s *Scraper) ScrapeSource(ctx context.Context, sourceName string, opts Scra
 
 	// ICS extraction: dispatch before sitemap/tier since extraction_method
 	// is orthogonal to tier numbers.
-	if found.ExtractionMethod == "ics" {
+	switch found.ExtractionMethod {
+	case "ics":
 		return s.scrapeICS(ctx, *found, opts)
+	case ExtractionMethodBiblioCommonsRSS:
+		return s.scrapeBiblioCommonsRSS(ctx, *found, opts)
 	}
 
 	// Sitemap-based scraping: dispatch before the tier switch since sitemap
@@ -429,6 +433,8 @@ func (s *Scraper) ScrapeAll(ctx context.Context, opts ScrapeOptions) ([]ScrapeRe
 		// is orthogonal to tier numbers.
 		if cfg.ExtractionMethod == "ics" {
 			res, scrapeErr = s.scrapeICS(ctx, cfg, opts)
+		} else if cfg.ExtractionMethod == ExtractionMethodBiblioCommonsRSS {
+			res, scrapeErr = s.scrapeBiblioCommonsRSS(ctx, cfg, opts)
 		} else if cfg.Sitemap != nil {
 			// Sitemap-based scraping.
 			res, scrapeErr = s.scrapeSitemap(ctx, cfg, opts)

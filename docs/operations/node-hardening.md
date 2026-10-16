@@ -7,8 +7,8 @@ behind it gets deleted by the next person who finds it inconvenient.
 
 This is the host layer. For application-level security — secrets, authentication, rate
 limits, database access — see [SEL Security Model](../contributors/security.md). For the
-reverse proxy configuration itself see [Caddy](caddy.md) and, if something is already
-broken, [Troubleshooting](troubleshooting.md).
+reverse proxy configuration itself see [Caddy](../deploy/caddy.md) and, if something is already
+broken, [Troubleshooting](../deploy/troubleshooting.md).
 
 ## The two assumptions worth making
 

@@ -524,3 +524,37 @@ func TestAmbiguousDateMaxFutureDays_EnvVar(t *testing.T) {
 		t.Errorf("AmbiguousDateMaxFutureDays = %d, want 90", cfg.Validation.AmbiguousDateMaxFutureDays)
 	}
 }
+
+func TestLoad_CORSPublicReadsOpen(t *testing.T) {
+	for _, k := range []string{"ENVIRONMENT", "CORS_PUBLIC_READS_OPEN", "DATABASE_URL", "JWT_SECRET"} {
+		old, had := os.LookupEnv(k)
+		defer func(k, old string, had bool) {
+			if had {
+				_ = os.Setenv(k, old)
+			} else {
+				_ = os.Unsetenv(k)
+			}
+		}(k, old, had)
+	}
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+
+	_ = os.Unsetenv("CORS_PUBLIC_READS_OPEN")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.CORS.PublicReadsOpen {
+		t.Error("PublicReadsOpen should default to true")
+	}
+
+	_ = os.Setenv("CORS_PUBLIC_READS_OPEN", "false")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.CORS.PublicReadsOpen {
+		t.Error("CORS_PUBLIC_READS_OPEN=false should disable public reads")
+	}
+}

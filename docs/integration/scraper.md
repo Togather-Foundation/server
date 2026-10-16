@@ -804,6 +804,35 @@ to enter the iframe's execution context and extracts HTML from the iframe. CSS s
 in `selectors:` then apply to the iframe DOM, not the parent page. This enables
 extraction from cross-origin iframes such as Ticket Spot (Wix embed) and Elevent.
 
+### BiblioCommons RSS (`extraction_method: bibliocommons_rss`)
+
+For BiblioCommons library calendars (e.g. Toronto Public Library). Like `ics`, it is
+orthogonal to tiers: the URL is a filtered events RSS feed and `tier`/`selectors` are ignored
+(validation warns if set).
+
+```yaml
+name: "tpl-career-job-search"
+url: "https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events?types=68b050d1023ff32800756704"
+extraction_method: bibliocommons_rss
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: education
+timezone: "America/Toronto"
+max_pages: 6        # 25 items/page; paging stops at the first empty (or repeated) page
+enabled: false
+```
+
+Behaviour: sets `?page=N` (other query params are preserved), identifies as
+`Togather-SEL-Scraper`, uses venue-local times, maps `bc:location` to a place with
+address + coordinates, virtual events to a `VirtualLocation`, categories to keywords
+(language categories to `inLanguage`), registration state + room into the description, and
+skips cancelled events (reported as quality warnings). The channel title
+(`Events | <Library>`) becomes the organizer. See
+[event-platforms.md §23](event-platforms.md#23-bibliocommons-public-libraries) for the feed
+shape, filter ids and the terms/licence notes. `extraction_method` is constrained in the DB
+(migration 000053), so run `make migrate-up` before `server scrape sync`.
+
 ### Full Config with Tier 3 GraphQL
 
 ```yaml
