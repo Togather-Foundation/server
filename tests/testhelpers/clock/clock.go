@@ -28,7 +28,7 @@ func FutureTime(days int) time.Time {
 // that compare 23:00 with 02:00).
 func FutureTimeAt(days, hour, minute int) time.Time {
 	if days < 1 {
-		panic("clock.FutureTime: days must be >= 1 (use PastTime for past dates)")
+		panic("clock.FutureTimeAt: days must be >= 1 (use PastTimeAt for past dates)")
 	}
 	return anchorTime(days, hour, minute)
 }
@@ -42,7 +42,7 @@ func PastTime(days int) time.Time {
 // PastTimeAt is PastTime with an explicit UTC time of day.
 func PastTimeAt(days, hour, minute int) time.Time {
 	if days < 1 {
-		panic("clock.PastTime: days must be >= 1 (use FutureTime for future dates)")
+		panic("clock.PastTimeAt: days must be >= 1 (use FutureTimeAt for future dates)")
 	}
 	return anchorTime(-days, hour, minute)
 }

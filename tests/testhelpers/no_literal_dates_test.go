@@ -5,6 +5,8 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,12 +46,7 @@ func TestNoLiteralDatesInWallClockSensitiveTests(t *testing.T) {
 
 	var violations []string
 	for _, dir := range wallClockSensitiveDirs {
-		files, err := filepath.Glob(filepath.Join(root, dir, "*_test.go"))
-		require.NoError(t, err)
-		require.NotEmpty(t, files, "no test files found in %s; has the directory moved?", dir)
-		for _, file := range files {
-			violations = append(violations, literalDateViolations(t, root, file)...)
-		}
+		violations = append(violations, scanTree(t, root, dir)...)
 	}
 
 	sort.Strings(violations)
@@ -59,16 +56,113 @@ func TestNoLiteralDatesInWallClockSensitiveTests(t *testing.T) {
 		fixedDateMarker, strings.Join(violations, "\n  "))
 }
 
-func literalDateViolations(t *testing.T, root, path string) []string {
+// scanTree walks root/dir recursively (so test subpackages cannot escape the
+// guard) and returns the unmarked literal dates in its *_test.go files.
+// testdata directories are skipped, as the go tool does.
+func scanTree(t *testing.T, root, dir string) []string {
 	t.Helper()
 
-	src, err := os.ReadFile(path)
-	require.NoError(t, err)
-	lines := strings.Split(string(src), "\n")
+	start := filepath.Join(root, dir)
+	byDir := map[string][]string{}
+	require.NoError(t, filepath.WalkDir(start, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if strings.HasSuffix(path, "_test.go") {
+			byDir[filepath.Dir(path)] = append(byDir[filepath.Dir(path)], path)
+		}
+		return nil
+	}))
+	require.NotEmpty(t, byDir, "no test files found under %s; has the directory moved?", dir)
 
-	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
-	require.NoError(t, err, "parse %s", path)
+	var out []string
+	for _, files := range byDir {
+		parsed := parseFiles(t, files)
+		// A year hidden behind a package-level const/var (const probeYear =
+		// 2028, possibly declared in another file) is still a literal.
+		pkgYears := map[string]bool{}
+		for _, pf := range parsed {
+			for _, d := range pf.ast.Decls {
+				if gd, ok := d.(*ast.GenDecl); ok {
+					maps.Copy(pkgYears, yearBindings(gd))
+				}
+			}
+		}
+		for _, pf := range parsed {
+			out = append(out, literalDateViolations(t, root, pf, pkgYears)...)
+		}
+	}
+	return out
+}
+
+type parsedFile struct {
+	path string
+	src  []byte
+	fset *token.FileSet
+	ast  *ast.File
+}
+
+func parseFiles(t *testing.T, paths []string) []parsedFile {
+	t.Helper()
+	var out []parsedFile
+	for _, path := range paths {
+		src, err := os.ReadFile(path)
+		require.NoError(t, err)
+		fset := token.NewFileSet()
+		f, err := parser.ParseFile(fset, path, src, parser.ParseComments)
+		require.NoError(t, err, "parse %s", path)
+		out = append(out, parsedFile{path: path, src: src, fset: fset, ast: f})
+	}
+	return out
+}
+
+func isLiteralYear(e ast.Expr) bool {
+	lit, ok := e.(*ast.BasicLit)
+	if !ok || lit.Kind != token.INT || len(lit.Value) != 4 {
+		return false
+	}
+	n, err := strconv.Atoi(lit.Value)
+	return err == nil && n >= 1900 && n <= 2099
+}
+
+// yearBindings returns the names that a const/var declaration or assignment
+// inside n binds to a four-digit year literal.
+func yearBindings(n ast.Node) map[string]bool {
+	names := map[string]bool{}
+	ast.Inspect(n, func(n ast.Node) bool {
+		switch x := n.(type) {
+		case *ast.ValueSpec:
+			for i, v := range x.Values {
+				if i < len(x.Names) && isLiteralYear(v) {
+					names[x.Names[i].Name] = true
+				}
+			}
+		case *ast.AssignStmt:
+			if len(x.Lhs) == len(x.Rhs) {
+				for i, v := range x.Rhs {
+					if id, ok := x.Lhs[i].(*ast.Ident); ok && isLiteralYear(v) {
+						names[id.Name] = true
+					}
+				}
+			}
+		}
+		return true
+	})
+	return names
+}
+
+func literalDateViolations(t *testing.T, root string, pf parsedFile, pkgYears map[string]bool) []string {
+	t.Helper()
+
+	path, src, fset, f := pf.path, pf.src, pf.fset, pf.ast
+
+	lines := strings.Split(string(src), "\n")
 
 	marked := func(line int) bool {
 		for _, l := range []int{line, line - 1} {
@@ -91,7 +185,11 @@ func literalDateViolations(t *testing.T, root, path string) []string {
 		out = append(out, fmt.Sprintf("%s:%d: %s", rel, p.Line, what))
 	}
 
-	ast.Inspect(f, func(n ast.Node) bool {
+	// yearIdents are the package-level year constants plus, inside a function,
+	// that function's own year-literal locals (so an unrelated parameter that
+	// happens to share a name with another function's local is not flagged).
+	yearIdents := pkgYears
+	visit := func(n ast.Node) bool {
 		switch x := n.(type) {
 		case *ast.CallExpr:
 			sel, ok := x.Fun.(*ast.SelectorExpr)
@@ -101,8 +199,15 @@ func literalDateViolations(t *testing.T, root, path string) []string {
 			if pkg, ok := sel.X.(*ast.Ident); !ok || pkg.Name != "time" {
 				return true
 			}
-			if lit, ok := x.Args[0].(*ast.BasicLit); ok && lit.Kind == token.INT {
-				report(x.Pos(), "time.Date with a literal year")
+			switch arg := x.Args[0].(type) {
+			case *ast.BasicLit:
+				if arg.Kind == token.INT {
+					report(x.Pos(), "time.Date with a literal year")
+				}
+			case *ast.Ident:
+				if yearIdents[arg.Name] {
+					report(x.Pos(), "time.Date with a year held in a constant/variable initialised from a literal")
+				}
 			}
 		case *ast.BasicLit:
 			if x.Kind != token.STRING {
@@ -119,6 +224,14 @@ func literalDateViolations(t *testing.T, root, path string) []string {
 			}
 		}
 		return true
-	})
+	}
+	for _, d := range f.Decls {
+		yearIdents = pkgYears
+		if fd, ok := d.(*ast.FuncDecl); ok {
+			yearIdents = maps.Clone(pkgYears)
+			maps.Copy(yearIdents, yearBindings(fd))
+		}
+		ast.Inspect(d, visit)
+	}
 	return out
 }

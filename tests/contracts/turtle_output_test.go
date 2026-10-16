@@ -256,8 +256,11 @@ func TestTurtleAllDayEmitsSELTerm(t *testing.T) {
 	).Scan(&eventID)
 	require.NoError(t, err)
 
-	// Local midnight in America/Toronto on 2026-07-10 (EDT = UTC-04:00).
-	start := testhelpers.FutureTimeAt(1, 4, 0)
+	// Local midnight in America/Toronto. WinterTime builds the instant in the
+	// zone itself, so it is true midnight whichever day the suite runs.
+	toronto, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+	start := testhelpers.WinterTime(0, 0, 0, toronto)
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, end_time, venue_id, timezone, is_all_day)
 		 VALUES ($1, $2, $3, $4, $5, $6)`,

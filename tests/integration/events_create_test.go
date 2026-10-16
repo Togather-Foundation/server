@@ -16,10 +16,13 @@ func TestCreateEventHappyPath(t *testing.T) {
 	env := setupTestEnv(t)
 
 	key := insertAPIKey(t, env, "agent-happy")
+	// Render the start in Toronto's real offset for that date (EST or EDT).
+	toronto, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
 	payload := map[string]any{
 		"name":        "Neighborhood Jazz Night",
 		"description": "An evening of smooth jazz featuring local Toronto musicians in the heart of Centennial Park.",
-		"startDate":   testhelpers.FutureTime(41).In(time.FixedZone("EDT", -4*60*60)).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(41).In(toronto).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",
