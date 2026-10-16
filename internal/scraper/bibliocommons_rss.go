@@ -286,7 +286,7 @@ func mapBCItem(item bcItem, id string, cfg SourceConfig, loc *time.Location, org
 		StartDate:   start,
 		EndDate:     end,
 		URL:         link,
-		Image:       strings.Replace(strings.TrimSpace(item.Enclosure.URL), "http://", "https://", 1),
+		Image:       upgradeToHTTPS(strings.TrimSpace(item.Enclosure.URL)),
 		EventDomain: cfg.Domain,
 		License:     cfg.License,
 		Organizer:   organizer,
@@ -310,13 +310,26 @@ func mapBCItem(item bcItem, id string, cfg SourceConfig, loc *time.Location, org
 		in.Keywords = append(in.Keywords, c)
 	}
 
-	if strings.EqualFold(strings.TrimSpace(item.IsVirtual), "true") || item.Location == nil {
+	switch {
+	case strings.EqualFold(strings.TrimSpace(item.IsVirtual), "true"):
 		// Online events have no <bc:location>; the event page hosts registration/join info.
 		in.VirtualLocation = &events.VirtualLocationInput{Type: "VirtualLocation", URL: link, Name: "Online event"}
-	} else {
+	case item.Location == nil:
+		// A feed glitch must not publish an in-person event as online.
+		return events.EventInput{}, fmt.Sprintf("skipping %q (%s): not virtual but no location", name, id), false
+	default:
 		in.Location = bcPlace(item.Location)
 	}
 	return in, "", true
+}
+
+// upgradeToHTTPS rewrites a leading http:// scheme to https://, leaving any other
+// occurrence of "http://" (e.g. in a query string) alone.
+func upgradeToHTTPS(u string) string {
+	if rest, ok := strings.CutPrefix(u, "http://"); ok {
+		return "https://" + rest
+	}
+	return u
 }
 
 func bcPlace(l *bcLocation) *events.PlaceInput {

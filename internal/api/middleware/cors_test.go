@@ -383,3 +383,27 @@ func TestCORS_Whitelist_CredentialsOnlyForListedOrigin(t *testing.T) {
 		t.Errorf("Vary = %q, want Origin", got)
 	}
 }
+
+// A cached response to a request without an Origin header must not poison later
+// cross-origin fetches of the same public URL, so public reads always carry ACAO: *.
+func TestCORS_PublicReads_WildcardEvenWithoutOrigin(t *testing.T) {
+	cfg := config.CORSConfig{AllowedOrigins: []string{"https://sel.events"}, PublicReadsOpen: true}
+
+	rec := serveCORS(t, cfg, http.MethodGet, "/api/v1/stats", nil)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Errorf("public read without Origin: ACAO = %q, want *", got)
+	}
+	if got := rec.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Errorf("public read without Origin: unexpected Allow-Credentials %q", got)
+	}
+
+	rec = serveCORS(t, cfg, http.MethodGet, "/api/v1/admin/stats", nil)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("non-public path without Origin: ACAO = %q, want none", got)
+	}
+
+	rec = serveCORS(t, cfg, http.MethodPost, "/api/v1/events", nil)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("write without Origin: ACAO = %q, want none", got)
+	}
+}

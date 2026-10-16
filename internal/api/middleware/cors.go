@@ -45,6 +45,16 @@ func CORS(cfg config.CORSConfig, logger zerolog.Logger) func(http.Handler) http.
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 
+			// Public reads always carry ACAO: * even without an Origin header, so a shared
+			// cache that stored a same-origin response cannot later serve it to a
+			// cross-origin fetch without CORS headers.
+			if origin == "" && cfg.PublicReadsOpen && (r.Method == http.MethodGet || r.Method == http.MethodHead) && isPublicReadPath(r.URL.Path) {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Expose-Headers", exposeHeaders)
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			// Skip CORS processing if no Origin header (same-origin requests)
 			if origin == "" {
 				next.ServeHTTP(w, r)

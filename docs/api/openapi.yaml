@@ -11,8 +11,9 @@ info:
     **Public read access:** No authentication required for reading events, places, or organizations.
 
     **Browser (CORS) access:** `GET`/`HEAD` on the public read endpoints (`/api/v1/events`,
-    `/api/v1/events/{id}`, `/api/v1/places`, `/api/v1/organizations`, `/api/v1/events.ics`,
-    `/api/v1/openapi.json`) answer cross-origin requests from any origin, including `Origin: null`
+    `/api/v1/events/{id}`, `/api/v1/events/{id}/ics`, `/api/v1/events.ics`, `/api/v1/places`,
+    `/api/v1/places/{id}`, `/api/v1/organizations`, `/api/v1/organizations/{id}`,
+    `/api/v1/stats`, `/api/v1/openapi.json`, `/api/v1/openapi.yaml`) answer cross-origin requests from any origin, including `Origin: null`
     from `file://` pages, with `Access-Control-Allow-Origin: *` and no credentials header
     (configurable via `CORS_PUBLIC_READS_OPEN`, default `true`). `429` responses carry the same
     headers and expose `Retry-After`. Admin, auth and write routes only allow origins listed in

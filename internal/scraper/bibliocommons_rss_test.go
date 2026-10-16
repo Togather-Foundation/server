@@ -198,7 +198,7 @@ func TestBiblioCommonsRSS_RespectsMaxPages(t *testing.T) {
 		// Every page has one new, distinct event.
 		_, _ = w.Write([]byte(`<?xml version="1.0"?><rss xmlns:bc="http://bibliocommons.com/rss/1.0/modules/event/" version="2.0"><channel><title>Events | X Library</title>
 <item><title>E` + r.URL.Query().Get("page") + `</title><link>https://x.example/events/` + r.URL.Query().Get("page") + `</link><guid>https://x.example/events/` + r.URL.Query().Get("page") + `</guid>
-<bc:start_date_local>2026-11-01T10:00</bc:start_date_local><bc:end_date_local>2026-11-01T11:00</bc:end_date_local><bc:is_cancelled>false</bc:is_cancelled><bc:is_virtual>false</bc:is_virtual></item></channel></rss>`))
+<bc:start_date_local>2026-11-01T10:00</bc:start_date_local><bc:end_date_local>2026-11-01T11:00</bc:end_date_local><bc:is_cancelled>false</bc:is_cancelled><bc:is_virtual>false</bc:is_virtual><bc:location><bc:name>Branch</bc:name><bc:street>Main St</bc:street></bc:location></item></channel></rss>`))
 	}))
 	defer srv.Close()
 
@@ -331,4 +331,29 @@ func TestBiblioCommonsRSS_MappedEventsPassIngestValidation(t *testing.T) {
 		_, err := events.ValidateEventInput(norm, "toronto.test")
 		assert.NoError(t, err, "event %q", e.Name)
 	}
+}
+
+func TestMapBCItem_NoLocationAndNotVirtualIsSkipped(t *testing.T) {
+	item := bcItem{
+		Title:      "Mystery Event",
+		StartLocal: "2026-10-22T18:30",
+		Link:       "https://tpl.bibliocommons.com/events/abc",
+		IsVirtual:  "false",
+	}
+	_, reason, ok := mapBCItem(item, "abc", bcTestSource("http://x"), time.UTC, nil)
+	assert.False(t, ok, "an in-person event with no location must not be published as online")
+	assert.Contains(t, reason, "location")
+}
+
+func TestMapBCItem_ImageUpgradeOnlyRewritesScheme(t *testing.T) {
+	item := bcItem{
+		Title:      "Event",
+		StartLocal: "2026-10-22T18:30",
+		Link:       "https://tpl.bibliocommons.com/events/abc",
+		IsVirtual:  "true",
+	}
+	item.Enclosure.URL = "/img.jpg?src=http://origin.example/a.jpg"
+	in, _, ok := mapBCItem(item, "abc", bcTestSource("http://x"), time.UTC, nil)
+	require.True(t, ok)
+	assert.Equal(t, "/img.jpg?src=http://origin.example/a.jpg", in.Image)
 }
