@@ -109,18 +109,21 @@ type SourceConfig struct {
 	LastScrapedAt *time.Time `yaml:"-" json:"-"`
 
 	// ExtractionMethod selects the extraction pipeline for this source.
-	// Values: "" or "scraper" (default tier-based dispatch), "ics" (ICS feed).
+	// Values: "" or "scraper" (default tier-based dispatch), "ics" (ICS feed),
+	// "bibliocommons_rss" (BiblioCommons library events RSS feed).
 	// When "ics", the scraper fetches the URL as an ICS feed and uses the
-	// ical package for parsing and mapping. Tier and selector fields are ignored.
+	// ical package for parsing and mapping. When "bibliocommons_rss", it pages
+	// through the RSS feed (?page=N, up to max_pages). Tier and selector fields
+	// are ignored for both.
 	ExtractionMethod string `yaml:"extraction_method,omitempty" json:"extraction_method,omitempty"`
 
-	// Headers are extra HTTP headers sent with every ICS feed request.
+	// Headers are extra HTTP headers sent with every ICS / BiblioCommons RSS feed request.
 	// Use to override the default User-Agent or add auth headers for sources
 	// that block generic bot UAs (e.g. Meetup.com).
 	// Example:
 	//   headers:
 	//     User-Agent: "Mozilla/5.0 (compatible; MyBot/1.0)"
-	// Only applies when extraction_method is "ics". For Tier 2 (headless)
+	// Only applies when extraction_method is "ics" or "bibliocommons_rss". For Tier 2 (headless)
 	// use headless.headers; for Tier 3 (REST) use rest.headers.
 	Headers map[string]string `yaml:"headers,omitempty" json:"headers,omitempty"`
 
@@ -456,6 +459,9 @@ func (c SourceConfig) GetURLs() []string {
 	return nil
 }
 
+// ExtractionMethodBiblioCommonsRSS selects the BiblioCommons events RSS extractor.
+const ExtractionMethodBiblioCommonsRSS = "bibliocommons_rss"
+
 // GetTimezone returns the effective IANA timezone name for this source.
 // Priority: per-source Timezone field → DEFAULT_TIMEZONE env var →
 // "America/Toronto" fallback. Each SEL node runs for one geographic
@@ -521,7 +527,8 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 	var errs []string
 	var warnings []string
 
-	isICS := cfg.ExtractionMethod == "ics"
+	// Feed-based methods parse the URL directly: tier/selectors/rest are not used.
+	isICS := cfg.ExtractionMethod == "ics" || cfg.ExtractionMethod == ExtractionMethodBiblioCommonsRSS
 
 	if strings.TrimSpace(cfg.Name) == "" {
 		errs = append(errs, "name: required")
@@ -722,8 +729,18 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		if cfg.Tier != 0 {
 			warnings = append(warnings, fmt.Sprintf("extraction_method is \"ics\": tier %d will be ignored (ICS extraction does not use tier-based dispatch)", cfg.Tier))
 		}
+	case ExtractionMethodBiblioCommonsRSS:
+		// BiblioCommons RSS sources: the feed is parsed directly; selectors/tier are ignored.
+		if strings.TrimSpace(cfg.Selectors.EventList) != "" ||
+			strings.TrimSpace(cfg.Selectors.Name) != "" ||
+			strings.TrimSpace(cfg.Selectors.StartDate) != "" {
+			warnings = append(warnings, "extraction_method is \"bibliocommons_rss\": CSS selectors will be ignored (the RSS feed is parsed directly)")
+		}
+		if cfg.Tier != 0 {
+			warnings = append(warnings, fmt.Sprintf("extraction_method is \"bibliocommons_rss\": tier %d will be ignored (feed extraction does not use tier-based dispatch)", cfg.Tier))
+		}
 	default:
-		errs = append(errs, fmt.Sprintf("extraction_method: must be \"\" (default), \"scraper\", or \"ics\", got %q", cfg.ExtractionMethod))
+		errs = append(errs, fmt.Sprintf("extraction_method: must be \"\" (default), \"scraper\", \"ics\", or \"bibliocommons_rss\", got %q", cfg.ExtractionMethod))
 	}
 
 	if cfg.Domain != "" {
