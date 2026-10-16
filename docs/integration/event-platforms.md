@@ -30,6 +30,7 @@ Quick lookup by DOM signal. Find the first matching row; go to the named section
 | `elevent-cdn.azureedge.net` in source/network | **Elevent widget** | T2 (`iframe:` config block) |
 | `geteventviewer.com` or `ticketspotapp.com` iframe | **Ticket Spot** (Wix embed) | T2 (`iframe:` config block) |
 | `.ashx?orgid=` URL pattern | **Agile Technologies box office** | T2 (`wait_network_idle: true`) |
+| `*.bibliocommons.com/v2/events`, `cp-events-search-item` | **BiblioCommons (public libraries)** | RSS (`extraction_method: bibliocommons_rss`) — not the HTML listing |
 | `<title>Just a moment...</title>` or `window._cf_chl_opt` or `id="challenge-error-text"` in curl output | **Cloudflare-protected** | T2 (`undetected: true`) |
 | `showpass.com` link or `showpass-widget` | **Showpass** | T3 (REST API) |
 | `showclix.com` link or `eventsbucket.s3.amazonaws.com` in network | **Showclix** | T3 (REST via S3 JSON) |
@@ -902,6 +903,69 @@ accept `?format=json`.
 
 **Known examples:**
 - `hot-docs.yaml` — disabled, Agile Technologies, widget doesn't render in Rod
+
+---
+
+### 23. BiblioCommons (public libraries)
+
+**What it is:** The catalogue/website platform behind most Canadian public-library event
+calendars, including Toronto Public Library (`tpl.bibliocommons.com`).
+
+**Detection signals:**
+- `https://<lib>.bibliocommons.com/v2/events` listing, `cp-events-search-item` cards
+- A `<script type="application/json">` blob (~600 KB) with `entities.events`
+
+**Recommended approach:** the **events RSS feed**, via `extraction_method: bibliocommons_rss`:
+
+```
+https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&programs=<id>&q=<text>&page=N
+```
+
+- Filters are server-side and combinable: `types=` (category), `programs=`, `audiences=`,
+  `q=` (keyword). 25 items/page; the extractor pages until an empty page or `max_pages`.
+  Find ids from the `?types=` / `?programs=` links on the HTML event pages.
+- Items carry `bc:start_date_local` / `end_date_local` (venue wall-clock — used; the UTC
+  values are 4–5 h ahead), `bc:location` (name, street, city, zip, **latitude/longitude**,
+  room), `bc:is_virtual`, `bc:is_cancelled`, `bc:registration_info`
+  (required / full / capacity / registered) and `<category>` values (topic, programme,
+  audience, language).
+- Virtual events have no `bc:location` → mapped to a `VirtualLocation` pointing at the event page.
+- Cancelled events are skipped with a quality warning. A previously ingested event that is
+  later cancelled is **not** updated (no event-status field on `EventInput` yet).
+- Descriptions are converted HTML → text; TPL's "Information Collection Notice" privacy
+  boilerplate is dropped; room and registration state are appended as plain lines.
+
+**Why not the other surfaces:**
+- **HTML listing (Tier 1 CSS):** works, but BiblioCommons' terms
+  (`tpl.bibliocommons.com/info/terms`, last updated 2018-09-19) prohibit using "any
+  automated system to harvest or capture any BiblioCommons Content … except as may be
+  specifically permitted using RSS/XML feeds". The listing also lacks coordinates and
+  needs a fragile pagination selector (the old `a.cp-pagination-btn--next` matched nothing,
+  so only page 1 was ever scraped; the real one is `li.pagination__next-chevron a`).
+- **Gateway JSON** (`/v2/libraries/<lib>/events`): ~6,800 events, **ignores** `types`,
+  `programs`, `q` and date params, and pagination is `pagination.page/pages`, not a `next`
+  URL — unusable for a filtered ingest.
+- **TPL Open Data "Branch Programs and Events Feed"** (open.toronto.ca,
+  `library-branch-programs-and-events-feed`; JSON/CSV/XML, daily): TPL's Open Data Policy
+  says open data is "freely available for anyone to use and republish as they wish, without
+  restrictions" under TPL's Open Government Licence. But it has no description, URL,
+  coordinates or programme, cannot be filtered (7,290 events, all categories), and the CKAN
+  record says "License not specified".
+
+**Terms / licence status (2026-10-15):** the RSS feed is the one surface the BiblioCommons
+terms name as permitted, but they also say Service Content is the IP of the participating
+library/BiblioCommons, and TPL has not been asked whether republishing descriptions and
+images under CC0 is acceptable. Facts (title, time, place) are the same ones TPL publishes
+as open data. The TPL sources therefore ship `enabled: false`; confirm with TPL
+(`answerline@tpl.ca` / the Open Data team) before enabling. Note that
+`licenseStatus` on ingested events is always `cc0` (platform policy); the source `license`
+is recorded as provenance only.
+
+**Known examples:**
+- `tpl-career-job-search.yaml`, `tpl-artificial-intelligence.yaml`,
+  `tpl-career-coaches-in-residence.yaml`, `tpl-innovator-in-residence.yaml` — RSS, disabled
+- `toronto-reference-library.yaml` — **legacy HTML Tier 1** (enabled). Page 1 only, no times,
+  polluted names/locations; superseded by the RSS sources above.
 
 ---
 
