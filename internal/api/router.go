@@ -974,17 +974,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		mux.Handle("/dev/static/", http.StripPrefix("/dev/static/", devStaticFS))
 	}
 
-	// Wrap entire router with middleware stack
-	// Order: SecurityHeaders -> CORS -> CorrelationID -> RequestLogging -> RateLimit -> HTTPMetrics
-	// Note: Security headers and CORS must be applied first to ensure they're set on all responses
-	// HTTPMetrics is last (innermost) so it captures actual handler latency, not middleware overhead
-	handler := middleware.SecurityHeaders(requireHTTPS)(mux)
-	handler = middleware.CORS(cfg.CORS, logger)(handler)
-	handler = middleware.CorrelationID(logger)(handler)
-	handler = middleware.OpenAPILink(cfg.Server.BaseURL)(handler)
-	handler = middleware.RequestLogging(logger)(handler)
-	handler = middleware.RateLimit(cfg.RateLimit)(handler)
-	handler = metrics.HTTPMiddleware(handler)
+	handler := applyGlobalMiddleware(mux, cfg, logger, requireHTTPS)
 
 	return &RouterWithClient{
 		Handler:       handler,
@@ -992,6 +982,30 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		UsageRecorder: usageRecorder,
 		Broker:        broker,
 	}
+}
+
+// applyGlobalMiddleware wraps the router with the global middleware stack.
+//
+// Each wrapper added later is OUTERMOST, so a request runs through them in the
+// reverse of the order below:
+//
+//	HTTPMetrics -> CORS -> SecurityHeaders -> RateLimit -> RequestLogging ->
+//	OpenAPILink -> CorrelationID -> mux
+//
+// CORS and security headers sit outside RateLimit on purpose: a 429 must still carry
+// Access-Control-Allow-Origin and Expose-Headers (Retry-After), otherwise a browser
+// page sees an opaque network error instead of a readable "slow down" response.
+// HTTPMetrics is outermost so it observes every response, including preflights and 429s.
+func applyGlobalMiddleware(mux http.Handler, cfg config.Config, logger zerolog.Logger, requireHTTPS bool) http.Handler {
+	handler := mux
+	handler = middleware.CorrelationID(logger)(handler)
+	handler = middleware.OpenAPILink(cfg.Server.BaseURL)(handler)
+	handler = middleware.RequestLogging(logger)(handler)
+	handler = middleware.RateLimit(cfg.RateLimit)(handler)
+	handler = middleware.SecurityHeaders(requireHTTPS)(handler)
+	handler = middleware.CORS(cfg.CORS, logger)(handler)
+	handler = metrics.HTTPMiddleware(handler)
+	return handler
 }
 
 func methodMux(handlers map[string]http.Handler) http.Handler {

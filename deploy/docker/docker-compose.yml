@@ -138,6 +138,7 @@ services:
 
       # CORS Configuration
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-*}
+      CORS_PUBLIC_READS_OPEN: ${CORS_PUBLIC_READS_OPEN:-true}
 
       # Background Jobs
       JOB_RETRY_DEDUPLICATION: ${JOB_RETRY_DEDUPLICATION:-3}

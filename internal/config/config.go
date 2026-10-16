@@ -168,6 +168,11 @@ type LoggingConfig struct {
 type CORSConfig struct {
 	AllowAllOrigins bool     // Development mode: allow all origins
 	AllowedOrigins  []string // Production mode: whitelist of allowed origins
+	// PublicReadsOpen answers cross-origin GET/HEAD requests to the public read
+	// endpoints (events, places, organizations, ICS feeds, OpenAPI) from any origin
+	// (including "null" from file:// pages) with a credential-less wildcard,
+	// regardless of the whitelist. Env: CORS_PUBLIC_READS_OPEN, default true.
+	PublicReadsOpen bool
 }
 
 // EmailConfig holds email service configuration
@@ -675,6 +680,8 @@ func Load() (Config, error) {
 			}
 		}
 	}
+
+	cfg.CORS.PublicReadsOpen = getEnvBool("CORS_PUBLIC_READS_OPEN", true)
 
 	if cfg.Database.URL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")

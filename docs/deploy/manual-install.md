@@ -731,7 +731,8 @@ See [.env.example](../../.env.example) for full list. Key variables:
 
 - `DATABASE_URL`: PostgreSQL connection string
 - `SERVER_PORT`: API port (default: 8080)
-- `CORS_ALLOWED_ORIGINS`: Allowed CORS origins (use domain in prod, not *)
+- `CORS_ALLOWED_ORIGINS`: Allowed CORS origins for admin/auth/write routes (use domain in prod, not *). Credentials (`Access-Control-Allow-Credentials`) are sent only to origins listed here (and loopback origins in dev).
+- `CORS_PUBLIC_READS_OPEN` (default `true`): public read endpoints (events, places, organizations, ICS feeds, OpenAPI) answer any origin with `Access-Control-Allow-Origin: *` and no credentials, so browser pages from any host (including `file://`) can read them
 - `ADMIN_USERNAME`, `ADMIN_PASSWORD`: Initial admin credentials
 - `JWT_SECRET`: Must be 32+ characters
 - `ENVIRONMENT`: development|staging|production
