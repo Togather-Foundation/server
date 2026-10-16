@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -27,7 +28,7 @@ func TestAdminDeleteEventSuccess(t *testing.T) {
 	event := map[string]any{
 		"name":        "Event to Delete",
 		"description": "This event will be deleted",
-		"startDate":   time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(50).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -143,7 +144,7 @@ func TestAdminDeleteEventIdempotent(t *testing.T) {
 	// Create event
 	event := map[string]any{
 		"name":      "Event for Idempotent Delete",
-		"startDate": time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(50).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -212,7 +213,7 @@ func TestAdminDeleteEventWithReason(t *testing.T) {
 	// Create event
 	event := map[string]any{
 		"name":      "Event to Delete with Reason",
-		"startDate": time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(50).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -285,7 +286,7 @@ func TestAdminDeleteEventExcludedFromListing(t *testing.T) {
 	event := map[string]any{
 		"name":        "Event to be Excluded",
 		"description": "This event will be deleted and excluded from listings",
-		"startDate":   time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(50).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",

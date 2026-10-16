@@ -546,6 +546,22 @@ func TestEventWithVenue(t *testing.T) {
 }
 ```
 
+### Dates in Tests
+
+Tests must not depend on today's date. Anything that reaches HTTP handlers, ingest, the review queue or the database can read the wall clock (the events list defaults to `startDate=today`, SQL uses `NOW()`, feeds and stats split past/upcoming), so a hardcoded date silently turns from "next month" into "last month" and the test starts failing without any code change. This is how `TestLicenseInEventList` and the admin pending-list tests broke once the calendar passed `2026-10-01`.
+
+Use the helpers in `tests/testhelpers` (or the dependency-free `tests/testhelpers/clock` for in-package tests such as `package postgres`):
+
+```go
+start := testhelpers.FutureTime(30)              // 19:00 UTC, 30 days from now
+body["startDate"] = start.Format(time.RFC3339)
+url := "/api/v1/events?startDate=" + testhelpers.FutureDate(1)
+created := testhelpers.PastTimeAt(2, 9, 0)       // 09:00 UTC two days ago
+jan := testhelpers.WinterDate(3) + "T19:00:00-05:00" // fixed Toronto offset stays valid
+```
+
+A literal date that can never rot may stay if it carries a `// fixed-date: <reason>` comment. `tests/testhelpers/no_literal_dates_test.go` fails CI for unmarked literals in `tests/contracts`, `tests/integration`, `tests/integration_batch` and `internal/storage/postgres`. See `tests/AGENTS.md` for the full helper table and the rules for fixed offsets and tzdata.
+
 ---
 
 ## Integration Testing

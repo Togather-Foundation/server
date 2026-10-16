@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -31,8 +32,8 @@ func TestCreateEventPreviouslyRejected(t *testing.T) {
 	// Event with reversed dates (common data quality issue)
 	payload := map[string]any{
 		"name":      "Late Night Jazz",
-		"startDate": time.Date(2026, 3, 31, 23, 0, 0, 0, time.UTC).Format(time.RFC3339), // 11 PM
-		"endDate":   time.Date(2026, 3, 31, 2, 0, 0, 0, time.UTC).Format(time.RFC3339),  // 2 AM (should be next day!)
+		"startDate": testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339), // 11 PM
+		"endDate":   testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339),  // 2 AM (should be next day!)
 		"location": map[string]any{
 			"name":            "Jazz Club",
 			"addressLocality": "Toronto",
@@ -136,8 +137,8 @@ func TestCreateEventRejectedThenFixed(t *testing.T) {
 	// Now submit with FIXED dates
 	fixedPayload := map[string]any{
 		"name":      "Late Night Show",
-		"startDate": time.Date(2026, 3, 31, 23, 0, 0, 0, time.UTC).Format(time.RFC3339),
-		"endDate":   time.Date(2026, 4, 1, 2, 0, 0, 0, time.UTC).Format(time.RFC3339), // Next day!
+		"startDate": testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339),
+		"endDate":   testhelpers.FutureTimeAt(71, 2, 0).Format(time.RFC3339), // Next day!
 		"location": map[string]any{
 			"name":            "Comedy Club",
 			"addressLocality": "Toronto",

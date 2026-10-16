@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -25,7 +26,7 @@ func TestFederationSyncURIPreservation(t *testing.T) {
 		"@type":     "Event",
 		"@id":       originalEventURI,
 		"name":      "URI Preservation Test Event",
-		"startDate": time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(1).Format(time.RFC3339),
 		"location": map[string]any{
 			"@type":           "Place",
 			"name":            "Test Venue",
@@ -112,7 +113,7 @@ func TestFederationSyncURIPreservation(t *testing.T) {
 			"@id":         originalEventURI,
 			"name":        "URI Preservation Test Event - Updated",
 			"description": "This event has been updated",
-			"startDate":   time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"startDate":   testhelpers.FutureTime(1).Format(time.RFC3339),
 		}
 
 		resp := postFederationSync(t, env, apiKey, updatedPayload)
@@ -134,7 +135,7 @@ func TestFederationSyncURIPreservation(t *testing.T) {
 			"@type":     "Event",
 			"@id":       "https://preserve.example.org/events/EVENT_WITH_FEDERATED_PLACE",
 			"name":      "Event with Federated Place",
-			"startDate": time.Date(2026, 7, 15, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"startDate": testhelpers.FutureTime(6).Format(time.RFC3339),
 			"location": map[string]any{
 				"@type":           "Place",
 				"@id":             "https://preserve.example.org/places/FEDERATED_PLACE_123",
@@ -166,7 +167,7 @@ func TestFederationSyncURIPreservation(t *testing.T) {
 		// Create a local event (not through federation sync)
 		org := insertOrganization(t, env, "Local Org")
 		place := insertPlace(t, env, "Local Place", "Toronto")
-		localEventULID := insertEventWithOccurrence(t, env, "Local Event", org.ID, place.ID, "music", "published", []string{"local"}, time.Date(2026, 7, 20, 19, 0, 0, 0, time.UTC))
+		localEventULID := insertEventWithOccurrence(t, env, "Local Event", org.ID, place.ID, "music", "published", []string{"local"}, testhelpers.FutureTime(11))
 
 		// Verify no federation_uri
 		var federationURI *string

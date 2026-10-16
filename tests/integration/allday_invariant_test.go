@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -214,11 +215,11 @@ func TestAdminFixReviewKeepsMultiOccurrenceSeries(t *testing.T) {
 	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
 		"name":        "Three Night Run",
 		"description": "A three-date series, every date timed at 19:00.",
-		"startDate":   "2026-11-01T19:00:00-05:00",
+		"startDate":   testhelpers.WinterDate(1) + "T19:00:00-05:00",
 		"occurrences": []map[string]any{
-			{"startDate": "2026-11-01T19:00:00-05:00", "endDate": "2026-11-01T21:00:00-05:00"},
-			{"startDate": "2026-11-02T19:00:00-05:00", "endDate": "2026-11-02T21:00:00-05:00"},
-			{"startDate": "2026-11-03T19:00:00-05:00", "endDate": "2026-11-03T21:00:00-05:00"},
+			{"startDate": testhelpers.WinterDate(1) + "T19:00:00-05:00", "endDate": testhelpers.WinterDate(1) + "T21:00:00-05:00"},
+			{"startDate": testhelpers.WinterDate(2) + "T19:00:00-05:00", "endDate": testhelpers.WinterDate(2) + "T21:00:00-05:00"},
+			{"startDate": testhelpers.WinterDate(3) + "T19:00:00-05:00", "endDate": testhelpers.WinterDate(3) + "T21:00:00-05:00"},
 		},
 		"location": map[string]any{
 			"name":            "The Rex",
@@ -229,17 +230,17 @@ func TestAdminFixReviewKeepsMultiOccurrenceSeries(t *testing.T) {
 
 	before := subEvents(t, getEventAsAgent(t, env, ulid))
 	require.Len(t, before, 3)
-	require.Equal(t, "2026-11-01T19:00:00-05:00", before[0]["startDate"])
-	require.Equal(t, "2026-11-02T19:00:00-05:00", before[1]["startDate"])
-	require.Equal(t, "2026-11-03T19:00:00-05:00", before[2]["startDate"])
+	require.Equal(t, testhelpers.WinterDate(1)+"T19:00:00-05:00", before[0]["startDate"])
+	require.Equal(t, testhelpers.WinterDate(2)+"T19:00:00-05:00", before[1]["startDate"])
+	require.Equal(t, testhelpers.WinterDate(3)+"T19:00:00-05:00", before[2]["startDate"])
 
 	// Put the event in the review queue with the event-level all-day flag set,
 	// which is what the previous code smeared across all three rows.
-	reviewStart := time.Date(2026, 11, 1, 19, 0, 0, 0, time.FixedZone("EST", -5*3600))
+	reviewStart := testhelpers.WinterTime(1, 19, 0, time.FixedZone("EST", -5*3600))
 	reviewID := insertPendingReviewForEvent(t, env, ulid, true, reviewStart)
 
-	correctedStart := time.Date(2026, 11, 1, 20, 0, 0, 0, time.FixedZone("EST", -5*3600))
-	correctedEnd := time.Date(2026, 11, 1, 22, 0, 0, 0, time.FixedZone("EST", -5*3600))
+	correctedStart := testhelpers.WinterTime(1, 20, 0, time.FixedZone("EST", -5*3600))
+	correctedEnd := testhelpers.WinterTime(1, 22, 0, time.FixedZone("EST", -5*3600))
 	resp := postReviewFix(t, env, adminToken, reviewID, &correctedStart, &correctedEnd)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -253,10 +254,10 @@ func TestAdminFixReviewKeepsMultiOccurrenceSeries(t *testing.T) {
 
 	// The corrected row (occurrences[0], which the event's own dates mirror)
 	// moves; the two sibling rows do not.
-	require.Equal(t, "2026-11-01T20:00:00-05:00", after[0]["startDate"])
-	require.Equal(t, "2026-11-02T19:00:00-05:00", after[1]["startDate"],
+	require.Equal(t, testhelpers.WinterDate(1)+"T20:00:00-05:00", after[0]["startDate"])
+	require.Equal(t, testhelpers.WinterDate(2)+"T19:00:00-05:00", after[1]["startDate"],
 		"sibling occurrence must not be rewritten to occurrences[0]'s dates")
-	require.Equal(t, "2026-11-03T19:00:00-05:00", after[2]["startDate"],
+	require.Equal(t, testhelpers.WinterDate(3)+"T19:00:00-05:00", after[2]["startDate"],
 		"sibling occurrence must not be rewritten to occurrences[0]'s dates")
 
 	for i, sub := range after {
@@ -268,7 +269,7 @@ func TestAdminFixReviewKeepsMultiOccurrenceSeries(t *testing.T) {
 	require.NotEqual(t, after[1]["startDate"], after[2]["startDate"])
 
 	// The event-level dates mirror occurrences[0].
-	require.Equal(t, "2026-11-01T20:00:00-05:00", eventLevelStartDate(t, env, ulid))
+	require.Equal(t, testhelpers.WinterDate(1)+"T20:00:00-05:00", eventLevelStartDate(t, env, ulid))
 
 	assertAllDayRowsAreAnchored(t, env)
 }
@@ -295,9 +296,9 @@ func TestAdminPutOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
 		"name":        "Single Date Event",
 		"description": "One timed occurrence to be marked all-day.",
-		"startDate":   "2026-11-05T19:00:00-05:00",
+		"startDate":   testhelpers.WinterDate(5) + "T19:00:00-05:00",
 		"occurrences": []map[string]any{
-			{"startDate": "2026-11-05T19:00:00-05:00", "endDate": "2026-11-05T21:00:00-05:00"},
+			{"startDate": testhelpers.WinterDate(5) + "T19:00:00-05:00", "endDate": testhelpers.WinterDate(5) + "T21:00:00-05:00"},
 		},
 		"location": map[string]any{
 			"name":            "Hart House",
@@ -315,8 +316,8 @@ func TestAdminPutOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 	// 19:30 — the row is anchored to local midnight instead.
 	resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
 		"all_day":    true,
-		"start_time": "2026-11-05T19:30:00-05:00",
-		"end_time":   "2026-11-05T23:45:00-05:00",
+		"start_time": testhelpers.WinterDate(5) + "T19:30:00-05:00",
+		"end_time":   testhelpers.WinterDate(5) + "T23:45:00-05:00",
 	})
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode, "PUT occurrence with all_day:true")
@@ -324,9 +325,9 @@ func TestAdminPutOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 	var updated map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
 	require.Equal(t, true, updated["all_day"])
-	require.Equal(t, "2026-11-05T00:00:00-05:00", updated["start_time"],
+	require.Equal(t, testhelpers.WinterDate(5)+"T00:00:00-05:00", updated["start_time"],
 		"stored instant must be local midnight in the occurrence zone")
-	require.Equal(t, "2026-11-05T00:00:00-05:00", updated["end_time"],
+	require.Equal(t, testhelpers.WinterDate(5)+"T00:00:00-05:00", updated["end_time"],
 		"end_time must be anchored with the marker")
 
 	// The database row agrees with the response, and the date-only rendering
@@ -346,7 +347,7 @@ func TestAdminPutOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 
 	rendered := subEvents(t, getEventAsAgent(t, env, ulid))
 	require.Len(t, rendered, 1)
-	require.Equal(t, "2026-11-05", rendered[0]["startDate"], "date-only rendering must follow the anchored instant")
+	require.Equal(t, testhelpers.WinterDate(5), rendered[0]["startDate"], "date-only rendering must follow the anchored instant")
 	require.Equal(t, true, rendered[0]["allDay"])
 
 	assertAllDayRowsAreAnchored(t, env)
@@ -356,8 +357,8 @@ func TestAdminPutOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 	// Both ends move together (an end before the new start is rejected by the
 	// database's valid_end_time check).
 	retime := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
-		"start_time": "2026-11-06T19:30:00-05:00",
-		"end_time":   "2026-11-06T21:00:00-05:00",
+		"start_time": testhelpers.WinterDate(6) + "T19:30:00-05:00",
+		"end_time":   testhelpers.WinterDate(6) + "T21:00:00-05:00",
 	})
 	defer func() { _ = retime.Body.Close() }()
 	if retime.StatusCode != http.StatusOK {
@@ -368,11 +369,11 @@ func TestAdminPutOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 
 	var retimed map[string]any
 	require.NoError(t, json.NewDecoder(retime.Body).Decode(&retimed))
-	require.Equal(t, "2026-11-06T19:30:00-05:00", retimed["start_time"], "timed instant must be preserved verbatim")
+	require.Equal(t, testhelpers.WinterDate(6)+"T19:30:00-05:00", retimed["start_time"], "timed instant must be preserved verbatim")
 	require.NotContains(t, retimed, "all_day", "a retimed row must not keep the date-only marker")
 
 	renderedAfterRetime := subEvents(t, getEventAsAgent(t, env, ulid))
-	require.Equal(t, "2026-11-06T19:30:00-05:00", renderedAfterRetime[0]["startDate"])
+	require.Equal(t, testhelpers.WinterDate(6)+"T19:30:00-05:00", renderedAfterRetime[0]["startDate"])
 	require.NotContains(t, renderedAfterRetime[0], "allDay")
 
 	assertAllDayRowsAreAnchored(t, env)
@@ -391,9 +392,9 @@ func TestAdminPutOccurrenceEndOnlyRetimeClearsMarker(t *testing.T) {
 	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
 		"name":        "End-Only Retime Event",
 		"description": "An all-day occurrence whose end is retimed off midnight.",
-		"startDate":   "2026-11-05T19:00:00-05:00",
+		"startDate":   testhelpers.WinterDate(5) + "T19:00:00-05:00",
 		"occurrences": []map[string]any{
-			{"startDate": "2026-11-05T19:00:00-05:00", "endDate": "2026-11-05T21:00:00-05:00"},
+			{"startDate": testhelpers.WinterDate(5) + "T19:00:00-05:00", "endDate": testhelpers.WinterDate(5) + "T21:00:00-05:00"},
 		},
 		"location": map[string]any{
 			"name":            "Hart House",
@@ -409,28 +410,28 @@ func TestAdminPutOccurrenceEndOnlyRetimeClearsMarker(t *testing.T) {
 	// Make the row all-day (anchored to local midnight).
 	resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
 		"all_day":    true,
-		"start_time": "2026-11-05T19:00:00-05:00",
-		"end_time":   "2026-11-05T23:00:00-05:00",
+		"start_time": testhelpers.WinterDate(5) + "T19:00:00-05:00",
+		"end_time":   testhelpers.WinterDate(5) + "T23:00:00-05:00",
 	})
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	_ = resp.Body.Close()
 
 	// Retime only the end off midnight.
 	retime := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
-		"end_time": "2026-11-05T21:00:00-05:00",
+		"end_time": testhelpers.WinterDate(5) + "T21:00:00-05:00",
 	})
 	defer func() { _ = retime.Body.Close() }()
 	require.Equal(t, http.StatusOK, retime.StatusCode)
 
 	var updated map[string]any
 	require.NoError(t, json.NewDecoder(retime.Body).Decode(&updated))
-	require.Equal(t, "2026-11-05T21:00:00-05:00", updated["end_time"],
+	require.Equal(t, testhelpers.WinterDate(5)+"T21:00:00-05:00", updated["end_time"],
 		"a timed end must be preserved verbatim, not snapped to midnight")
 	require.NotContains(t, updated, "all_day", "the all-day marker must be cleared by an end-only retime")
 
 	_, _, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
 	require.False(t, isAllDay, "is_all_day must be false after an end-only retime")
-	require.Equal(t, "2026-11-05", endDate)
+	require.Equal(t, testhelpers.WinterDate(5), endDate)
 	require.Equal(t, "21:00:00", endClock)
 
 	assertAllDayRowsAreAnchored(t, env)
@@ -484,10 +485,10 @@ func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 
 	// Case 1: the end moves off local midnight, so the row is timed now. The
 	// requested instant must be stored verbatim and the marker must clear.
-	ulid, occurrenceUUID := newDateOnlyEvent("Date Only Workshop", "2026-11-07")
+	ulid, occurrenceUUID := newDateOnlyEvent("Date Only Workshop", testhelpers.WinterDate(7))
 
 	retimed := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
-		"end_time": "2026-11-07T21:00:00-05:00",
+		"end_time": testhelpers.WinterDate(7) + "T21:00:00-05:00",
 	})
 	defer func() { _ = retimed.Body.Close() }()
 	if retimed.StatusCode != http.StatusOK {
@@ -498,7 +499,7 @@ func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 
 	var retimedBody map[string]any
 	require.NoError(t, json.NewDecoder(retimed.Body).Decode(&retimedBody))
-	require.Equal(t, "2026-11-07T21:00:00-05:00", retimedBody["end_time"],
+	require.Equal(t, testhelpers.WinterDate(7)+"T21:00:00-05:00", retimedBody["end_time"],
 		"the requested end must be stored verbatim, not re-anchored to midnight")
 	require.NotContains(t, retimedBody, "all_day", "the marker must clear when the end leaves local midnight")
 
@@ -510,7 +511,7 @@ func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 		 WHERE id = $1::uuid
 	`, occurrenceUUID).Scan(&isAllDay, &storedEnd))
 	require.False(t, isAllDay, "is_all_day must not survive an end retimed off local midnight")
-	require.Equal(t, "2026-11-07T21:00:00", storedEnd)
+	require.Equal(t, testhelpers.WinterDate(7)+"T21:00:00", storedEnd)
 
 	rendered := subEvents(t, getEventAsAgent(t, env, ulid))
 	require.Len(t, rendered, 1)
@@ -521,10 +522,10 @@ func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 	// Case 2 (mirror): the end lands on ANOTHER civil date's local midnight.
 	// Still date-only, so the marker must survive, the row must stay anchored,
 	// and the date-only rendering must survive.
-	ulid2, occurrenceUUID2 := newDateOnlyEvent("Date Only Fair", "2026-11-09")
+	ulid2, occurrenceUUID2 := newDateOnlyEvent("Date Only Fair", testhelpers.WinterDate(9))
 
 	mirror := putOccurrence(t, env, adminToken, ulid2, occurrenceUUID2, map[string]any{
-		"end_time": "2026-11-10T00:00:00-05:00",
+		"end_time": testhelpers.WinterDate(10) + "T00:00:00-05:00",
 	})
 	defer func() { _ = mirror.Body.Close() }()
 	if mirror.StatusCode != http.StatusOK {
@@ -536,7 +537,7 @@ func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 	var mirrored map[string]any
 	require.NoError(t, json.NewDecoder(mirror.Body).Decode(&mirrored))
 	require.Equal(t, true, mirrored["all_day"], "an end that stays on local midnight must keep the marker")
-	require.Equal(t, "2026-11-10T00:00:00-05:00", mirrored["end_time"],
+	require.Equal(t, testhelpers.WinterDate(10)+"T00:00:00-05:00", mirrored["end_time"],
 		"the end must be local midnight of the requested civil date")
 
 	var mirrorAllDay bool
@@ -554,14 +555,14 @@ func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 
 	mirrorRendered := subEvents(t, getEventAsAgent(t, env, ulid2))
 	require.Len(t, mirrorRendered, 1)
-	require.Equal(t, "2026-11-09", mirrorRendered[0]["startDate"], "date-only rendering must survive")
+	require.Equal(t, testhelpers.WinterDate(9), mirrorRendered[0]["startDate"], "date-only rendering must survive")
 	require.Equal(t, true, mirrorRendered[0]["allDay"])
 
 	assertAllDayRowsAreAnchored(t, env)
 
 	// Case 3: clearing the end outright is not a retime. The marker survives
 	// with end_time null, which is the boundary the API docs state.
-	ulid3, occurrenceUUID3 := newDateOnlyEvent("Date Only Cleanup", "2026-11-11")
+	ulid3, occurrenceUUID3 := newDateOnlyEvent("Date Only Cleanup", testhelpers.WinterDate(11))
 
 	cleared := putOccurrence(t, env, adminToken, ulid3, occurrenceUUID3, map[string]any{
 		"end_time": nil,
@@ -591,7 +592,7 @@ func TestAdminPutOccurrenceEndOnlyRetimeOnDateOnlyRow(t *testing.T) {
 
 	clearedRendered := subEvents(t, getEventAsAgent(t, env, ulid3))
 	require.Len(t, clearedRendered, 1)
-	require.Equal(t, "2026-11-11", clearedRendered[0]["startDate"], "the row is still date-only")
+	require.Equal(t, testhelpers.WinterDate(11), clearedRendered[0]["startDate"], "the row is still date-only")
 	require.Equal(t, true, clearedRendered[0]["allDay"])
 
 	assertAllDayRowsAreAnchored(t, env)
@@ -610,9 +611,9 @@ func TestAdminFixReviewSingleAllDayEventRoundTrip(t *testing.T) {
 	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
 		"name":        "One Day Festival",
 		"description": "A date-only single-occurrence event.",
-		"startDate":   "2026-11-07",
+		"startDate":   testhelpers.WinterDate(7),
 		"occurrences": []map[string]any{
-			{"startDate": "2026-11-07"},
+			{"startDate": testhelpers.WinterDate(7)},
 		},
 		"location": map[string]any{
 			"name":            "Trinity Bellwoods",
@@ -623,15 +624,15 @@ func TestAdminFixReviewSingleAllDayEventRoundTrip(t *testing.T) {
 
 	subs := subEvents(t, getEventAsAgent(t, env, ulid))
 	require.Len(t, subs, 1)
-	require.Equal(t, "2026-11-07", subs[0]["startDate"])
+	require.Equal(t, testhelpers.WinterDate(7), subs[0]["startDate"])
 	require.Equal(t, true, subs[0]["allDay"])
 
-	reviewStart := time.Date(2026, 11, 7, 0, 0, 0, 0, time.FixedZone("EST", -5*3600))
+	reviewStart := testhelpers.WinterTime(7, 0, 0, time.FixedZone("EST", -5*3600))
 	reviewID := insertPendingReviewForEvent(t, env, ulid, true, reviewStart)
 
 	// The admin corrects the date with a timed value; because the event is
 	// date-only the correction is re-anchored to midnight.
-	correctedStart := time.Date(2026, 11, 8, 14, 0, 0, 0, time.FixedZone("EST", -5*3600))
+	correctedStart := testhelpers.WinterTime(8, 14, 0, time.FixedZone("EST", -5*3600))
 	resp := postReviewFix(t, env, adminToken, reviewID, &correctedStart, nil)
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
@@ -642,9 +643,9 @@ func TestAdminFixReviewSingleAllDayEventRoundTrip(t *testing.T) {
 
 	rendered := subEvents(t, getEventAsAgent(t, env, ulid))
 	require.Len(t, rendered, 1)
-	require.Equal(t, "2026-11-08", rendered[0]["startDate"], "corrected date must be date-only")
+	require.Equal(t, testhelpers.WinterDate(8), rendered[0]["startDate"], "corrected date must be date-only")
 	require.Equal(t, true, rendered[0]["allDay"], "marker must survive the review path")
-	require.Equal(t, "2026-11-08", eventLevelStartDate(t, env, ulid))
+	require.Equal(t, testhelpers.WinterDate(8), eventLevelStartDate(t, env, ulid))
 
 	assertAllDayRowsAreAnchored(t, env)
 }
@@ -741,9 +742,9 @@ func TestAdminPostOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
 		"name":        "POST All-Day Event",
 		"description": "A base event to POST an all-day occurrence onto.",
-		"startDate":   "2026-11-05T19:00:00-05:00",
+		"startDate":   testhelpers.WinterDate(5) + "T19:00:00-05:00",
 		"occurrences": []map[string]any{
-			{"startDate": "2026-11-05T19:00:00-05:00", "endDate": "2026-11-05T21:00:00-05:00"},
+			{"startDate": testhelpers.WinterDate(5) + "T19:00:00-05:00", "endDate": testhelpers.WinterDate(5) + "T21:00:00-05:00"},
 		},
 		"location": map[string]any{
 			"name":            "The Rex",
@@ -755,8 +756,8 @@ func TestAdminPostOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 	resp := postOccurrence(t, env, adminToken, ulid, map[string]any{
 		"all_day":    true,
 		"timezone":   "America/Toronto",
-		"start_time": "2026-11-07T19:00:00-05:00",
-		"end_time":   "2026-11-07T21:00:00-05:00",
+		"start_time": testhelpers.WinterDate(7) + "T19:00:00-05:00",
+		"end_time":   testhelpers.WinterDate(7) + "T21:00:00-05:00",
 	})
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusCreated, resp.StatusCode, "POST occurrence with all_day:true")
@@ -764,15 +765,15 @@ func TestAdminPostOccurrenceAllDayAnchorsToMidnight(t *testing.T) {
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	require.Equal(t, true, created["all_day"])
-	require.Equal(t, "2026-11-07T00:00:00-05:00", created["start_time"],
+	require.Equal(t, testhelpers.WinterDate(7)+"T00:00:00-05:00", created["start_time"],
 		"POST all_day:true must store local midnight, not the timed instant")
-	require.Equal(t, "2026-11-07T00:00:00-05:00", created["end_time"])
+	require.Equal(t, testhelpers.WinterDate(7)+"T00:00:00-05:00", created["end_time"])
 
 	occUUID, ok := created["id"].(string)
 	require.True(t, ok, "POST response must include the occurrence id")
 
 	startDate, startClock, _, _, isAllDay := occurrenceLocalWindow(t, env, occUUID)
-	require.Equal(t, "2026-11-07", startDate, "stored row must be anchored to the requested civil date")
+	require.Equal(t, testhelpers.WinterDate(7), startDate, "stored row must be anchored to the requested civil date")
 	require.Equal(t, "00:00:00", startClock, "stored row must be local midnight")
 	require.True(t, isAllDay)
 
@@ -792,7 +793,7 @@ func TestAdminAllDayInvariantPositiveOffsetZone(t *testing.T) {
 	agentKey := insertAPIKey(t, env, "allday-agent-paris")
 
 	t.Run("unrelated PUT leaves a correctly-anchored Paris row unchanged", func(t *testing.T) {
-		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day A", "2026-11-06")
+		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day A", testhelpers.WinterDate(6))
 
 		resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
 			"ticket_url": "https://paris.example/tickets",
@@ -801,45 +802,45 @@ func TestAdminAllDayInvariantPositiveOffsetZone(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		startDate, startClock, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
-		require.Equal(t, "2026-11-06", startDate, "an unrelated PUT must not shift the civil date")
+		require.Equal(t, testhelpers.WinterDate(6), startDate, "an unrelated PUT must not shift the civil date")
 		require.Equal(t, "00:00:00", startClock)
-		require.Equal(t, "2026-11-06", endDate, "an unrelated PUT must not shift the end")
+		require.Equal(t, testhelpers.WinterDate(6), endDate, "an unrelated PUT must not shift the end")
 		require.Equal(t, "00:00:00", endClock)
 		require.True(t, isAllDay)
 	})
 
 	t.Run("correcting only the start must not shift the end", func(t *testing.T) {
-		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day B", "2026-11-07")
+		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day B", testhelpers.WinterDate(7))
 
 		resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
 			"all_day":    true,
-			"start_time": "2026-11-06T14:00:00+01:00",
+			"start_time": testhelpers.WinterDate(6) + "T14:00:00+01:00",
 		})
 		defer func() { _ = resp.Body.Close() }()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		startDate, startClock, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
-		require.Equal(t, "2026-11-06", startDate, "correcting only the start must move the start")
+		require.Equal(t, testhelpers.WinterDate(6), startDate, "correcting only the start must move the start")
 		require.Equal(t, "00:00:00", startClock)
-		require.Equal(t, "2026-11-07", endDate, "correcting only the start must not shift the end")
+		require.Equal(t, testhelpers.WinterDate(7), endDate, "correcting only the start must not shift the end")
 		require.Equal(t, "00:00:00", endClock)
 		require.True(t, isAllDay)
 	})
 
 	t.Run("correcting only the end must not shift the start", func(t *testing.T) {
-		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day C", "2026-11-08")
+		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day C", testhelpers.WinterDate(8))
 
 		resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
 			"all_day":  true,
-			"end_time": "2026-11-09T14:00:00+01:00",
+			"end_time": testhelpers.WinterDate(9) + "T14:00:00+01:00",
 		})
 		defer func() { _ = resp.Body.Close() }()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		startDate, startClock, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
-		require.Equal(t, "2026-11-08", startDate, "correcting only the end must not shift the start")
+		require.Equal(t, testhelpers.WinterDate(8), startDate, "correcting only the end must not shift the start")
 		require.Equal(t, "00:00:00", startClock)
-		require.Equal(t, "2026-11-09", endDate, "correcting only the end must move the end")
+		require.Equal(t, testhelpers.WinterDate(9), endDate, "correcting only the end must move the end")
 		require.Equal(t, "00:00:00", endClock)
 		require.True(t, isAllDay)
 	})
@@ -847,16 +848,19 @@ func TestAdminAllDayInvariantPositiveOffsetZone(t *testing.T) {
 	t.Run("tz change re-anchors preserving the civil date", func(t *testing.T) {
 		// January keeps every zone in standard time, so the host Go tzdata and
 		// the Postgres tzdata agree on the offset (no DST-boundary ambiguity).
-		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day D", "2026-01-10")
+		ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris All-Day D", testhelpers.WinterDate(0))
 
 		resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
-			"timezone": "America/Vancouver",
+			// Phoenix never observes DST and has no pending rule change, so the
+			// host Go tzdata and the Postgres tzdata cannot disagree about it
+			// (they do for zones with recent rule changes, e.g. Vancouver).
+			"timezone": "America/Phoenix",
 		})
 		defer func() { _ = resp.Body.Close() }()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		startDate, startClock, _, _, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
-		require.Equal(t, "2026-01-10", startDate, "the civil date must survive the zone change")
+		require.Equal(t, testhelpers.WinterDate(0), startDate, "the civil date must survive the zone change")
 		require.Equal(t, "00:00:00", startClock)
 		require.True(t, isAllDay)
 	})

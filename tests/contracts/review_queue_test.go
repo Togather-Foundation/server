@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,8 +28,8 @@ func TestReviewQueueListResponseStructure(t *testing.T) {
 	// Create test data
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	eventULID1 := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "pending_review", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
-	eventULID2 := insertEventWithOccurrence(t, env, "Summer Arts Expo", org.ID, place.ID, "arts", "pending_review", []string{"summer"}, time.Date(2026, 7, 11, 19, 0, 0, 0, time.UTC))
+	eventULID1 := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "pending_review", []string{"jazz"}, testhelpers.FutureTime(1))
+	eventULID2 := insertEventWithOccurrence(t, env, "Summer Arts Expo", org.ID, place.ID, "arts", "pending_review", []string{"summer"}, testhelpers.FutureTime(2))
 
 	// Get event IDs for review queue entries
 	var eventID1, eventID2 string
@@ -38,8 +39,8 @@ func TestReviewQueueListResponseStructure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert review queue entries
-	insertReviewQueueEntry(t, env, eventID1, `{"name":"Jazz in the Park"}`, `{"name":"Jazz in the Park"}`, `[]`, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
-	insertReviewQueueEntry(t, env, eventID2, `{"name":"Summer Arts Expo"}`, `{"name":"Summer Arts Expo"}`, `[]`, time.Date(2026, 7, 11, 19, 0, 0, 0, time.UTC))
+	insertReviewQueueEntry(t, env, eventID1, `{"name":"Jazz in the Park"}`, `{"name":"Jazz in the Park"}`, `[]`, testhelpers.FutureTime(1))
+	insertReviewQueueEntry(t, env, eventID2, `{"name":"Summer Arts Expo"}`, `{"name":"Summer Arts Expo"}`, `[]`, testhelpers.FutureTime(2))
 
 	// Test list endpoint
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/admin/review-queue", nil)
@@ -79,13 +80,13 @@ func TestReviewQueueListItemFields(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "pending_review", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "pending_review", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	var eventID string
 	err := env.Pool.QueryRow(env.Context, `SELECT id FROM events WHERE ulid = $1`, eventULID).Scan(&eventID)
 	require.NoError(t, err)
 
-	insertReviewQueueEntry(t, env, eventID, `{"name":"Jazz in the Park"}`, `{"name":"Jazz in the Park"}`, `[{"severity":"warning","message":"Test warning"}]`, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	insertReviewQueueEntry(t, env, eventID, `{"name":"Jazz in the Park"}`, `{"name":"Jazz in the Park"}`, `[{"severity":"warning","message":"Test warning"}]`, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/admin/review-queue", nil)
 	require.NoError(t, err)

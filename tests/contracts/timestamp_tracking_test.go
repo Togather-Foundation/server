@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -20,13 +21,14 @@ func TestDualTimestampTracking(t *testing.T) {
 	key := insertAPIKey(t, env, "timestamp-test-agent")
 
 	// Source-provided timestamp (when the event was published by the source)
+	// fixed-date: source timestamp round-tripped through the DB and compared with itself, never with "now"
 	sourcePublishedTime := time.Date(2026, 1, 15, 10, 0, 0, 0, time.UTC)
 
 	payload := map[string]any{
 		"name":        "Timestamp Test Event",
 		"description": "A timestamp tracking test event with complete metadata to avoid review workflow",
 		"image":       "https://img.testevent.invalid/images/timestamp-test.jpg",
-		"startDate":   time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(40).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Timestamp Venue",
 			"addressLocality": "Toronto",
@@ -124,11 +126,12 @@ func TestFieldProvenanceTimestamps(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTime(50), placeID,
 	)
 	require.NoError(t, err)
 
 	// Record field provenance with specific observed_at time
+	// fixed-date: source timestamp round-tripped through the DB and compared with itself, never with "now"
 	sourceObservedTime := time.Date(2026, 1, 26, 14, 30, 0, 0, time.UTC)
 	beforeInsert := time.Now()
 
@@ -186,7 +189,7 @@ func TestEventSourceRetrievedAtDefault(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 11, 1, 19, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTime(60), placeID,
 	)
 	require.NoError(t, err)
 
@@ -244,11 +247,12 @@ func TestTimestampPrecision(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 12, 1, 19, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTime(90), placeID,
 	)
 	require.NoError(t, err)
 
 	// Create a precise timestamp with microseconds
+	// fixed-date: sub-second precision round trip; compared with itself, never with "now"
 	preciseTime := time.Date(2026, 1, 26, 15, 45, 30, 123456789, time.UTC)
 
 	_, err = env.Pool.Exec(env.Context,
@@ -307,7 +311,7 @@ func TestTimestampComparison(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2027, 1, 1, 19, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTime(120), placeID,
 	)
 	require.NoError(t, err)
 

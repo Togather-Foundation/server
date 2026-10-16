@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +28,7 @@ func TestFederationSyncAuth(t *testing.T) {
 		"@type":     "Event",
 		"@id":       "https://partner.example.org/events/01HYX3KQW7ERTV9XNBM2P8QJZF",
 		"name":      "Partner Event",
-		"startDate": time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(1).Format(time.RFC3339),
 		"location": map[string]any{
 			"@type":           "Place",
 			"name":            "Partner Venue",
@@ -153,7 +154,7 @@ func TestFederationSyncValidation(t *testing.T) {
 			"@type":     "Event",
 			"@id":       "https://validator.example.org/events/01HYX3KQW7ERTV9XNBM2P8QJZF",
 			"name":      "Valid Event",
-			"startDate": time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"startDate": testhelpers.FutureTime(1).Format(time.RFC3339),
 			"location": map[string]any{
 				"@type":           "Place",
 				"name":            "Valid Venue",
@@ -176,7 +177,7 @@ func TestFederationSyncValidation(t *testing.T) {
 			"@type":     "Event",
 			"@id":       "https://untrusted.example.org/events/01HYX3KQW7ERTV9XNBM2P8QJZF",
 			"name":      "Low Trust Event",
-			"startDate": time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"startDate": testhelpers.FutureTime(1).Format(time.RFC3339),
 		}
 
 		resp := postFederationSync(t, env, lowTrustKey, payload)

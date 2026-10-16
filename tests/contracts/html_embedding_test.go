@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ func TestHTMLWithEmbeddedJSONLD(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := "Jazz in the Park"
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -154,7 +154,7 @@ func TestHTMLMetaTags(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := "Jazz in the Park"
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestHTMLValidStructure(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -228,7 +228,7 @@ func TestJSONLDConsistencyBetweenFormats(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := "Jazz in the Park"
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	// Get JSON-LD response
 	jsonReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)

@@ -59,6 +59,7 @@ func TestMCPServerInitializeAndTools(t *testing.T) {
 	ctx := context.Background()
 	_, err = cli.Initialize(ctx, mcpTypes.InitializeRequest{
 		Params: mcpTypes.InitializeParams{
+			// fixed-date: MCP protocol version identifier, not a calendar date
 			ProtocolVersion: "2024-11-05",
 			Capabilities:    mcpTypes.ClientCapabilities{},
 			ClientInfo: mcpTypes.Implementation{
@@ -115,6 +116,7 @@ func TestMCPResources(t *testing.T) {
 	ctx := context.Background()
 	_, err = cli.Initialize(ctx, mcpTypes.InitializeRequest{
 		Params: mcpTypes.InitializeParams{
+			// fixed-date: MCP protocol version identifier, not a calendar date
 			ProtocolVersion: "2024-11-05",
 			Capabilities:    mcpTypes.ClientCapabilities{},
 			ClientInfo: mcpTypes.Implementation{
@@ -233,6 +235,7 @@ func TestMCPAuthUnauthorized(t *testing.T) {
 	// Test 4: Anonymous write-tool call returns a JSON-RPC error (not HTTP 401).
 	// Streamable HTTP requires an initialized session; capture the session id from
 	// the initialize handshake and reuse it for the tools/call request.
+	// fixed-date: MCP protocol version identifier, not a calendar date
 	sessReq, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(`{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}, "id": 1}`))
 	require.NoError(t, err)
 	sessReq.Header.Set("Content-Type", "application/json")
@@ -300,6 +303,7 @@ func TestMCPAuthValidKey(t *testing.T) {
 	defer testServer.Close()
 
 	// Request with valid API key
+	// fixed-date: MCP protocol version identifier, not a calendar date
 	initPayload := `{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}, "id": 1}`
 	req, err := http.NewRequest(http.MethodPost, testServer.URL, strings.NewReader(initPayload))
 	require.NoError(t, err)
@@ -431,6 +435,7 @@ func TestMCPRateLimitTierAgent(t *testing.T) {
 	testServer := httptest.NewServer(wrappedHandler)
 	defer testServer.Close()
 
+	// fixed-date: MCP protocol version identifier, not a calendar date
 	initPayload := `{"jsonrpc": "2.0", "method": "initialize", "params": {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "test", "version": "1.0"}}, "id": 1}`
 
 	// First two requests should succeed (burst allowance)
@@ -473,7 +478,7 @@ func TestMCPCreateEvent(t *testing.T) {
 		eventPayload := map[string]any{
 			"@type":     "Event",
 			"name":      "Test Concert",
-			"startDate": "2026-12-01T19:00:00Z",
+			"startDate": testhelpers.FutureTime(90).Format(time.RFC3339),
 			"location": map[string]any{
 				"@type": "VirtualLocation",
 				"name":  "Online Event",
@@ -528,11 +533,12 @@ func TestMCPCreateEvent(t *testing.T) {
 	})
 
 	t.Run("all_day_event", func(t *testing.T) {
+		date := testhelpers.FutureDate(60)
 		eventPayload := map[string]any{
 			"@type":     "Event",
 			"name":      "All Day Test Concert",
 			"allDay":    true,
-			"startDate": "2026-11-01T00:00:00+01:00",
+			"startDate": date + "T00:00:00+01:00",
 			"location": map[string]any{
 				"@type": "VirtualLocation",
 				"name":  "Online Event",
@@ -572,7 +578,7 @@ func TestMCPCreateEvent(t *testing.T) {
 
 		got := decodeToolText(t, getResult)
 		require.Equal(t, true, got["allDay"])
-		require.Equal(t, "2026-11-01", got["startDate"])
+		require.Equal(t, date, got["startDate"])
 	})
 
 	t.Run("invalid_event_payload", func(t *testing.T) {
@@ -607,7 +613,7 @@ func TestMCPGetEvent(t *testing.T) {
 	ingestService := eventsIngestService(t, repo, env)
 	eventInput := events.EventInput{
 		Name:      "Test Event for Get",
-		StartDate: "2026-12-15T18:00:00Z",
+		StartDate: testhelpers.FutureTimeAt(95, 18, 0).Format(time.RFC3339),
 		VirtualLocation: &events.VirtualLocationInput{
 			URL: "https://example.com/test-event",
 		},
@@ -989,7 +995,7 @@ func TestMCPSearch(t *testing.T) {
 	ingestService := eventsIngestService(t, repo, env)
 	_, err = ingestService.Ingest(ctx, events.EventInput{
 		Name:      "Music Festival",
-		StartDate: "2026-06-01T12:00:00Z",
+		StartDate: testhelpers.FutureTimeAt(40, 12, 0).Format(time.RFC3339),
 		VirtualLocation: &events.VirtualLocationInput{
 			URL: "https://example.com/music-festival",
 		},
@@ -1117,6 +1123,7 @@ func setupMCPClient(t *testing.T, env *testEnv) *client.Client {
 	ctx := context.Background()
 	_, err = cli.Initialize(ctx, mcpTypes.InitializeRequest{
 		Params: mcpTypes.InitializeParams{
+			// fixed-date: MCP protocol version identifier, not a calendar date
 			ProtocolVersion: "2024-11-05",
 			Capabilities:    mcpTypes.ClientCapabilities{},
 			ClientInfo: mcpTypes.Implementation{
@@ -1186,12 +1193,13 @@ func TestMCPPrompts(t *testing.T) {
 
 	// Test duplicate_check prompt
 	t.Run("duplicate_check", func(t *testing.T) {
+		date := testhelpers.FutureDate(30)
 		result, err := cli.GetPrompt(ctx, mcpTypes.GetPromptRequest{
 			Params: mcpTypes.GetPromptParams{
 				Name: "duplicate_check",
 				Arguments: map[string]string{
 					"event_description": "Tech Talk: Introduction to Go",
-					"date":              "2026-02-15",
+					"date":              date,
 					"location":          "Toronto Tech Hub",
 				},
 			},
@@ -1205,7 +1213,7 @@ func TestMCPPrompts(t *testing.T) {
 		require.True(t, ok)
 		require.Contains(t, textContent.Text, "potential duplicate events")
 		require.Contains(t, textContent.Text, "Tech Talk")
-		require.Contains(t, textContent.Text, "2026-02-15")
+		require.Contains(t, textContent.Text, date)
 	})
 
 	// Test list prompts
@@ -1374,7 +1382,7 @@ func TestMCPPagination(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		_, err := ingestService.Ingest(ctx, events.EventInput{
 			Name:      "Pagination Test Event",
-			StartDate: "2026-06-01T12:00:00Z",
+			StartDate: testhelpers.FutureTimeAt(40, 12, 0).Format(time.RFC3339),
 			VirtualLocation: &events.VirtualLocationInput{
 				URL: "https://example.com/event",
 			},

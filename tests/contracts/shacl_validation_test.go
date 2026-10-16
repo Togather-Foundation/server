@@ -8,6 +8,7 @@ import (
 	"testing"
 )
 
+// fixed-date: static Turtle input for SHACL shape validation; no wall-clock comparison
 const shaclSampleTTL = `@prefix schema: <https://schema.org/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
@@ -24,6 +25,7 @@ const shaclSampleTTL = `@prefix schema: <https://schema.org/> .
   schema:name "Togather Foundation" .
 `
 
+// fixed-date: static Turtle input for SHACL shape validation; no wall-clock comparison
 const shaclAllDaySampleTTL = `@prefix schema: <https://schema.org/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix sel: <https://schema.togather.foundation/ns#> .
@@ -39,6 +41,7 @@ const shaclAllDaySampleTTL = `@prefix schema: <https://schema.org/> .
   schema:address [ a schema:PostalAddress ; schema:streetAddress "1 Queen St" ; schema:addressLocality "Toronto" ] .
 `
 
+// fixed-date: static Turtle input for SHACL shape validation; no wall-clock comparison
 const shaclDateOnlyWithoutAllDayTTL = `@prefix schema: <https://schema.org/> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix sel: <https://schema.togather.foundation/ns#> .

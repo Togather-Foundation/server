@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
@@ -77,7 +78,7 @@ func TestEventRepository_ILIKEInjectionPrevention(t *testing.T) {
 	// Setup test data
 	org := insertOrganization(t, ctx, pool, "Test Org")
 	place := insertPlace(t, ctx, pool, "Test Venue", "Toronto", "ON")
-	startTime := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+	startTime := clock.FutureTime(1)
 
 	// Create events with special characters that could be used for injection
 	testCases := []struct {

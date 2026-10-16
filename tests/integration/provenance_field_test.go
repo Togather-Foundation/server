@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -50,7 +51,7 @@ func TestFieldProvenanceParameter(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 10, 15, 19, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTime(51), placeID,
 	)
 	require.NoError(t, err)
 
@@ -149,7 +150,7 @@ func TestFieldProvenanceFiltering(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 11, 1, 18, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTimeAt(60, 18, 0), placeID,
 	)
 	require.NoError(t, err)
 
@@ -214,7 +215,7 @@ func TestFieldProvenanceMultipleSources(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 12, 1, 19, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTime(90), placeID,
 	)
 	require.NoError(t, err)
 
@@ -283,11 +284,12 @@ func TestFieldProvenanceTimestamps(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2027, 1, 1, 20, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTimeAt(120, 20, 0), placeID,
 	)
 	require.NoError(t, err)
 
 	// Record provenance with specific timestamp
+	// fixed-date: provenance observed_at round-tripped through the DB and compared with itself
 	observedTime := time.Date(2026, 1, 26, 12, 0, 0, 0, time.UTC)
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO field_provenance (event_id, field_path, value_hash, value_preview, source_id, confidence, observed_at, applied_to_canonical)

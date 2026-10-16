@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/ical"
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -94,7 +95,8 @@ func TestICSInteropIngest(t *testing.T) {
 				SourceName: "Test",
 				TrustLevel: 1,
 				License:    "CC0-1.0",
-				Now:        time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+				// fixed-date: injected mapper clock; the recurrence-exdate.ics fixture is anchored to this date, so the expansion is deterministic
+				Now: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
 			}
 
 			results, warnings, err := ical.MapToEventInputs(context.Background(), cal, opts)
@@ -289,7 +291,8 @@ func TestICSIngestEventSchedule(t *testing.T) {
 		TrustLevel: 5,
 		License:    "CC0-1.0",
 		Timezone:   "America/Toronto",
-		Now:        time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+		// fixed-date: injected mapper clock; the recurrence-exdate.ics fixture is anchored to this date, so the expansion is deterministic
+		Now: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
 	}
 	inputs, warnings, err := ical.MapToEventInputs(context.Background(), cal, opts)
 	require.NoError(t, err, "MapToEventInputs")
@@ -302,6 +305,7 @@ func TestICSIngestEventSchedule(t *testing.T) {
 
 	// ── 2. Verify EXDATE occurrence is absent from mapped inputs ───────────────
 	// The EXDATE in the fixture is 2026-07-06T19:00:00 America/Toronto (first Monday).
+	// fixed-date: EXDATE date taken from the fixed recurrence-exdate.ics fixture, expanded against the injected Now above
 	exdateWant := "2026-07-06"
 	for _, inp := range inputs {
 		require.NotContains(t, inp.StartDate, exdateWant,
@@ -385,6 +389,7 @@ func TestICSIngestEventSchedule(t *testing.T) {
 
 	// ── 5. List endpoint: verify eventSchedule present on recurring events ─────
 	t.Run("list-endpoint-eventSchedule", func(t *testing.T) {
+		// fixed-date: explicit lower bound before the fixture-driven occurrences, so the list never depends on today
 		req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events?startDate=2026-06-01", nil)
 		require.NoError(t, err)
 		req.Header.Set("Accept", "application/ld+json")
@@ -423,7 +428,7 @@ func TestICSIngestEventSchedule(t *testing.T) {
 	t.Run("non-recurring-no-eventSchedule", func(t *testing.T) {
 		org := insertOrganization(t, env, "Non-recurring Org")
 		place := insertPlace(t, env, "Non-recurring Venue", "Toronto")
-		nonRecurULID := insertEventWithOccurrence(t, env, "One-off Concert", org.ID, place.ID, "music", "published", nil, time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC))
+		nonRecurULID := insertEventWithOccurrence(t, env, "One-off Concert", org.ID, place.ID, "music", "published", nil, testhelpers.FutureTime(40))
 
 		req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+nonRecurULID, nil)
 		require.NoError(t, err)

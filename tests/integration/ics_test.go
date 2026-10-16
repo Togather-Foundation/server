@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -94,7 +95,7 @@ func TestICSSingleEvent(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := "Jazz in the Park"
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+eventULID+"/ics", nil)
 	require.NoError(t, err)
@@ -152,7 +153,7 @@ func TestICSSingleEventGone(t *testing.T) {
 	event := map[string]any{
 		"name":        "Event to Delete",
 		"description": "This event will be deleted",
-		"startDate":   time.Date(2026, 11, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(60).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -210,7 +211,7 @@ func TestEventsListLinkHeader(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events", nil)
 	require.NoError(t, err)
@@ -234,7 +235,7 @@ func TestEventsGetLinkHeader(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := "Jazz in the Park"
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -279,7 +280,7 @@ func TestICSSingleEventContentDisposition(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+eventULID+"/ics", nil)
 	require.NoError(t, err)

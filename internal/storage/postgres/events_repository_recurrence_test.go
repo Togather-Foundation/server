@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 	"github.com/oklog/ulid/v2"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -58,7 +59,7 @@ func TestGetByULID_RecurrenceRule(t *testing.T) {
 			 VALUES ($1, $2, $3, $4)
 			 RETURNING id`,
 			"Test Series",
-			time.Now().Format("2006-01-02"),
+			clock.FutureTime(1).Format(time.DateOnly),
 			"America/Toronto",
 			rrule,
 		).Scan(&seriesID)
@@ -92,8 +93,8 @@ func TestGetByULID_RecurrenceRule(t *testing.T) {
 
 	t.Run("series with RRULE — SeriesID and Recurrence populated", func(t *testing.T) {
 		rrule := "FREQ=WEEKLY;BYDAY=MO,WE"
-		seriesStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-		seriesEnd := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+		seriesStart := clock.FutureTimeAt(1, 0, 0)
+		seriesEnd := clock.FutureTimeAt(365, 0, 0)
 		var seriesID string
 		err := pool.QueryRow(ctx,
 			`INSERT INTO event_series (name, series_start_date, series_end_date, schedule_timezone, rrule)
@@ -108,7 +109,7 @@ func TestGetByULID_RecurrenceRule(t *testing.T) {
 		require.NoError(t, err)
 
 		// Also set exdates on the series row to verify array population.
-		exDate := time.Date(2026, 5, 4, 18, 0, 0, 0, time.UTC)
+		exDate := clock.FutureTimeAt(30, 18, 0)
 		_, err = pool.Exec(ctx,
 			`UPDATE event_series SET exdates = $1 WHERE id = $2::uuid`,
 			[]time.Time{exDate},
@@ -196,8 +197,8 @@ func TestList_RecurrenceRule(t *testing.T) {
 
 	t.Run("event with series + RRULE — Recurrence populated via List", func(t *testing.T) {
 		rrule := "FREQ=WEEKLY;BYDAY=MO"
-		seriesStart := time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC)
-		seriesEnd := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)
+		seriesStart := clock.FutureTimeAt(10, 0, 0)
+		seriesEnd := clock.FutureTimeAt(120, 0, 0)
 		var seriesID string
 		err := pool.QueryRow(ctx,
 			`INSERT INTO event_series (name, series_start_date, series_end_date, schedule_timezone, rrule)

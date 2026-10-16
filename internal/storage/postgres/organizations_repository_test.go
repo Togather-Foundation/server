@@ -3,9 +3,9 @@ package postgres
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 
 	"github.com/stretchr/testify/require"
 )
@@ -18,13 +18,13 @@ func TestOrganizationRepositoryListFiltersAndPagination(t *testing.T) {
 
 	orgA := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	setOrganizationLegalName(t, ctx, pool, orgA.ID, "Toronto Arts Organization")
-	setOrganizationCreatedAt(t, ctx, pool, orgA.ID, time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC))
+	setOrganizationCreatedAt(t, ctx, pool, orgA.ID, clock.PastTimeAt(3, 9, 0))
 
 	orgB := insertOrganization(t, ctx, pool, "City Gallery")
-	setOrganizationCreatedAt(t, ctx, pool, orgB.ID, time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC))
+	setOrganizationCreatedAt(t, ctx, pool, orgB.ID, clock.PastTimeAt(2, 9, 0))
 
 	orgC := insertOrganization(t, ctx, pool, "Ottawa Tourism")
-	setOrganizationCreatedAt(t, ctx, pool, orgC.ID, time.Date(2026, 7, 3, 9, 0, 0, 0, time.UTC))
+	setOrganizationCreatedAt(t, ctx, pool, orgC.ID, clock.PastTimeAt(1, 9, 0))
 
 	page1, err := repo.List(ctx, organizations.Filters{}, organizations.Pagination{Limit: 1})
 	require.NoError(t, err)

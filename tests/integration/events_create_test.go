@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +19,7 @@ func TestCreateEventHappyPath(t *testing.T) {
 	payload := map[string]any{
 		"name":        "Neighborhood Jazz Night",
 		"description": "An evening of smooth jazz featuring local Toronto musicians in the heart of Centennial Park.",
-		"startDate":   time.Date(2026, 9, 12, 19, 0, 0, 0, time.FixedZone("EDT", -4*60*60)).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(41).In(time.FixedZone("EDT", -4*60*60)).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",
@@ -64,10 +65,11 @@ func TestCreateAllDayEventRoundTrip(t *testing.T) {
 	env := setupTestEnv(t)
 
 	key := insertAPIKey(t, env, "agent-all-day")
+	date := testhelpers.FutureDate(60)
 	payload := map[string]any{
 		"name":        "All Day Exhibition",
 		"description": "A full-day gallery exhibition open from morning to close.",
-		"startDate":   "2026-11-01",
+		"startDate":   date,
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",
@@ -112,7 +114,7 @@ func TestCreateAllDayEventRoundTrip(t *testing.T) {
 
 	var got map[string]any
 	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&got))
-	require.Equal(t, "2026-11-01", got["startDate"])
+	require.Equal(t, date, got["startDate"])
 	require.Equal(t, true, got["allDay"])
 }
 
@@ -123,11 +125,12 @@ func TestCreateAllDayEventWithTimeRoundTrip(t *testing.T) {
 	env := setupTestEnv(t)
 
 	key := insertAPIKey(t, env, "agent-all-day-time")
+	date := testhelpers.FutureDate(60)
 	payload := map[string]any{
 		"name":        "All Day Exhibition (explicit)",
 		"description": "A full-day gallery exhibition submitted with an explicit all-day flag.",
 		"allDay":      true,
-		"startDate":   "2026-11-01T00:00:00+01:00",
+		"startDate":   date + "T00:00:00+01:00",
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",
@@ -172,7 +175,7 @@ func TestCreateAllDayEventWithTimeRoundTrip(t *testing.T) {
 
 	var got map[string]any
 	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&got))
-	require.Equal(t, "2026-11-01", got["startDate"])
+	require.Equal(t, date, got["startDate"])
 	require.Equal(t, true, got["allDay"])
 }
 
@@ -184,13 +187,19 @@ func TestCreateMixedAllDayAndTimedOccurrencesRoundTrip(t *testing.T) {
 	env := setupTestEnv(t)
 
 	key := insertAPIKey(t, env, "agent-mixed-all-day")
+	toronto, err := time.LoadLocation("America/Toronto")
+	require.NoError(t, err)
+	base := testhelpers.FutureTime(60)
+	date := base.Format(time.DateOnly)
+	next := base.AddDate(0, 0, 1)
+	timed := time.Date(next.Year(), next.Month(), next.Day(), 19, 0, 0, 0, toronto).Format(time.RFC3339)
 	payload := map[string]any{
 		"name":        "Mixed Listing Probe",
 		"description": "A mixed schedule with one all-day date and one timed performance.",
-		"startDate":   "2026-11-01",
+		"startDate":   date,
 		"occurrences": []any{
-			map[string]any{"startDate": "2026-11-01"},
-			map[string]any{"startDate": "2026-11-02T19:00:00-05:00"},
+			map[string]any{"startDate": date},
+			map[string]any{"startDate": timed},
 		},
 		"location": map[string]any{
 			"name":            "Centennial Park",
@@ -243,12 +252,12 @@ func TestCreateMixedAllDayAndTimedOccurrencesRoundTrip(t *testing.T) {
 
 	s0, ok := subEvents[0].(map[string]any)
 	require.True(t, ok, "subEvent[0] must be an object")
-	require.Equal(t, "2026-11-01", s0["startDate"], "subEvent[0] date-only startDate")
+	require.Equal(t, date, s0["startDate"], "subEvent[0] date-only startDate")
 	require.Equal(t, true, s0["allDay"], "subEvent[0] must be all-day")
 
 	s1, ok := subEvents[1].(map[string]any)
 	require.True(t, ok, "subEvent[1] must be an object")
-	require.Equal(t, "2026-11-02T19:00:00-05:00", s1["startDate"], "subEvent[1] must keep its clock time")
+	require.Equal(t, timed, s1["startDate"], "subEvent[1] must keep its clock time")
 	require.NotEqual(t, true, s1["allDay"], "subEvent[1] must not be marked all-day")
 }
 
@@ -281,7 +290,8 @@ func TestCreateEventInvalidDateFormat(t *testing.T) {
 
 	key := insertAPIKey(t, env, "agent-invalid-date")
 	payload := map[string]any{
-		"name":      "Bad date",
+		"name": "Bad date",
+		// fixed-date: deliberately malformed date (month 13) to provoke a 400; not a calendar date
 		"startDate": "2026-13-40",
 		"location": map[string]any{
 			"name":            "Centennial Park",
@@ -312,7 +322,7 @@ func TestCreateEventMissingLocationAndVirtual(t *testing.T) {
 	key := insertAPIKey(t, env, "agent-missing-location")
 	payload := map[string]any{
 		"name":      "No location",
-		"startDate": time.Date(2026, 9, 12, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(41).Format(time.RFC3339),
 	}
 
 	body, err := json.Marshal(payload)
@@ -336,7 +346,7 @@ func TestCreateEventMissingAuthHeader(t *testing.T) {
 
 	payload := map[string]any{
 		"name":      "Unauthorized event",
-		"startDate": time.Date(2026, 9, 12, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(41).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",
@@ -364,7 +374,7 @@ func TestCreateEventInvalidAPIKey(t *testing.T) {
 
 	payload := map[string]any{
 		"name":      "Invalid key event",
-		"startDate": time.Date(2026, 9, 12, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(41).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",
@@ -395,7 +405,7 @@ func TestCreateEventIdempotencyReturnsSameEvent(t *testing.T) {
 	payload := map[string]any{
 		"name":        "Idempotent event",
 		"description": "Test event for verifying idempotency key handling in the event creation API.",
-		"startDate":   time.Date(2026, 9, 12, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(41).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",

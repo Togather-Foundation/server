@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestEventTombstoneAfterDelete(t *testing.T) {
 	event := map[string]any{
 		"name":        "Event Tombstone Test",
 		"description": "This event will be deleted",
-		"startDate":   time.Date(2026, 11, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(60).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",

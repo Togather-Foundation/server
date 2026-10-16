@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,6 +45,7 @@ func TestProblemDetailsInvalidULID(t *testing.T) {
 func TestProblemDetailsMalformedDateRange(t *testing.T) {
 	env := setupTestEnv(t)
 
+	// fixed-date: deliberately malformed date (month 13) to provoke a 400; not a calendar date
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events?startDate=2026-13-40&endDate=2026-01-01", nil)
 	require.NoError(t, err)
 	req.Header.Set("Accept", "application/ld+json")
@@ -68,7 +69,7 @@ func TestAcceptHeaderDefaultsToJSON(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events", nil)
 	require.NoError(t, err)

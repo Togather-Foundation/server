@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,13 +20,13 @@ func TestChangeFeedPagination(t *testing.T) {
 	place := insertPlace(t, env, "Test Venue", "Toronto")
 
 	// Create events with changes
-	event1ULID := insertEventWithOccurrence(t, env, "Event One", org.ID, place.ID, "music", "published", []string{"test"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	event1ULID := insertEventWithOccurrence(t, env, "Event One", org.ID, place.ID, "music", "published", []string{"test"}, testhelpers.FutureTime(1))
 	time.Sleep(10 * time.Millisecond) // Ensure different timestamps
 
-	event2ULID := insertEventWithOccurrence(t, env, "Event Two", org.ID, place.ID, "arts", "published", []string{"test"}, time.Date(2026, 7, 15, 19, 0, 0, 0, time.UTC))
+	event2ULID := insertEventWithOccurrence(t, env, "Event Two", org.ID, place.ID, "arts", "published", []string{"test"}, testhelpers.FutureTime(6))
 	time.Sleep(10 * time.Millisecond)
 
-	event3ULID := insertEventWithOccurrence(t, env, "Event Three", org.ID, place.ID, "culture", "published", []string{"test"}, time.Date(2026, 7, 20, 19, 0, 0, 0, time.UTC))
+	event3ULID := insertEventWithOccurrence(t, env, "Event Three", org.ID, place.ID, "culture", "published", []string{"test"}, testhelpers.FutureTime(11))
 
 	// Each event creation should generate a 'create' change event
 	t.Run("fetch all changes without pagination", func(t *testing.T) {
@@ -231,7 +232,7 @@ func TestChangeFeedTimestamps(t *testing.T) {
 	place := insertPlace(t, env, "Timestamp Test Venue", "Toronto")
 
 	// Create event
-	eventULID := insertEventWithOccurrence(t, env, "Timestamp Test Event", org.ID, place.ID, "music", "published", []string{"test"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Timestamp Test Event", org.ID, place.ID, "music", "published", []string{"test"}, testhelpers.FutureTime(1))
 
 	// Fetch change feed
 	resp := fetchChangeFeed(t, env, url.Values{"include_snapshot": {"true"}})

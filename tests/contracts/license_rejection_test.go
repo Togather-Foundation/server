@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +18,7 @@ func TestCreateEventRejectsNonCC0License(t *testing.T) {
 	key := insertAPIKey(t, env, "agent-license")
 	payload := map[string]any{
 		"name":      "Licensed Event",
-		"startDate": time.Date(2026, 9, 12, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(41).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Centennial Park",
 			"addressLocality": "Toronto",

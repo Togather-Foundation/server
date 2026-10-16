@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +18,7 @@ func TestTurtleOutputBasicSyntax(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := "Jazz in the Park"
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -55,7 +56,7 @@ func TestTurtlePrefixDeclarations(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -82,7 +83,7 @@ func TestTurtleEventProperties(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := "Jazz Concert"
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz", "music"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz", "music"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -168,7 +169,7 @@ func TestTurtleURIFormat(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -198,7 +199,7 @@ func TestTurtleValidSyntax(t *testing.T) {
 
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
-	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Jazz in the Park", org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)
@@ -256,7 +257,7 @@ func TestTurtleAllDayEmitsSELTerm(t *testing.T) {
 	require.NoError(t, err)
 
 	// Local midnight in America/Toronto on 2026-07-10 (EDT = UTC-04:00).
-	start := time.Date(2026, 7, 10, 4, 0, 0, 0, time.UTC)
+	start := testhelpers.FutureTimeAt(1, 4, 0)
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, end_time, venue_id, timezone, is_all_day)
 		 VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -290,7 +291,7 @@ func TestTurtleConsistencyWithJSONLD(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := "Jazz in the Park"
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	// Get Turtle
 	turtleReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
@@ -318,7 +319,7 @@ func TestTurtleCharacterEncoding(t *testing.T) {
 	org := insertOrganization(t, env, "Toronto Arts Org")
 	place := insertPlace(t, env, "Centennial Park", "Toronto")
 	eventName := `Jazz "in the" Park` // Event name with quotes
-	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", []string{"jazz"}, testhelpers.FutureTime(1))
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/events/"+eventULID, nil)
 	require.NoError(t, err)

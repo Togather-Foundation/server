@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/rs/zerolog"
@@ -31,6 +32,11 @@ func assertJSONEqual(t *testing.T, expected, actual []byte, msgAndArgs ...interf
 	return assert.Equal(t, expectedData, actualData, msgAndArgs...)
 }
 
+// reviewQueueStart/End are the late-evening start and early-morning end of the
+// shared review-queue fixture: 23:00 UTC on day 70 to 02:00 UTC the next day.
+func reviewQueueStart() time.Time { return clock.FutureTimeAt(70, 23, 0) }
+func reviewQueueEnd() time.Time   { return clock.FutureTimeAt(71, 2, 0) }
+
 // reviewQueueTestEvent creates a unique event suitable for review queue testing.
 // Each call creates a new event with a unique ULID, avoiding duplicate key violations
 // on the event_review_queue.event_id unique constraint.
@@ -38,7 +44,7 @@ func reviewQueueTestEvent(t *testing.T, ctx context.Context, repo *EventReposito
 	t.Helper()
 
 	eventULID := ulid.Make().String()
-	startTime = time.Date(2025, 3, 31, 23, 0, 0, 0, time.UTC)
+	startTime = reviewQueueStart()
 
 	eventParams := events.EventCreateParams{
 		ULID:           eventULID,
@@ -78,14 +84,14 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	// Shared test data templates
 	originalPayload, _ := json.Marshal(map[string]interface{}{
 		"name":      "Test Event",
-		"startDate": "2025-03-31T23:00:00Z",
-		"endDate":   "2025-03-31T02:00:00Z",
+		"startDate": reviewQueueStart().Format(time.RFC3339),
+		"endDate":   clock.FutureTimeAt(70, 2, 0).Format(time.RFC3339),
 	})
 
 	normalizedPayload, _ := json.Marshal(map[string]interface{}{
 		"name":      "Test Event",
-		"startDate": "2025-03-31T23:00:00Z",
-		"endDate":   "2025-04-01T02:00:00Z",
+		"startDate": reviewQueueStart().Format(time.RFC3339),
+		"endDate":   reviewQueueEnd().Format(time.RFC3339),
 	})
 
 	warnings, _ := json.Marshal([]map[string]interface{}{
@@ -99,7 +105,7 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 	sourceID := "test-source"
 	externalID := "ext-123"
 	dedupHash := "hash-abc-123"
-	endTime := time.Date(2025, 4, 1, 2, 0, 0, 0, time.UTC)
+	endTime := reviewQueueEnd()
 
 	t.Run("CreateReviewQueueEntry", func(t *testing.T) {
 		eventID, startTime := reviewQueueTestEvent(t, ctx, repo, place)

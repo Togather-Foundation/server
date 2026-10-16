@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,7 @@ func TestAdminUpdateEventSuccess(t *testing.T) {
 	event := map[string]any{
 		"name":        "Original Event Name",
 		"description": "Original description",
-		"startDate":   time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(50).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Original Venue",
 			"addressLocality": "Toronto",
@@ -94,7 +95,7 @@ func TestAdminUpdateEventPublishDraft(t *testing.T) {
 
 	event := map[string]any{
 		"name":       "Draft Event",
-		"startDate":  time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":  testhelpers.FutureTime(50).Format(time.RFC3339),
 		"confidence": 0.5, // Low confidence - will be draft
 		"location": map[string]any{
 			"name":            "Test Venue",

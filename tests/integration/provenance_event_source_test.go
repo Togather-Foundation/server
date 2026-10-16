@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +26,7 @@ func TestEventSourceAttribution(t *testing.T) {
 	payload := map[string]any{
 		"name":        "Community Art Festival",
 		"description": "Annual celebration of local artists featuring live music, art installations, and interactive workshops for all ages.",
-		"startDate":   time.Date(2026, 8, 15, 14, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTimeAt(35, 14, 0).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "City Hall Plaza",
 			"addressLocality": "Toronto",
@@ -160,7 +161,7 @@ func TestMultipleSourcesAttribution(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 9, 1, 18, 0, 0, 0, time.UTC), venueID,
+		eventID, testhelpers.FutureTimeAt(40, 18, 0), venueID,
 	)
 	require.NoError(t, err)
 
@@ -227,7 +228,7 @@ func TestSourceConfidenceLevels(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTime(50), placeID,
 	)
 	require.NoError(t, err)
 

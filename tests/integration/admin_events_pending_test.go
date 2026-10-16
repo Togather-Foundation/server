@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -59,7 +60,7 @@ func TestAdminPendingListWithEvents(t *testing.T) {
 	// 1. Event with low confidence (< 0.6)
 	lowConfidenceEvent := map[string]any{
 		"name":      "Low Confidence Event",
-		"startDate": time.Now().UTC().AddDate(0, 0, 30).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(30).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -75,7 +76,7 @@ func TestAdminPendingListWithEvents(t *testing.T) {
 	// 2. Event with missing description (should be flagged)
 	noDescEvent := map[string]any{
 		"name":      "No Description Event",
-		"startDate": time.Now().UTC().AddDate(0, 0, 31).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(31).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -168,7 +169,7 @@ func TestAdminPendingListPagination(t *testing.T) {
 	for i := 0; i < 15; i++ {
 		event := map[string]any{
 			"name":      "Pending Event " + string(rune('A'+i)),
-			"startDate": time.Now().UTC().AddDate(0, 0, 30+i).Format(time.RFC3339),
+			"startDate": testhelpers.FutureTime(30 + i).Format(time.RFC3339),
 			"location": map[string]any{
 				"name":            "Test Venue",
 				"addressLocality": "Toronto",
@@ -237,7 +238,7 @@ func TestAdminPendingListFilters(t *testing.T) {
 	// Submit events in different cities
 	torontoEvent := map[string]any{
 		"name":      "Toronto Pending Event",
-		"startDate": time.Now().UTC().AddDate(0, 0, 30).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(30).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Toronto Venue",
 			"addressLocality": "Toronto",
@@ -252,7 +253,7 @@ func TestAdminPendingListFilters(t *testing.T) {
 
 	montrealEvent := map[string]any{
 		"name":      "Montreal Pending Event",
-		"startDate": time.Now().UTC().AddDate(0, 0, 31).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(31).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Montreal Venue",
 			"addressLocality": "Montreal",
@@ -353,7 +354,7 @@ func TestAdminPendingListSortOrder(t *testing.T) {
 	for _, name := range eventNames {
 		event := map[string]any{
 			"name":      name,
-			"startDate": time.Now().UTC().AddDate(0, 0, 30).Format(time.RFC3339),
+			"startDate": testhelpers.FutureTime(30).Format(time.RFC3339),
 			"location": map[string]any{
 				"name":            "Test Venue",
 				"addressLocality": "Toronto",

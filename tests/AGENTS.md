@@ -32,6 +32,24 @@ The `tests/testhelpers` package provides shared utilities for `integration`, `in
 - `TestConfig` sets `AllowTestDomains: true` — fixture generators (`RandomEventInput`, etc.) no longer produce `example.com` URLs, but the flag is still required because integration tests construct `example.com` URLs inline and `server generate`/`cmd/loadtest` continue to inject placeholder domains. The `integration` package extends it locally to add `DeveloperConfig.UsageFlushTimeoutSeconds: 2`.
 - All helpers take explicit `pool`/`ctx` args (not a package-specific `testEnv` struct) so they work across packages.
 
+## Dates: tests must not depend on the wall clock
+
+Never hardcode a calendar date in a test that goes through HTTP handlers, ingest, the review queue or the database (`tests/contracts`, `tests/integration`, `tests/integration_batch`, `internal/storage/postgres`). The code under test reads "now" (the events list defaults to `startDate=today`, SQL uses `NOW()`, feeds and stats split past/upcoming), so a date that is "next month" when you write the test is in the past a month later and the test fails for no code reason.
+
+| Helper | Returns |
+|---|---|
+| `FutureTime(n)` / `PastTime(n)` | 19:00 UTC, `n` (>= 1) days after / before today |
+| `FutureTimeAt(n, h, m)` / `PastTimeAt(n, h, m)` | same with an explicit UTC time of day |
+| `FutureDate(n)` / `PastDate(n)` | the same day as a `"2006-01-02"` string (query params, all-day dates) |
+| `WinterDate(k)` / `WinterTime(k, h, m, loc)` | January `10+k` of next year (`k` 0..21). Use when asserting a fixed UTC offset (`-05:00` Toronto, `+01:00` Paris): January is standard time everywhere, so the offset is valid whichever day the suite runs |
+
+- Keep offsets well under the ingest far-future cap (`MaxFutureDays`, default 730).
+- Build timestamp strings from the helpers (`testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339)`), not literals. When a test needs a zone offset, compute it from the zone (`time.LoadLocation`) instead of writing `-04:00`.
+- In-package tests (`package postgres`, ...) cannot import `testhelpers` (import cycle); import the dependency-free `github.com/Togather-Foundation/server/tests/testhelpers/clock`, which has the same functions.
+- Zones with recent tzdata rule changes (for example `America/Vancouver` after BC's move to permanent time) can disagree between the Go host and Postgres for future dates. When the zone is incidental, use a stable one such as `America/Phoenix`.
+- A literal date that can genuinely never rot (a serialisation round-trip fixture, a malformed-date negative case, a protocol version string) is allowed with a `// fixed-date: <reason>` comment on the same or previous line.
+- `tests/testhelpers/no_literal_dates_test.go` enforces this in CI: it parses the test files in the directories above and fails on any `time.Date(<literal year>…)` or `YYYY-MM-DD` string without the marker. Pure unit tests that pass an explicit `now` to the code under test are outside its scope.
+
 ## Patterns
 
 **Fault injection:** for packages that call `os.*` directly (like `internal/fileutil`), introduce an unexported interface (e.g. `atomicFS`) with a `defaultFS` production impl and a `failFS` test impl. Use same-package tests (`package foo`, not `package foo_test`) to access the seam. See `internal/fileutil/atomicwrite.go` + `atomicwrite_fault_test.go` as a reference.

@@ -16,8 +16,8 @@ func TestPlaceToDomain_AllFields(t *testing.T) {
 	err := testPgUUID.Scan(testUUID.String())
 	require.NoError(t, err)
 
-	testCreatedAt := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC)
-	testUpdatedAt := time.Date(2026, 2, 19, 11, 0, 0, 0, time.UTC)
+	testCreatedAt := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC) // fixed-date: pure row-conversion fixture, never compared to now
+	testUpdatedAt := time.Date(2026, 2, 19, 11, 0, 0, 0, time.UTC) // fixed-date: pure row-conversion fixture, never compared to now
 
 	place := (&Place{
 		ID:                      testPgUUID,
@@ -71,7 +71,7 @@ func TestPlaceToDomain_NullFields(t *testing.T) {
 	err := testPgUUID.Scan(testUUID.String())
 	require.NoError(t, err)
 
-	testCreatedAt := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC)
+	testCreatedAt := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC) // fixed-date: pure row-conversion fixture, never compared to now
 
 	place := (&Place{
 		ID:                      testPgUUID,
@@ -122,8 +122,8 @@ func TestOrganizationToDomain_AllFields(t *testing.T) {
 	err := testPgUUID.Scan(testUUID.String())
 	require.NoError(t, err)
 
-	testCreatedAt := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC)
-	testUpdatedAt := time.Date(2026, 2, 19, 11, 0, 0, 0, time.UTC)
+	testCreatedAt := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC) // fixed-date: pure row-conversion fixture, never compared to now
+	testUpdatedAt := time.Date(2026, 2, 19, 11, 0, 0, 0, time.UTC) // fixed-date: pure row-conversion fixture, never compared to now
 
 	org := (&Organization{
 		ID:               testPgUUID,
@@ -172,7 +172,7 @@ func TestOrganizationToDomain_NullFields(t *testing.T) {
 	err := testPgUUID.Scan(testUUID.String())
 	require.NoError(t, err)
 
-	testCreatedAt := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC)
+	testCreatedAt := time.Date(2026, 2, 19, 10, 0, 0, 0, time.UTC) // fixed-date: pure row-conversion fixture, never compared to now
 
 	org := (&Organization{
 		ID:               testPgUUID,

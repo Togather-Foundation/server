@@ -9,6 +9,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,8 +36,8 @@ func TestReversedDatesRegressions_srv629_NormalizationBypass(t *testing.T) {
 	}{
 		{
 			name:               "high-confidence timezone correction generates warning",
-			startDate:          "2025-03-31T23:00:00Z", // 11 PM
-			endDate:            "2025-03-31T02:00:00Z", // 2 AM (reversed, early morning)
+			startDate:          testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339), // 11 PM
+			endDate:            testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339),  // 2 AM (reversed, early morning)
 			wantWarningCode:    "reversed_dates_timezone_likely",
 			wantLifecycleState: "pending_review",
 			wantNeedsReview:    true,
@@ -44,8 +45,8 @@ func TestReversedDatesRegressions_srv629_NormalizationBypass(t *testing.T) {
 		},
 		{
 			name:               "needs review correction generates warning",
-			startDate:          "2025-04-01T22:00:00Z", // 10 PM
-			endDate:            "2025-04-01T14:00:00Z", // 2 PM (reversed, NOT early morning)
+			startDate:          testhelpers.FutureTimeAt(71, 22, 0).Format(time.RFC3339), // 10 PM
+			endDate:            testhelpers.FutureTimeAt(71, 14, 0).Format(time.RFC3339), // 2 PM (reversed, NOT early morning)
 			wantWarningCode:    "reversed_dates_corrected_needs_review",
 			wantLifecycleState: "pending_review",
 			wantNeedsReview:    true,
@@ -53,8 +54,8 @@ func TestReversedDatesRegressions_srv629_NormalizationBypass(t *testing.T) {
 		},
 		{
 			name:               "early morning short duration - timezone likely",
-			startDate:          "2025-04-01T20:00:00Z", // 8 PM
-			endDate:            "2025-04-01T01:00:00Z", // 1 AM (reversed, early morning, 5h corrected)
+			startDate:          testhelpers.FutureTimeAt(71, 20, 0).Format(time.RFC3339), // 8 PM
+			endDate:            testhelpers.FutureTimeAt(71, 1, 0).Format(time.RFC3339),  // 1 AM (reversed, early morning, 5h corrected)
 			wantWarningCode:    "reversed_dates_timezone_likely",
 			wantLifecycleState: "pending_review",
 			wantNeedsReview:    true,
@@ -62,8 +63,8 @@ func TestReversedDatesRegressions_srv629_NormalizationBypass(t *testing.T) {
 		},
 		{
 			name:               "early morning long duration - needs review",
-			startDate:          "2025-04-01T10:00:00Z", // 10 AM
-			endDate:            "2025-04-01T03:00:00Z", // 3 AM (reversed, early morning but 17h corrected)
+			startDate:          testhelpers.FutureTimeAt(71, 10, 0).Format(time.RFC3339), // 10 AM
+			endDate:            testhelpers.FutureTimeAt(71, 3, 0).Format(time.RFC3339),  // 3 AM (reversed, early morning but 17h corrected)
 			wantWarningCode:    "reversed_dates_corrected_needs_review",
 			wantLifecycleState: "pending_review",
 			wantNeedsReview:    true,
@@ -149,8 +150,8 @@ func TestReversedDatesRegressions_srv_oad_OccurrenceReversedDates(t *testing.T) 
 			name: "event with ONLY occurrences - one reversed",
 			occurrences: []map[string]any{
 				{
-					"startDate": "2025-04-01T23:00:00Z",
-					"endDate":   "2025-04-01T02:00:00Z", // Reversed
+					"startDate": testhelpers.FutureTimeAt(71, 23, 0).Format(time.RFC3339),
+					"endDate":   testhelpers.FutureTimeAt(71, 2, 0).Format(time.RFC3339), // Reversed
 				},
 			},
 			wantWarnings:    true,
@@ -161,16 +162,16 @@ func TestReversedDatesRegressions_srv_oad_OccurrenceReversedDates(t *testing.T) 
 			name: "multiple occurrences - one reversed among valid ones",
 			occurrences: []map[string]any{
 				{
-					"startDate": "2025-04-01T19:00:00Z",
-					"endDate":   "2025-04-01T21:00:00Z", // Valid
+					"startDate": testhelpers.FutureTimeAt(71, 19, 0).Format(time.RFC3339),
+					"endDate":   testhelpers.FutureTimeAt(71, 21, 0).Format(time.RFC3339), // Valid
 				},
 				{
-					"startDate": "2025-04-02T23:00:00Z",
-					"endDate":   "2025-04-02T02:00:00Z", // Reversed
+					"startDate": testhelpers.FutureTimeAt(72, 23, 0).Format(time.RFC3339),
+					"endDate":   testhelpers.FutureTimeAt(72, 2, 0).Format(time.RFC3339), // Reversed
 				},
 				{
-					"startDate": "2025-04-03T19:00:00Z",
-					"endDate":   "2025-04-03T21:00:00Z", // Valid
+					"startDate": testhelpers.FutureTimeAt(73, 19, 0).Format(time.RFC3339),
+					"endDate":   testhelpers.FutureTimeAt(73, 21, 0).Format(time.RFC3339), // Valid
 				},
 			},
 			wantWarnings:    true,
@@ -247,8 +248,8 @@ func TestReversedDatesRegressions_srv_67i_WarningCodeConsistency(t *testing.T) {
 			name: "timezone_likely code for early morning short duration",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-03-31T23:00:00Z", // 11 PM
-				EndDate:   "2025-03-31T02:00:00Z", // 2 AM (reversed)
+				StartDate: testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339), // 11 PM
+				EndDate:   testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339),  // 2 AM (reversed)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarningCode: "reversed_dates_timezone_likely",
@@ -258,8 +259,8 @@ func TestReversedDatesRegressions_srv_67i_WarningCodeConsistency(t *testing.T) {
 			name: "corrected_needs_review code for non-early-morning",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T22:00:00Z",
-				EndDate:   "2025-04-01T14:00:00Z", // 2 PM (reversed)
+				StartDate: testhelpers.FutureTimeAt(71, 22, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 14, 0).Format(time.RFC3339), // 2 PM (reversed)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarningCode: "reversed_dates_corrected_needs_review",
@@ -269,8 +270,8 @@ func TestReversedDatesRegressions_srv_67i_WarningCodeConsistency(t *testing.T) {
 			name: "corrected_needs_review for non-early-morning (uncorrected validation path)",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T13:00:00Z", // 1 PM
-				EndDate:   "2025-04-01T12:00:00Z", // noon (reversed, not corrected by normalize)
+				StartDate: testhelpers.FutureTimeAt(71, 13, 0).Format(time.RFC3339), // 1 PM
+				EndDate:   testhelpers.FutureTimeAt(71, 12, 0).Format(time.RFC3339), // noon (reversed, not corrected by normalize)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarningCode: "reversed_dates_corrected_needs_review",
@@ -320,8 +321,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "endHour boundary: 0:00 (midnight) - early morning",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T23:00:00Z",
-				EndDate:   "2025-04-01T00:00:00Z", // midnight (hour=0)
+				StartDate: testhelpers.FutureTimeAt(71, 23, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 0, 0).Format(time.RFC3339), // midnight (hour=0)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
@@ -332,8 +333,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "endHour boundary: 2:00 - early morning",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T23:00:00Z",
-				EndDate:   "2025-04-01T02:00:00Z", // 2 AM (hour=2)
+				StartDate: testhelpers.FutureTimeAt(71, 23, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 2, 0).Format(time.RFC3339), // 2 AM (hour=2)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
@@ -344,8 +345,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "endHour boundary: 4:00 - early morning (last hour)",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T23:00:00Z",
-				EndDate:   "2025-04-01T04:00:00Z", // 4 AM (hour=4)
+				StartDate: testhelpers.FutureTimeAt(71, 23, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 4, 0).Format(time.RFC3339), // 4 AM (hour=4)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
@@ -356,8 +357,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "endHour boundary: 4:59:59 - still early morning",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T23:00:00Z",
-				EndDate:   "2025-04-01T04:59:59Z", // 4:59:59 AM (hour=4)
+				StartDate: testhelpers.FutureTimeAt(71, 23, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 4, 59).Add(59 * time.Second).Format(time.RFC3339), // 4:59:59 AM (hour=4)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
@@ -368,8 +369,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "endHour boundary: 5:00 - NOT early morning",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T23:00:00Z",
-				EndDate:   "2025-04-01T05:00:00Z", // 5 AM (hour=5)
+				StartDate: testhelpers.FutureTimeAt(71, 23, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 5, 0).Format(time.RFC3339), // 5 AM (hour=5)
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
@@ -380,8 +381,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "duration boundary: 6h 59m - under 7h threshold",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T20:01:00Z",
-				EndDate:   "2025-04-01T03:00:00Z", // 6h 59m corrected duration
+				StartDate: testhelpers.FutureTimeAt(71, 20, 1).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 3, 0).Format(time.RFC3339), // 6h 59m corrected duration
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
@@ -392,8 +393,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "duration boundary: 7h 00m - exactly at threshold",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T20:00:00Z",
-				EndDate:   "2025-04-01T03:00:00Z", // Exactly 7h corrected duration
+				StartDate: testhelpers.FutureTimeAt(71, 20, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 3, 0).Format(time.RFC3339), // Exactly 7h corrected duration
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
@@ -404,8 +405,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "duration boundary: 7h 01m - over threshold",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T19:59:00Z",
-				EndDate:   "2025-04-01T03:00:00Z", // 7h 1m corrected duration
+				StartDate: testhelpers.FutureTimeAt(71, 19, 59).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 3, 0).Format(time.RFC3339), // 7h 1m corrected duration
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning:     true,
@@ -416,7 +417,7 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "no endDate - no warning",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T19:00:00Z",
+				StartDate: testhelpers.FutureTimeAt(71, 19, 0).Format(time.RFC3339),
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning: false,
@@ -426,8 +427,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "already correct dates - no warning",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T19:00:00Z",
-				EndDate:   "2025-04-01T21:00:00Z", // Normal order
+				StartDate: testhelpers.FutureTimeAt(71, 19, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 21, 0).Format(time.RFC3339), // Normal order
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning: false,
@@ -437,8 +438,8 @@ func TestReversedDatesRegressions_EdgeCases(t *testing.T) {
 			name: "same start and end - no warning",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T19:00:00Z",
-				EndDate:   "2025-04-01T19:00:00Z", // Same time
+				StartDate: testhelpers.FutureTimeAt(71, 19, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 19, 0).Format(time.RFC3339), // Same time
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantWarning: false,
@@ -488,8 +489,8 @@ func TestReversedDatesRegressions_LifecycleStateTransitions(t *testing.T) {
 	payload := map[string]any{
 		"name":        "Event With Reversed Dates",
 		"description": "Test event to verify reversed dates trigger pending_review state",
-		"startDate":   "2025-03-31T23:00:00Z",
-		"endDate":     "2025-03-31T02:00:00Z", // Reversed
+		"startDate":   testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339),
+		"endDate":     testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339), // Reversed
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -568,8 +569,8 @@ func TestReversedDatesRegressions_LifecycleStateTransitions(t *testing.T) {
 	}
 	parsedStart, err := time.Parse(time.RFC3339, startDate)
 	require.NoError(t, err)
-	expectedStart, _ := time.Parse(time.RFC3339, "2025-03-31T23:00:00Z")
-	require.True(t, parsedStart.Equal(expectedStart), "startDate should be 2025-03-31T23:00:00Z (got %s)", startDate)
+	expectedStart := testhelpers.FutureTimeAt(70, 23, 0)
+	require.True(t, parsedStart.Equal(expectedStart), "startDate should be %s (got %s)", expectedStart.Format(time.RFC3339), startDate)
 
 	// End date should be corrected to next day - BUT it might not be in API response
 	// Check if occurrence has endDate
@@ -595,9 +596,9 @@ func TestReversedDatesRegressions_LifecycleStateTransitions(t *testing.T) {
 	}
 	parsedEnd, err := time.Parse(time.RFC3339, endDate)
 	require.NoError(t, err)
-	expectedEnd, _ := time.Parse(time.RFC3339, "2025-04-01T02:00:00Z")
+	expectedEnd := testhelpers.FutureTimeAt(71, 2, 0)
 	require.True(t, parsedEnd.Equal(expectedEnd),
-		"endDate should be auto-corrected to 2025-04-01T02:00:00Z (got %s)", endDate)
+		"endDate should be auto-corrected to %s (got %s)", expectedEnd.Format(time.RFC3339), endDate)
 }
 
 // TestReversedDatesRegressions_WarningMessageContent tests that warning messages
@@ -616,8 +617,8 @@ func TestReversedDatesRegressions_WarningMessageContent(t *testing.T) {
 			name: "timezone_likely warning includes gap and hour",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-03-31T23:00:00Z",
-				EndDate:   "2025-03-31T02:00:00Z",
+				StartDate: testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339),
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantCode:    "reversed_dates_timezone_likely",
@@ -628,8 +629,8 @@ func TestReversedDatesRegressions_WarningMessageContent(t *testing.T) {
 			name: "corrected_needs_review includes gap",
 			input: events.EventInput{
 				Name:      "Test Event",
-				StartDate: "2025-04-01T22:00:00Z",
-				EndDate:   "2025-04-01T14:00:00Z",
+				StartDate: testhelpers.FutureTimeAt(71, 22, 0).Format(time.RFC3339),
+				EndDate:   testhelpers.FutureTimeAt(71, 14, 0).Format(time.RFC3339),
 				Location:  &events.PlaceInput{Name: "Test Venue"},
 			},
 			wantCode:    "reversed_dates_corrected_needs_review",

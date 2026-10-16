@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -23,17 +24,17 @@ func TestEventRepositoryListFiltersAndPagination(t *testing.T) {
 	placeB := insertPlace(t, ctx, pool, "Riverside Gallery", "Toronto", "ON")
 	placeC := insertPlace(t, ctx, pool, "Ottawa Arena", "Ottawa", "ON")
 
-	startA := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
-	startB := time.Date(2026, 7, 20, 18, 0, 0, 0, time.UTC)
-	startC := time.Date(2026, 8, 1, 20, 0, 0, 0, time.UTC)
+	startA := clock.FutureTimeAt(10, 19, 0)
+	startB := clock.FutureTimeAt(20, 18, 0)
+	startC := clock.FutureTimeAt(35, 20, 0)
 
 	ulidA := insertEvent(t, ctx, pool, "Jazz in the Park", "Live jazz", orgA, placeA, "music", "published", []string{"jazz", "summer"}, startA)
 	_ = insertEvent(t, ctx, pool, "Summer Arts Expo", "Gallery showcase", orgB, placeB, "arts", "draft", []string{"gallery"}, startB)
 	_ = insertEvent(t, ctx, pool, "Ottawa Winter Fest", "Snow fun", orgB, placeC, "culture", "published", []string{"winter"}, startC)
 
 	filters := events.Filters{
-		StartDate:      timePtr(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)),
-		EndDate:        timePtr(time.Date(2026, 7, 31, 23, 59, 0, 0, time.UTC)),
+		StartDate:      timePtr(clock.FutureTimeAt(5, 0, 0)),
+		EndDate:        timePtr(clock.FutureTimeAt(30, 23, 59)),
 		LifecycleState: "published",
 	}
 
@@ -82,7 +83,7 @@ func TestEventRepositoryListDedupesOccurrences(t *testing.T) {
 
 	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	place := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
-	start := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+	start := clock.FutureTime(1)
 	ulidValue := insertEvent(t, ctx, pool, "Jazz in the Park", "Live jazz", org, place, "music", "published", []string{"jazz"}, start)
 
 	var eventID string
@@ -111,7 +112,7 @@ func TestEventRepositoryGetByULID(t *testing.T) {
 
 	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	place := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
-	start := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+	start := clock.FutureTime(1)
 	ulidValue := insertEvent(t, ctx, pool, "Jazz in the Park", "Live jazz", org, place, "music", "published", []string{"jazz"}, start)
 
 	result, err := repo.GetByULID(ctx, ulidValue)
@@ -133,7 +134,7 @@ func TestOccurrenceAllDayRoundTrip(t *testing.T) {
 
 	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	place := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
-	start := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	start := clock.FutureTimeAt(60, 0, 0)
 	ulidValue := insertEvent(t, ctx, pool, "All Day Exhibition", "Full-day gallery", org, place, "arts", "published", []string{"exhibit"}, start)
 
 	var eventID string
@@ -289,12 +290,12 @@ func TestFindSeriesCompanion(t *testing.T) {
 	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	place := insertPlace(t, ctx, pool, "The Rex Jazz Bar", "Toronto", "ON")
 
-	// Week 1: a published companion event at 19:00 UTC on March 31.
-	week1Start := time.Date(2026, 3, 31, 19, 0, 0, 0, time.UTC)
+	// Week 1: a published companion event at 19:00 UTC, 40 days from now.
+	week1Start := clock.FutureTime(40)
 	week1ULID := insertEvent(t, ctx, pool, "Jazz Jam Session", "Live jazz", org, place, "music", "published", nil, week1Start)
 
 	// Week 2: the incoming event 7 days later at the same time.
-	week2Start := time.Date(2026, 4, 7, 19, 0, 0, 0, time.UTC)
+	week2Start := week1Start.AddDate(0, 0, 7)
 	week2ULID := insertEvent(t, ctx, pool, "Jazz Jam Session", "Live jazz", org, place, "music", "published", nil, week2Start)
 
 	t.Run("finds companion from previous week", func(t *testing.T) {
@@ -309,7 +310,7 @@ func TestFindSeriesCompanion(t *testing.T) {
 		require.Equal(t, week1ULID, result.ULID)
 		require.Equal(t, "Jazz Jam Session", result.Name)
 		// StartDate must be formatted as "YYYY-MM-DD" — not an RFC3339 timestamp.
-		require.Equal(t, "2026-03-31", result.StartDate)
+		require.Equal(t, week1Start.Format(time.DateOnly), result.StartDate)
 		// StartTime must be formatted as "HH:MM:SS".
 		require.Equal(t, "19:00:00", result.StartTime)
 		require.Equal(t, "The Rex Jazz Bar", result.VenueName)
@@ -317,7 +318,7 @@ func TestFindSeriesCompanion(t *testing.T) {
 
 	t.Run("returns nil when no companion exists (no matching event in window)", func(t *testing.T) {
 		// Look for a companion 7–21 days before a date far in the future — nothing there.
-		farFuture := time.Date(2027, 1, 1, 19, 0, 0, 0, time.UTC)
+		farFuture := week2Start.AddDate(0, 0, 300)
 		result, err := repo.FindSeriesCompanion(ctx, events.SeriesCompanionQuery{
 			NormalizedName: "jazz jam session",
 			VenueID:        place.ID,

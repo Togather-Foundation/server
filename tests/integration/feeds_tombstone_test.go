@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,7 +18,7 @@ func TestFeedsTombstoneInChangeFeed(t *testing.T) {
 	place := insertPlace(t, env, "Tombstone Test Venue", "Toronto")
 
 	// Create an event
-	eventULID := insertEventWithOccurrence(t, env, "Event to Delete", org.ID, place.ID, "music", "published", []string{"test"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Event to Delete", org.ID, place.ID, "music", "published", []string{"test"}, testhelpers.FutureTime(1))
 	eventID := lookupEventIDByULID(t, env, eventULID)
 
 	// Get initial change feed state
@@ -115,7 +116,7 @@ func TestFeedsTombstonePayload(t *testing.T) {
 	place := insertPlace(t, env, "Tombstone Payload Venue", "Toronto")
 
 	// Create an event
-	eventULID := insertEventWithOccurrence(t, env, "Event for Tombstone Test", org.ID, place.ID, "arts", "published", []string{"tombstone"}, time.Date(2026, 7, 15, 19, 0, 0, 0, time.UTC))
+	eventULID := insertEventWithOccurrence(t, env, "Event for Tombstone Test", org.ID, place.ID, "arts", "published", []string{"tombstone"}, testhelpers.FutureTime(6))
 	eventID := lookupEventIDByULID(t, env, eventULID)
 
 	// Construct event URI
@@ -161,7 +162,7 @@ func TestFeedsTombstonePayload(t *testing.T) {
 
 	t.Run("tombstone includes superseded_by_uri if provided", func(t *testing.T) {
 		// Create another event
-		newEventULID := insertEventWithOccurrence(t, env, "Replacement Event", org.ID, place.ID, "arts", "published", []string{"replacement"}, time.Date(2026, 7, 20, 19, 0, 0, 0, time.UTC))
+		newEventULID := insertEventWithOccurrence(t, env, "Replacement Event", org.ID, place.ID, "arts", "published", []string{"replacement"}, testhelpers.FutureTime(11))
 		newEventID := lookupEventIDByULID(t, env, newEventULID)
 		newEventURI := "http://localhost/events/" + newEventULID
 
@@ -188,13 +189,13 @@ func TestFeedsTombstoneOrdering(t *testing.T) {
 	place := insertPlace(t, env, "Ordering Test Venue", "Toronto")
 
 	// Create multiple events
-	event1ULID := insertEventWithOccurrence(t, env, "Event 1", org.ID, place.ID, "music", "published", []string{"test"}, time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC))
+	event1ULID := insertEventWithOccurrence(t, env, "Event 1", org.ID, place.ID, "music", "published", []string{"test"}, testhelpers.FutureTime(1))
 	time.Sleep(10 * time.Millisecond)
 
-	event2ULID := insertEventWithOccurrence(t, env, "Event 2", org.ID, place.ID, "arts", "published", []string{"test"}, time.Date(2026, 7, 15, 19, 0, 0, 0, time.UTC))
+	event2ULID := insertEventWithOccurrence(t, env, "Event 2", org.ID, place.ID, "arts", "published", []string{"test"}, testhelpers.FutureTime(6))
 	time.Sleep(10 * time.Millisecond)
 
-	event3ULID := insertEventWithOccurrence(t, env, "Event 3", org.ID, place.ID, "culture", "published", []string{"test"}, time.Date(2026, 7, 20, 19, 0, 0, 0, time.UTC))
+	event3ULID := insertEventWithOccurrence(t, env, "Event 3", org.ID, place.ID, "culture", "published", []string{"test"}, testhelpers.FutureTime(11))
 
 	event1ID := lookupEventIDByULID(t, env, event1ULID)
 	event2ID := lookupEventIDByULID(t, env, event2ULID)

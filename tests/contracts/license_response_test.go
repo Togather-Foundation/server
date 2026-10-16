@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +24,7 @@ func TestLicenseInformationInJSONLD(t *testing.T) {
 		"name":        "Licensed Event",
 		"description": "A licensed event for contract testing with complete metadata to avoid review workflow",
 		"image":       "https://img.testevent.invalid/images/licensed-event.jpg",
-		"startDate":   time.Date(2026, 9, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate":   testhelpers.FutureTime(40).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Public Park",
 			"addressLocality": "Toronto",
@@ -100,7 +101,7 @@ func TestLicenseInEventList(t *testing.T) {
 	// Create an event directly in database
 	org := insertOrganization(t, env, "License Test Org")
 	place := insertPlace(t, env, "License Test Venue", "Toronto")
-	_ = insertEventWithOccurrence(t, env, "List License Test", org.ID, place.ID, "arts", "published", []string{}, time.Now().UTC().AddDate(0, 0, 30))
+	_ = insertEventWithOccurrence(t, env, "List License Test", org.ID, place.ID, "arts", "published", []string{}, testhelpers.FutureTime(30))
 
 	// Request event list with JSON-LD
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events?limit=10", nil)
@@ -164,7 +165,7 @@ func TestLicenseStatusField(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2026, 11, 1, 18, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTimeAt(60, 18, 0), placeID,
 	)
 	require.NoError(t, err)
 
@@ -203,7 +204,7 @@ func TestProprietaryLicenseRejection(t *testing.T) {
 	// Attempt to create event with proprietary license
 	payload := map[string]any{
 		"name":      "Proprietary Event",
-		"startDate": time.Date(2026, 12, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(90).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Private Venue",
 			"addressLocality": "Toronto",
@@ -267,7 +268,7 @@ func TestLicenseURLValidation(t *testing.T) {
 	// Add occurrence
 	_, err = env.Pool.Exec(env.Context,
 		`INSERT INTO event_occurrences (event_id, start_time, venue_id) VALUES ($1, $2, $3)`,
-		eventID, time.Date(2027, 1, 1, 19, 0, 0, 0, time.UTC), placeID,
+		eventID, testhelpers.FutureTime(120), placeID,
 	)
 	require.NoError(t, err)
 

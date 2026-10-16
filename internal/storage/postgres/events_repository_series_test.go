@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
@@ -16,9 +17,10 @@ func TestUpsertEventSeries(t *testing.T) {
 
 	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
-	seriesStart := time.Date(2026, 7, 6, 0, 0, 0, 0, time.UTC)
-	seriesEnd := time.Date(2026, 8, 31, 0, 0, 0, 0, time.UTC)
-	exdate := time.Date(2026, 7, 6, 19, 0, 0, 0, time.UTC)
+	seriesStart := clock.FutureTimeAt(1, 0, 0)
+	seriesEnd := clock.FutureTimeAt(56, 0, 0)
+	seriesRRule := "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=" + seriesEnd.Format("20060102") + "T235959Z"
+	exdate := clock.FutureTime(1)
 
 	t.Run("create new series", func(t *testing.T) {
 		result, err := repo.UpsertEventSeries(ctx, events.UpsertEventSeriesParams{
@@ -26,7 +28,7 @@ func TestUpsertEventSeries(t *testing.T) {
 			Name:        "Weekly Workshop",
 			SeriesStart: seriesStart,
 			SeriesEnd:   &seriesEnd,
-			RRule:       "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260831T235959Z",
+			RRule:       seriesRRule,
 			ExDates:     []time.Time{exdate},
 			RDates:      nil,
 			TZID:        "America/Toronto",
@@ -43,7 +45,7 @@ func TestUpsertEventSeries(t *testing.T) {
 		).Scan(&name, &rrule, &tzid, &extKey)
 		require.NoError(t, err)
 		require.Equal(t, "Weekly Workshop", name)
-		require.Equal(t, "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260831T235959Z", rrule)
+		require.Equal(t, seriesRRule, rrule)
 		require.Equal(t, "America/Toronto", tzid)
 		require.NotNil(t, extKey)
 		require.Equal(t, "myorg-ical:EVT-001", *extKey)
@@ -65,13 +67,14 @@ func TestUpsertEventSeries(t *testing.T) {
 		require.NotEmpty(t, result1.SeriesID)
 
 		// Upsert with same external_key — should update, not create new
-		newSeriesEnd := time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)
+		newSeriesEnd := clock.FutureTimeAt(180, 0, 0)
+		newSeriesRRule := "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=" + newSeriesEnd.Format("20060102") + "T235959Z"
 		result2, err := repo.UpsertEventSeries(ctx, events.UpsertEventSeriesParams{
 			ExternalKey: "myorg-ical:EVT-002",
 			Name:        "Updated Name",
 			SeriesStart: seriesStart,
 			SeriesEnd:   &newSeriesEnd,
-			RRule:       "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261231T235959Z",
+			RRule:       newSeriesRRule,
 			ExDates:     []time.Time{exdate},
 			RDates:      nil,
 			TZID:        "America/Toronto",
@@ -87,7 +90,7 @@ func TestUpsertEventSeries(t *testing.T) {
 		).Scan(&name, &rrule, &tzid)
 		require.NoError(t, err)
 		require.Equal(t, "Updated Name", name)
-		require.Equal(t, "FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20261231T235959Z", rrule)
+		require.Equal(t, newSeriesRRule, rrule)
 		require.Equal(t, "America/Toronto", tzid)
 	})
 
@@ -120,7 +123,7 @@ func TestUpsertEventSeries(t *testing.T) {
 			Name:        "No TZID",
 			SeriesStart: seriesStart,
 			SeriesEnd:   &seriesEnd,
-			RRule:       "FREQ=WEEKLY;UNTIL=20260831T235959Z",
+			RRule:       "FREQ=WEEKLY;UNTIL=" + seriesEnd.Format("20060102") + "T235959Z",
 			ExDates:     nil,
 			RDates:      nil,
 			TZID:        "",

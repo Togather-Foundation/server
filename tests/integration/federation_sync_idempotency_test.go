@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +22,7 @@ func TestFederationSyncIdempotency(t *testing.T) {
 		"@type":     "Event",
 		"@id":       "https://idempotent.example.org/events/01HYX3KQW7ERTV9XNBM2P8QJZF",
 		"name":      "Idempotent Test Event",
-		"startDate": time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": testhelpers.FutureTime(1).Format(time.RFC3339),
 		"location": map[string]any{
 			"@type":           "Place",
 			"name":            "Test Venue",
@@ -78,7 +79,7 @@ func TestFederationSyncIdempotency(t *testing.T) {
 			"@type":     "Event",
 			"@id":       "https://idempotent.example.org/events/CONCURRENT_EVENT_123",
 			"name":      "Concurrent Test Event",
-			"startDate": time.Date(2026, 7, 15, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"startDate": testhelpers.FutureTime(6).Format(time.RFC3339),
 		}
 
 		// Submit concurrently (simulated with rapid sequential submissions)
@@ -111,7 +112,7 @@ func TestFederationSyncIdempotency(t *testing.T) {
 			"@type":     "Event",
 			"@id":       "https://other.example.org/events/" + ulid, // Same ULID, different domain
 			"name":      "Event from Other Node",
-			"startDate": time.Date(2026, 7, 20, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"startDate": testhelpers.FutureTime(11).Format(time.RFC3339),
 		}
 
 		resp := postFederationSync(t, env, otherAPIKey, otherPayload)

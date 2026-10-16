@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/provenance"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 
 	"github.com/stretchr/testify/require"
 )
@@ -53,7 +54,7 @@ func TestProvenanceRepositoryGetEventSourcesAndFields(t *testing.T) {
 
 	org := insertOrganization(t, ctx, pool, "Toronto Arts Org")
 	place := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
-	start := time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC)
+	start := clock.FutureTime(1)
 	ulidValue := insertEvent(t, ctx, pool, "Jazz in the Park", "Live jazz", org, place, "music", "published", []string{"jazz"}, start)
 
 	var eventID string

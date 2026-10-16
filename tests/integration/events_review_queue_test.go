@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Togather-Foundation/server/tests/testhelpers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,8 +21,8 @@ func TestReviewQueue_HighConfidenceAutoFix(t *testing.T) {
 
 	payload := map[string]any{
 		"name":      "Late Night Jazz",
-		"startDate": "2026-03-31T23:00:00Z", // 11 PM
-		"endDate":   "2026-03-31T02:00:00Z", // 2 AM (should be next day!)
+		"startDate": testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339), // 11 PM
+		"endDate":   testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339),  // 2 AM (should be next day!)
 		"location": map[string]any{
 			"name":            "Jazz Club",
 			"addressLocality": "Toronto",
@@ -75,8 +77,8 @@ func TestReviewQueue_LowConfidenceCorrection(t *testing.T) {
 
 	payload := map[string]any{
 		"name":      "Afternoon Event",
-		"startDate": "2026-03-31T18:00:00Z", // 6 PM
-		"endDate":   "2026-03-31T14:00:00Z", // 2 PM (reversed but afternoon - low confidence)
+		"startDate": testhelpers.FutureTimeAt(70, 18, 0).Format(time.RFC3339), // 6 PM
+		"endDate":   testhelpers.FutureTimeAt(70, 14, 0).Format(time.RFC3339), // 2 PM (reversed but afternoon - low confidence)
 		"location": map[string]any{
 			"name":            "Convention Center",
 			"addressLocality": "Toronto",
@@ -126,11 +128,11 @@ func TestReviewQueue_OccurrenceReversedDates(t *testing.T) {
 
 	payload := map[string]any{
 		"name":      "Multi-Day Workshop",
-		"startDate": "2026-03-31T23:00:00Z", // Add top-level startDate
+		"startDate": testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339), // Add top-level startDate
 		"occurrences": []map[string]any{
 			{
-				"startDate": "2026-03-31T23:00:00Z", // 11 PM
-				"endDate":   "2026-03-31T02:00:00Z", // 2 AM (reversed!)
+				"startDate": testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339), // 11 PM
+				"endDate":   testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339), // 2 AM (reversed!)
 			},
 		},
 		"location": map[string]any{
@@ -182,8 +184,8 @@ func TestReviewQueue_FixedResubmit(t *testing.T) {
 	// First submission with issues
 	payload1 := map[string]any{
 		"name":      "Jazz Night",
-		"startDate": "2026-03-31T23:00:00Z",
-		"endDate":   "2026-03-31T02:00:00Z", // Reversed
+		"startDate": testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339),
+		"endDate":   testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339), // Reversed
 		"location": map[string]any{
 			"name":            "Jazz Club",
 			"addressLocality": "Toronto",
@@ -214,8 +216,8 @@ func TestReviewQueue_FixedResubmit(t *testing.T) {
 	// Second submission with fixed dates
 	payload2 := map[string]any{
 		"name":      "Jazz Night",
-		"startDate": "2026-03-31T23:00:00Z",
-		"endDate":   "2026-04-01T02:00:00Z", // Fixed!
+		"startDate": testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339),
+		"endDate":   testhelpers.FutureTimeAt(71, 2, 0).Format(time.RFC3339), // Fixed!
 		"location": map[string]any{
 			"name":            "Jazz Club",
 			"addressLocality": "Toronto",
@@ -253,8 +255,8 @@ func TestReviewQueue_RejectedResubmit(t *testing.T) {
 	// Submit event with issues
 	payload := map[string]any{
 		"name":      "Bad Event",
-		"startDate": "2026-03-31T23:00:00Z",
-		"endDate":   "2026-03-31T02:00:00Z", // Reversed
+		"startDate": testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339),
+		"endDate":   testhelpers.FutureTimeAt(70, 2, 0).Format(time.RFC3339), // Reversed
 		"location": map[string]any{
 			"name":            "Venue",
 			"addressLocality": "Toronto",
@@ -334,8 +336,8 @@ func TestReviewQueue_NormalEvent(t *testing.T) {
 
 	payload := map[string]any{
 		"name":      "Normal Event",
-		"startDate": "2026-03-31T19:00:00Z",
-		"endDate":   "2026-03-31T22:00:00Z", // Correct order
+		"startDate": testhelpers.FutureTimeAt(70, 19, 0).Format(time.RFC3339),
+		"endDate":   testhelpers.FutureTimeAt(70, 22, 0).Format(time.RFC3339), // Correct order
 		"location": map[string]any{
 			"name":            "Venue",
 			"addressLocality": "Toronto",

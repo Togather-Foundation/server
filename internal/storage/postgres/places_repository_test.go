@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
@@ -18,10 +19,10 @@ func TestPlaceRepositoryListFiltersAndPagination(t *testing.T) {
 	repo := &PlaceRepository{pool: pool}
 
 	placeA := insertPlace(t, ctx, pool, "Centennial Park", "Toronto", "ON")
-	setPlaceCreatedAt(t, ctx, pool, placeA.ID, time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC))
+	setPlaceCreatedAt(t, ctx, pool, placeA.ID, clock.PastTimeAt(2, 10, 0))
 
 	placeB := insertPlace(t, ctx, pool, "Riverside Gallery", "Toronto", "ON")
-	setPlaceCreatedAt(t, ctx, pool, placeB.ID, time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC))
+	setPlaceCreatedAt(t, ctx, pool, placeB.ID, clock.PastTimeAt(1, 10, 0))
 
 	insertPlace(t, ctx, pool, "Ottawa Arena", "Ottawa", "ON")
 
