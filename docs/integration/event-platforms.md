@@ -952,14 +952,31 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
   coordinates or programme, cannot be filtered (7,290 events, all categories), and the CKAN
   record says "License not specified".
 
-**Terms / licence status (2026-10-15):** the RSS feed is the one surface the BiblioCommons
-terms name as permitted, but they also say Service Content is the IP of the participating
-library/BiblioCommons, and TPL has not been asked whether republishing descriptions and
-images under CC0 is acceptable. Facts (title, time, place) are the same ones TPL publishes
-as open data. The TPL sources therefore ship `enabled: false`; confirm with TPL
-(`answerline@tpl.ca` / the Open Data team) before enabling. Note that
-`licenseStatus` on ingested events is always `cc0` (platform policy); the source `license`
-is recorded as provenance only.
+**Terms / licence status (2026-10-15) — ambiguous; get TPL's OK in writing before enabling.**
+- BiblioCommons terms (`tpl.bibliocommons.com/info/terms`, last updated 2018-09-19) bar
+  "any automated system to harvest or capture any BiblioCommons Content … except as may
+  be specifically permitted using RSS/XML feeds", so using the RSS feed is the sanctioned route.
+  The same terms say Service Content is the IP of the participating library/BiblioCommons
+  and may not be republished "except as arranged by separate agreement"; sites that display
+  extracts must link each one to the original BiblioCommons page. Nothing says the RSS
+  exception extends to republishing descriptions and images.
+- TPL's Open Data Policy ("freely available for anyone to use and republish … without
+  restrictions", under the "Open Government Licence of Toronto Public Library") covers the
+  City-portal dataset *Library Branch Programs and Events Feed*, a different product from the
+  RSS. Its CKAN record says "License not specified" while the portal page shows
+  Open Government Licence – Toronto (attribution: "Contains information licensed under the
+  Open Government Licence – Toronto."). Contact on the record: planning@tpl.ca.
+- No TPL page invites third-party republishing; `gateway.bibliocommons.com` has no
+  robots.txt; `tpl.bibliocommons.com/robots.txt` sets a 120 s crawl-delay for HTML pages.
+- Ask TPL (planning@tpl.ca, cc media@tpl.ca): authorisation to ingest the RSS and republish
+  titles/descriptions/images/venue/registration under CC0 (or the OGL attribution); whether
+  images are cleared and TPL logos excluded; the required attribution/link-back; whether
+  BiblioCommons needs to consent.
+- `licenseStatus` on ingested events is always `cc0` (platform policy); the source `license`
+  is recorded as provenance only.
+- Not legal advice; this reflects only the text retrieved on 2026-10-15.
+
+The TPL sources therefore ship `enabled: false` until that confirmation exists.
 
 **Known examples:**
 - `tpl-career-job-search.yaml`, `tpl-artificial-intelligence.yaml`,
