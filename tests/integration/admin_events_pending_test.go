@@ -59,7 +59,7 @@ func TestAdminPendingListWithEvents(t *testing.T) {
 	// 1. Event with low confidence (< 0.6)
 	lowConfidenceEvent := map[string]any{
 		"name":      "Low Confidence Event",
-		"startDate": time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": time.Now().UTC().AddDate(0, 0, 30).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -75,7 +75,7 @@ func TestAdminPendingListWithEvents(t *testing.T) {
 	// 2. Event with missing description (should be flagged)
 	noDescEvent := map[string]any{
 		"name":      "No Description Event",
-		"startDate": time.Date(2026, 10, 2, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": time.Now().UTC().AddDate(0, 0, 31).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -168,7 +168,7 @@ func TestAdminPendingListPagination(t *testing.T) {
 	for i := 0; i < 15; i++ {
 		event := map[string]any{
 			"name":      "Pending Event " + string(rune('A'+i)),
-			"startDate": time.Date(2026, 10, i+1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"startDate": time.Now().UTC().AddDate(0, 0, 30+i).Format(time.RFC3339),
 			"location": map[string]any{
 				"name":            "Test Venue",
 				"addressLocality": "Toronto",
@@ -237,7 +237,7 @@ func TestAdminPendingListFilters(t *testing.T) {
 	// Submit events in different cities
 	torontoEvent := map[string]any{
 		"name":      "Toronto Pending Event",
-		"startDate": time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": time.Now().UTC().AddDate(0, 0, 30).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Toronto Venue",
 			"addressLocality": "Toronto",
@@ -252,7 +252,7 @@ func TestAdminPendingListFilters(t *testing.T) {
 
 	montrealEvent := map[string]any{
 		"name":      "Montreal Pending Event",
-		"startDate": time.Date(2026, 10, 2, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+		"startDate": time.Now().UTC().AddDate(0, 0, 31).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Montreal Venue",
 			"addressLocality": "Montreal",
@@ -353,7 +353,7 @@ func TestAdminPendingListSortOrder(t *testing.T) {
 	for _, name := range eventNames {
 		event := map[string]any{
 			"name":      name,
-			"startDate": time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC).Format(time.RFC3339),
+			"startDate": time.Now().UTC().AddDate(0, 0, 30).Format(time.RFC3339),
 			"location": map[string]any{
 				"name":            "Test Venue",
 				"addressLocality": "Toronto",

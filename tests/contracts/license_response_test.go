@@ -100,7 +100,7 @@ func TestLicenseInEventList(t *testing.T) {
 	// Create an event directly in database
 	org := insertOrganization(t, env, "License Test Org")
 	place := insertPlace(t, env, "License Test Venue", "Toronto")
-	_ = insertEventWithOccurrence(t, env, "List License Test", org.ID, place.ID, "arts", "published", []string{}, time.Date(2026, 10, 1, 19, 0, 0, 0, time.UTC))
+	_ = insertEventWithOccurrence(t, env, "List License Test", org.ID, place.ID, "arts", "published", []string{}, time.Now().UTC().AddDate(0, 0, 30))
 
 	// Request event list with JSON-LD
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events?limit=10", nil)
