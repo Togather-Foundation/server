@@ -562,6 +562,14 @@ jan := testhelpers.WinterDate(3) + "T19:00:00-05:00" // fixed Toronto offset sta
 
 A literal date that can never rot may stay if it carries a `// fixed-date: <reason>` comment. `tests/testhelpers/no_literal_dates_test.go` fails CI for unmarked literals in `tests/contracts`, `tests/integration`, `tests/integration_batch` and `internal/storage/postgres`. See `tests/AGENTS.md` for the full helper table and the rules for fixed offsets and tzdata.
 
+### All-day anchoring and tzdata
+
+All-day occurrence instants are anchored by **PostgreSQL**, not by Go: `EventRepository.AnchorAllDayOccurrence` turns `(civil date, zone)` into the stored instant with `AT TIME ZONE`, the same expression the generated `local_date` / `local_start_time` columns invert. Go only extracts the civil date the input value carries. This matters because the host Go tzdata and the PostgreSQL image can be different releases and disagree about a zone (for example `America/Vancouver` after BC's permanent-time rule), which used to make a row that Go called midnight read back as 23:00 or 01:00 and drift the civil date.
+
+Tests must therefore:
+- assert the database's `local_date` / `local_start_time` (or compare `start_time` with `SELECT (date::timestamp AT TIME ZONE zone)`) instead of computing an expected offset with Go's tzdata;
+- inject a fake `events.AllDayAnchorer` when they need to make the "host" and "database" tzdata differ deterministically (see `internal/domain/events/allday_test.go`), rather than relying on the CI box's tzdata version.
+
 ---
 
 ## Integration Testing

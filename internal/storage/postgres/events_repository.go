@@ -331,7 +331,9 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
 	   e.keywords, e.in_language, e.is_accessible_for_free,
 	   e.federation_uri, e.created_at, e.updated_at, e.published_at,
-	   o.id, o.start_time, o.end_time, o.timezone, o.is_all_day, o.door_time, o.venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url,
+	   o.id, o.start_time, o.end_time, o.timezone, o.is_all_day, o.local_date,
+	   (o.end_time AT TIME ZONE o.timezone)::date AS local_end_date,
+	   o.door_time, o.venue_id, ov.ulid AS occ_venue_ulid, o.virtual_url,
 	   o.ticket_url, o.price_min, o.price_max, o.price_currency, o.availability,
 	   org.ulid AS organizer_ulid,
 	   e.series_id::text AS series_id,
@@ -386,6 +388,8 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			endTime             pgtype.Timestamptz
 			timezone            *string
 			isAllDay            pgtype.Bool
+			localDate           pgtype.Date
+			localEndDate        pgtype.Date
 			doorTime            pgtype.Timestamptz
 			venueID             *string
 			venueULID           *string
@@ -437,6 +441,8 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&endTime,
 			&timezone,
 			&isAllDay,
+			&localDate,
+			&localEndDate,
 			&doorTime,
 			&venueID,
 			&venueULID,
@@ -548,6 +554,13 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			if endTime.Valid {
 				value := endTime.Time
 				occ.EndTime = &value
+			}
+			if localDate.Valid {
+				occ.LocalDate = localDate.Time
+			}
+			if localEndDate.Valid {
+				value := localEndDate.Time
+				occ.LocalEndDate = &value
 			}
 			if doorTime.Valid {
 				value := doorTime.Time
@@ -740,6 +753,51 @@ INSERT INTO event_occurrences (
 		return fmt.Errorf("create occurrence: %w", err)
 	}
 	return nil
+}
+
+// AnchorAllDayOccurrence returns the instants PostgreSQL computes for the civil
+// dates carried by start/end in timezone. This is the single all-day anchoring
+// authority: the generated local_date/local_start_time columns apply exactly
+// this conversion, so they can never disagree with the stored instant even when
+// the host Go binary and the database image ship different tzdata.
+func (r *EventRepository) AnchorAllDayOccurrence(ctx context.Context, start time.Time, end *time.Time, timezone string) (time.Time, *time.Time, error) {
+	timezone = strings.TrimSpace(timezone)
+	if timezone == "" {
+		timezone = "UTC"
+	}
+
+	startDate := pgtype.Date{Time: anchorDateUTC(start), Valid: true}
+	var endDate pgtype.Date
+	if end != nil {
+		endDate = pgtype.Date{Time: anchorDateUTC(*end), Valid: true}
+	}
+
+	var startOut, endOut pgtype.Timestamptz
+	err := r.queryer().QueryRow(ctx, `
+SELECT ($1::date::timestamp AT TIME ZONE $2)::timestamptz,
+       CASE WHEN $3::date IS NULL THEN NULL
+            ELSE ($3::date::timestamp AT TIME ZONE $2)::timestamptz END
+`, startDate, timezone, endDate).Scan(&startOut, &endOut)
+	if err != nil {
+		return time.Time{}, nil, fmt.Errorf("anchor all-day occurrence in %q: %w", timezone, err)
+	}
+	if !startOut.Valid {
+		return time.Time{}, nil, fmt.Errorf("anchor all-day occurrence in %q: database returned no start", timezone)
+	}
+
+	var endPtr *time.Time
+	if endOut.Valid {
+		t := endOut.Time
+		endPtr = &t
+	}
+	return startOut.Time, endPtr, nil
+}
+
+// anchorDateUTC keeps only the civil date of t, at midnight UTC, so it can be
+// sent to PostgreSQL as a date without any timezone conversion.
+func anchorDateUTC(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
 // CheckOccurrenceOverlap returns true if [startTime, endTime) overlaps any existing
@@ -3513,6 +3571,8 @@ func occurrenceRowToOccurrence(
 	endTime pgtype.Timestamptz,
 	timezone string,
 	isAllDay bool,
+	localDate pgtype.Date,
+	localEndDate pgtype.Date,
 	doorTime pgtype.Timestamptz,
 	venueID pgtype.UUID,
 	venueULID pgtype.Text,
@@ -3550,6 +3610,13 @@ func occurrenceRowToOccurrence(
 	if endTime.Valid {
 		t := endTime.Time
 		occ.EndTime = &t
+	}
+	if localDate.Valid {
+		occ.LocalDate = localDate.Time
+	}
+	if localEndDate.Valid {
+		t := localEndDate.Time
+		occ.LocalEndDate = &t
 	}
 	if doorTime.Valid {
 		t := doorTime.Time
@@ -3623,6 +3690,7 @@ func (r *EventRepository) InsertOccurrence(ctx context.Context, params events.Oc
 		row.StartTime, row.EndTime,
 		row.Timezone,
 		row.IsAllDay,
+		row.LocalDate, row.LocalEndDate,
 		row.DoorTime,
 		row.VenueID, pgtype.Text{String: row.VenueUlid, Valid: row.VenueUlid != ""},
 		row.VirtualUrl, row.TicketUrl,
@@ -3656,6 +3724,7 @@ func (r *EventRepository) GetOccurrenceByID(ctx context.Context, eventID string,
 		row.StartTime, row.EndTime,
 		row.Timezone,
 		row.IsAllDay,
+		row.LocalDate, row.LocalEndDate,
 		row.DoorTime,
 		row.VenueID, row.VenueUlid,
 		row.VirtualUrl, row.TicketUrl,
@@ -3739,6 +3808,7 @@ func (r *EventRepository) UpdateOccurrence(ctx context.Context, eventID string, 
 		row.StartTime, row.EndTime,
 		row.Timezone,
 		row.IsAllDay,
+		row.LocalDate, row.LocalEndDate,
 		row.DoorTime,
 		row.VenueID, pgtype.Text{String: row.VenueUlid, Valid: row.VenueUlid != ""},
 		row.VirtualUrl, row.TicketUrl,

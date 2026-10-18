@@ -93,11 +93,17 @@ type Event struct {
 }
 
 type Occurrence struct {
-	ID            string
-	StartTime     time.Time
-	EndTime       *time.Time
-	Timezone      string
-	IsAllDay      bool
+	ID        string
+	StartTime time.Time
+	EndTime   *time.Time
+	Timezone  string
+	IsAllDay  bool
+	// LocalDate and LocalEndDate are the civil dates PostgreSQL derives from
+	// the instants (start_time/end_time AT TIME ZONE timezone). They are the
+	// authority for re-anchoring a stored date-only row: never re-derive a
+	// stored date from the instant with the host's tzdata.
+	LocalDate     time.Time
+	LocalEndDate  *time.Time
 	DoorTime      *time.Time
 	VenueID       *string // UUID from event_occurrences.venue_id (for DB operations)
 	VenueULID     *string // ULID from places.ulid (for URI building)
@@ -327,6 +333,13 @@ type Repository interface {
 	// Use this to serialise concurrent operations that read-then-write the same event
 	// (e.g. add-occurrence overlap check + insert).
 	LockEventForUpdate(ctx context.Context, eventID string) error
+
+	// AnchorAllDayOccurrence returns the instants PostgreSQL computes for the
+	// civil dates carried by start/end (time-of-day is ignored) in the given
+	// zone. This is the single all-day anchoring authority: the generated
+	// local_date/local_start_time columns apply the inverse conversion with the
+	// same tzdata, so Go and SQL cannot disagree about midnight.
+	AnchorAllDayOccurrence(ctx context.Context, start time.Time, end *time.Time, timezone string) (time.Time, *time.Time, error)
 
 	// InsertOccurrence inserts a new occurrence row and returns the created occurrence.
 	// It differs from CreateOccurrence (which returns only an error) in that it returns

@@ -224,6 +224,7 @@ type mockTransactionalRepo struct {
 	getReviewQueueEntryFunc                         func(ctx context.Context, id int) (*ReviewQueueEntry, error)
 	lockReviewQueueEntryForUpdateFunc               func(ctx context.Context, id int) (*ReviewQueueEntry, error)
 	checkOccurrenceOverlapFunc                      func(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time) (bool, error)
+	anchorAllDayFunc                                func(ctx context.Context, start time.Time, end *time.Time, timezone string) (time.Time, *time.Time, error)
 	createOccurrenceFunc                            func(ctx context.Context, params OccurrenceCreateParams) error
 	softDeleteEventFunc                             func(ctx context.Context, ulid, reason string) error
 	mergeReviewFunc                                 func(ctx context.Context, id int, reviewedBy string, primaryEventULID string) (*ReviewQueueEntry, error)
@@ -254,6 +255,13 @@ type mockTransactionalRepo struct {
 func (m *mockTransactionalRepo) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// Return self as transaction-scoped repository
 	return m, &mockTxCommitter{repo: m}, nil
+}
+
+func (m *mockTransactionalRepo) AnchorAllDayOccurrence(ctx context.Context, start time.Time, end *time.Time, timezone string) (time.Time, *time.Time, error) {
+	if m.anchorAllDayFunc != nil {
+		return m.anchorAllDayFunc(ctx, start, end, timezone)
+	}
+	return anchorAllDayInZone(start, end, timezone)
 }
 
 func (m *mockTransactionalRepo) GetByULID(ctx context.Context, ulid string) (*Event, error) {

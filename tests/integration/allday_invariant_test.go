@@ -982,3 +982,73 @@ func TestAdminFixReviewEndOnlyKeepsParisCivilDate(t *testing.T) {
 
 	assertAllDayRowsAreAnchored(t, env)
 }
+
+// TestAllDayAnchoringUsesPostgresTzdataAuthority pins the single-authority
+// rule against the real database: a date-only write stores the instant that the
+// DB's own tzdata calls midnight, so the generated local_date/local_start_time
+// columns agree by construction. The host Go tzdata is irrelevant — the test
+// compares the stored instant with the value Postgres computes from the same
+// civil date, and America/Vancouver in January is a zone where the two tzdata
+// releases have disagreed (BC's permanent-time rule).
+func TestAllDayAnchoringUsesPostgresTzdataAuthority(t *testing.T) {
+	env := setupTestEnv(t)
+
+	insertAdminUser(t, env, alldayTestAdminUser, alldayTestAdminPassword, "allday-admin@example.com", "admin")
+	adminToken := adminLogin(t, env, alldayTestAdminUser, alldayTestAdminPassword)
+	agentKey := insertAPIKey(t, env, "allday-agent-tz-authority")
+
+	date := testhelpers.WinterDate(10)
+	ulid := createEventAsAgent(t, env, agentKey, map[string]any{
+		"name":        "Tz Authority Event",
+		"description": "A timed occurrence re-anchored as all-day in a zone with a recent rule change.",
+		"startDate":   date + "T19:00:00-05:00",
+		"occurrences": []map[string]any{
+			{"startDate": date + "T19:00:00-05:00", "endDate": date + "T21:00:00-05:00"},
+		},
+		"location": map[string]any{
+			"name":            "The Rex",
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+		},
+	})
+
+	subs := subEvents(t, getEventAsAgent(t, env, ulid))
+	require.Len(t, subs, 1)
+	occurrenceUUID := occurrenceUUIDFromSubEvent(t, subs[0])
+
+	// The wire value carries the host-tzdata offset shape for Vancouver January
+	// (-07:00). The writer must ignore that offset and anchor the civil date the
+	// value carries, using the database's zone rules.
+	resp := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+		"all_day":    true,
+		"timezone":   "America/Vancouver",
+		"start_time": date + "T00:00:00-07:00",
+		"end_time":   date + "T00:00:00-07:00",
+	})
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var failure map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "PUT all-day Vancouver: status=%d response=%v", resp.StatusCode, failure)
+	}
+
+	startDate, startClock, endDate, endClock, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
+	require.True(t, isAllDay)
+	require.Equal(t, date, startDate, "the civil date the value carries must survive the anchor")
+	require.Equal(t, "00:00:00", startClock, "the generated local clock must be midnight in the DB's tzdata")
+	require.Equal(t, date, endDate)
+	require.Equal(t, "00:00:00", endClock)
+
+	// The stored instant is exactly the one Postgres computes from the date and
+	// zone — the same expression the generated columns invert.
+	var dbAnchor time.Time
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT ($1::date::timestamp AT TIME ZONE 'America/Vancouver')`, date).Scan(&dbAnchor))
+	var storedStart time.Time
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT start_time FROM event_occurrences WHERE id = $1::uuid`, occurrenceUUID).Scan(&storedStart))
+	require.True(t, storedStart.Equal(dbAnchor),
+		"stored instant %s must equal the DB anchor %s", storedStart.Format(time.RFC3339), dbAnchor.Format(time.RFC3339))
+
+	assertAllDayRowsAreAnchored(t, env)
+}

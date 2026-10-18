@@ -369,6 +369,8 @@ SELECT o.id,
        o.price_currency,
        o.availability,
        o.is_all_day,
+       o.local_date,
+       (o.end_time AT TIME ZONE o.timezone)::date AS local_end_date,
        o.created_at,
        o.updated_at
   FROM event_occurrences o
@@ -398,6 +400,8 @@ type GetOccurrenceByIDRow struct {
 	PriceCurrency pgtype.Text        `json:"price_currency"`
 	Availability  pgtype.Text        `json:"availability"`
 	IsAllDay      bool               `json:"is_all_day"`
+	LocalDate     pgtype.Date        `json:"local_date"`
+	LocalEndDate  pgtype.Date        `json:"local_end_date"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 }
@@ -422,6 +426,8 @@ func (q *Queries) GetOccurrenceByID(ctx context.Context, arg GetOccurrenceByIDPa
 		&i.PriceCurrency,
 		&i.Availability,
 		&i.IsAllDay,
+		&i.LocalDate,
+		&i.LocalEndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -496,7 +502,9 @@ INSERT INTO event_occurrences (
     $13
 )
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, is_all_day, created_at, updated_at,
+          ticket_url, price_min, price_max, price_currency, availability, is_all_day,
+          local_date, (end_time AT TIME ZONE timezone)::date AS local_end_date,
+          created_at, updated_at,
           COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid
 `
 
@@ -531,6 +539,8 @@ type InsertOccurrenceRow struct {
 	PriceCurrency pgtype.Text        `json:"price_currency"`
 	Availability  pgtype.Text        `json:"availability"`
 	IsAllDay      bool               `json:"is_all_day"`
+	LocalDate     pgtype.Date        `json:"local_date"`
+	LocalEndDate  pgtype.Date        `json:"local_end_date"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	VenueUlid     string             `json:"venue_ulid"`
@@ -569,6 +579,8 @@ func (q *Queries) InsertOccurrence(ctx context.Context, arg InsertOccurrencePara
 		&i.PriceCurrency,
 		&i.Availability,
 		&i.IsAllDay,
+		&i.LocalDate,
+		&i.LocalEndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.VenueUlid,
@@ -753,7 +765,9 @@ UPDATE event_occurrences
  WHERE id = $20::uuid
    AND event_id = $21::uuid
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, is_all_day, created_at, updated_at,
+          ticket_url, price_min, price_max, price_currency, availability, is_all_day,
+          local_date, (end_time AT TIME ZONE timezone)::date AS local_end_date,
+          created_at, updated_at,
           COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid
 `
 
@@ -796,6 +810,8 @@ type UpdateOccurrenceByIDRow struct {
 	PriceCurrency pgtype.Text        `json:"price_currency"`
 	Availability  pgtype.Text        `json:"availability"`
 	IsAllDay      bool               `json:"is_all_day"`
+	LocalDate     pgtype.Date        `json:"local_date"`
+	LocalEndDate  pgtype.Date        `json:"local_end_date"`
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
 	VenueUlid     string             `json:"venue_ulid"`
@@ -844,6 +860,8 @@ func (q *Queries) UpdateOccurrenceByID(ctx context.Context, arg UpdateOccurrence
 		&i.PriceCurrency,
 		&i.Availability,
 		&i.IsAllDay,
+		&i.LocalDate,
+		&i.LocalEndDate,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.VenueUlid,

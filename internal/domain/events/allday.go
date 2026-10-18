@@ -1,6 +1,10 @@
 package events
 
-import "time"
+import (
+	"context"
+	"fmt"
+	"time"
+)
 
 // All-day invariant — one rule, one place.
 //
@@ -11,10 +15,9 @@ import "time"
 //
 // and a genuinely timed occurrence keeps its instant and carries no marker.
 //
-// Ingestion has enforced this since the all-day/date-only work (see
-// parseAllDayDate in ingest.go). Every other writer must route through
-// NormalizeOccurrenceAllDay so the two halves of the pair are written together
-// and cannot drift apart.
+// Ingestion has enforced this since the all-day/date-only work. Every other
+// writer must route through NormalizeOccurrenceAllDay so the two halves of the
+// pair are written together and cannot drift apart.
 //
 // The drift is not cosmetic. The wire layer renders an is_all_day row as a bare
 // YYYY-MM-DD date, so a row holding 2026-11-05T19:00:00-05:00 with
@@ -22,13 +25,37 @@ import "time"
 // and recurrence all see 19:00 — every "all-day rows are local midnight"
 // assumption downstream becomes false.
 //
+// One anchoring authority. The local date and the local clock are derived by
+// PostgreSQL (`start_time AT TIME ZONE timezone`): the generated columns
+// local_date/local_start_time use exactly that expression. Go must therefore
+// never turn a civil date into an instant with its own tzdata — the host Go
+// tzdata and the database image's tzdata can disagree on a zone's offset (for
+// example America/Vancouver after BC's permanent-time rule), and then a row
+// Go calls "midnight" reads back as 23:00 or 01:00 and the civil date drifts.
+//
+// The split is:
+//   - Go determines the civil date a write intends: the date the input value
+//     carries in its own offset (the same rule as ingest).
+//   - AllDayAnchorer (the Postgres repository) turns (date, zone) into the
+//     stored instant, using the same tzdata as the generated columns.
+//
+// A read that has to re-anchor an existing row takes the civil date from the
+// database (`Occurrence.LocalDate` / `LocalEndDate`, both computed with
+// AT TIME ZONE), never from `instant.In(hostLocation)`.
+type AllDayAnchorer interface {
+	// AnchorAllDayOccurrence returns the instants PostgreSQL computes for the
+	// civil dates carried by start and end (time-of-day is ignored) in the
+	// given zone. It is the single authority for all-day anchoring.
+	AnchorAllDayOccurrence(ctx context.Context, start time.Time, end *time.Time, timezone string) (time.Time, *time.Time, error)
+}
+
 // NormalizeOccurrenceAllDay returns the canonical (start, end, error) tuple
 // for a single occurrence write:
 //
-//   - allDay true  → start and end are re-anchored to local midnight in loc
-//     (the occurrence's own zone) of the civil date each value carries — the
-//     same date rule ingestion applies to startDate, so one wire value anchors
-//     to one date through either entry point;
+//   - allDay true  → start and end are anchored to local midnight in the
+//     occurrence's zone by anchorer, for the civil date each value carries —
+//     the same date rule ingestion applies to startDate, so one wire value
+//     anchors to one date through either entry point;
 //   - allDay false → the instants are returned verbatim and the marker is
 //     cleared.
 //
@@ -36,69 +63,66 @@ import "time"
 // next to un-normalised instants is exactly the bug this function exists to
 // prevent; so is leaving is_all_day = true on a row whose instant was just
 // retimed off local midnight.
-func NormalizeOccurrenceAllDay(start time.Time, end *time.Time, allDay bool, loc *time.Location) (time.Time, *time.Time, error) {
+func NormalizeOccurrenceAllDay(ctx context.Context, anchorer AllDayAnchorer, start time.Time, end *time.Time, allDay bool, timezone string) (time.Time, *time.Time, error) {
 	if !allDay {
 		return start, end, nil
 	}
+	if anchorer == nil {
+		return time.Time{}, nil, fmt.Errorf("normalize all-day occurrence: no anchorer")
+	}
 
-	nStart, err := anchorAllDayInstant(start, loc)
+	nStart, nEnd, err := anchorer.AnchorAllDayOccurrence(ctx, start, end, timezone)
 	if err != nil {
-		return time.Time{}, nil, err
+		return time.Time{}, nil, fmt.Errorf("anchor all-day occurrence: %w", err)
 	}
-
-	var nEnd *time.Time
-	if end != nil {
-		e, err := anchorAllDayInstant(*end, loc)
-		if err != nil {
-			return time.Time{}, nil, err
-		}
-		nEnd = &e
-	}
-
 	return nStart, nEnd, nil
 }
 
-// anchorAllDayInstant delegates the anchoring rule to parseAllDayDate — the
-// same function ingestion uses — so exactly one implementation decides "which
-// civil date, and midnight in which zone".
-//
-// The civil date is the date the value carries (its leading date in its own
-// offset), exactly as ingestion takes it from startDate. A midnight stamped in
-// a zone east of the occurrence's (the shape both ingest producers emit for a
-// date-only source value) therefore keeps its date instead of landing a day
-// early. The result is local midnight of that date in loc (nil → UTC).
-//
-// A value read back from the database does NOT carry the occurrence's zone
-// (pgx ScanLocation is nil → time.Unix → time.Local), so its own-offset date can
-// be a day early for a row east of the server zone. Express such a value in
-// the row's zone with rowInstant before passing it here.
-func anchorAllDayInstant(t time.Time, loc *time.Location) (time.Time, error) {
-	return parseAllDayDate(t.Format(time.RFC3339), loc)
+// civilDateUTC returns the civil date carried by t, as midnight UTC. It reads
+// t's own wall-clock date (its own offset/zone, or the wall fields the caller
+// constructed), never the host's tzdata: that is the date the value carries.
+// Use it only to pass a civil date to the anchoring authority — never to turn a
+// stored instant back into a date.
+func civilDateUTC(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
 }
 
-// rowInstant re-expresses an instant read from the database in the zone of the
-// row it came from (nil → UTC), so the date it carries is the row's civil
-// date. Client-supplied values must not go through it: their own offset is the
-// date the client meant.
-func rowInstant(t time.Time, loc *time.Location) time.Time {
-	if loc == nil {
-		loc = time.UTC
+// occurrenceCivilDate returns the database-computed civil date of a stored
+// occurrence edge. The fallback exists only for in-memory values that never
+// came from a row (tests, hand-built fixtures); the production read paths
+// always populate LocalDate/LocalEndDate from the DB.
+func occurrenceCivilDate(local time.Time, fallback time.Time) time.Time {
+	if !local.IsZero() {
+		return local
 	}
-	return t.In(loc)
+	return civilDateUTC(fallback)
 }
 
-// rowInstantPtr is rowInstant for an optional instant.
-func rowInstantPtr(t *time.Time, loc *time.Location) *time.Time {
-	if t == nil {
-		return nil
+// occurrenceCivilDatePtr is occurrenceCivilDate for an optional edge.
+func occurrenceCivilDatePtr(local *time.Time, fallback time.Time) *time.Time {
+	if local != nil {
+		d := *local
+		return &d
 	}
-	r := rowInstant(*t, loc)
-	return &r
+	d := civilDateUTC(fallback)
+	return &d
 }
 
-// isLocalMidnight reports whether t is exactly midnight in loc. It is the
-// "agrees with the instant" half of the invariant: a row may only carry
-// is_all_day = true when this holds for its start_time.
+// occurrenceEndBeforeStart compares an occurrence window. For a date-only row
+// it compares the civil dates the values carry: two midnights of the same civil
+// date can be different instants when one value carries a positive offset.
+func occurrenceEndBeforeStart(start, end time.Time, allDay bool) bool {
+	if allDay {
+		return civilDateUTC(end).Before(civilDateUTC(start))
+	}
+	return end.Before(start)
+}
+
+// isLocalMidnight reports whether t is exactly midnight in loc. It is used for
+// the admin retime heuristic (is the *requested* value still a local
+// midnight?), not to anchor a write. All-day anchoring itself is done by
+// AllDayAnchorer.
 func isLocalMidnight(t time.Time, loc *time.Location) bool {
 	if loc == nil {
 		loc = time.UTC
@@ -133,4 +157,11 @@ func occurrenceZone(requestTZ string, rowTZ string, defaultTZ string) *time.Loca
 		zone = defaultTZ
 	}
 	return locationOrUTC(zone)
+}
+
+// occurrenceZoneName is occurrenceZone as the IANA name the anchoring authority
+// needs. The resolved location's name is used so an empty or unloadable input
+// becomes "UTC" consistently on both sides.
+func occurrenceZoneName(requestTZ string, rowTZ string, defaultTZ string) string {
+	return occurrenceZone(requestTZ, rowTZ, defaultTZ).String()
 }

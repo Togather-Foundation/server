@@ -484,7 +484,7 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 - **Expected:**
   - `AdminService.FixAndApproveEventWithReview` atomically applies the correction, publishes the event, and approves the review entry in one transaction.
   - Corrections address the event's own dates, which mirror `occurrences[0]`: for an event with exactly one occurrence the whole-event update is used, for a series only that one row is rewritten (`UpdateOccurrenceDatesByOccurrenceID`) and every sibling row is left untouched.
-  - The all-day marker and the instant are normalised together (marker true ⇒ local midnight in the occurrence's zone), per occurrence — never taken from the event-level flag for a series. Approving with no corrections rewrites no occurrence row at all.
+  - The all-day marker and the instant are normalised together (marker true ⇒ local midnight in the occurrence's zone), per occurrence — never taken from the event-level flag for a series. The midnight is computed by PostgreSQL (`AT TIME ZONE`, the same tzdata as the generated `local_date`/`local_start_time` columns), not by the host Go tzdata. Approving with no corrections rewrites no occurrence row at all.
   - At least one correction is required (400 if both startDate and endDate are null).
   - If the event has no occurrences, one is created from the corrected dates (that path is unchanged).
 

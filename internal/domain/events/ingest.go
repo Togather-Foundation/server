@@ -155,13 +155,17 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		var end *time.Time
 		var err error
 		if input.AllDay {
-			start, err = parseAllDayDate(input.StartDate, loc)
+			startDate, err := parseAllDayCivilDate(input.StartDate)
 			if err != nil {
 				return fmt.Errorf("parse startDate: %w", err)
 			}
-			end, err = parseAllDayEndDate(input.EndDate, loc)
+			endDate, err := parseAllDayEndCivilDate(input.EndDate)
 			if err != nil {
 				return fmt.Errorf("parse end date: %w", err)
+			}
+			start, end, err = NormalizeOccurrenceAllDay(ctx, repo, startDate, endDate, true, occurrenceZoneName("", "", s.defaultTZ))
+			if err != nil {
+				return fmt.Errorf("anchor startDate: %w", err)
 			}
 		} else {
 			start, err = parseEventStartDate(input.StartDate, loc)
@@ -232,13 +236,17 @@ func (s *IngestService) createOccurrencesWithRepo(ctx context.Context, repo Repo
 		var end *time.Time
 		var err error
 		if allDay {
-			start, err = parseAllDayDate(occ.StartDate, loc)
+			startDate, err := parseAllDayCivilDate(occ.StartDate)
 			if err != nil {
 				return fmt.Errorf("parse occurrence startDate: %w", err)
 			}
-			end, err = parseAllDayEndDate(occ.EndDate, loc)
+			endDate, err := parseAllDayEndCivilDate(occ.EndDate)
 			if err != nil {
 				return fmt.Errorf("parse occurrence end date: %w", err)
+			}
+			start, end, err = NormalizeOccurrenceAllDay(ctx, repo, startDate, endDate, true, occurrenceZoneName(tz, "", s.defaultTZ))
+			if err != nil {
+				return fmt.Errorf("anchor occurrence startDate: %w", err)
 			}
 		} else {
 			start, err = parseEventStartDate(occ.StartDate, loc)
@@ -979,43 +987,37 @@ func parseEventEndDate(raw string, loc *time.Location) (*time.Time, error) {
 	return nil, fmt.Errorf("invalid endDate %q", raw)
 }
 
-// parseAllDayDate anchors an all-day occurrence date to its intended civil
-// calendar date, then stores it as local midnight in targetLoc (the
-// occurrence's target timezone). The intended date is derived from the input
-// value as expressed in the input's own location:
+// parseAllDayCivilDate extracts the civil date an all-day input value carries:
 //   - a bare YYYY-MM-DD string is that calendar date; and
 //   - an RFC 3339 value is its local date in the value's own offset/zone.
 //
-// Re-anchoring to local midnight in the occurrence's target zone keeps the
-// stored instant consistent with the authoritative Timezone column, so a later
-// DateIn(start, occurrence.Timezone) reproduces the intended date regardless of
-// the node's own timezone.
-func parseAllDayDate(raw string, targetLoc *time.Location) (time.Time, error) {
+// It returns a date-only value at midnight UTC. It deliberately does not turn
+// the date into an instant: the anchoring authority (the database, via
+// AllDayAnchorer.AnchorAllDayOccurrence) applies the occurrence's zone with its
+// own tzdata, the same data the generated local_date/local_start_time columns
+// use.
+func parseAllDayCivilDate(raw string) (time.Time, error) {
 	trimmed := strings.TrimSpace(raw)
 	if t, err := time.Parse(time.RFC3339, trimmed); err == nil {
-		// t.Date() returns the civil date in t's own offset/zone.
-		y, m, d := t.Date()
-		if targetLoc == nil {
-			targetLoc = time.UTC
-		}
-		return time.Date(y, m, d, 0, 0, 0, 0, targetLoc), nil
+		return civilDateUTC(t), nil
 	}
 	if isDateOnly(trimmed) {
-		if targetLoc == nil {
-			targetLoc = time.UTC
+		t, err := time.Parse("2006-01-02", trimmed)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("invalid startDate %q: %w", raw, err)
 		}
-		return time.ParseInLocation("2006-01-02", trimmed, targetLoc)
+		return civilDateUTC(t), nil
 	}
 	return time.Time{}, fmt.Errorf("invalid startDate %q", raw)
 }
 
-// parseAllDayEndDate is the optional-end variant of parseAllDayDate.
-func parseAllDayEndDate(raw string, targetLoc *time.Location) (*time.Time, error) {
+// parseAllDayEndCivilDate is the optional-end variant of parseAllDayCivilDate.
+func parseAllDayEndCivilDate(raw string) (*time.Time, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return nil, nil
 	}
-	t, err := parseAllDayDate(trimmed, targetLoc)
+	t, err := parseAllDayCivilDate(trimmed)
 	if err != nil {
 		return nil, fmt.Errorf("invalid endDate %q: %w", raw, err)
 	}
@@ -1023,35 +1025,38 @@ func parseAllDayEndDate(raw string, targetLoc *time.Location) (*time.Time, error
 }
 
 // parseEventTimes extracts start and end times from validated event input.
-// All-day inputs are anchored with parseAllDayDate (the same re-anchoring used
-// when storing occurrences) so the review queue snapshot's event_start_time
-// matches the stored occurrence instant, even for allDay:true + RFC 3339 input.
-func parseEventTimes(input EventInput, defaultTZ string) (time.Time, *time.Time) {
-	loc := locationOrUTC(defaultTZ)
-	var start time.Time
-	var end *time.Time
+// All-day inputs are anchored through the same AllDayAnchorer the occurrence
+// writer uses, so the review queue snapshot's event_start_time matches the
+// stored occurrence instant, even for allDay:true + RFC 3339 input, and neither
+// side depends on the host's tzdata.
+func (s *IngestService) parseEventTimes(ctx context.Context, anchorer AllDayAnchorer, input EventInput) (time.Time, *time.Time, error) {
+	loc := locationOrUTC(s.defaultTZ)
 
 	if input.AllDay {
-		if s, err := parseAllDayDate(input.StartDate, loc); err == nil {
-			start = s
-		} else {
-			start = time.Now() // fallback, should not happen after validation
+		startDate, err := parseAllDayCivilDate(input.StartDate)
+		if err != nil {
+			return time.Time{}, nil, fmt.Errorf("parse all-day startDate for review queue: %w", err)
 		}
-		if e, err := parseAllDayEndDate(input.EndDate, loc); err == nil {
-			end = e
+		endDate, err := parseAllDayEndCivilDate(input.EndDate)
+		if err != nil {
+			return time.Time{}, nil, fmt.Errorf("parse all-day endDate for review queue: %w", err)
 		}
-	} else {
-		if s, err := parseEventStartDate(input.StartDate, loc); err == nil {
-			start = s
-		} else {
-			start = time.Now() // fallback, should not happen after validation
+		start, end, err := NormalizeOccurrenceAllDay(ctx, anchorer, startDate, endDate, true, occurrenceZoneName("", "", s.defaultTZ))
+		if err != nil {
+			return time.Time{}, nil, fmt.Errorf("anchor all-day review queue dates: %w", err)
 		}
-		if e, err := parseEventEndDate(input.EndDate, loc); err == nil {
-			end = e
-		}
+		return start, end, nil
 	}
 
-	return start, end
+	start, err := parseEventStartDate(input.StartDate, loc)
+	if err != nil {
+		return time.Time{}, nil, fmt.Errorf("parse startDate for review queue: %w", err)
+	}
+	end, err := parseEventEndDate(input.EndDate, loc)
+	if err != nil {
+		return time.Time{}, nil, fmt.Errorf("parse endDate for review queue: %w", err)
+	}
+	return start, end, nil
 }
 
 // parseEventTimesFromEvent extracts start/end times from an existing Event's first occurrence.

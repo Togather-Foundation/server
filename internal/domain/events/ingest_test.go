@@ -938,6 +938,10 @@ func (m *MockRepository) DismissPendingReviewsByEventULIDs(_ context.Context, _ 
 	return nil, nil
 }
 
+func (m *MockRepository) AnchorAllDayOccurrence(ctx context.Context, start time.Time, end *time.Time, timezone string) (time.Time, *time.Time, error) {
+	return anchorAllDayInZone(start, end, timezone)
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (Repository, TxCommitter, error) {
 	// For testing, return self and a no-op committer
 	return m, &noOpTxCommitter{}, nil

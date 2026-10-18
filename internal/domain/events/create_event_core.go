@@ -795,7 +795,10 @@ func (s *IngestService) createEventCore(
 			sourceIDPtr = &sourceID
 		}
 
-		startTime, endTime := parseEventTimes(validated, s.defaultTZ)
+		startTime, endTime, err := s.parseEventTimes(ctx, dbRepo, validated)
+		if err != nil {
+			return nil, fmt.Errorf("review queue dates: %w", err)
+		}
 		reviewEntry, err := dbRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
 			EventID:            event.ID,
 			OriginalPayload:    originalJSON,

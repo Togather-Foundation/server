@@ -29,7 +29,7 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 
 	t.Run("timed instant is returned verbatim with the marker clear", func(t *testing.T) {
 		start := time.Date(2026, 11, 5, 19, 0, 0, 0, loc)
-		gotStart, gotEnd, err := NormalizeOccurrenceAllDay(start, &end, false, loc)
+		gotStart, gotEnd, err := NormalizeOccurrenceAllDay(context.Background(), fakeAllDayAnchorer{loc: loc}, start, &end, false, loc.String())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -43,7 +43,7 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 
 	t.Run("all-day anchors a timed instant to local midnight in the row zone", func(t *testing.T) {
 		start := time.Date(2026, 11, 5, 19, 0, 0, 0, loc)
-		gotStart, gotEnd, err := NormalizeOccurrenceAllDay(start, &end, true, loc)
+		gotStart, gotEnd, err := NormalizeOccurrenceAllDay(context.Background(), fakeAllDayAnchorer{loc: loc}, start, &end, true, loc.String())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -65,7 +65,7 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 		// for the same startDate, so the admin writers must take it too, anchored
 		// to midnight in the occurrence's zone.
 		start := time.Date(2026, 11, 6, 2, 0, 0, 0, time.UTC)
-		gotStart, _, err := NormalizeOccurrenceAllDay(start, nil, true, loc)
+		gotStart, _, err := NormalizeOccurrenceAllDay(context.Background(), fakeAllDayAnchorer{loc: loc}, start, nil, true, loc.String())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -76,10 +76,10 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 	})
 
 	t.Run("bare date anchoring matches ingest for an ambiguous zone", func(t *testing.T) {
-		// Same rule as parseAllDayDate with a YYYY-MM-DD input: midnight in the
+		// Same rule as parseAllDayCivilDate with a YYYY-MM-DD input: the carried date
 		// target zone.
 		start := time.Date(2026, 3, 8, 12, 30, 0, 0, loc) // DST spring-forward day
-		gotStart, _, err := NormalizeOccurrenceAllDay(start, nil, true, loc)
+		gotStart, _, err := NormalizeOccurrenceAllDay(context.Background(), fakeAllDayAnchorer{loc: loc}, start, nil, true, loc.String())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -89,7 +89,7 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 	})
 }
 
-// TestAllDayDateRuleBothEntryPoints pins that ingestion (parseAllDayDate) and the
+// TestAllDayDateRuleBothEntryPoints pins that ingestion (parseAllDayCivilDate) and the
 // admin writers (NormalizeOccurrenceAllDay) anchor the same wire value to the
 // same instant, including values whose own offset differs from the
 // occurrence's zone.
@@ -107,17 +107,21 @@ func TestAllDayDateRuleBothEntryPoints(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			ingest, err := parseAllDayDate(tc.raw, loc)
+			ingestDate, err := parseAllDayCivilDate(tc.raw)
 			if err != nil {
-				t.Fatalf("parseAllDayDate: %v", err)
+				t.Fatalf("parseAllDayCivilDate: %v", err)
 			}
-			parsed := ingest
+			ingest, _, err := NormalizeOccurrenceAllDay(context.Background(), fakeAllDayAnchorer{loc: loc}, ingestDate, nil, true, loc.String())
+			if err != nil {
+				t.Fatalf("NormalizeOccurrenceAllDay: %v", err)
+			}
+			parsed := ingestDate
 			if len(tc.raw) > len("2006-01-02") {
 				if parsed, err = time.Parse(time.RFC3339, tc.raw); err != nil {
 					t.Fatalf("parse %q: %v", tc.raw, err)
 				}
 			}
-			admin, _, err := NormalizeOccurrenceAllDay(parsed, nil, true, loc)
+			admin, _, err := NormalizeOccurrenceAllDay(context.Background(), fakeAllDayAnchorer{loc: loc}, parsed, nil, true, loc.String())
 			if err != nil {
 				t.Fatalf("NormalizeOccurrenceAllDay: %v", err)
 			}
@@ -138,8 +142,10 @@ func TestAllDayDateRuleBothEntryPoints(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load Europe/Paris: %v", err)
 		}
-		stored := time.Date(2026, 3, 5, 0, 0, 0, 0, paris).UTC() // pgx hands back UTC/local
-		got, _, err := NormalizeOccurrenceAllDay(rowInstant(stored, paris), nil, true, paris)
+		// The database says the row's civil date is the 5th. The API must use
+		// that date, not one re-derived from the instant in the host's tzdata.
+		dbDate := time.Date(2026, 3, 5, 0, 0, 0, 0, time.UTC)
+		got, _, err := NormalizeOccurrenceAllDay(context.Background(), fakeAllDayAnchorer{loc: paris}, dbDate, nil, true, paris.String())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -149,37 +155,31 @@ func TestAllDayDateRuleBothEntryPoints(t *testing.T) {
 	})
 }
 
-// TestAnchorAllDayInstantPositiveOffset pins the F1 fix for a positive-offset
-// zone: a correctly-anchored Paris all-day row read back from the DB carries
-// the server's local zone (pgx ScanLocation nil → time.Unix → time.Local), not
-// Paris. The writers express a stored instant in the row's zone (rowInstant)
-// before anchoring, so the 6th survives a DB round-trip — not the 5th the
-// value's own UTC offset would produce.
-func TestAnchorAllDayInstantPositiveOffset(t *testing.T) {
-	paris, err := time.LoadLocation("Europe/Paris")
-	if err != nil {
-		t.Fatalf("load Europe/Paris: %v", err)
-	}
+// TestNormalizeOccurrenceAllDayUsesAnchorerAuthority pins the single-authority
+// rule: the instant comes from the anchorer (Postgres in production), not from
+// converting the civil date with the Go host's tzdata. The fake anchorer claims
+// a -08:00 offset for America/Vancouver while a host on the newer tzdata says
+// -07:00; the anchored instant must follow the authority.
+func TestNormalizeOccurrenceAllDayUsesAnchorerAuthority(t *testing.T) {
+	carried := time.Date(2027, 1, 15, 0, 0, 0, 0, time.UTC)
 
-	midnightParis := time.Date(2026, 11, 6, 0, 0, 0, 0, paris)
-	dbValue := midnightParis.UTC() // what a pgx read yields (location UTC)
+	// Host tzdata shape (BC permanent time, -07:00) vs database shape (-08:00).
+	hostShape := time.FixedZone("America/Vancouver", -7*3600)
+	dbShape := time.FixedZone("America/Vancouver", -8*3600)
 
-	got, err := anchorAllDayInstant(rowInstant(dbValue, paris), paris)
+	got, _, err := NormalizeOccurrenceAllDay(context.Background(), fakeAllDayAnchorer{loc: dbShape}, carried, nil, true, "America/Vancouver")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !got.Equal(midnightParis) {
-		t.Errorf("anchor(%s, Europe/Paris) = %s, want %s (the civil date must survive a DB round-trip)",
-			dbValue.Format(time.RFC3339), got.Format(time.RFC3339), midnightParis.Format(time.RFC3339))
+	want := time.Date(2027, 1, 15, 0, 0, 0, 0, dbShape)
+	if !got.Equal(want) {
+		t.Errorf("anchor = %s, want the authority's %s", got.Format(time.RFC3339), want.Format(time.RFC3339))
 	}
-
-	// nil loc is treated as UTC.
-	gotUTC, err := anchorAllDayInstant(rowInstant(dbValue, nil), nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if hostAnchor := time.Date(2027, 1, 15, 0, 0, 0, 0, hostShape); got.Equal(hostAnchor) {
+		t.Errorf("anchor = %s followed the host tzdata; it must follow the anchoring authority", got.Format(time.RFC3339))
 	}
-	if y, m, d := gotUTC.Date(); y != 2026 || m != time.November || d != 5 {
-		t.Errorf("anchor(nil loc → UTC) date = %04d-%02d-%02d, want 2026-11-05", y, m, d)
+	if !isLocalMidnight(got, dbShape) {
+		t.Errorf("anchored %s is not local midnight in the authority's zone", got.Format(time.RFC3339))
 	}
 }
 
@@ -208,7 +208,10 @@ func TestUpdateOccurrenceOnEvent_TzChangePositiveOffsetPreservesCivilDate(t *tes
 		return &Event{ID: "event-uuid", ULID: "01HEVENT000000000000000001", LifecycleState: "draft", PrimaryVenueID: &venueID}, nil
 	}
 	repo.getOccurrenceByIDFunc = func(_ context.Context, _ string, _ string) (*Occurrence, error) {
-		return &Occurrence{ID: "occ-uuid", StartTime: dbStart, Timezone: "Europe/Paris", IsAllDay: true}, nil
+		return &Occurrence{
+			ID: "occ-uuid", StartTime: dbStart, Timezone: "Europe/Paris", IsAllDay: true,
+			LocalDate: time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC),
+		}, nil
 	}
 	repo.updateOccurrenceFunc = func(_ context.Context, _, _ string, params OccurrenceUpdateParams) (*Occurrence, error) {
 		captured = params

@@ -241,7 +241,9 @@ INSERT INTO event_occurrences (
     sqlc.arg('is_all_day')
 )
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, is_all_day, created_at, updated_at,
+          ticket_url, price_min, price_max, price_currency, availability, is_all_day,
+          local_date, (end_time AT TIME ZONE timezone)::date AS local_end_date,
+          created_at, updated_at,
           COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid;
 
 -- name: GetOccurrenceByID :one
@@ -261,6 +263,8 @@ SELECT o.id,
        o.price_currency,
        o.availability,
        o.is_all_day,
+       o.local_date,
+       (o.end_time AT TIME ZONE o.timezone)::date AS local_end_date,
        o.created_at,
        o.updated_at
   FROM event_occurrences o
@@ -289,7 +293,9 @@ UPDATE event_occurrences
  WHERE id = sqlc.arg('id')::uuid
    AND event_id = sqlc.arg('event_id')::uuid
 RETURNING id, event_id, start_time, end_time, timezone, door_time, venue_id, virtual_url,
-          ticket_url, price_min, price_max, price_currency, availability, is_all_day, created_at, updated_at,
+          ticket_url, price_min, price_max, price_currency, availability, is_all_day,
+          local_date, (end_time AT TIME ZONE timezone)::date AS local_end_date,
+          created_at, updated_at,
           COALESCE((SELECT p.ulid FROM places p WHERE p.id = event_occurrences.venue_id), '')::text AS venue_ulid;
 
 -- name: DeleteOccurrenceByID :one

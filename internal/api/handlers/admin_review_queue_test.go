@@ -298,6 +298,10 @@ func (m *MockRepository) CleanupExpiredReviews(ctx context.Context) error {
 	return args.Error(0)
 }
 
+func (m *MockRepository) AnchorAllDayOccurrence(ctx context.Context, start time.Time, end *time.Time, timezone string) (time.Time, *time.Time, error) {
+	return anchorAllDayForHandlerTest(start, end, timezone)
+}
+
 func (m *MockRepository) BeginTx(ctx context.Context) (events.Repository, events.TxCommitter, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(events.Repository), args.Get(1).(events.TxCommitter), args.Error(2)
