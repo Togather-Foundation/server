@@ -1483,18 +1483,21 @@ func (s *AdminService) FixAndApproveEventWithReview(ctx context.Context, eventUL
 		// which mirror occurrences[0] (see the event-level startDate/endDate in
 		// docs/api/openapi.yaml), so only that row may move.
 		first := existing.Occurrences[0]
+		// Stored instants are read back in the server's zone; express them in the
+		// row's own zone so the civil date they carry is the row's.
+		rowZone := occurrenceZone("", first.Timezone, s.defaultTZ)
 
 		// Determine effective start and end times for the corrected row.
 		if startDate != nil {
 			effectiveStart = *startDate
 		} else {
-			effectiveStart = first.StartTime
+			effectiveStart = rowInstant(first.StartTime, rowZone)
 		}
 
 		if endDate != nil {
 			effectiveEnd = endDate
 		} else {
-			effectiveEnd = first.EndTime
+			effectiveEnd = rowInstantPtr(first.EndTime, rowZone)
 		}
 
 		// Validate: end must not be before start
@@ -2901,7 +2904,11 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 	//   - an unrelated PATCH writes neither the marker nor the instants.
 	zone := occurrenceZone(stringOrEmpty(params.Timezone), current.Timezone, s.defaultTZ)
 
-	effectiveStart := current.StartTime
+	// Stored instants are read back in the server's zone; express them in the
+	// row's own zone so the civil date they carry is the row's. Client values
+	// keep their own offset: that is the date the client meant.
+	rowZone := occurrenceZone("", current.Timezone, s.defaultTZ)
+	effectiveStart := rowInstant(current.StartTime, rowZone)
 	if params.StartTime != nil {
 		effectiveStart = *params.StartTime
 	}
@@ -2909,7 +2916,7 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 	if params.EndTimeSet {
 		effectiveEnd = params.EndTime
 	} else {
-		effectiveEnd = current.EndTime
+		effectiveEnd = rowInstantPtr(current.EndTime, rowZone)
 	}
 
 	effectiveAllDay := current.IsAllDay

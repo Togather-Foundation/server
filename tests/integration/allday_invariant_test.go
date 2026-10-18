@@ -865,3 +865,84 @@ func TestAdminAllDayInvariantPositiveOffsetZone(t *testing.T) {
 		require.True(t, isAllDay)
 	})
 }
+
+// TestAllDayDateRuleSameWireValueBothEntryPoints pins that ingestion and the
+// admin occurrence PUT anchor the same wire value to the same civil date. The
+// value 02:00Z carries the 17th in its own offset but is the evening of the
+// 16th in Toronto; both doors must take the date the value carries.
+// Regression: t_5958de44 (ingest stored the 17th, the PUT stored the 16th).
+func TestAllDayDateRuleSameWireValueBothEntryPoints(t *testing.T) {
+	env := setupTestEnv(t)
+
+	insertAdminUser(t, env, alldayTestAdminUser, alldayTestAdminPassword, "allday-admin@example.com", "admin")
+	adminToken := adminLogin(t, env, alldayTestAdminUser, alldayTestAdminPassword)
+	agentKey := insertAPIKey(t, env, "allday-agent-same-rule")
+
+	wire := testhelpers.WinterDate(7) + "T02:00:00Z"
+
+	// Door 1: ingest.
+	ingestULID := createEventAsAgent(t, env, agentKey, map[string]any{
+		"name":        "Same Rule Ingest Door",
+		"description": "All-day event ingested with an offset-mismatched RFC3339 value.",
+		"allDay":      true,
+		"startDate":   wire,
+		"location": map[string]any{
+			"name":            "Ingest Door Hall",
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+		},
+	})
+	ingestSubs := subEvents(t, getEventAsAgent(t, env, ingestULID))
+	require.Len(t, ingestSubs, 1)
+	ingestOcc := occurrenceUUIDFromSubEvent(t, ingestSubs[0])
+
+	// Door 2: admin PUT on a timed occurrence in the same zone.
+	putULID := createEventAsAgent(t, env, agentKey, map[string]any{
+		"name":        "Same Rule Admin Door",
+		"description": "Timed event later marked all-day through the admin PUT.",
+		"startDate":   testhelpers.WinterDate(12) + "T19:00:00-05:00",
+		"occurrences": []map[string]any{
+			{"startDate": testhelpers.WinterDate(12) + "T19:00:00-05:00", "endDate": testhelpers.WinterDate(12) + "T21:00:00-05:00"},
+		},
+		"location": map[string]any{
+			"name":            "Admin Door Hall",
+			"addressLocality": "Toronto",
+			"addressRegion":   "ON",
+		},
+	})
+	putSubs := subEvents(t, getEventAsAgent(t, env, putULID))
+	require.Len(t, putSubs, 1)
+	putOcc := occurrenceUUIDFromSubEvent(t, putSubs[0])
+
+	resp := putOccurrence(t, env, adminToken, putULID, putOcc, map[string]any{
+		"all_day":    true,
+		"start_time": wire,
+		"end_time":   nil,
+	})
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode, "PUT occurrence with all_day:true")
+
+	var updated map[string]any
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&updated))
+	require.Equal(t, testhelpers.WinterDate(7)+"T00:00:00-05:00", updated["start_time"],
+		"the admin PUT must anchor the date the value carries")
+
+	// end_time is NULL on both rows, which occurrenceLocalWindow cannot scan.
+	startOf := func(occ string) (date, clock string, allDay bool) {
+		require.NoError(t, env.Pool.QueryRow(env.Context, `
+			SELECT to_char(local_date, 'YYYY-MM-DD'), to_char(local_start_time, 'HH24:MI:SS'), is_all_day
+			  FROM event_occurrences WHERE id = $1::uuid
+		`, occ).Scan(&date, &clock, &allDay))
+		return date, clock, allDay
+	}
+	ingestDate, ingestClock, ingestAllDay := startOf(ingestOcc)
+	putDate, putClock, putAllDay := startOf(putOcc)
+	require.True(t, ingestAllDay)
+	require.True(t, putAllDay)
+	require.Equal(t, testhelpers.WinterDate(7), ingestDate, "ingest anchors the carried date")
+	require.Equal(t, ingestDate, putDate, "both entry points must store the same civil date for the same wire value")
+	require.Equal(t, "00:00:00", ingestClock)
+	require.Equal(t, ingestClock, putClock)
+
+	assertAllDayRowsAreAnchored(t, env)
+}

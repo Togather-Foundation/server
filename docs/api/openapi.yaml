@@ -3370,14 +3370,19 @@ components:
             is anchored to local midnight in its timezone. This marker does not
             change the wire encoding: start_time and end_time are always RFC3339
             date-times in the admin occurrence API (both request and response).
-            Sending all_day: true anchors start_time and end_time to local midnight
-            of their civil date in the occurrence's timezone (the civil date is the
-            date in the occurrence's own zone); retiming an all-day occurrence to a
-            time off local midnight — on either start_time or end_time — clears the
-            marker, so a stored row can never claim is_all_day while holding a timed
-            instant. Clearing the end with end_time: null does not clear the marker:
-            a date-only occurrence may have no end. This is the same
-            normalisation ingestion applies to a bare YYYY-MM-DD startDate.
+            Sending all_day: true anchors start_time and end_time to local midnight,
+            in the occurrence's timezone, of the civil date each value carries (the
+            leading date of the RFC3339 value, in the value's own offset). That is
+            the same date rule ingestion applies to startDate, so the same value
+            anchors to the same date through either entry point; a value that is
+            midnight in a zone east of the occurrence's keeps the date it carries
+            rather than moving a day earlier. A start_time the request does not
+            supply is taken from the stored row, whose date is read in the
+            occurrence's timezone. Retiming an all-day occurrence to a time off
+            local midnight — on either start_time or end_time — clears the marker,
+            so a stored row can never claim is_all_day while holding a timed
+            instant. Clearing the end with end_time: null does not clear the
+            marker: a date-only occurrence may have no end.
         venue_ulid:
           type: [string, 'null']
           description: ULID of the venue for this occurrence, or null to clear

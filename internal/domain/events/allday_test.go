@@ -60,16 +60,16 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 		}
 	})
 
-	t.Run("the civil date is the date in the occurrence's own zone", func(t *testing.T) {
-		// 2026-11-06T02:00:00Z is 2026-11-05 22:00 in Toronto. The civil date is
-		// the one in the occurrence's own (target) zone, so the 5th — not the
-		// 6th the value's own UTC offset would suggest — is the date anchored.
+	t.Run("the civil date is the date the value carries", func(t *testing.T) {
+		// 2026-11-06T02:00:00Z carries the 6th. That is the date ingestion takes
+		// for the same startDate, so the admin writers must take it too, anchored
+		// to midnight in the occurrence's zone.
 		start := time.Date(2026, 11, 6, 2, 0, 0, 0, time.UTC)
 		gotStart, _, err := NormalizeOccurrenceAllDay(start, nil, true, loc)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		want := time.Date(2026, 11, 5, 0, 0, 0, 0, loc)
+		want := time.Date(2026, 11, 6, 0, 0, 0, 0, loc)
 		if !gotStart.Equal(want) {
 			t.Errorf("start = %s, want %s", gotStart, want)
 		}
@@ -89,12 +89,72 @@ func TestNormalizeOccurrenceAllDay(t *testing.T) {
 	})
 }
 
+// TestAllDayDateRuleBothEntryPoints pins that ingestion (parseAllDayDate) and the
+// admin writers (NormalizeOccurrenceAllDay) anchor the same wire value to the
+// same instant, including values whose own offset differs from the
+// occurrence's zone.
+func TestAllDayDateRuleBothEntryPoints(t *testing.T) {
+	loc := toronto(t)
+	cases := []struct {
+		name string
+		raw  string
+		want string // civil date
+	}{
+		{"UTC value that is the previous evening in the zone", "2026-11-06T02:00:00Z", "2026-11-06"},
+		{"already midnight in the zone", "2026-11-06T00:00:00-05:00", "2026-11-06"},
+		{"midnight east of the zone", "2026-03-05T00:00:00+01:00", "2026-03-05"},
+		{"bare date", "2026-11-06", "2026-11-06"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ingest, err := parseAllDayDate(tc.raw, loc)
+			if err != nil {
+				t.Fatalf("parseAllDayDate: %v", err)
+			}
+			parsed := ingest
+			if len(tc.raw) > len("2006-01-02") {
+				if parsed, err = time.Parse(time.RFC3339, tc.raw); err != nil {
+					t.Fatalf("parse %q: %v", tc.raw, err)
+				}
+			}
+			admin, _, err := NormalizeOccurrenceAllDay(parsed, nil, true, loc)
+			if err != nil {
+				t.Fatalf("NormalizeOccurrenceAllDay: %v", err)
+			}
+			if !ingest.Equal(admin) {
+				t.Errorf("entry points disagree on %q: ingest %s, admin %s", tc.raw, ingest.Format(time.RFC3339), admin.Format(time.RFC3339))
+			}
+			if got := admin.In(loc).Format(time.DateOnly); got != tc.want {
+				t.Errorf("civil date = %s, want %s", got, tc.want)
+			}
+			if !isLocalMidnight(admin, loc) {
+				t.Errorf("anchored %s is not local midnight in %s", admin, loc)
+			}
+		})
+	}
+
+	t.Run("row read keeps the row's civil date", func(t *testing.T) {
+		paris, err := time.LoadLocation("Europe/Paris")
+		if err != nil {
+			t.Fatalf("load Europe/Paris: %v", err)
+		}
+		stored := time.Date(2026, 3, 5, 0, 0, 0, 0, paris).UTC() // pgx hands back UTC/local
+		got, _, err := NormalizeOccurrenceAllDay(rowInstant(stored, paris), nil, true, paris)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if want := time.Date(2026, 3, 5, 0, 0, 0, 0, paris); !got.Equal(want) {
+			t.Errorf("got %s, want %s", got, want)
+		}
+	})
+}
+
 // TestAnchorAllDayInstantPositiveOffset pins the F1 fix for a positive-offset
 // zone: a correctly-anchored Paris all-day row read back from the DB carries
 // the server's local zone (pgx ScanLocation nil → time.Unix → time.Local), not
-// Paris. The civil date must come from the occurrence's own zone (Paris), so
-// the 6th survives a DB round-trip — not the 5th the value's own UTC offset
-// would produce.
+// Paris. The writers express a stored instant in the row's zone (rowInstant)
+// before anchoring, so the 6th survives a DB round-trip — not the 5th the
+// value's own UTC offset would produce.
 func TestAnchorAllDayInstantPositiveOffset(t *testing.T) {
 	paris, err := time.LoadLocation("Europe/Paris")
 	if err != nil {
@@ -104,7 +164,7 @@ func TestAnchorAllDayInstantPositiveOffset(t *testing.T) {
 	midnightParis := time.Date(2026, 11, 6, 0, 0, 0, 0, paris)
 	dbValue := midnightParis.UTC() // what a pgx read yields (location UTC)
 
-	got, err := anchorAllDayInstant(dbValue, paris)
+	got, err := anchorAllDayInstant(rowInstant(dbValue, paris), paris)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -114,7 +174,7 @@ func TestAnchorAllDayInstantPositiveOffset(t *testing.T) {
 	}
 
 	// nil loc is treated as UTC.
-	gotUTC, err := anchorAllDayInstant(dbValue, nil)
+	gotUTC, err := anchorAllDayInstant(rowInstant(dbValue, nil), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

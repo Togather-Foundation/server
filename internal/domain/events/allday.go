@@ -25,8 +25,10 @@ import "time"
 // NormalizeOccurrenceAllDay returns the canonical (start, end, error) tuple
 // for a single occurrence write:
 //
-//   - allDay true  → start and end are re-anchored to local midnight of their
-//     civil date in loc (the occurrence's own zone);
+//   - allDay true  → start and end are re-anchored to local midnight in loc
+//     (the occurrence's own zone) of the civil date each value carries — the
+//     same date rule ingestion applies to startDate, so one wire value anchors
+//     to one date through either entry point;
 //   - allDay false → the instants are returned verbatim and the marker is
 //     cleared.
 //
@@ -60,20 +62,38 @@ func NormalizeOccurrenceAllDay(start time.Time, end *time.Time, allDay bool, loc
 // same function ingestion uses — so exactly one implementation decides "which
 // civil date, and midnight in which zone".
 //
-// The civil date is the date in the occurrence's own (target) zone, not in the
-// value's own offset. A DB-read instant carries the server's local zone (pgx
-// ScanLocation is nil → time.Unix → time.Local), so formatting it verbatim
-// would take the civil date a day early for any row east of the server zone.
-// We therefore re-express the instant in loc first (nil → UTC), then
-// round-trip through RFC3339 so parseAllDayDate picks the date in that zone and
-// re-anchors to midnight there. This is idempotent for canonical rows (already
-// midnight in loc) and correct for client instants interpreted in the
-// occurrence zone.
+// The civil date is the date the value carries (its leading date in its own
+// offset), exactly as ingestion takes it from startDate. A midnight stamped in
+// a zone east of the occurrence's (the shape both ingest producers emit for a
+// date-only source value) therefore keeps its date instead of landing a day
+// early. The result is local midnight of that date in loc (nil → UTC).
+//
+// A value read back from the database does NOT carry the occurrence's zone
+// (pgx ScanLocation is nil → time.Unix → time.Local), so its own-offset date can
+// be a day early for a row east of the server zone. Express such a value in
+// the row's zone with rowInstant before passing it here.
 func anchorAllDayInstant(t time.Time, loc *time.Location) (time.Time, error) {
+	return parseAllDayDate(t.Format(time.RFC3339), loc)
+}
+
+// rowInstant re-expresses an instant read from the database in the zone of the
+// row it came from (nil → UTC), so the date it carries is the row's civil
+// date. Client-supplied values must not go through it: their own offset is the
+// date the client meant.
+func rowInstant(t time.Time, loc *time.Location) time.Time {
 	if loc == nil {
 		loc = time.UTC
 	}
-	return parseAllDayDate(t.In(loc).Format(time.RFC3339), loc)
+	return t.In(loc)
+}
+
+// rowInstantPtr is rowInstant for an optional instant.
+func rowInstantPtr(t *time.Time, loc *time.Location) *time.Time {
+	if t == nil {
+		return nil
+	}
+	r := rowInstant(*t, loc)
+	return &r
 }
 
 // isLocalMidnight reports whether t is exactly midnight in loc. It is the
