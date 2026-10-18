@@ -1050,5 +1050,45 @@ func TestAllDayAnchoringUsesPostgresTzdataAuthority(t *testing.T) {
 	require.True(t, storedStart.Equal(dbAnchor),
 		"stored instant %s must equal the DB anchor %s", storedStart.Format(time.RFC3339), dbAnchor.Format(time.RFC3339))
 
+	// Re-sending the DB-canonical instant with no all_day field must not clear
+	// the date-only marker. The retime classifier has to use the anchoring
+	// authority, not the host's tzdata: on a host whose tzdata calls this
+	// instant 01:00, the old classifier dropped the marker.
+	vancouver, err := time.LoadLocation("America/Vancouver")
+	require.NoError(t, err)
+	canonical := storedStart.In(vancouver).Format(time.RFC3339)
+	resend := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+		"timezone":   "America/Vancouver",
+		"start_time": canonical,
+		"end_time":   canonical,
+	})
+	defer func() { _ = resend.Body.Close() }()
+	if resend.StatusCode != http.StatusOK {
+		var failure map[string]any
+		_ = json.NewDecoder(resend.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "PUT canonical all-day: status=%d response=%v", resend.StatusCode, failure)
+	}
+	_, startClock, _, endClock, isAllDay = occurrenceLocalWindow(t, env, occurrenceUUID)
+	require.True(t, isAllDay, "re-sending the DB-canonical midnight must keep the all-day marker")
+	require.Equal(t, "00:00:00", startClock)
+	require.Equal(t, "00:00:00", endClock)
+
+	// A genuine retime off midnight with no all_day field still clears it.
+	retimed := putOccurrence(t, env, adminToken, ulid, occurrenceUUID, map[string]any{
+		"timezone":   "America/Vancouver",
+		"start_time": date + "T12:00:00-08:00",
+		"end_time":   date + "T13:00:00-08:00",
+	})
+	defer func() { _ = retimed.Body.Close() }()
+	if retimed.StatusCode != http.StatusOK {
+		var failure map[string]any
+		_ = json.NewDecoder(retimed.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "PUT retimed: status=%d response=%v", retimed.StatusCode, failure)
+	}
+	_, startClock, _, endClock, isAllDay = occurrenceLocalWindow(t, env, occurrenceUUID)
+	require.False(t, isAllDay, "a retime off midnight must clear the all-day marker")
+	require.Equal(t, "12:00:00", startClock)
+	require.Equal(t, "13:00:00", endClock)
+
 	assertAllDayRowsAreAnchored(t, env)
 }

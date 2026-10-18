@@ -119,10 +119,10 @@ func occurrenceEndBeforeStart(start, end time.Time, allDay bool) bool {
 	return end.Before(start)
 }
 
-// isLocalMidnight reports whether t is exactly midnight in loc. It is used for
-// the admin retime heuristic (is the *requested* value still a local
-// midnight?), not to anchor a write. All-day anchoring itself is done by
-// AllDayAnchorer.
+// isLocalMidnight reports whether t is exactly midnight in loc using the GO
+// tzdata. It is a test-side predicate only: production classification of a
+// retime (is the requested value still local midnight?) uses
+// isLocalMidnightByAuthority, so it agrees with the anchoring authority.
 func isLocalMidnight(t time.Time, loc *time.Location) bool {
 	if loc == nil {
 		loc = time.UTC
@@ -133,6 +133,22 @@ func isLocalMidnight(t time.Time, loc *time.Location) bool {
 	}
 	h, m, s := local.Clock()
 	return h == 0 && m == 0 && s == 0
+}
+
+// isLocalMidnightByAuthority reports whether t is exactly the instant the
+// anchoring authority calls local midnight for the civil date t carries in its
+// own offset. It is the admin retime classifier: using the authority means a
+// PATCH that re-sends the DB-canonical midnight keeps the date-only marker even
+// when the host's tzdata would call that instant 01:00 (or 23:00).
+func isLocalMidnightByAuthority(ctx context.Context, anchorer AllDayAnchorer, t time.Time, timezone string) (bool, error) {
+	if anchorer == nil {
+		return false, fmt.Errorf("classify all-day midnight: no anchorer")
+	}
+	anchored, _, err := anchorer.AnchorAllDayOccurrence(ctx, civilDateUTC(t), nil, timezone)
+	if err != nil {
+		return false, fmt.Errorf("classify all-day midnight in %q: %w", timezone, err)
+	}
+	return anchored.Equal(t), nil
 }
 
 // sameInstant reports whether two optional instants denote the same point in

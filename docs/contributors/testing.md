@@ -564,7 +564,7 @@ A literal date that can never rot may stay if it carries a `// fixed-date: <reas
 
 ### All-day anchoring and tzdata
 
-All-day occurrence instants are anchored by **PostgreSQL**, not by Go: `EventRepository.AnchorAllDayOccurrence` turns `(civil date, zone)` into the stored instant with `AT TIME ZONE`, the same expression the generated `local_date` / `local_start_time` columns invert. Go only extracts the civil date the input value carries. This matters because the host Go tzdata and the PostgreSQL image can be different releases and disagree about a zone (for example `America/Vancouver` after BC's permanent-time rule), which used to make a row that Go called midnight read back as 23:00 or 01:00 and drift the civil date.
+All-day occurrence instants are anchored by **PostgreSQL**, not by Go: `EventRepository.AnchorAllDayOccurrence` turns `(civil date, zone)` into the stored instant with `AT TIME ZONE`, the same expression the generated `local_date` / `local_start_time` columns invert. Go only extracts the civil date the input value carries. This matters because the host Go tzdata and the PostgreSQL image can be different releases and disagree about a zone (for example `America/Vancouver` after BC's permanent-time rule), which used to make a row that Go called midnight read back as 23:00 or 01:00 and drift the civil date. The admin retime classifier (`isLocalMidnightByAuthority`) uses the same authority, so re-sending the DB-canonical midnight does not clear the date-only marker.
 
 Tests must therefore:
 - assert the database's `local_date` / `local_start_time` (or compare `start_time` with `SELECT (date::timestamp AT TIME ZONE zone)`) instead of computing an expected offset with Go's tzdata;

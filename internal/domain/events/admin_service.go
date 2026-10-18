@@ -2912,8 +2912,7 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 	//     a row whose instant just moved off local midnight may not keep
 	//     claiming to be date-only;
 	//   - an unrelated PATCH writes neither the marker nor the instants.
-	zoneLoc := occurrenceZone(stringOrEmpty(params.Timezone), current.Timezone, s.defaultTZ)
-	zone := zoneLoc.String()
+	zone := occurrenceZoneName(stringOrEmpty(params.Timezone), current.Timezone, s.defaultTZ)
 
 	// Client values keep their own offset: that is the date the client meant.
 	// For an edge the request does not touch, take the civil date the DATABASE
@@ -2939,9 +2938,25 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 		// The row was date-only. Retiming EITHER edge off local midnight makes
 		// it a timed row, so clear the marker — not just when the start moves.
 		// A timed end alone makes the row timed too (the invariant requires
-		// start and, when present, end to be local midnight).
-		startTimed := params.StartTime != nil && !isLocalMidnight(*params.StartTime, zoneLoc)
-		endTimed := params.EndTimeSet && params.EndTime != nil && !isLocalMidnight(*params.EndTime, zoneLoc)
+		// start and, when present, end to be local midnight). Classify with the
+		// anchoring authority (Postgres), not the host's tzdata: a PATCH that
+		// re-sends the DB-canonical midnight must not clear the marker.
+		startTimed := false
+		if params.StartTime != nil {
+			midnight, err := isLocalMidnightByAuthority(ctx, txRepo, *params.StartTime, zone)
+			if err != nil {
+				return nil, fmt.Errorf("classify retimed start of occurrence %s: %w", occurrenceID, err)
+			}
+			startTimed = !midnight
+		}
+		endTimed := false
+		if params.EndTimeSet && params.EndTime != nil {
+			midnight, err := isLocalMidnightByAuthority(ctx, txRepo, *params.EndTime, zone)
+			if err != nil {
+				return nil, fmt.Errorf("classify retimed end of occurrence %s: %w", occurrenceID, err)
+			}
+			endTimed = !midnight
+		}
 		if startTimed || endTimed {
 			effectiveAllDay = false
 		}

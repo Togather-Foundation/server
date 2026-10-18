@@ -620,3 +620,39 @@ func TestUpdateOccurrenceOnEvent_AllDayInvariant(t *testing.T) {
 		}
 	})
 }
+
+// TestIsLocalMidnightByAuthority pins the retime classifier to the anchoring
+// authority: the same instant that Postgres calls midnight keeps the marker,
+// even when the host's tzdata would call it 01:00.
+func TestIsLocalMidnightByAuthority(t *testing.T) {
+	dbShape := time.FixedZone("America/Vancouver", -8*3600)
+	hostShape := time.FixedZone("America/Vancouver", -7*3600)
+	anchorer := fakeAllDayAnchorer{loc: dbShape}
+
+	dbMidnight := time.Date(2027, 1, 20, 0, 0, 0, 0, dbShape)
+	got, err := isLocalMidnightByAuthority(context.Background(), anchorer, dbMidnight, "America/Vancouver")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !got {
+		t.Error("the DB-canonical midnight must be classified as local midnight")
+	}
+
+	hostMidnight := time.Date(2027, 1, 20, 0, 0, 0, 0, hostShape)
+	got, err = isLocalMidnightByAuthority(context.Background(), anchorer, hostMidnight, "America/Vancouver")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got {
+		t.Error("the host-tzdata midnight is not the authority's midnight")
+	}
+
+	timed := time.Date(2027, 1, 20, 12, 0, 0, 0, dbShape)
+	got, err = isLocalMidnightByAuthority(context.Background(), anchorer, timed, "America/Vancouver")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got {
+		t.Error("a timed value must not be classified as local midnight")
+	}
+}
