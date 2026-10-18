@@ -98,6 +98,9 @@ func scanTree(t *testing.T, root, dir string) []string {
 			out = append(out, literalDateViolations(t, root, pf, pkgYears)...)
 		}
 	}
+	// byDir is a map, so the order above is random. The producer owns a stable
+	// order rather than leaving every caller to remember to sort.
+	sort.Strings(out)
 	return out
 }
 
@@ -188,6 +191,11 @@ func literalDateViolations(t *testing.T, root string, pf parsedFile, pkgYears ma
 	// yearIdents are the package-level year constants plus, inside a function,
 	// that function's own year-literal locals (so an unrelated parameter that
 	// happens to share a name with another function's local is not flagged).
+	//
+	// Accepted over-reporting: the match is by name for the whole function, so a
+	// closure parameter that shadows a year-literal local is still reported. A
+	// guard should err toward false positives, and the escape hatch is one
+	// comment on the line.
 	yearIdents := pkgYears
 	visit := func(n ast.Node) bool {
 		switch x := n.(type) {

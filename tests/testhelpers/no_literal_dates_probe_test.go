@@ -71,3 +71,24 @@ var _ = "2031-02-03"
 		"pkg/top_test.go:5: time.Date with a literal year",
 	}, got)
 }
+
+// TestScanTreeReturnsSortedViolations pins that scanTree owns the order of its
+// result. It walks a map of directories, so without an explicit sort the order
+// changes from run to run and any exact-order assertion on it flakes.
+func TestScanTreeReturnsSortedViolations(t *testing.T) {
+	root := t.TempDir()
+	dirs := []string{"aaa", "bbb", "ccc", "ddd", "eee", "fff", "ggg"}
+	for _, d := range dirs {
+		path := filepath.Join(root, "pkg", d, "x_test.go")
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("package "+d+"\n\nvar _ = \"2031-02-03\"\n"), 0o644))
+	}
+
+	var want []string
+	for _, d := range dirs {
+		want = append(want, "pkg/"+d+"/x_test.go:3: string literal containing date \"2031-02-03\"")
+	}
+	for range 5 {
+		require.Equal(t, want, scanTree(t, root, "pkg"))
+	}
+}
