@@ -2940,7 +2940,7 @@ func (s *AdminService) UpdateOccurrenceOnEvent(ctx context.Context, eventULID st
 	// new zone instead could shift the event a day (an instant that is late
 	// evening in an east zone is the previous calendar day in a west zone).
 	if params.Timezone != nil && effectiveAllDay {
-		oldZone := locationOrUTC(current.Timezone)
+		oldZone := rowZone
 		if params.StartTime == nil {
 			y, m, d := effectiveStart.In(oldZone).Date()
 			effectiveStart = time.Date(y, m, d, 0, 0, 0, 0, zone)

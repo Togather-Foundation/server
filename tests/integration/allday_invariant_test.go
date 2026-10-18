@@ -946,3 +946,39 @@ func TestAllDayDateRuleSameWireValueBothEntryPoints(t *testing.T) {
 
 	assertAllDayRowsAreAnchored(t, env)
 }
+
+// TestAdminFixReviewEndOnlyKeepsParisCivilDate pins the row-read half of the
+// one-date-rule: a review fix that supplies only endDate takes its start from
+// the stored Paris row, which pgx hands back in the server's zone. The start
+// must be read in the row's zone, or on a server west of Paris it anchors a day
+// early.
+func TestAdminFixReviewEndOnlyKeepsParisCivilDate(t *testing.T) {
+	env := setupTestEnv(t)
+
+	insertAdminUser(t, env, alldayTestAdminUser, alldayTestAdminPassword, "allday-admin@example.com", "admin")
+	adminToken := adminLogin(t, env, alldayTestAdminUser, alldayTestAdminPassword)
+	agentKey := insertAPIKey(t, env, "allday-agent-fix-end-only")
+
+	date := testhelpers.WinterDate(9)
+	ulid, occurrenceUUID := newParisAllDayOccurrence(t, env, adminToken, agentKey, "Paris End Only Fix", date)
+
+	paris, err := time.LoadLocation("Europe/Paris")
+	require.NoError(t, err)
+	reviewID := insertPendingReviewForEvent(t, env, ulid, true, testhelpers.WinterTime(9, 0, 0, paris))
+
+	endDate := testhelpers.WinterTime(9, 0, 0, paris)
+	resp := postReviewFix(t, env, adminToken, reviewID, nil, &endDate)
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		var failure map[string]any
+		_ = json.NewDecoder(resp.Body).Decode(&failure)
+		require.Failf(t, "unexpected status", "fix review: status=%d response=%v", resp.StatusCode, failure)
+	}
+
+	startDate, startClock, _, _, isAllDay := occurrenceLocalWindow(t, env, occurrenceUUID)
+	require.True(t, isAllDay)
+	require.Equal(t, date, startDate, "the stored start must keep its Paris civil date")
+	require.Equal(t, "00:00:00", startClock)
+
+	assertAllDayRowsAreAnchored(t, env)
+}

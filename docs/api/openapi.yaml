@@ -3377,8 +3377,8 @@ components:
             anchors to the same date through either entry point; a value that is
             midnight in a zone east of the occurrence's keeps the date it carries
             rather than moving a day earlier. A start_time the request does not
-            supply is taken from the stored row, whose date is read in the
-            occurrence's timezone. Retiming an all-day occurrence to a time off
+            supply is taken from the stored row, whose date is read in the row's
+            current timezone (before any timezone change in the same request). Retiming an all-day occurrence to a time off
             local midnight — on either start_time or end_time — clears the marker,
             so a stored row can never claim is_all_day while holding a timed
             instant. Clearing the end with end_time: null does not clear the
