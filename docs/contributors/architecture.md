@@ -439,10 +439,12 @@ Allows authenticated agents to submit new events. Payloads follow schema.org/Eve
 Filtered queries over events. Publicly accessible.
 
 **Query Parameters:**
-- `start_after={ISO8601}`: Events starting after this time
-- `start_before={ISO8601}`: Events starting before this time
-- `location={city}` or `venue_id={id}`: Location filter
-- `q={text}`: Full-text search
+- `startDate={YYYY-MM-DD}`: Events starting on or after this date (defaults to today)
+- `endDate={YYYY-MM-DD}`: Events starting on or before this date (inclusive of the whole day)
+- `city={city}` or `region={region}`: Location filter (boundary semantics)
+- `venueId={ULID}` or `organizerId={ULID}`: Entity filter
+- `q={text}`: Full-text search (name and description)
+- `state={state}`, `domain={domain}`, `keywords={a,b}`: Lifecycle, domain, and keyword filters
 - `after={cursor}&limit=50`: Pagination (max limit: 200)
 
 **Response**: List envelope with items and next_cursor
@@ -467,8 +469,8 @@ Returns full event details. Supports content negotiation.
 Ordered change stream for federation and sync.
 
 **Query Parameters:**
-- `since={cursor}` or `after={cursor}`: Start from this sequence number
-- `limit={n}`: Events per page (default 100, max 1000)
+- `since={cursor}` or `after={legacy cursor}`: Start from this sequence number
+- `limit={n}`: Changes per page (default 50, max 200)
 
 **Response**: Change feed envelope with cursor and changes array
 
@@ -478,7 +480,7 @@ Planned endpoints (not implemented yet):
 - **`GET /api/v1/exports/events.jsonld`**: Single JSON-LD graph
 - **`GET /api/v1/exports/events.ndjson`**: Newline-delimited JSON-LD
 
-Planned filters: `start_after` and `start_before`.
+Planned filters: `startDate` and `endDate`.
 
 #### Admin Endpoints
 

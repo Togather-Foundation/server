@@ -29,7 +29,7 @@ For the Nominatim client design and usage policies, see [nominatim.md](nominatim
 
 The geocoding system enables three core capabilities:
 
-1. **Proximity Search**: Find places/events within a radius of coordinates (`near_lat`, `near_lon`, `radius`)
+1. **Proximity Search**: Find places within a radius of coordinates (`near_lat`, `near_lon`, `radius`). The events list endpoint does not implement proximity search yet — a `near_*`/`radius` parameter sent to `/api/v1/events` is ignored and reported in the response `warnings` array.
 2. **Search-Time Geocoding**: Convert place names to coordinates for proximity search (`near_place=Toronto City Hall`)
 3. **Background Enrichment**: Automatically geocode events/places missing coordinates on creation
 

@@ -404,19 +404,24 @@ GET /api/v1/events
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `limit` | integer | Number of results (default: 100, max: 1000) |
-| `after` | string | Cursor for pagination |
-| `startDate` | ISO 8601 | Filter events starting on or after this date |
-| `endDate` | ISO 8601 | Filter events starting on or before this date (inclusive of the entire endDate day) |
+| `limit` | integer | Number of results (default: 50, max: 200) |
+| `after` | string | Cursor for pagination (`cursor` is accepted as an alias) |
+| `startDate` | ISO 8601 date | Filter events starting on or after this date. Defaults to today when neither date is supplied. |
+| `endDate` | ISO 8601 date | Filter events starting on or before this date (inclusive of the entire endDate day) |
 | `city` | string | Requested city/locality. Each node is single-scope: a city within the node's configured localities (configs/boundary.yaml) matches the whole node, one outside it matches nothing. Not matched against per-event addressLocality. Ignored when the node configures no localities. |
 | `region` | string | Requested region/state, interpreted against the node's configured regions the same way as `city`; ignored when the node configures no regions. |
-| `venueULID` | ULID | Filter by specific venue |
-| `organizerULID` | ULID | Filter by specific organizer |
-| `lifecycleState` | string | Filter by state: `draft`, `published`, `deleted` |
-| `q` | string | Full-text search query (searches name and description) |
+| `venueId` | ULID | Filter by specific venue |
+| `organizerId` | ULID | Filter by specific organizer |
+| `state` | string | Filter by lifecycle state: `draft`, `published`, `postponed`, `rescheduled`, `sold_out`, `cancelled`, `completed` |
+| `q` | string | Full-text search query (searches name and description); `search` is accepted as an alias |
 | `keywords` | string | Comma-separated keywords |
-| `domain` | string | Event domain: `arts`, `sports`, `community`, etc. |
+| `domain` | string | Event domain: `arts`, `music`, `culture`, `sports`, `community`, `education`, `general` |
 | `context` | string | JSON-LD context emission mode: `item` (default) or `document`. Use `context=document` to emit a single top-level `@context` scoping all items instead of a full `@context` block per item — roughly halves list response size for clients with fixed output budgets. |
+
+> Parameter names above are the canonical camelCase forms. Snake_case aliases
+> (`start_date`, `end_date`, `venue_id`, `organizer_id`, `lifecycle_state`,
+> `event_domain`, `search`) are still accepted, but each one adds an entry to the
+> response `warnings` array. Prefer the canonical names.
 
 #### Response
 

@@ -90,7 +90,7 @@ Shared Events Library backend implementing the SEL Interoperability Profile.
 - Nominatim geocoding client with configurable timeout and country defaults
 - Background `GeocodingWorker` River jobs enqueued on batch ingestion
 - Reverse geocoding support for map UI interactions
-- Proximity search via `near_place` + `radius` query parameters on the events API
+- Proximity search via `near_place` + `radius` query parameters on the places API
 - PostgreSQL geocoding result cache with periodic cleanup job
 - PostGIS `geography` columns for spatial indexing
 

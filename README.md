@@ -78,7 +78,7 @@ curl https://toronto.togather.foundation/api/v1/events
 
 **Filter by date range:**
 ```bash
-curl "https://toronto.togather.foundation/api/v1/events?start_date=2026-03-01&end_date=2026-03-31"
+curl "https://toronto.togather.foundation/api/v1/events?startDate=2026-03-01&endDate=2026-03-31"
 ```
 
 **Interactive API explorer:**

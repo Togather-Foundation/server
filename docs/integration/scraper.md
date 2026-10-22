@@ -1525,14 +1525,17 @@ After a scrape run, verify results via the staging API:
 ```bash
 source .deploy.conf.staging
 
-# Check total event count
+# Check the API is serving events
 curl -s "https://$NODE_DOMAIN/api/v1/events?limit=1" \
-  | jq '.total_count // (.items | length)'
+  | jq '.items | length'
 
-# Check the review queue (events needing human review)
-curl -s "https://$NODE_DOMAIN/api/v1/events?lifecycle_state=review&limit=10" \
-  -H "Authorization: Bearer $PERF_ADMIN_API_KEY" \
-  | jq '[.items[] | {name: .name, source: .source_name}]'
+# Check the review queue (events needing human review).
+# Admin routes require a JWT — exchange the admin API key for one first.
+ADMIN_JWT=$(curl -s -X POST -H "Authorization: Bearer $PERF_ADMIN_API_KEY" \
+  "https://$NODE_DOMAIN/api/v1/auth/token" | jq -r '.token')
+curl -s "https://$NODE_DOMAIN/api/v1/admin/review-queue?status=pending&limit=10" \
+  -H "Authorization: Bearer $ADMIN_JWT" \
+  | jq '[.items[] | {name: .eventName, start: .eventStartTime}]'
 
 # List recent scraper runs (requires DB access)
 source .env
