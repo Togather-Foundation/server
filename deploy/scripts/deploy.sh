@@ -2047,7 +2047,13 @@ EOF
     # If current exists, copy it to previous (not symlink, actual copy for safety)
     if [[ -L "${current_link}" ]]; then
         local current_target=$(readlink "${current_link}")
-        if [[ -f "${current_target}" ]]; then
+        # The link holds a bare basename, so it only resolves against the
+        # history dir. This function runs in the caller's CWD (deploy() leaves
+        # it in deploy/docker), where a bare name does not exist, so testing
+        # "${current_target}" directly never advanced previous.json.
+        local current_path="${current_target}"
+        [[ "${current_path}" = /* ]] || current_path="${env_dir}/${current_target}"
+        if [[ -f "${current_path}" ]]; then
             rm -f "${previous_link}"
             ln -s "$(basename "${current_target}")" "${previous_link}"
             log "INFO" "Previous deployment link updated"
@@ -2109,11 +2115,55 @@ rollback_rebuild_hint() {
     log "ERROR" "  docker image ls togather-server"
 }
 
+# rollback_find_record - Find the history record that describes a version.
+# Args: $1 - env history dir, $2 - version, $3 - slot the version must be restored to
+# Prints a record path, or nothing. Read-only, never fails.
+rollback_find_record() {
+    local env_dir="$1"
+    local version="$2"
+    local slot="$3"
+
+    # previous.json is the fast path when it is accurate, and it is the record
+    # save_deployment_history wrote for the deployment one behind. Trust it only
+    # when it names the version we are restoring.
+    if [[ -e "${env_dir}/previous.json" ]] \
+        && jq -e --arg v "${version}" '.version == $v' "${env_dir}/previous.json" >/dev/null 2>&1; then
+        echo "${env_dir}/previous.json"
+        return 0
+    fi
+
+    # Otherwise scan the records in the directory. save_deployment_history
+    # writes one file per deployment, so the record for a version is still there
+    # when the link has gone stale. Prefer a record that also names this slot;
+    # the same version can legitimately have been deployed to either slot.
+    local f any_match=""
+    for f in "${env_dir}"/*.json; do
+        [[ -f "${f}" && ! -L "${f}" ]] || continue
+        if ! jq -e --arg v "${version}" '.version == $v' "${f}" >/dev/null 2>&1; then
+            continue
+        fi
+        local record_slot
+        record_slot=$(jq -r '.active_slot // empty' "${f}" 2>/dev/null || echo "")
+        if [[ -n "${slot}" && "${record_slot}" == "${slot}" ]]; then
+            echo "${f}"
+            return 0
+        fi
+        if [[ -z "${any_match}" ]]; then
+            any_match="${f}"
+        fi
+    done
+    if [[ -n "${any_match}" ]]; then
+        echo "${any_match}"
+    fi
+    return 0
+}
+
 # rollback_resolve_target - Work out which slot a rollback would restore and
 # which version/image belongs to it.
 # Args: $1 - environment
 # Sets: ROLLBACK_ACTIVE_SLOT, ROLLBACK_SLOT, ROLLBACK_PORT, ROLLBACK_HEALTH_URL,
-#       ROLLBACK_VERSION, ROLLBACK_COMMIT, ROLLBACK_IMAGE, ROLLBACK_RECORD
+#       ROLLBACK_VERSION, ROLLBACK_COMMIT, ROLLBACK_IMAGE, ROLLBACK_RECORD,
+#       ROLLBACK_SNAPSHOT
 # Returns: 0 on success, 1 when the fallback cannot be identified
 rollback_resolve_target() {
     local env="$1"
@@ -2127,53 +2177,65 @@ rollback_resolve_target() {
     fi
     ROLLBACK_HEALTH_URL="http://localhost:${ROLLBACK_PORT}/health"
 
-    # Deployment history: save_deployment_history keeps <env>/current.json for
-    # the live deployment and <env>/previous.json for the one before it, so
-    # previous.json is the rollback target.
-    local env_dir="${DEPLOYMENT_HISTORY_DIR}/${env}"
-    local record="${env_dir}/previous.json"
-    if [[ -L "${record}" ]]; then
-        record=$(readlink -f "${record}")
-    fi
-
     ROLLBACK_VERSION=""
     ROLLBACK_COMMIT=""
     ROLLBACK_IMAGE=""
     ROLLBACK_SNAPSHOT=""
     ROLLBACK_RECORD="none"
 
-    if [[ -f "${record}" ]] && jq -e . "${record}" >/dev/null 2>&1; then
-        ROLLBACK_RECORD="${record}"
-        ROLLBACK_VERSION=$(jq -r '.version // empty' "${record}" 2>/dev/null || echo "")
-        ROLLBACK_COMMIT=$(jq -r '.git_commit // empty' "${record}" 2>/dev/null || echo "")
-        ROLLBACK_IMAGE=$(jq -r '.docker_image // empty' "${record}" 2>/dev/null || echo "")
-        ROLLBACK_SNAPSHOT=$(jq -r '.snapshot_path // empty' "${record}" 2>/dev/null || echo "")
+    # The state file decides which version the retired slot last ran:
+    # update_deployment_state moves current_deployment into previous_deployment
+    # atomically on every flip, and get_inactive_slot already trusts the same
+    # file for the slot. The history directory is the secondary source and may
+    # only fill in the image name and snapshot path, because its previous.json
+    # link is not a reliable "one behind" record (see save_deployment_history).
+    ROLLBACK_VERSION=$(jq -r '.previous_deployment.version // empty' "${STATE_FILE}" 2>/dev/null || echo "")
+    ROLLBACK_COMMIT=$(jq -r '.previous_deployment.git_commit // empty' "${STATE_FILE}" 2>/dev/null || echo "")
 
-        local record_slot
-        record_slot=$(jq -r '.active_slot // empty' "${record}" 2>/dev/null || echo "")
-        if [[ -n "${record_slot}" && "${record_slot}" != "${ROLLBACK_SLOT}" ]]; then
-            log "ERROR" "State and history disagree about the rollback target."
-            log "ERROR" "  State:   active slot ${ROLLBACK_ACTIVE_SLOT}, so the retired slot is ${ROLLBACK_SLOT}"
-            log "ERROR" "  History: ${record} was recorded as the ${record_slot} deployment"
-            log "ERROR" "Refusing to guess. Reconcile ${STATE_FILE} with ${env_dir} first."
-            return 1
-        fi
-    else
-        log "WARN" "No deployment history record at ${record}; using the state file only"
-        ROLLBACK_VERSION=$(jq -r '.previous_deployment.version // empty' "${STATE_FILE}" 2>/dev/null || echo "")
-        ROLLBACK_COMMIT=$(jq -r '.previous_deployment.git_commit // empty' "${STATE_FILE}" 2>/dev/null || echo "")
+    local state_prev_slot
+    state_prev_slot=$(jq -r '.previous_deployment.active_slot // empty' "${STATE_FILE}" 2>/dev/null || echo "")
+    if [[ -n "${state_prev_slot}" && "${state_prev_slot}" != "${ROLLBACK_SLOT}" ]]; then
+        log "WARN" "State file is inconsistent: current_deployment.active_slot is ${ROLLBACK_ACTIVE_SLOT}"
+        log "WARN" "  so the retired slot is ${ROLLBACK_SLOT}, but previous_deployment.active_slot is ${state_prev_slot}."
+        log "WARN" "  Using previous_deployment.version (${ROLLBACK_VERSION:-none}); check ${STATE_FILE} afterwards."
     fi
 
     if [[ -z "${ROLLBACK_VERSION}" ]]; then
         log "ERROR" "Cannot determine which version to roll back to for ${env}."
-        log "ERROR" "  State file: ${STATE_FILE}"
-        log "ERROR" "  History:    ${env_dir}/previous.json"
+        log "ERROR" "  ${STATE_FILE} has no .previous_deployment.version"
+        log "ERROR" "  History: ${DEPLOYMENT_HISTORY_DIR}/${env}/previous.json"
         log "ERROR" "Rollback needs a previous deployment on record."
         return 1
     fi
 
+    local env_dir="${DEPLOYMENT_HISTORY_DIR}/${env}"
+    local prev_link="${env_dir}/previous.json"
+
+    # Say so when the link disagrees instead of silently working around it: the
+    # link is written with a CWD-relative test in save_deployment_history, so on
+    # older hosts it can name a deployment from several releases back.
+    if [[ -e "${prev_link}" ]]; then
+        local link_version
+        link_version=$(jq -r '.version // empty' "${prev_link}" 2>/dev/null || echo "")
+        if [[ "${link_version}" != "${ROLLBACK_VERSION}" ]]; then
+            log "WARN" "${prev_link} names ${link_version:-an unreadable record}, not ${ROLLBACK_VERSION}; ignoring it"
+        fi
+    fi
+
+    local record
+    record=$(rollback_find_record "${env_dir}" "${ROLLBACK_VERSION}" "${ROLLBACK_SLOT}")
+
+    if [[ -n "${record}" ]]; then
+        ROLLBACK_RECORD="${record}"
+        ROLLBACK_IMAGE=$(jq -r '.docker_image // empty' "${record}" 2>/dev/null || echo "")
+        ROLLBACK_SNAPSHOT=$(jq -r '.snapshot_path // empty' "${record}" 2>/dev/null || echo "")
+    else
+        log "WARN" "No history record for ${ROLLBACK_VERSION} under ${env_dir}"
+        log "WARN" "  Image name derived from the version; snapshot path unknown."
+    fi
+
     # Matches build_docker_image / save_deployment_history naming
-    if [[ -z "${ROLLBACK_IMAGE}" ]]; then
+    if [[ -z "${ROLLBACK_IMAGE}" || "${ROLLBACK_IMAGE}" == "none" ]]; then
         ROLLBACK_IMAGE="togather-server:${ROLLBACK_VERSION}"
     fi
 
@@ -2197,11 +2259,79 @@ rollback_caddy_target() {
     fi
 }
 
+# rollback_check_container - Is the target slot's container the build this
+# rollback claims? Read-only.
+# Args: $1 - slot
+# Sets: ROLLBACK_CONTAINER, ROLLBACK_CONTAINER_STATE (absent|running|exited|...),
+#       ROLLBACK_CONTAINER_IMAGE, ROLLBACK_CONTAINER_MATCH (yes|no|unknown)
+# The image tag existing does not prove the container was created from it: a
+# deploy that died between the container recreate and the state write leaves a
+# container on a different build, and `docker start` would happily serve it.
+rollback_check_container() {
+    local slot="$1"
+
+    ROLLBACK_CONTAINER="togather-server-${slot}"
+    ROLLBACK_CONTAINER_IMAGE=""
+    ROLLBACK_CONTAINER_MATCH="unknown"
+
+    ROLLBACK_CONTAINER_STATE=$(docker inspect --format='{{.State.Status}}' "${ROLLBACK_CONTAINER}" 2>/dev/null || echo "")
+    if [[ -z "${ROLLBACK_CONTAINER_STATE}" ]]; then
+        ROLLBACK_CONTAINER_STATE="absent"
+        return 0
+    fi
+
+    local container_image_id=""
+    ROLLBACK_CONTAINER_IMAGE=$(docker inspect --format='{{.Config.Image}}' "${ROLLBACK_CONTAINER}" 2>/dev/null || echo "")
+    container_image_id=$(docker inspect --format='{{.Image}}' "${ROLLBACK_CONTAINER}" 2>/dev/null || echo "")
+
+    if [[ -n "${ROLLBACK_CONTAINER_IMAGE}" && "${ROLLBACK_CONTAINER_IMAGE}" == "${ROLLBACK_IMAGE}" ]]; then
+        ROLLBACK_CONTAINER_MATCH="yes"
+        return 0
+    fi
+
+    # The stored reference can differ in form (registry prefix, tag vs digest)
+    # while naming the same image, so compare image ids as well.
+    local expected_image_id=""
+    expected_image_id=$(docker image inspect --format='{{.Id}}' "${ROLLBACK_IMAGE}" 2>/dev/null || echo "")
+    if [[ -n "${container_image_id}" && "${container_image_id}" == "${expected_image_id}" ]]; then
+        ROLLBACK_CONTAINER_MATCH="yes"
+        return 0
+    fi
+
+    ROLLBACK_CONTAINER_MATCH="no"
+    return 0
+}
+
+# rollback_detect_compose - Set COMPOSE_CMD the way validate_tool_versions does.
+# Only the recreate path needs it. validate_tool_versions is deliberately not
+# used here: it also demands migrate/psql/jq, and refusing a rollback mid
+# incident because psql is missing would be worse than the problem it solves.
+# Returns: 0 with COMPOSE_CMD set, 1 when this host has no compose v2.
+rollback_detect_compose() {
+    if command -v docker-compose &>/dev/null; then
+        COMPOSE_CMD="docker-compose"
+    elif docker compose version &>/dev/null; then
+        COMPOSE_CMD="docker compose"
+    else
+        return 1
+    fi
+
+    local compose_version
+    compose_version=$(${COMPOSE_CMD} version --short 2>/dev/null || echo "0.0.0")
+    local compose_major
+    compose_major=$(echo "${compose_version}" | cut -d. -f1 | tr -d 'v')
+    if [[ ! "${compose_major}" =~ ^[0-9]+$ ]] || [[ "${compose_major}" -lt 2 ]]; then
+        return 1
+    fi
+    return 0
+}
+
 # rollback_start_slot - Bring the retired slot's container back up
 # Args: $1 - environment, $2 - slot
 # Side effects:
-#   - docker start on an existing container, otherwise docker compose up -d
-#     for that service with IMAGE_TAG pinned to the target version
+#   - docker start on an existing container whose image matches ROLLBACK_IMAGE,
+#     otherwise docker compose up -d for that service with IMAGE_TAG pinned to
+#     the target version
 # NOTE: no drain/grace period is passed here. Stopping the outgoing slot and
 #       River worker handover are owned by the graceful-handover ticket; until
 #       that lands, the outgoing slot is stopped immediately after the switch.
@@ -2210,15 +2340,26 @@ rollback_start_slot() {
     local slot="$2"
     local container_name="togather-server-${slot}"
 
-    local container_state
-    container_state=$(docker inspect --format='{{.State.Status}}' "${container_name}" 2>/dev/null || echo "")
+    # Reuse the preflight result when it describes this container; otherwise
+    # look again (the dry run never gets here, so this is the real path).
+    if [[ "${ROLLBACK_CONTAINER:-}" != "${container_name}" ]]; then
+        rollback_check_container "${slot}"
+    fi
 
-    if [[ -n "${container_state}" ]]; then
-        if [[ "${container_state}" == "running" ]]; then
-            log "WARN" "Container ${container_name} is already running; leaving it as is"
+    if [[ "${ROLLBACK_CONTAINER_STATE}" != "absent" ]]; then
+        if [[ "${ROLLBACK_CONTAINER_MATCH}" != "yes" ]]; then
+            log "ERROR" "Container ${container_name} was created from ${ROLLBACK_CONTAINER_IMAGE:-an unknown image}, not ${ROLLBACK_IMAGE}."
+            log "ERROR" "Starting it would serve a different build than the one this rollback reports."
+            log "ERROR" "Recreate it on the recorded image, then run the rollback again:"
+            log "ERROR" "  docker rm -f ${container_name}"
+            log "ERROR" "  ./deploy/scripts/deploy.sh rollback ${env}"
+            return 1
+        fi
+        if [[ "${ROLLBACK_CONTAINER_STATE}" == "running" ]]; then
+            log "WARN" "Container ${container_name} is already running on ${ROLLBACK_CONTAINER_IMAGE}; leaving it as is"
             return 0
         fi
-        log "INFO" "Starting existing container ${container_name} (state: ${container_state})"
+        log "INFO" "Starting existing container ${container_name} (state: ${ROLLBACK_CONTAINER_STATE}, image: ${ROLLBACK_CONTAINER_IMAGE})"
         if ! docker start "${container_name}"; then
             log "ERROR" "Failed to start container ${container_name}"
             return 1
@@ -2229,6 +2370,13 @@ rollback_start_slot() {
 
     # No container: recreate it from compose with the target version's image.
     log "WARN" "No container named ${container_name}; creating it from compose"
+    if ! rollback_detect_compose; then
+        log "ERROR" "No docker compose >= 2.0 on this host, so ${container_name} cannot be created."
+        log "ERROR" "COMPOSE_CMD defaults to 'docker compose' (the plugin), which is not installed."
+        log "ERROR" "Install the compose plugin, or restore the container another way, then rerun."
+        return 1
+    fi
+
     local env_file
     env_file=$(discover_env_file "$env")
     if [[ -z "${env_file}" ]]; then
@@ -2268,6 +2416,16 @@ rollback_print_plan() {
     local env="$1"
     local image_rc=0
     rollback_check_image || image_rc=$?
+    rollback_check_container "${ROLLBACK_SLOT}"
+
+    local container_line
+    if [[ "${ROLLBACK_CONTAINER_STATE}" == "absent" ]]; then
+        container_line="absent -> compose up -d --no-deps with IMAGE_TAG=${ROLLBACK_VERSION}"
+    elif [[ "${ROLLBACK_CONTAINER_MATCH}" == "yes" ]]; then
+        container_line="${ROLLBACK_CONTAINER} (state ${ROLLBACK_CONTAINER_STATE}, image ${ROLLBACK_CONTAINER_IMAGE}, matches)"
+    else
+        container_line="${ROLLBACK_CONTAINER} (state ${ROLLBACK_CONTAINER_STATE}, image ${ROLLBACK_CONTAINER_IMAGE:-unknown}, DIFFERENT BUILD)"
+    fi
 
     log "INFO" "Rollback plan for ${env}"
     log "INFO" "  active slot:   ${ROLLBACK_ACTIVE_SLOT}  (from ${STATE_FILE})"
@@ -2277,6 +2435,7 @@ rollback_print_plan() {
     log "INFO" "  history:       ${ROLLBACK_RECORD}"
     log "INFO" "  snapshot:      ${ROLLBACK_SNAPSHOT:-none}"
     log "INFO" "  image:         ${ROLLBACK_IMAGE} [${ROLLBACK_IMAGE_STATE}]"
+    log "INFO" "  container:     ${container_line}"
     log "INFO" "  start:         docker start togather-server-${ROLLBACK_SLOT} (compose up -d if absent)"
     log "INFO" "  health:        ${ROLLBACK_HEALTH_URL} via deploy/scripts/wait-for-health.sh --slot ${ROLLBACK_SLOT}"
     log "INFO" "  caddy:         currently $(rollback_caddy_target) -> would point at localhost:${ROLLBACK_PORT}"
@@ -2285,7 +2444,12 @@ rollback_print_plan() {
 
     case "${image_rc}" in
         0)
-            log "INFO" "Preflight: image present, a real run would proceed."
+            if [[ "${ROLLBACK_CONTAINER_STATE}" != "absent" && "${ROLLBACK_CONTAINER_MATCH}" != "yes" ]]; then
+                log "WARN" "A real run would REFUSE: ${ROLLBACK_CONTAINER} is a different build (${ROLLBACK_CONTAINER_IMAGE:-unknown})."
+                log "WARN" "  Fix: docker rm -f ${ROLLBACK_CONTAINER}, then run the rollback again."
+            else
+                log "INFO" "Preflight: image present, fallback container usable; a real run would proceed."
+            fi
             ;;
         1)
             log "WARN" "A real run would REFUSE: the image for ${ROLLBACK_VERSION} is missing."
@@ -2398,6 +2562,20 @@ main_rollback() {
             exit 1
             ;;
     esac
+
+    # Container preflight: the image tag existing does not prove the target
+    # slot's container was created from it. A deploy that died between the
+    # recreate and the state write leaves a container on another build, and
+    # starting it would serve that build under the recorded version.
+    rollback_check_container "${ROLLBACK_SLOT}"
+    if [[ "${ROLLBACK_CONTAINER_STATE}" != "absent" && "${ROLLBACK_CONTAINER_MATCH}" != "yes" ]]; then
+        log "ERROR" "Container ${ROLLBACK_CONTAINER} exists but was created from ${ROLLBACK_CONTAINER_IMAGE:-an unknown image}, not ${ROLLBACK_IMAGE}."
+        log "ERROR" "Starting it would serve a different build than the one this rollback reports."
+        log "ERROR" "Recreate it on the recorded image, then run the rollback again:"
+        log "ERROR" "  docker rm -f ${ROLLBACK_CONTAINER}"
+        log "ERROR" "  ./deploy/scripts/deploy.sh rollback ${environment}"
+        exit 1
+    fi
 
     # Take the deployment lock from here on, so a forward deploy cannot race the
     # restart and the traffic switch. acquire_lock also handles a stale lock

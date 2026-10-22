@@ -14,6 +14,11 @@ image for its version is still on the host, starts the container, waits for
 health on its direct port (8081 blue, 8082 green), switches Caddy traffic,
 flips deployment state, and stops the outgoing slot.
 
+The version to restore comes from `.previous_deployment` in the deployment state
+file, the same source the slot comes from. The history directory is only used to
+fill in the exact `docker_image` and the snapshot path; a `previous.json` link
+that names a different version is reported and ignored.
+
 `server deploy rollback <environment>` is **not** the same thing: it only
 re-points the state file and never starts a container or touches Caddy. Use it
 only when you want the state file moved and nothing else.
@@ -47,6 +52,16 @@ only when you want the state file moved and nothing else.
 
 If the image for the target version is gone, the rollback refuses and prints the
 exact rebuild command instead of starting a slot on the wrong build.
+
+If the container on the target slot was created from a different image than the
+version being restored (a deploy that died after recreating the container but
+before recording itself), the rollback refuses too. Remove that container and
+run the rollback again, which recreates it on the recorded image:
+
+```bash
+docker rm -f togather-server-<slot>
+deploy/scripts/deploy.sh rollback <environment>
+```
 
 ## Database Considerations
 
@@ -109,6 +124,8 @@ the pre-deployment snapshot if the data repair itself must be undone. Never dele
 - **No previous deployment found**: first deployment or cleared state; redeploy target version.
 - **Health checks fail**: code/schema mismatch or infra issue; check logs and DB connectivity.
 - **Traffic does not switch**: Caddy not running or Caddyfile targets wrong port.
+- **Container is a different build**: `docker rm -f togather-server-<slot>` then rerun the rollback.
+- **`previous.json` names the wrong version**: harmless, the rollback reads the state file; the link advances on the next deployment.
 - **Schema mismatch**: restore snapshot or roll back migrations.
 
 ```bash
