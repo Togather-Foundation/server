@@ -25,6 +25,8 @@ func TestOpenAPIEndpointAvailable(t *testing.T) {
 
 	paths, ok := payload["paths"].(map[string]any)
 	require.True(t, ok)
-	require.Contains(t, paths, "/events")
-	require.Contains(t, paths, "/events/{id}")
+	// Server base URL is the node root, so paths carry the full /api/v1 prefix.
+	require.Contains(t, paths, "/api/v1/events")
+	require.Contains(t, paths, "/api/v1/events/{id}")
+	require.NotContains(t, paths, "/events", "paths must be relative to the node root and include /api/v1")
 }

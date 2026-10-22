@@ -146,8 +146,8 @@ info:
     url: https://creativecommons.org/publicdomain/zero/1.0/
 
 servers:
-  - url: https://{node}/api/v1
-    description: SEL Node API
+  - url: https://{node}
+    description: SEL Node (paths include the `/api/v1` prefix; health, well-known and MCP endpoints live at the node root)
     variables:
       node:
         default: toronto.togather.foundation
@@ -162,10 +162,18 @@ tags:
     description: Developer self-service API key management
   - name: Events
     description: Event discovery and submission
+  - name: Federation
+    description: Federation node management and inbound sync
   - name: Feeds
     description: Change feeds for federation
+  - name: Geocoding
+    description: Forward and reverse geocoding
   - name: Health
-    description: Health check endpoints
+    description: Health check and build metadata endpoints
+  - name: MCP
+    description: Model Context Protocol streamable HTTP endpoint
+  - name: Stats
+    description: Public server statistics
   - name: OAuth
     description: GitHub OAuth authentication
   - name: Organizations
@@ -174,7 +182,7 @@ tags:
     description: Venue information
 
 paths:
-  /events:
+  /api/v1/events:
     get:
       operationId: listEvents
       summary: List events
@@ -273,7 +281,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Event'
 
-  /events/{id}:
+  /api/v1/events/{id}:
     get:
       operationId: getEvent
       summary: Get event by ID
@@ -302,7 +310,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /events/batch:
+  /api/v1/events:batch:
     post:
       operationId: createEventBatch
       summary: Submit multiple events in a batch
@@ -366,7 +374,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
-  /events.ics:
+  /api/v1/events.ics:
     get:
       operationId: listEventsICS
       summary: List events as iCalendar feed
@@ -423,7 +431,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /events/{id}/ics:
+  /api/v1/events/{id}/ics:
     get:
       operationId: getEventICS
       summary: Get event as iCalendar
@@ -467,7 +475,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /batch-status/{id}:
+  /api/v1/batch-status/{id}:
     get:
       operationId: getBatchStatus
       summary: Get batch processing status
@@ -543,16 +551,26 @@ paths:
         '410':
           $ref: '#/components/responses/Gone'
 
-  /places:
+  /api/v1/places:
     get:
       operationId: listPlaces
       summary: List places
-      description: Query places (venues) with optional filters. Returns paginated JSON-LD.
+      description: |
+        Query places (venues) with optional filters. Returns paginated JSON-LD.
+        Supports proximity search via `near_lat` + `near_lon` (+ optional `radius`),
+        or `near_place` to geocode a place name first.
       tags: [Places]
       security: []
       parameters:
-        - $ref: '#/components/parameters/city'
+        - $ref: '#/components/parameters/localityCity'
         - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/order'
+        - $ref: '#/components/parameters/nearPlace'
+        - $ref: '#/components/parameters/nearLat'
+        - $ref: '#/components/parameters/nearLon'
+        - $ref: '#/components/parameters/radius'
+        - $ref: '#/components/parameters/countrycodes'
         - $ref: '#/components/parameters/after'
         - $ref: '#/components/parameters/limit'
       responses:
@@ -563,7 +581,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/PlaceListResponse'
 
-  /places/{id}:
+  /api/v1/places/{id}:
     get:
       operationId: getPlace
       summary: Get place by ID
@@ -587,7 +605,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /organizations:
+  /api/v1/organizations:
     get:
       operationId: listOrganizations
       summary: List organizations
@@ -595,7 +613,10 @@ paths:
       tags: [Organizations]
       security: []
       parameters:
+        - $ref: '#/components/parameters/localityCity'
         - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/sort'
+        - $ref: '#/components/parameters/order'
         - $ref: '#/components/parameters/after'
         - $ref: '#/components/parameters/limit'
       responses:
@@ -606,7 +627,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/OrganizationListResponse'
 
-  /organizations/{id}:
+  /api/v1/organizations/{id}:
     get:
       operationId: getOrganization
       summary: Get organization by ID
@@ -630,7 +651,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/events/pending:
+  /api/v1/admin/events/pending:
     get:
       operationId: listPendingEvents
       summary: List events awaiting review
@@ -640,6 +661,15 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - $ref: '#/components/parameters/startDate'
+        - $ref: '#/components/parameters/endDate'
+        - $ref: '#/components/parameters/city'
+        - $ref: '#/components/parameters/region'
+        - $ref: '#/components/parameters/venueId'
+        - $ref: '#/components/parameters/organizerId'
+        - $ref: '#/components/parameters/eventDomain'
+        - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/keywords'
         - $ref: '#/components/parameters/after'
         - $ref: '#/components/parameters/limit'
       responses:
@@ -654,7 +684,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /admin/events/{id}:
+  /api/v1/admin/events/{id}:
     put:
       operationId: updateEvent
       summary: Update an event
@@ -712,7 +742,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/events/consolidate:
+  /api/v1/admin/events/consolidate:
     post:
       operationId: consolidateEvents
       summary: Atomically consolidate multiple events into one canonical event
@@ -827,7 +857,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/events/{id}/occurrences:
+  /api/v1/admin/events/{id}/occurrences:
     post:
       operationId: createOccurrence
       summary: Add an occurrence to an event
@@ -878,7 +908,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/events/{id}/occurrences/{occurrenceId}:
+  /api/v1/admin/events/{id}/occurrences/{occurrenceId}:
     put:
       operationId: updateOccurrence
       summary: Update an occurrence on an event
@@ -977,7 +1007,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/api-keys:
+  /api/v1/admin/api-keys:
     get:
       operationId: listApiKeys
       summary: List API keys
@@ -1032,7 +1062,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiKeyCreated'
 
-  /feeds/changes:
+  /api/v1/admin/api-keys/{id}:
+    delete:
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      description: Deactivates an API key by UUID. Requires admin authentication.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: API key UUID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: API key revoked
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/feeds/changes:
     get:
       operationId: getChangeFeed
       summary: Get change feed
@@ -1053,6 +1110,24 @@ paths:
             to bootstrap from a known point in time.
           schema:
             type: string
+        - name: after
+          in: query
+          deprecated: true
+          description: Legacy alias for `since` (kept for backward compatibility).
+          schema:
+            type: string
+        - name: action
+          in: query
+          description: Filter by change type. Omit to receive every type.
+          schema:
+            type: string
+            enum: [create, update, delete]
+        - name: include_snapshot
+          in: query
+          description: When `true`, each change embeds the full JSON-LD event snapshot.
+          schema:
+            type: boolean
+            default: false
         - $ref: '#/components/parameters/limit'
       responses:
         '200':
@@ -1062,7 +1137,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ChangeFeedResponse'
 
-  /admin/review-queue:
+  /api/v1/admin/review-queue:
     get:
       operationId: listReviewQueue
       summary: List review queue entries
@@ -1108,7 +1183,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /admin/review-queue/{id}:
+  /api/v1/admin/review-queue/{id}:
     get:
       operationId: getReviewQueueEntry
       summary: Get review queue entry details
@@ -1143,7 +1218,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/review-queue/{id}/approve:
+  /api/v1/admin/review-queue/{id}/approve:
     post:
       operationId: approveReviewQueueEntry
       summary: Approve a review queue entry
@@ -1231,7 +1306,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/review-queue/{id}/reject:
+  /api/v1/admin/review-queue/{id}/reject:
     post:
       operationId: rejectReviewQueueEntry
       summary: Reject a review queue entry
@@ -1299,7 +1374,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/review-queue/{id}/fix:
+  /api/v1/admin/review-queue/{id}/fix:
     post:
       operationId: fixReviewQueueEntry
       summary: Fix event dates and approve
@@ -1387,7 +1462,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/identity/{type}/{id}:
+  /api/v1/admin/identity/{type}/{id}:
     get:
       operationId: getIdentityView
       summary: Get entity identity view
@@ -1429,7 +1504,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/identity/conflicts:
+  /api/v1/admin/identity/conflicts:
     get:
       operationId: listIdentityConflicts
       summary: List identity conflicts
@@ -1484,7 +1559,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /admin/identity/decisions:
+  /api/v1/admin/identity/decisions:
     get:
       operationId: listIdentityDecisions
       summary: List identity decisions
@@ -1535,7 +1610,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /admin/identity/link:
+  /api/v1/admin/identity/link:
     post:
       operationId: linkIdentifier
       summary: Record an identifier link decision
@@ -1572,7 +1647,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/identity/reject:
+  /api/v1/admin/identity/reject:
     post:
       operationId: rejectIdentifier
       summary: Record a reject decision
@@ -1608,7 +1683,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/login:
+  /api/v1/admin/login:
     post:
       operationId: login
       summary: Admin login
@@ -1686,7 +1761,7 @@ paths:
         '429':
           description: Too many requests (rate limit exceeded)
 
-  /admin/developers/invite:
+  /api/v1/admin/developers/invite:
     post:
       operationId: inviteDeveloper
       summary: Invite a developer
@@ -1749,7 +1824,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/developers:
+  /api/v1/admin/developers:
     get:
       operationId: listDevelopers
       summary: List all developers
@@ -1786,7 +1861,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /admin/developers/{id}:
+  /api/v1/admin/developers/{id}:
     get:
       operationId: getDeveloper
       summary: Get developer details
@@ -1896,7 +1971,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /admin/reports/daily-usage:
+  /api/v1/admin/reports/daily-usage:
     get:
       operationId: getDailyUsageReport
       tags: [Admin]
@@ -2416,7 +2491,7 @@ paths:
                       event times in local civil time (configurable via DEFAULT_TIMEZONE,
                       default America/Toronto).
 
-  /openapi.json:
+  /api/v1/openapi.json:
     get:
       operationId: getOpenApiSpec
       summary: OpenAPI specification
@@ -2431,7 +2506,7 @@ paths:
               schema:
                 type: object
 
-  /admin/scraper/sources:
+  /api/v1/admin/scraper/sources:
     get:
       operationId: listScraperSources
       summary: List scraper sources
@@ -2471,7 +2546,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/sources/{name}:
+  /api/v1/admin/scraper/sources/{name}:
     patch:
       operationId: setScraperSourceEnabled
       summary: Enable or disable a scraper source
@@ -2520,7 +2595,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/sources/{name}/runs:
+  /api/v1/admin/scraper/sources/{name}/runs:
     get:
       operationId: listScraperSourceRuns
       summary: List run history for a scraper source
@@ -2562,7 +2637,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/sources/{name}/diagnostics:
+  /api/v1/admin/scraper/sources/{name}/diagnostics:
     get:
       operationId: getSourceDiagnostics
       summary: Get diagnostics for a scraper source
@@ -2616,7 +2691,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/diagnostics:
+  /api/v1/admin/scraper/diagnostics:
     get:
       operationId: getAllDiagnostics
       summary: Get cross-source scraper diagnostics
@@ -2670,7 +2745,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/sources/{name}/trigger:
+  /api/v1/admin/scraper/sources/{name}/trigger:
     post:
       operationId: triggerScraperSource
       summary: Trigger an immediate scrape for a source
@@ -2723,7 +2798,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/config:
+  /api/v1/admin/scraper/config:
     get:
       operationId: getScraperConfig
       summary: Get global scraper configuration
@@ -2801,7 +2876,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/trigger-all:
+  /api/v1/admin/scraper/trigger-all:
     post:
       operationId: triggerAllScraperSources
       summary: Trigger a serial scrape run for all eligible sources
@@ -2907,7 +2982,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /scraper/submissions:
+  /api/v1/scraper/submissions:
     post:
       operationId: submitURLs
       summary: Submit URLs for scraping
@@ -2973,7 +3048,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/events:
+  /api/v1/admin/scraper/events:
     get:
       operationId: streamScraperEvents
       summary: Stream scraper job events
@@ -3005,7 +3080,7 @@ paths:
         '500':
           description: Streaming not supported
 
-  /admin/scraper/submissions:
+  /api/v1/admin/scraper/submissions:
     get:
       operationId: listScraperSubmissions
       summary: List URL submissions
@@ -3072,7 +3147,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
-  /admin/scraper/submissions/{id}:
+  /api/v1/admin/scraper/submissions/{id}:
     patch:
       operationId: updateScraperSubmission
       summary: Review a URL submission
@@ -3130,6 +3205,1204 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/stats:
+    get:
+      operationId: getServerStats
+      summary: Get server statistics
+      description: |
+        Public counters used by landing pages and monitoring: entity counts,
+        lifecycle split, recent/upcoming/past event counts and the event date range.
+        Responses are cacheable for five minutes (`Cache-Control: public, max-age=300`).
+      tags: [Stats]
+      security: []
+      responses:
+        '200':
+          description: Server statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+        '500':
+          description: Failed to compute statistics
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/geocode:
+    get:
+      operationId: geocodeAddress
+      summary: Geocode an address or place name
+      description: |
+        Forward-geocodes a free-text query via Nominatim, using the PostgreSQL
+        cache when possible. Public and rate limited.
+      tags: [Geocoding]
+      security: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Address or place name to geocode.
+          schema:
+            type: string
+          example: Toronto City Hall
+        - name: countrycodes
+          in: query
+          required: false
+          description: |
+            Comma-separated ISO 3166-1 alpha-2 country codes. Defaults to the
+            server's configured country list (`GEOCODING_DEFAULT_COUNTRYCODES`).
+          schema:
+            type: string
+          example: ca
+      responses:
+        '200':
+          description: Geocoding result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GeocodeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Upstream geocoding failed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/reverse-geocode:
+    get:
+      operationId: reverseGeocode
+      summary: Reverse geocode coordinates
+      description: Resolves latitude/longitude to an address via Nominatim, using the PostgreSQL cache when possible.
+      tags: [Geocoding]
+      security: []
+      parameters:
+        - name: lat
+          in: query
+          required: true
+          description: Latitude (WGS84).
+          schema:
+            type: number
+            format: double
+            minimum: -90
+            maximum: 90
+        - name: lon
+          in: query
+          required: true
+          description: Longitude (WGS84).
+          schema:
+            type: number
+            format: double
+            minimum: -180
+            maximum: 180
+      responses:
+        '200':
+          description: Reverse geocoding result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReverseGeocodeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          description: Upstream reverse geocoding failed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/accept-invitation:
+    post:
+      operationId: acceptInvitation
+      summary: Accept an admin user invitation
+      description: |
+        Sets the password for an invited admin user and activates the account.
+        Public endpoint; rate limited by IP.
+      tags: [Auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                  description: Invitation token from the invitation email.
+                password:
+                  type: string
+                  format: password
+                  description: Password satisfying the server's length/complexity policy.
+      responses:
+        '200':
+          description: Invitation accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AcceptInvitationResponse'
+        '400':
+          description: Invalid/expired token or weak password
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/federation/sync:
+    post:
+      operationId: syncFederatedEvent
+      summary: Import or update a federated event
+      description: |
+        Accepts a JSON-LD Event from a trusted federation node and preserves its
+        original URI as the canonical `@id`. Requires an API key. Supports
+        idempotent retries via `Idempotency-Key`.
+      tags: [Federation]
+      security:
+        - apiKey: []
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          description: Client-generated key that makes retries safe.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/ld+json:
+            schema:
+              type: object
+              description: JSON-LD Event payload (`@context`, `@type`, `@id`, `name`, `startDate`, ...).
+              additionalProperties: true
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Event updated or unchanged
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/FederationSyncResponse'
+        '201':
+          description: Event created
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/FederationSyncResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /health:
+    get:
+      operationId: getHealth
+      summary: Comprehensive health check
+      description: |
+        Checks database, migrations, River job queue, JSON-LD contexts and the HTTP
+        layer. Returns `503` when any critical check fails and `degraded` when a
+        check warns.
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Healthy or degraded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+        '503':
+          description: Unhealthy or shutting down
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheck'
+
+  /version:
+    get:
+      operationId: getVersion
+      summary: Get build metadata
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Version information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionResponse'
+
+  /api/v1/openapi.yaml:
+    get:
+      operationId: getOpenAPIYAML
+      summary: Get this OpenAPI specification (YAML)
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: OpenAPI document
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /mcp:
+    post:
+      operationId: mcpStreamableHTTP
+      summary: MCP streamable HTTP endpoint
+      description: |
+        Model Context Protocol endpoint (streamable HTTP transport, JSON-RPC 2.0).
+        Read-only tools (`events`, `search`, `places`, `organizations`,
+        `geocode_address`, `reverse_geocode`) are public; write/account tools
+        require an API key. Sessions are established with `initialize`; the
+        response `Mcp-Session-Id` header must be echoed on later calls.
+      tags: [MCP]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: JSON-RPC 2.0 request (`initialize`, `tools/list`, `tools/call`, ...).
+              additionalProperties: true
+      responses:
+        '200':
+          description: JSON-RPC response or SSE stream
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+            text/event-stream:
+              schema:
+                type: string
+
+  /api/v1/admin/logout:
+    post:
+      operationId: adminLogout
+      summary: Log out an admin session
+      description: Clears the `auth_token` HttpOnly cookie. Idempotent; never fails on a missing session.
+      tags: [Admin]
+      x-internal: true
+      security: []
+      responses:
+        '200':
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: logged out
+
+  /api/v1/admin/stats:
+    get:
+      operationId: getAdminStats
+      summary: Get event counts for the admin dashboard
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Event counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pending_count, published_count, total_count]
+                properties:
+                  pending_count:
+                    type: integer
+                    format: int64
+                  published_count:
+                    type: integer
+                    format: int64
+                  total_count:
+                    type: integer
+                    format: int64
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/events:
+    get:
+      operationId: listAllEventsForAdmin
+      summary: List all events (admin)
+      description: |
+        Same filters as the public list endpoint, but returns every lifecycle state
+        and adds admin-only fields (`description`, `confidence`, `lifecycle_state`,
+        `start_date`, `all_day`).
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/startDate'
+        - $ref: '#/components/parameters/endDate'
+        - $ref: '#/components/parameters/city'
+        - $ref: '#/components/parameters/region'
+        - $ref: '#/components/parameters/venueId'
+        - $ref: '#/components/parameters/organizerId'
+        - $ref: '#/components/parameters/lifecycleState'
+        - $ref: '#/components/parameters/eventDomain'
+        - $ref: '#/components/parameters/query'
+        - $ref: '#/components/parameters/keywords'
+        - $ref: '#/components/parameters/after'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          description: Paginated list of events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminEventListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/events/{id}/publish:
+    post:
+      operationId: publishEvent
+      summary: Publish a draft event
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      responses:
+        '200':
+          description: Published event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminEventResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/events/{id}/unpublish:
+    post:
+      operationId: unpublishEvent
+      summary: Move a published event back to draft
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/eventId'
+      responses:
+        '200':
+          description: Unpublished event
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminEventResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/duplicates:
+    get:
+      operationId: listDuplicatePairs
+      summary: List potential duplicate events
+      description: Returns pairs of potentially duplicate events. Detection is not implemented yet; the endpoint currently returns an empty list.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Duplicate pairs (currently always empty)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  next_cursor:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/places/{id}:
+    get:
+      operationId: adminGetPlace
+      summary: Get a place (admin)
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/placeId'
+      responses:
+        '200':
+          description: Place details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPlaceResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: adminUpdatePlace
+      summary: Update a place (admin)
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/placeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPlaceUpdate'
+      responses:
+        '200':
+          description: Updated place (JSON-LD)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Place'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: adminDeletePlace
+      summary: Soft-delete a place (admin)
+      description: Soft-deletes the place and writes a tombstone.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/placeId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Audit reason recorded on the tombstone.
+      responses:
+        '204':
+          description: Place deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/places/{id}/similar:
+    get:
+      operationId: findSimilarPlaces
+      summary: Find similar places
+      description: Returns candidate matches (name/location similarity ≥ 0.3), excluding the place itself.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/placeId'
+      responses:
+        '200':
+          description: Similar places
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SimilarityCandidate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/places/merge:
+    post:
+      operationId: mergePlaces
+      summary: Merge a duplicate place into a primary place
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeRequest'
+      responses:
+        '200':
+          description: Merge result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MergeResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/organizations/{id}:
+    get:
+      operationId: adminGetOrganization
+      summary: Get an organization (admin)
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/organizationId'
+      responses:
+        '200':
+          description: Organization details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminOrganizationResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: adminUpdateOrganization
+      summary: Update an organization (admin)
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/organizationId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminOrganizationUpdate'
+      responses:
+        '200':
+          description: Updated organization (JSON-LD)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Organization'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: adminDeleteOrganization
+      summary: Soft-delete an organization (admin)
+      description: Soft-deletes the organization and writes a tombstone.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/organizationId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '204':
+          description: Organization deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/organizations/{id}/similar:
+    get:
+      operationId: findSimilarOrganizations
+      summary: Find similar organizations
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/organizationId'
+      responses:
+        '200':
+          description: Similar organizations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SimilarityCandidate'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/organizations/merge:
+    post:
+      operationId: mergeOrganizations
+      summary: Merge a duplicate organization into a primary organization
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeRequest'
+      responses:
+        '200':
+          description: Merge result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MergeResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/geocoding/backfill:
+    post:
+      operationId: startGeocodingBackfill
+      summary: Enqueue geocoding jobs for places and events missing coordinates
+      tags: [Admin, Geocoding]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Backfill enqueued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackfillResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Internal server error
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/admin/users:
+    get:
+      operationId: listUsers
+      summary: List admin users
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Filter by derived status.
+          schema:
+            type: string
+            enum: [active, inactive, pending]
+        - name: role
+          in: query
+          description: Filter by role.
+          schema:
+            type: string
+            enum: [admin, editor, viewer]
+        - name: limit
+          in: query
+          description: Results per page (1-100).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          description: Zero-based result offset.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Paginated users
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createUser
+      summary: Create an admin user and send an invitation
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email]
+              properties:
+                username:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, editor, viewer]
+                  default: viewer
+      responses:
+        '201':
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Username or email already exists
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/admin/users/{id}:
+    get:
+      operationId: getUser
+      summary: Get an admin user
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: updateUser
+      summary: Update an admin user
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                role:
+                  type: string
+                  enum: [admin, editor, viewer]
+      responses:
+        '200':
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteUser
+      summary: Soft-delete an admin user
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '204':
+          description: User deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/users/{id}/activate:
+    post:
+      operationId: activateUser
+      summary: Activate an admin user
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: Activation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/users/{id}/deactivate:
+    post:
+      operationId: deactivateUser
+      summary: Deactivate an admin user
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: Deactivation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/users/{id}/resend-invitation:
+    post:
+      operationId: resendUserInvitation
+      summary: Resend an invitation email
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: Invitation resent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/users/{id}/activity:
+    get:
+      operationId: getUserActivity
+      summary: Get a user's audit activity
+      description: Audit storage is not implemented yet; the endpoint returns an empty page with an explanatory message.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: Activity page (currently empty)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  next_cursor:
+                    type: [string, 'null']
+                  message:
+                    type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/federation/nodes:
+    get:
+      operationId: listFederationNodes
+      summary: List federation nodes
+      tags: [Federation]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: Filter by federation status.
+          schema:
+            type: string
+        - name: sync_enabled
+          in: query
+          description: Filter by whether sync is enabled.
+          schema:
+            type: boolean
+        - name: is_online
+          in: query
+          description: Filter by last health-check result.
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Federation nodes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FederationNode'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      operationId: createFederationNode
+      summary: Register a federation node
+      description: |
+        Request fields use the server's Go field names (`NodeDomain`, `NodeName`, ...)
+        because the underlying type has no JSON tags. Keys are matched case-insensitively.
+      tags: [Federation]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederationNodeInput'
+      responses:
+        '201':
+          description: Node created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: A node with this domain already exists
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /api/v1/admin/federation/nodes/{id}:
+    get:
+      operationId: getFederationNode
+      summary: Get a federation node
+      tags: [Federation]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/nodeId'
+      responses:
+        '200':
+          description: Federation node
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      operationId: updateFederationNode
+      summary: Update a federation node
+      tags: [Federation]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/nodeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FederationNodeUpdate'
+      responses:
+        '200':
+          description: Updated node
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FederationNode'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      operationId: deleteFederationNode
+      summary: Delete a federation node
+      tags: [Federation]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/nodeId'
+      responses:
+        '204':
+          description: Node deleted
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
 components:
   securitySchemes:
@@ -3301,6 +4574,119 @@ components:
         type: string
         enum: [document, item]
         default: item
+
+    localityCity:
+      name: city
+      in: query
+      description: Filter by city/addressLocality.
+      schema:
+        type: string
+
+    sort:
+      name: sort
+      in: query
+      description: Sort field for place and organization lists.
+      schema:
+        type: string
+        enum: [name, created_at]
+        default: created_at
+
+    order:
+      name: order
+      in: query
+      description: Sort direction for place and organization lists.
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: asc
+
+    nearPlace:
+      name: near_place
+      in: query
+      description: |
+        Place name to geocode and use as the centre of a proximity search.
+        Mutually exclusive with `near_lat`/`near_lon`.
+      schema:
+        type: string
+
+    nearLat:
+      name: near_lat
+      in: query
+      description: Latitude for proximity search. Requires `near_lon`.
+      schema:
+        type: number
+        format: double
+        minimum: -90
+        maximum: 90
+
+    nearLon:
+      name: near_lon
+      in: query
+      description: Longitude for proximity search. Requires `near_lat`.
+      schema:
+        type: number
+        format: double
+        minimum: -180
+        maximum: 180
+
+    radius:
+      name: radius
+      in: query
+      description: |
+        Proximity search radius in kilometres (maximum 100). Requires
+        `near_place` or `near_lat` + `near_lon`. Defaults to 10 km.
+      schema:
+        type: number
+        format: double
+        exclusiveMinimum: 0
+        maximum: 100
+        default: 10
+
+    countrycodes:
+      name: countrycodes
+      in: query
+      description: |
+        Comma-separated ISO 3166-1 alpha-2 country codes used when geocoding
+        `near_place`. Defaults to the server's configured country list.
+      schema:
+        type: string
+      example: ca
+
+    placeId:
+      name: id
+      in: path
+      required: true
+      description: Place ULID
+      schema:
+        type: string
+        pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+
+    organizationId:
+      name: id
+      in: path
+      required: true
+      description: Organization ULID
+      schema:
+        type: string
+        pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+
+    userId:
+      name: id
+      in: path
+      required: true
+      description: Admin user UUID
+      schema:
+        type: string
+        format: uuid
+
+    nodeId:
+      name: id
+      in: path
+      required: true
+      description: Federation node UUID
+      schema:
+        type: string
+        format: uuid
 
   schemas:
     ConsolidateResponse:
@@ -5153,6 +6539,605 @@ components:
           type: string
           description: Counterpart entity ULID
         reason:
+          type: string
+
+    StatsResponse:
+      type: object
+      description: Public server statistics returned by `GET /api/v1/stats`.
+      required: [status, version, git_commit, uptime_seconds, total_events, total_places, total_organizations, total_sources, total_users, published_events, pending_events, events_created_last_7_days, events_created_last_30_days, upcoming_events, past_events, timestamp]
+      properties:
+        status:
+          type: string
+          example: healthy
+        version:
+          type: string
+        git_commit:
+          type: string
+        uptime_seconds:
+          type: integer
+          format: int64
+        slot:
+          type: string
+          description: Deployment slot (blue/green), when configured.
+        total_events:
+          type: integer
+          format: int64
+        total_places:
+          type: integer
+          format: int64
+        total_organizations:
+          type: integer
+          format: int64
+        total_sources:
+          type: integer
+          format: int64
+        total_users:
+          type: integer
+          format: int64
+        published_events:
+          type: integer
+          format: int64
+        pending_events:
+          type: integer
+          format: int64
+          description: Events currently in the `draft` lifecycle state.
+        events_created_last_7_days:
+          type: integer
+          format: int64
+        events_created_last_30_days:
+          type: integer
+          format: int64
+        upcoming_events:
+          type: integer
+          format: int64
+        past_events:
+          type: integer
+          format: int64
+        oldest_event_date:
+          type: string
+          format: date-time
+        newest_event_date:
+          type: string
+          format: date-time
+        timestamp:
+          type: string
+          format: date-time
+
+    GeocodeResponse:
+      type: object
+      required: [latitude, longitude, display_name, source, cached, attribution]
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        display_name:
+          type: string
+        source:
+          type: string
+          enum: [cache, nominatim]
+        cached:
+          type: boolean
+        attribution:
+          type: string
+          example: Data © OpenStreetMap contributors, ODbL 1.0
+
+    ReverseGeocodeResponse:
+      type: object
+      required: [display_name, address, latitude, longitude, source, cached, attribution]
+      properties:
+        display_name:
+          type: string
+        address:
+          $ref: '#/components/schemas/AddressComponents'
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        source:
+          type: string
+          enum: [cache, nominatim]
+        cached:
+          type: boolean
+        attribution:
+          type: string
+
+    AddressComponents:
+      type: object
+      properties:
+        road:
+          type: string
+        suburb:
+          type: string
+        city:
+          type: string
+        state:
+          type: string
+        postcode:
+          type: string
+
+    AcceptInvitationResponse:
+      type: object
+      required: [message, user]
+      properties:
+        message:
+          type: string
+        user:
+          type: object
+          required: [id, username, email, role]
+          properties:
+            id:
+              type: string
+              format: uuid
+            username:
+              type: string
+            email:
+              type: string
+              format: email
+            role:
+              type: string
+              enum: [admin, editor, viewer]
+
+    FederationSyncResponse:
+      type: object
+      required: ['@type', '@id', localId, federationUri]
+      properties:
+        '@context':
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+            - type: object
+        '@type':
+          type: string
+          enum: [Event]
+        '@id':
+          type: string
+          format: uri
+        localId:
+          type: string
+          pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+        federationUri:
+          type: string
+          format: uri
+
+    HealthCheck:
+      type: object
+      required: [status, version, git_commit, checks, timestamp]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy, shutting_down]
+        version:
+          type: string
+        git_commit:
+          type: string
+        slot:
+          type: string
+        docs_url:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/HealthCheckResult'
+        timestamp:
+          type: string
+          format: date-time
+
+    HealthCheckResult:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [pass, warn, fail]
+        message:
+          type: string
+        latency_ms:
+          type: integer
+          format: int64
+        details:
+          type: object
+          additionalProperties: true
+
+    VersionResponse:
+      type: object
+      required: [version, git_commit, build_date, go_version]
+      properties:
+        version:
+          type: string
+        git_commit:
+          type: string
+        build_date:
+          type: string
+        go_version:
+          type: string
+
+    AdminEventSummary:
+      allOf:
+        - $ref: '#/components/schemas/EventSummary'
+        - type: object
+          properties:
+            description:
+              type: string
+            confidence:
+              type: [number, 'null']
+              format: double
+            lifecycle_state:
+              type: string
+            start_date:
+              type: string
+              format: date-time
+            all_day:
+              type: boolean
+
+    AdminEventListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminEventSummary'
+        next_cursor:
+          type: string
+
+    AdminEventResponse:
+      allOf:
+        - $ref: '#/components/schemas/Event'
+        - type: object
+          properties:
+            lifecycle_state:
+              type: string
+              enum: [draft, published, postponed, rescheduled, sold_out, cancelled, completed]
+
+    AdminPlaceResponse:
+      type: object
+      required: [ulid, name, created_at, updated_at]
+      properties:
+        ulid:
+          type: string
+          pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+        name:
+          type: string
+        description:
+          type: string
+        street_address:
+          type: string
+        city:
+          type: string
+        region:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+        latitude:
+          type: [number, 'null']
+          format: double
+        longitude:
+          type: [number, 'null']
+          format: double
+        telephone:
+          type: string
+        email:
+          type: string
+          format: email
+        url:
+          type: string
+          format: uri
+        lifecycle:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AdminPlaceUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        street_address:
+          type: string
+        city:
+          type: string
+        region:
+          type: string
+        postal_code:
+          type: string
+        country:
+          type: string
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        telephone:
+          type: string
+        email:
+          type: string
+          format: email
+        url:
+          type: string
+          format: uri
+
+    AdminOrganizationResponse:
+      type: object
+      required: [ulid, name, created_at, updated_at]
+      properties:
+        ulid:
+          type: string
+          pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+        name:
+          type: string
+        description:
+          type: string
+        street_address:
+          type: string
+        address_locality:
+          type: string
+        address_region:
+          type: string
+        postal_code:
+          type: string
+        address_country:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+          format: email
+        url:
+          type: string
+          format: uri
+        lifecycle:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AdminOrganizationUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        street_address:
+          type: string
+        address_locality:
+          type: string
+        address_region:
+          type: string
+        postal_code:
+          type: string
+        address_country:
+          type: string
+        telephone:
+          type: string
+        email:
+          type: string
+          format: email
+        url:
+          type: string
+          format: uri
+
+    SimilarityCandidate:
+      type: object
+      required: [ulid, name, similarity]
+      properties:
+        ulid:
+          type: string
+          pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+        name:
+          type: string
+        similarity:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+
+    MergeRequest:
+      type: object
+      required: [primary_id, duplicate_id]
+      properties:
+        primary_id:
+          type: string
+          pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+        duplicate_id:
+          type: string
+          pattern: '^[0-9A-HJKMNP-TV-Z]{26}$'
+
+    MergeResult:
+      type: object
+      required: [status, canonical_id, already_merged]
+      properties:
+        status:
+          type: string
+          enum: [merged]
+        canonical_id:
+          type: string
+        already_merged:
+          type: boolean
+
+    BackfillResponse:
+      type: object
+      required: [places_enqueued, events_enqueued, estimated_duration]
+      properties:
+        places_enqueued:
+          type: integer
+        events_enqueued:
+          type: integer
+        estimated_duration:
+          type: string
+
+    AdminUserListResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserResponse'
+        next_cursor:
+          type: [string, 'null']
+        total:
+          type: integer
+          format: int64
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    FederationNode:
+      type: object
+      description: |
+        Federation node record. Field names are the Go field names because the
+        underlying struct has no JSON tags.
+      properties:
+        ID:
+          type: string
+          format: uuid
+        NodeDomain:
+          type: string
+        NodeName:
+          type: string
+        BaseURL:
+          type: string
+          format: uri
+        APIVersion:
+          type: string
+        GeographicScope:
+          type: [string, 'null']
+        TrustLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        FederationStatus:
+          type: string
+          enum: [pending, active, paused, blocked]
+        SyncEnabled:
+          type: boolean
+        SyncDirection:
+          type: string
+          enum: [bidirectional, pull_only, push_only, disabled]
+        LastSyncAt:
+          type: [string, 'null']
+          format: date-time
+        LastSuccessfulSyncAt:
+          type: [string, 'null']
+          format: date-time
+        SyncCursor:
+          type: [string, 'null']
+        RequiresAuth:
+          type: boolean
+        ContactEmail:
+          type: [string, 'null']
+          format: email
+        ContactName:
+          type: [string, 'null']
+        IsOnline:
+          type: boolean
+        LastHealthCheckAt:
+          type: [string, 'null']
+          format: date-time
+        LastErrorAt:
+          type: [string, 'null']
+          format: date-time
+        LastErrorMessage:
+          type: [string, 'null']
+        Notes:
+          type: [string, 'null']
+        CreatedAt:
+          type: string
+          format: date-time
+        UpdatedAt:
+          type: string
+          format: date-time
+
+    FederationNodeInput:
+      type: object
+      required: [NodeDomain, NodeName, BaseURL, TrustLevel, FederationStatus, SyncDirection]
+      properties:
+        NodeDomain:
+          type: string
+          description: Unique node domain, e.g. `toronto.togather.foundation`.
+        NodeName:
+          type: string
+        BaseURL:
+          type: string
+          format: uri
+        APIVersion:
+          type: string
+        GeographicScope:
+          type: string
+        TrustLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        FederationStatus:
+          type: string
+          enum: [pending, active, paused, blocked]
+        SyncEnabled:
+          type: boolean
+        SyncDirection:
+          type: string
+          enum: [bidirectional, pull_only, push_only, disabled]
+        ContactEmail:
+          type: string
+          format: email
+        ContactName:
+          type: string
+        Notes:
+          type: string
+
+    FederationNodeUpdate:
+      type: object
+      properties:
+        NodeName:
+          type: string
+        BaseURL:
+          type: string
+          format: uri
+        APIVersion:
+          type: string
+        GeographicScope:
+          type: string
+        TrustLevel:
+          type: integer
+          minimum: 1
+          maximum: 10
+        FederationStatus:
+          type: string
+          enum: [pending, active, paused, blocked]
+        SyncEnabled:
+          type: boolean
+        SyncDirection:
+          type: string
+          enum: [bidirectional, pull_only, push_only, disabled]
+        ContactEmail:
+          type: string
+          format: email
+        ContactName:
+          type: string
+        Notes:
           type: string
 
   responses:
