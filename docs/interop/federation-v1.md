@@ -432,8 +432,8 @@ Push changes to subscribers instead of requiring polling.
 
 Filters by geographic region or event domain to reduce bandwidth.
 
-**Example:**
-```http
+**Example (not yet implemented — the change feed has no region/domain filters):**
+```http check-doc-params:ignore
 GET /api/v1/feeds/changes?region=Ontario&domain=music
 ```
 

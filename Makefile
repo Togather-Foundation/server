@@ -43,7 +43,7 @@ help:
 	@echo "  make lint-openapi  - Validate OpenAPI specification"
 	@echo "  make lint-yaml     - Validate YAML files (GitHub workflows, configs)"
 	@echo "  make lint-js       - Validate JavaScript syntax (web/admin/static/js)"
-	@echo "  make lint-docs     - Check local Markdown links in docs/ resolve to real files"
+	@echo "  make lint-docs     - Check local Markdown links and documented API query parameter names"
 	@echo "  make lint-shell    - Lint shell scripts with shellcheck"
 	@echo "  make vulncheck     - Run govulncheck vulnerability scan"
 	@echo "  make ci            - Run full CI pipeline (warm lint by default; use COLD=1 for GH Actions parity)"
@@ -462,6 +462,9 @@ lint-js:
 lint-docs:
 	@echo "Checking Markdown links in docs/..."
 	@scripts/check-doc-links.sh
+	@echo ""
+	@echo "Checking documented API query parameters..."
+	@scripts/check-doc-params.sh
 
 # Lint shell scripts with shellcheck (errors only in CI; use SHELLCHECK_SEVERITY=warning for full output)
 lint-shell:
