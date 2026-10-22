@@ -5,14 +5,14 @@
     "general": {
       "description": "General-purpose agent implementing code and executing multi-step tasks",
       "mode": "subagent",
-      "model": "deepseek/deepseek-v4-pro",
+      "model": "deepseek/deepseek-flash",
       "reasoningEffort": "high",
-      "small_model": "deepseek/deepseek-v4-flash"
+      "small_model": "deepseek/deepseek-flash"
     },
     "explore": {
       "description": "Fast agent specialzed for exploring codebases",
       "mode": "subagent",
-      "model": "deepseek/deepseek-v4-flash",
+      "model": "deepseek/deepseek-flash",
       "reasoningEffort": "low",
       "permission": {
         "write": "deny",
@@ -50,7 +50,7 @@
     "diagnose": {
       "description": "Senior diagnostic expert for hard problems",
       "mode": "subagent",
-      "model": "github-copilot/gpt-5.5",
+      "model": "deepseek/deepseek-flash",
       "reasoningEffort": "high"
     }
   },
