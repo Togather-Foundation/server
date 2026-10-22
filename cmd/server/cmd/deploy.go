@@ -73,32 +73,45 @@ Examples:
 // deployRollbackCmd rolls back a deployment
 var deployRollbackCmd = &cobra.Command{
 	Use:   "rollback ENVIRONMENT",
-	Short: "Rollback to previous deployment",
-	Long: `Rollback to the previous deployment by switching to the inactive slot.
+	Short: "Re-point deployment state at the previous deployment",
+	Long: `Rollback of the deployment state only: this moves the state file back to
+the previous deployment.
 
-This command:
-  1. Validates that a previous deployment exists
-  2. Checks health of the target slot (unless --force or --skip-health-check)
-  3. Switches the active deployment slot
-  4. Updates deployment state
+WARNING: this command does not restore service. It only edits state. It:
+  1. Validates that a previous deployment is on record
+  2. Re-points the state file at the previous deployment's slot and version
+
+It does NOT:
+  - start the retired container (a successful deploy stops that slot)
+  - wait for the target slot to pass its health check
+  - rewrite /etc/caddy/Caddyfile or reload Caddy
+
+So used alone it leaves traffic where it is, pointing at the slot the state
+file now calls inactive. The full operational rollback (start, health, traffic,
+state) lives in the deploy script:
+
+  ./deploy/scripts/deploy.sh rollback ENVIRONMENT [--dry-run]
+
+Use this command only when you want the state file moved and nothing else.
 
 Safety features:
   - Requires explicit confirmation unless --force
   - Shows what will happen before executing
   - Validates target slot health
-  - Prevents rollback if target unhealthy (unless --force)
+  - Prevents rollback if target unhealthy (unless --force); a stopped slot
+    always fails that check, so a real rollback normally needs --force here
 
 Examples:
-  # Rollback production deployment
+  # Move state back to the previous deployment
   server deploy rollback production
 
   # Dry-run to see what would happen
   server deploy rollback production --dry-run
 
-  # Force rollback without health checks or confirmation
+  # Force the state change without health checks or confirmation
   server deploy rollback production --force
 
-  # Rollback with specific health check URL
+  # Point the health check at a specific endpoint (blue 8081, green 8082)
   server deploy rollback production --health-url http://localhost:8081/health`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -323,14 +336,20 @@ func rollbackDeployment(env string) error {
 	fmt.Printf("Target slot: %s\n", targetSlot)
 	fmt.Println()
 
+	// Say plainly what this command does not do: PerformRollback only edits the
+	// state file, so an operator must not read it as "service restored".
+	fmt.Printf("NOTE: this changes the state file only. It does not start the %s\n", targetSlot)
+	fmt.Println("container, check its health, or move Caddy traffic. For the full")
+	fmt.Printf("rollback run: ./deploy/scripts/deploy.sh rollback %s\n", env)
+	fmt.Println()
+
 	// Determine health check URL if not specified
 	healthCheckURL := deployHealthCheckURL
 	if healthCheckURL == "" && !deploySkipHealthCheck && !deployForce {
-		// Try to auto-detect based on slot
-		// This assumes standard Docker Compose setup
-		port := 8080
+		// Auto-detect from the slot's direct port: blue 8081, green 8082
+		port := 8081
 		if targetSlot == deployment.SlotGreen {
-			port = 8081
+			port = 8082
 		}
 		healthCheckURL = fmt.Sprintf("http://localhost:%d/health", port)
 		fmt.Printf("Health check URL: %s (auto-detected)\n", healthCheckURL)
@@ -411,10 +430,13 @@ func rollbackDeployment(env string) error {
 
 		fmt.Println()
 		fmt.Println("Next steps:")
-		fmt.Println("  1. Verify the application is working correctly")
-		fmt.Println("  2. Monitor logs for errors")
+		fmt.Printf("  1. State now says %s is active, but traffic was not moved.\n", result.NewActiveSlot)
+		fmt.Println("     Confirm Caddy points where you expect, or run:")
+		fmt.Printf("     ./deploy/scripts/deploy.sh rollback %s\n", env)
+		fmt.Println("  2. Verify the application is working correctly")
+		fmt.Println("  3. Monitor logs for errors")
 		if rollbackTarget.SnapshotPath != "" {
-			fmt.Println("  3. Restore database snapshot if needed:")
+			fmt.Println("  4. Restore database snapshot if needed:")
 			fmt.Printf("     server snapshot restore %s\n", rollbackTarget.SnapshotPath)
 		}
 	} else {

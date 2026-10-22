@@ -7,6 +7,12 @@
 #
 # Usage:
 #   ./deploy.sh ENVIRONMENT [options]
+#   ./deploy.sh rollback ENVIRONMENT [--dry-run]
+#
+# Subcommands:
+#   rollback            Restore the retired slot in one command: start its
+#                       container, wait for health, switch Caddy traffic, flip
+#                       deployment state. Refuses if the image is gone.
 #
 # Arguments:
 #   ENVIRONMENT         Target environment: development, staging, or production
@@ -39,10 +45,12 @@ DEPLOY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PROJECT_ROOT="$(cd "${DEPLOY_DIR}/.." && pwd)"
 CONFIG_DIR="${DEPLOY_DIR}/config"
 DOCKER_DIR="${DEPLOY_DIR}/docker"
-STATE_FILE="${CONFIG_DIR}/deployment-state.json"
+STATE_FILE="${TOGATHER_STATE_FILE:-${CONFIG_DIR}/deployment-state.json}"
 DEPLOYMENT_CONFIG="${CONFIG_DIR}/deployment.yml"
 LOG_DIR="${HOME}/.togather/logs/deployments"
-DEPLOYMENT_HISTORY_DIR="/var/lib/togather/deployments"
+# History directory, overridable so the rollback path can be exercised against a
+# fabricated state file + history (dry run, or a test harness) without sudo.
+DEPLOYMENT_HISTORY_DIR="${TOGATHER_DEPLOYMENT_HISTORY_DIR:-/var/lib/togather/deployments}"
 LOCK_TIMEOUT=1800  # 30 minutes in seconds
 
 # Color codes for output
@@ -1995,6 +2003,427 @@ EOF
 }
 
 # ============================================================================
+# ROLLBACK (restore the retired slot in one command)
+# ============================================================================
+
+# rollback_check_image - Is the image for the target version on this host?
+# Sets: ROLLBACK_IMAGE_STATE (present|absent|unknown), ROLLBACK_IMAGE_ERROR
+# Returns: 0 present, 1 absent, 2 docker could not answer
+# "absent" and "unknown" are kept apart on purpose: a dead daemon must not be
+# reported as "your fallback image was pruned".
+rollback_check_image() {
+    local out=""
+    ROLLBACK_IMAGE_STATE="unknown"
+    ROLLBACK_IMAGE_ERROR=""
+
+    if out=$(docker image inspect "${ROLLBACK_IMAGE}" 2>&1 >/dev/null); then
+        ROLLBACK_IMAGE_STATE="present"
+        return 0
+    fi
+    if echo "${out}" | grep -qiE 'no such (image|object)|not found'; then
+        ROLLBACK_IMAGE_STATE="absent"
+        return 1
+    fi
+    ROLLBACK_IMAGE_ERROR=$(echo "${out}" | head -1)
+    return 2
+}
+
+# rollback_rebuild_hint - Print the exact command that puts the missing image back
+# Args: $1 - environment
+rollback_rebuild_hint() {
+    local env="$1"
+    local rebuild_ref="${ROLLBACK_COMMIT:-${ROLLBACK_VERSION}}"
+
+    log "ERROR" "Image ${ROLLBACK_IMAGE} is NOT present on this host."
+    log "ERROR" "Refusing to roll back: a slot whose image is gone would either fail to"
+    log "ERROR" "start or come up on a different build than the version it claims."
+    log "ERROR" ""
+    log "ERROR" "Rebuild that exact version and redeploy it through the forward path:"
+    log "ERROR" "  cd ${PROJECT_ROOT}"
+    log "ERROR" "  git fetch origin && git checkout ${rebuild_ref}"
+    log "ERROR" "  ./deploy/scripts/deploy.sh ${env}"
+    log "ERROR" ""
+    log "ERROR" "That rebuilds togather-server:${ROLLBACK_VERSION} and deploys it to the"
+    log "ERROR" "inactive slot. It also runs a DB snapshot and migrations, which the"
+    log "ERROR" "rollback path deliberately does not. Check what survives with:"
+    log "ERROR" "  docker image ls togather-server"
+}
+
+# rollback_resolve_target - Work out which slot a rollback would restore and
+# which version/image belongs to it.
+# Args: $1 - environment
+# Sets: ROLLBACK_ACTIVE_SLOT, ROLLBACK_SLOT, ROLLBACK_PORT, ROLLBACK_HEALTH_URL,
+#       ROLLBACK_VERSION, ROLLBACK_COMMIT, ROLLBACK_IMAGE, ROLLBACK_RECORD
+# Returns: 0 on success, 1 when the fallback cannot be identified
+rollback_resolve_target() {
+    local env="$1"
+
+    ROLLBACK_ACTIVE_SLOT=$(get_active_slot)
+    ROLLBACK_SLOT=$(get_inactive_slot)
+
+    ROLLBACK_PORT=8081
+    if [[ "${ROLLBACK_SLOT}" == "green" ]]; then
+        ROLLBACK_PORT=8082
+    fi
+    ROLLBACK_HEALTH_URL="http://localhost:${ROLLBACK_PORT}/health"
+
+    # Deployment history: save_deployment_history keeps <env>/current.json for
+    # the live deployment and <env>/previous.json for the one before it, so
+    # previous.json is the rollback target.
+    local env_dir="${DEPLOYMENT_HISTORY_DIR}/${env}"
+    local record="${env_dir}/previous.json"
+    if [[ -L "${record}" ]]; then
+        record=$(readlink -f "${record}")
+    fi
+
+    ROLLBACK_VERSION=""
+    ROLLBACK_COMMIT=""
+    ROLLBACK_IMAGE=""
+    ROLLBACK_SNAPSHOT=""
+    ROLLBACK_RECORD="none"
+
+    if [[ -f "${record}" ]] && jq -e . "${record}" >/dev/null 2>&1; then
+        ROLLBACK_RECORD="${record}"
+        ROLLBACK_VERSION=$(jq -r '.version // empty' "${record}" 2>/dev/null || echo "")
+        ROLLBACK_COMMIT=$(jq -r '.git_commit // empty' "${record}" 2>/dev/null || echo "")
+        ROLLBACK_IMAGE=$(jq -r '.docker_image // empty' "${record}" 2>/dev/null || echo "")
+        ROLLBACK_SNAPSHOT=$(jq -r '.snapshot_path // empty' "${record}" 2>/dev/null || echo "")
+
+        local record_slot
+        record_slot=$(jq -r '.active_slot // empty' "${record}" 2>/dev/null || echo "")
+        if [[ -n "${record_slot}" && "${record_slot}" != "${ROLLBACK_SLOT}" ]]; then
+            log "ERROR" "State and history disagree about the rollback target."
+            log "ERROR" "  State:   active slot ${ROLLBACK_ACTIVE_SLOT}, so the retired slot is ${ROLLBACK_SLOT}"
+            log "ERROR" "  History: ${record} was recorded as the ${record_slot} deployment"
+            log "ERROR" "Refusing to guess. Reconcile ${STATE_FILE} with ${env_dir} first."
+            return 1
+        fi
+    else
+        log "WARN" "No deployment history record at ${record}; using the state file only"
+        ROLLBACK_VERSION=$(jq -r '.previous_deployment.version // empty' "${STATE_FILE}" 2>/dev/null || echo "")
+        ROLLBACK_COMMIT=$(jq -r '.previous_deployment.git_commit // empty' "${STATE_FILE}" 2>/dev/null || echo "")
+    fi
+
+    if [[ -z "${ROLLBACK_VERSION}" ]]; then
+        log "ERROR" "Cannot determine which version to roll back to for ${env}."
+        log "ERROR" "  State file: ${STATE_FILE}"
+        log "ERROR" "  History:    ${env_dir}/previous.json"
+        log "ERROR" "Rollback needs a previous deployment on record."
+        return 1
+    fi
+
+    # Matches build_docker_image / save_deployment_history naming
+    if [[ -z "${ROLLBACK_IMAGE}" ]]; then
+        ROLLBACK_IMAGE="togather-server:${ROLLBACK_VERSION}"
+    fi
+
+    return 0
+}
+
+# rollback_caddy_target - Where Caddy points today, for the dry-run plan
+# Prints one line; never fails.
+rollback_caddy_target() {
+    local caddyfile="/etc/caddy/Caddyfile"
+    if [[ ! -r "${caddyfile}" ]]; then
+        echo "unknown (${caddyfile} not readable)"
+        return 0
+    fi
+    local current_port
+    current_port=$(sed -n '/# BLUE_GREEN_SLOT_START/,/# BLUE_GREEN_SLOT_END/p' "${caddyfile}" | grep -oP 'reverse_proxy\s+localhost:\K\d+' | head -1 || true)
+    if [[ -z "${current_port}" ]]; then
+        echo "unknown (no managed reverse_proxy block in ${caddyfile})"
+    else
+        echo "localhost:${current_port} in ${caddyfile}"
+    fi
+}
+
+# rollback_start_slot - Bring the retired slot's container back up
+# Args: $1 - environment, $2 - slot
+# Side effects:
+#   - docker start on an existing container, otherwise docker compose up -d
+#     for that service with IMAGE_TAG pinned to the target version
+# NOTE: no drain/grace period is passed here. Stopping the outgoing slot and
+#       River worker handover are owned by the graceful-handover ticket; until
+#       that lands, the outgoing slot is stopped immediately after the switch.
+rollback_start_slot() {
+    local env="$1"
+    local slot="$2"
+    local container_name="togather-server-${slot}"
+
+    local container_state
+    container_state=$(docker inspect --format='{{.State.Status}}' "${container_name}" 2>/dev/null || echo "")
+
+    if [[ -n "${container_state}" ]]; then
+        if [[ "${container_state}" == "running" ]]; then
+            log "WARN" "Container ${container_name} is already running; leaving it as is"
+            return 0
+        fi
+        log "INFO" "Starting existing container ${container_name} (state: ${container_state})"
+        if ! docker start "${container_name}"; then
+            log "ERROR" "Failed to start container ${container_name}"
+            return 1
+        fi
+        log "SUCCESS" "Started ${container_name}"
+        return 0
+    fi
+
+    # No container: recreate it from compose with the target version's image.
+    log "WARN" "No container named ${container_name}; creating it from compose"
+    local env_file
+    env_file=$(discover_env_file "$env")
+    if [[ -z "${env_file}" ]]; then
+        log "ERROR" "No environment file found for ${env}; cannot create ${container_name}"
+        return 1
+    fi
+
+    local compose_file="${DOCKER_DIR}/docker-compose.blue-green.yml"
+    log "INFO" "Using environment file: ${env_file}"
+    log "INFO" "Pinning IMAGE_TAG=${ROLLBACK_VERSION} for togather-${slot}"
+
+    # Subshell: deploy_to_slot sources the env file and cd's into DOCKER_DIR in
+    # the caller's shell; a rollback should not inherit either side effect.
+    if ! (
+        set -a
+        # shellcheck disable=SC1090
+        source "${env_file}"
+        set +a
+        export COMPOSE_PROJECT_NAME="togather-${env}"
+        export DEPLOYMENT_SLOT="${slot}"
+        export IMAGE_TAG="${ROLLBACK_VERSION}"
+        export ENV_FILE="${env_file}"
+        cd "${DOCKER_DIR}"
+        ${COMPOSE_CMD} -f "${compose_file}" up -d --no-deps "togather-${slot}"
+    ); then
+        log "ERROR" "Failed to create ${container_name} from ${compose_file}"
+        return 1
+    fi
+    log "SUCCESS" "Created ${container_name}"
+
+    return 0
+}
+
+# rollback_print_plan - Print exactly what a rollback would do
+# Args: $1 - environment
+rollback_print_plan() {
+    local env="$1"
+    local image_rc=0
+    rollback_check_image || image_rc=$?
+
+    log "INFO" "Rollback plan for ${env}"
+    log "INFO" "  active slot:   ${ROLLBACK_ACTIVE_SLOT}  (from ${STATE_FILE})"
+    log "INFO" "  target slot:   ${ROLLBACK_SLOT}"
+    log "INFO" "  version:       ${ROLLBACK_VERSION}"
+    log "INFO" "  git commit:    ${ROLLBACK_COMMIT:-<not recorded>}"
+    log "INFO" "  history:       ${ROLLBACK_RECORD}"
+    log "INFO" "  snapshot:      ${ROLLBACK_SNAPSHOT:-none}"
+    log "INFO" "  image:         ${ROLLBACK_IMAGE} [${ROLLBACK_IMAGE_STATE}]"
+    log "INFO" "  start:         docker start togather-server-${ROLLBACK_SLOT} (compose up -d if absent)"
+    log "INFO" "  health:        ${ROLLBACK_HEALTH_URL} via deploy/scripts/wait-for-health.sh --slot ${ROLLBACK_SLOT}"
+    log "INFO" "  caddy:         currently $(rollback_caddy_target) -> would point at localhost:${ROLLBACK_PORT}"
+    log "INFO" "  state:         active_slot -> ${ROLLBACK_SLOT}, rollback appended to history"
+    log "INFO" "  retire:        docker stop togather-server-${ROLLBACK_ACTIVE_SLOT} after the switch"
+
+    case "${image_rc}" in
+        0)
+            log "INFO" "Preflight: image present, a real run would proceed."
+            ;;
+        1)
+            log "WARN" "A real run would REFUSE: the image for ${ROLLBACK_VERSION} is missing."
+            rollback_rebuild_hint "${env}"
+            ;;
+        *)
+            log "WARN" "A real run would REFUSE: docker could not answer (${ROLLBACK_IMAGE_ERROR:-no output})."
+            log "WARN" "Fix docker on this host before rolling back: cannot confirm the fallback image exists."
+            ;;
+    esac
+
+    log "INFO" "Dry run: nothing was changed."
+}
+
+# main_rollback - One command that puts the retired slot back in service
+# Args: ENVIRONMENT [--dry-run]
+# Steps: resolve target -> preflight image -> (dry run stops) -> lock ->
+#        start container -> wait for health -> switch traffic -> flip state ->
+#        stop the outgoing slot
+main_rollback() {
+    local environment=""
+    local dry_run=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            --help)
+                usage
+                exit 0
+                ;;
+            -*)
+                echo "ERROR: Unknown option for rollback: $1" >&2
+                usage
+                exit 1
+                ;;
+            *)
+                if [[ -n "${environment}" ]]; then
+                    echo "ERROR: rollback takes exactly one ENVIRONMENT argument" >&2
+                    exit 1
+                fi
+                environment="$1"
+                shift
+                ;;
+        esac
+    done
+
+    if [[ -z "${environment}" ]]; then
+        echo "ERROR: ENVIRONMENT argument required" >&2
+        echo "" >&2
+        usage
+        exit 1
+    fi
+
+    case "${environment}" in
+        development|staging|production)
+            ;;
+        *)
+            echo "ERROR: Invalid environment '${environment}'" >&2
+            echo "Must be one of: development, staging, production" >&2
+            exit 1
+            ;;
+    esac
+
+    init_logging "${environment}"
+    log "INFO" "Rollback requested for ${environment} by ${DEPLOYED_BY}"
+
+    if [[ ! -f "${STATE_FILE}" ]]; then
+        log "ERROR" "Deployment state file not found: ${STATE_FILE}"
+        log "ERROR" "Cannot tell which slot is live, so there is nothing safe to roll back to."
+        exit 1
+    fi
+    validate_state_file "${STATE_FILE}" || exit 1
+
+    local state_env
+    state_env=$(jq -r '.environment // empty' "${STATE_FILE}" 2>/dev/null || echo "")
+    if [[ "${state_env}" != "${environment}" ]]; then
+        log "ERROR" "Environment mismatch: requested ${environment}, ${STATE_FILE} says '${state_env}'"
+        exit 1
+    fi
+
+    if ! rollback_resolve_target "${environment}"; then
+        exit 1
+    fi
+
+    # Dry run stops here: everything above is read-only, and nothing below runs.
+    if [[ "${dry_run}" == "true" ]]; then
+        rollback_print_plan "${environment}"
+        exit 0
+    fi
+
+    # Preflight before anything is changed: a rollback to a slot whose image is
+    # gone would restore a container on the wrong build.
+    local image_rc=0
+    rollback_check_image || image_rc=$?
+    case "${image_rc}" in
+        0)
+            log "SUCCESS" "Preflight passed: ${ROLLBACK_IMAGE} present, target ${ROLLBACK_SLOT} at ${ROLLBACK_VERSION}"
+            ;;
+        1)
+            rollback_rebuild_hint "${environment}"
+            exit 1
+            ;;
+        *)
+            log "ERROR" "Cannot verify image ${ROLLBACK_IMAGE}: docker did not answer"
+            log "ERROR" "  ${ROLLBACK_IMAGE_ERROR:-no output from docker image inspect}"
+            log "ERROR" "Refusing to roll back without a fallback image check."
+            exit 1
+            ;;
+    esac
+
+    # Take the deployment lock from here on, so a forward deploy cannot race the
+    # restart and the traffic switch. acquire_lock also handles a stale lock
+    # left behind by a deploy that died.
+    acquire_lock "${environment}" || {
+        log "ERROR" "Could not acquire the deployment lock for ${environment}"
+        log "ERROR" "A deploy is in progress, or a lock is stuck. See docs/deploy/lock-management.md"
+        exit 1
+    }
+
+    # Label this run as a rollback in state and history, and keep the lock block
+    # pointing at the id that will appear there.
+    DEPLOYMENT_ID=$(generate_id "rollback")
+    # shellcheck disable=SC2016  # $d is a jq variable, not a shell one
+    update_state_file_atomic --arg d "${DEPLOYMENT_ID}" '.lock.deployment_id = $d' || {
+        log "ERROR" "Failed to record rollback id in ${STATE_FILE}"
+        exit 1
+    }
+
+    # switch_traffic verifies the live version against these globals on the way
+    # out; for a rollback the expected version is the one being restored.
+    GIT_SHORT_COMMIT="${ROLLBACK_VERSION}"
+    GIT_COMMIT="${ROLLBACK_COMMIT:-${ROLLBACK_VERSION}}"
+
+    # The rollback record should name the snapshot that belongs to the version
+    # we are restoring, not "none".
+    if [[ -n "${ROLLBACK_SNAPSHOT}" && "${ROLLBACK_SNAPSHOT}" != "none" ]]; then
+        SNAPSHOT_PATH="${ROLLBACK_SNAPSHOT}"
+    fi
+
+    rollback_start_slot "${environment}" "${ROLLBACK_SLOT}" || {
+        log "ERROR" "Could not bring ${ROLLBACK_SLOT} back up; traffic NOT switched, state unchanged"
+        exit 1
+    }
+
+    log "INFO" "Waiting for ${ROLLBACK_SLOT} to pass health checks at ${ROLLBACK_HEALTH_URL}"
+    if ! validate_health "${environment}" "${ROLLBACK_SLOT}"; then
+        log "ERROR" "Health check failed for the ${ROLLBACK_SLOT} slot."
+        log "ERROR" "Traffic was NOT switched and deployment state is unchanged; ${ROLLBACK_ACTIVE_SLOT} still serves."
+        local last_body
+        last_body=$(curl -sS -m 5 "${ROLLBACK_HEALTH_URL}" 2>&1 || echo "")
+        if [[ -n "${last_body}" ]]; then
+            log "ERROR" "Last body from ${ROLLBACK_HEALTH_URL}:"
+            log "ERROR" "  ${last_body:0:2000}"
+        else
+            log "ERROR" "No response body from ${ROLLBACK_HEALTH_URL}"
+        fi
+        log "ERROR" "Container left running for inspection: docker logs --tail 100 togather-server-${ROLLBACK_SLOT}"
+        exit 1
+    fi
+
+    switch_traffic "${environment}" "${ROLLBACK_SLOT}" || {
+        log "ERROR" "Traffic switch failed; Caddy was restored to ${ROLLBACK_ACTIVE_SLOT} and state is unchanged"
+        exit 1
+    }
+
+    update_deployment_state "${environment}" "active" || {
+        log "ERROR" "Traffic is on ${ROLLBACK_SLOT} but deployment state could not be updated."
+        log "ERROR" "Fix by hand: set ${STATE_FILE} current_deployment.active_slot to ${ROLLBACK_SLOT}"
+        exit 1
+    }
+
+    # Retire the slot we just rolled away from. Mirrors the forward path: two
+    # River workers on different code versions against one database can corrupt
+    # data, so the outgoing slot does not stay up.
+    local old_container_name="togather-server-${ROLLBACK_ACTIVE_SLOT}"
+    log "INFO" "Stopping outgoing container: ${old_container_name}"
+    if docker stop "${old_container_name}" 2>/dev/null; then
+        log "SUCCESS" "Stopped ${old_container_name}"
+    else
+        log "WARN" "Could not stop ${old_container_name} (may already be stopped or not exist)"
+    fi
+
+    log "SUCCESS" "Rollback complete: ${environment} is serving ${ROLLBACK_VERSION} on ${ROLLBACK_SLOT}"
+    log "INFO" "Rollback ID: ${DEPLOYMENT_ID}"
+    log "INFO" "Verify: curl ${ROLLBACK_HEALTH_URL}"
+    if [[ -n "${SNAPSHOT_PATH}" ]]; then
+        log "INFO" "Snapshot for ${ROLLBACK_VERSION}: ${SNAPSHOT_PATH}"
+        log "INFO" "Restore it only if migrations ran after ${ROLLBACK_VERSION}."
+    else
+        log "INFO" "If migrations ran after ${ROLLBACK_VERSION}, restore the database snapshot by hand."
+    fi
+    exit 0
+}
+
+# ============================================================================
 # MAIN DEPLOYMENT FUNCTION
 # ============================================================================
 
@@ -2361,8 +2790,17 @@ KEYS_EOF
 usage() {
     cat << USAGE_EOF
 Usage: ./deploy/scripts/deploy.sh [OPTIONS] ENVIRONMENT
+       ./deploy/scripts/deploy.sh rollback ENVIRONMENT [--dry-run]
 
 Deploy Togather server using blue-green zero-downtime strategy.
+
+Subcommands:
+  rollback ENVIRONMENT
+                      Restore the retired slot in one command: start its
+                      container, wait for health on its direct port, switch
+                      Caddy traffic, flip deployment state, stop the outgoing
+                      slot. Refuses outright if the target image is gone.
+                      Add --dry-run to print the plan and change nothing.
 
 Arguments:
   ENVIRONMENT         Target environment (development, staging, production)
@@ -2396,6 +2834,12 @@ Examples:
   # Dry-run validation
   ./deploy/scripts/deploy.sh --dry-run staging
 
+  # Roll back staging: restart the retired slot, move traffic, flip state
+  ./deploy/scripts/deploy.sh rollback staging
+
+  # Show the rollback plan without changing anything
+  ./deploy/scripts/deploy.sh rollback staging --dry-run
+
   # Check for .env drift (missing/extra variables)
   ./deploy/scripts/deploy.sh staging --env-diff
 
@@ -2404,6 +2848,14 @@ USAGE_EOF
 }
 
 main() {
+    # Subcommand: `deploy.sh rollback <env> [--dry-run]` restores the retired
+    # slot (start, health, traffic, state) instead of only editing state.
+    # main_rollback always exits, so there is no status to propagate here.
+    if [[ "${1:-}" == "rollback" ]]; then
+        shift
+        main_rollback "$@"
+    fi
+
     # Parse arguments
     local dry_run=false
     local skip_migrations=false

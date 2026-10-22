@@ -5,20 +5,28 @@ Use this when a deployment fails or health checks stay unhealthy.
 ## Quick Reference
 
 ```bash
-server deploy rollback <environment>
-server deploy rollback <environment> --force
-server deploy rollback <environment> --dry-run
+deploy/scripts/deploy.sh rollback <environment> --dry-run   # show the plan
+deploy/scripts/deploy.sh rollback <environment>             # do the rollback
 ```
+
+That one command resolves the retired slot from deployment state, checks the
+image for its version is still on the host, starts the container, waits for
+health on its direct port (8081 blue, 8082 green), switches Caddy traffic,
+flips deployment state, and stops the outgoing slot.
+
+`server deploy rollback <environment>` is **not** the same thing: it only
+re-points the state file and never starts a container or touches Caddy. Use it
+only when you want the state file moved and nothing else.
 
 ## Rollback Workflow
 
-1. Confirm deployment state:
+1. Preview the plan (read-only, changes nothing):
    ```bash
-   cat /opt/togather/src/deploy/config/deployment-state.json | jq .
+   deploy/scripts/deploy.sh rollback <environment> --dry-run
    ```
-2. Run rollback:
+2. Roll back:
    ```bash
-   server deploy rollback <environment>
+   deploy/scripts/deploy.sh rollback <environment>
    ```
 3. Verify health:
    ```bash
@@ -37,6 +45,9 @@ server deploy rollback <environment> --dry-run
 - ❌ Environment variables
 - ❌ External dependencies
 
+If the image for the target version is gone, the rollback refuses and prints the
+exact rebuild command instead of starting a slot on the wrong build.
+
 ## Database Considerations
 
 Restore a snapshot if migrations ran after the target deployment.
@@ -47,7 +58,7 @@ docker compose -f /opt/togather/src/deploy/docker/docker-compose.blue-green.yml 
 
 gunzip -c /var/lib/togather/db-snapshots/<snapshot-file>.sql.gz | psql "$DATABASE_URL"
 
-server deploy rollback <environment> --force
+deploy/scripts/deploy.sh rollback <environment>
 ```
 
 ## Troubleshooting
