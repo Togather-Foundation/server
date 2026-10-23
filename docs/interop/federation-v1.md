@@ -273,14 +273,23 @@ GET /api/v1/feeds/changes?after=<cursor>&limit=<n>&action=<create|update|delete>
 
 **Public visibility:** The change feed is an unconditional public feed. `draft` and
 `pending_review` changes are omitted entirely. A delete row is exposed only if the
-event was publicly visible at some earlier point; tombstones for submissions that
-never left `draft`/`pending_review` are not published. A deleted event's
-`create`/`update` rows are omitted, but its `delete` row is retained so consumers
-observe tombstones (Interop Profile §4.3). Snapshots are only attached to
-create/update rows that were recorded while the event was publicly visible and
-whose event is still public (rows with no recorded lifecycle fall back to the
-current event state); delete rows carry a tombstone payload only for
-previously-public events.
+event was publicly visible **before that deletion**: `events.first_published_at`
+must be set and must not be later than the delete row's `changed_at`. Tombstones
+for submissions that never left `draft`/`pending_review` are not published, and an
+earlier never-public delete row stays hidden if the event is republished later. A
+deleted event's `create`/`update` rows are omitted, but its `delete` row is
+retained so consumers observe tombstones (Interop Profile §4.3). Snapshots are
+only attached to create/update rows that were recorded while the event was
+publicly visible and whose event is still public (rows with no recorded lifecycle
+fall back to the current event state); delete rows carry a tombstone payload only
+for previously-public events.
+
+`first_published_at` is maintained by a database trigger on every event insert and
+lifecycle change, and was backfilled once from `event_changes` public snapshots.
+Rows already deleted before that backfill with no recorded public history stay
+`NULL` and are not published; a legacy row that is still in a public state is
+stamped from `created_at` when it next leaves a public state. Bulk import/restore
+operators should follow [data imports](../operations/data-imports.md).
 
 **Unpublishing is not a deletion.** Unpublishing (transitioning to `draft`)
 withdraws the event's create/update rows from the feed and emits no delete row.

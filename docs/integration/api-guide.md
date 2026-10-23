@@ -539,6 +539,9 @@ keep `first_published_at` NULL and stay 404 (and produce no change-feed delete
 row). A legacy row still in a public state is stamped from `created_at` when it
 next leaves a public state, so a legacy published-then-deleted event returns 410.
 
+For bulk imports or direct SQL restores, see
+[Bulk imports and restores](../operations/data-imports.md) to preserve this signal.
+
 ---
 
 ## Developer Endpoints
