@@ -80,7 +80,7 @@ func (h *ICSHandler) SingleEventHandler(w http.ResponseWriter, r *http.Request) 
 	item, err := h.Service.GetPublicByULID(r.Context(), ulidValue)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
-			tombstone, tombErr := h.Service.GetTombstoneByEventULID(r.Context(), ulidValue)
+			tombstone, tombErr := h.Service.GetPublicTombstoneByEventULID(r.Context(), ulidValue)
 			if tombErr == nil && tombstone != nil {
 				WriteTombstoneResponse(w, r, tombstone.Payload, tombstone.DeletedAt, "Event")
 				return
@@ -93,7 +93,7 @@ func (h *ICSHandler) SingleEventHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if item.LifecycleState == "deleted" {
-		tombstone, tombErr := h.Service.GetTombstoneByEventULID(r.Context(), ulidValue)
+		tombstone, tombErr := h.Service.GetPublicTombstoneByEventULID(r.Context(), ulidValue)
 		if tombErr == nil && tombstone != nil {
 			WriteTombstoneResponse(w, r, tombstone.Payload, tombstone.DeletedAt, "Event")
 			return

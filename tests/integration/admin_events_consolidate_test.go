@@ -175,10 +175,12 @@ func TestAdminConsolidateCreate_Success(t *testing.T) {
 	canonicalULID := eventIDFromPayload(eventField)
 	require.NotEmpty(t, canonicalULID, "could not extract canonical ULID from event @id")
 
-	// Retired events should return 410 Gone
+	// The retired events were created in pending_review, so they were never
+	// publicly visible. A retired never-public event must return 404 rather than
+	// a 410 tombstone, which would leak that it once existed.
 	for _, retiredULID := range []string{ulid1, ulid2} {
 		retStatus, _ := getEvent(t, env, retiredULID)
-		assert.Equal(t, http.StatusGone, retStatus, "retired event %s should return 410 Gone", retiredULID)
+		assert.Equal(t, http.StatusNotFound, retStatus, "retired never-public event %s should return 404 Not Found", retiredULID)
 	}
 
 	// Canonical event should return 200 OK
@@ -223,9 +225,10 @@ func TestAdminConsolidatePromote_Success(t *testing.T) {
 	assert.Contains(t, retired, ulid2, "retired list should include second event ULID")
 	assert.NotContains(t, retired, ulid1, "canonical ULID should not appear in retired list")
 
-	// Retired event should return 410 Gone
+	// The retired event was created in pending_review (never public), so it must
+	// return 404 rather than a 410 tombstone that leaks its prior existence.
 	retStatus, _ := getEvent(t, env, ulid2)
-	assert.Equal(t, http.StatusGone, retStatus, "retired event should return 410 Gone")
+	assert.Equal(t, http.StatusNotFound, retStatus, "retired never-public event should return 404 Not Found")
 
 	// The promoted canonical was created in pending_review and still has its
 	// pending review, so it must not leak to anonymous readers (404) while

@@ -220,7 +220,8 @@ server review approve 42 --json
 ### `server review reject <id>`
 
 Reject a review queue entry. Soft-deletes the event with a tombstone and sets
-review status to `rejected`. Requires `--reason`.
+review status to `rejected`. Requires `--reason`. The tombstone row is not served
+publicly for never-public submissions; anonymous reads return `404`, not `410`.
 
 ```bash
 server review reject 42 --reason "spam"

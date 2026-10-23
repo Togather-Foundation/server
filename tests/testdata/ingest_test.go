@@ -336,6 +336,10 @@ func (m *IngestMockRepository) GetTombstoneByEventULID(ctx context.Context, even
 	return nil, events.ErrNotFound
 }
 
+func (m *IngestMockRepository) GetPublicTombstoneByEventULID(ctx context.Context, eventULID string) (*events.Tombstone, error) {
+	return m.GetTombstoneByEventULID(ctx, eventULID)
+}
+
 func (m *IngestMockRepository) BeginTx(ctx context.Context) (events.Repository, events.TxCommitter, error) {
 	return m, &noOpTxCommitter{}, nil
 }

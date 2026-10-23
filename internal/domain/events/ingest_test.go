@@ -548,6 +548,10 @@ func (m *MockRepository) GetTombstoneByEventULID(ctx context.Context, eventULID 
 	return nil, ErrNotFound
 }
 
+func (m *MockRepository) GetPublicTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {
+	return m.GetTombstoneByEventULID(ctx, eventULID)
+}
+
 // Review Queue methods
 func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error) {
 	m.mu.Lock()

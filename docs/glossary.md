@@ -14,7 +14,7 @@ This glossary defines canonical terms used throughout the SEL backend codebase a
 
 **Key Properties:**
 - Ordered by `sequence_number` (BIGSERIAL, monotonic per-node)
-- Includes tombstones for deleted events
+- Includes tombstones for deleted events that were publicly visible (delete rows for never-public submissions are never published)
 - Cursor-based pagination for federation sync
 - Immutable once written (append-only)
 
@@ -46,12 +46,15 @@ This glossary defines canonical terms used throughout the SEL backend codebase a
 - `sold_out` — No tickets available, still visible
 - `cancelled` — Event will not occur, visible with status
 - `completed` — Past event, archived but visible
-- `deleted` — Soft-deleted, returns 410 Gone with tombstone
+- `deleted` — Soft-deleted; returns 410 Gone with a tombstone if it was publicly visible, or 404 if it was never public
 
 **Public Visibility:** Everything except `draft`, `pending_review`, and `deleted`
 is publicly visible (the allowlist implemented by `events.PubliclyVisible` in the
 API). Public list/detail/ICS/HTML/MCP surfaces and the change feed hide the rest;
-admin surfaces remain unfiltered.
+admin surfaces remain unfiltered. A `deleted` event is only distinguishable to
+anonymous readers (410 + tombstone, or a changefeed delete row) when a prior
+change snapshot shows it was public before deletion; deleted events that were
+never public return 404 so their existence is not leaked.
 
 **State Transitions:**
 ```
@@ -199,12 +202,12 @@ https://{origin_node_domain}/events/{ulid}
 
 ### Tombstone
 **Type:** Deletion Record  
-**Definition:** A marker indicating an entity has been deleted, returned as HTTP 410 Gone with metadata about the deletion.
+**Definition:** A marker indicating an entity has been deleted, returned as HTTP 410 Gone with metadata about the deletion for entities that were publicly visible.
 
 **Properties:**
 - Soft delete: `deleted_at` timestamp set on entity
-- Returns 410 status with JSON-LD tombstone response
-- Included in change feed for federation sync
+- Returns 410 status with JSON-LD tombstone response only for previously-public entities; never-public deletions return 404
+- Change feed publishes delete rows (and their tombstones) only for previously-public events
 - Preserves URI for historical references
 - Contains deletion timestamp and optional reason
 

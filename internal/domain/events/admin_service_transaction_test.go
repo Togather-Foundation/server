@@ -300,6 +300,10 @@ func (m *mockTransactionalRepo) GetTombstoneByEventULID(ctx context.Context, eve
 	return nil, ErrNotFound
 }
 
+func (m *mockTransactionalRepo) GetPublicTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {
+	return m.GetTombstoneByEventULID(ctx, eventULID)
+}
+
 // Unimplemented Repository methods
 func (m *mockTransactionalRepo) List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error) {
 	return ListResult{}, errors.New("not implemented")

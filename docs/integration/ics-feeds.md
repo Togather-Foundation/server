@@ -16,9 +16,10 @@ knowledge base.
 > **publicly visible** events (`published`, `postponed`, `rescheduled`, `sold_out`,
 > `cancelled`, `completed`). `draft`, `pending_review`, and `deleted` events are
 > excluded; a single-event request for a `draft`/`pending_review` event returns
-> `404`, and a deleted event returns `410 Gone` with a tombstone. This is separate
-> from **ingesting** an upstream ICS feed, which is what the rest of this runbook
-> covers.
+> `404`. A deleted event that was publicly visible returns `410 Gone` with a
+> tombstone; a deleted event that was never public also returns `404` (no
+> tombstone, existence not leaked). This is separate from **ingesting** an upstream
+> ICS feed, which is what the rest of this runbook covers.
 
 ## Table of Contents
 

@@ -98,7 +98,7 @@ The MCP server provides 9 tools:
 
 | Tool | Auth | Description |
 |------|------|-------------|
-| `events` | public | List events with filters and pagination, OR get a single event by ULID (if `id` parameter provided). Hides `draft`/`pending_review` (get returns "event not found"); a deleted event returns its tombstone. |
+| `events` | public | List events with filters and pagination, OR get a single event by ULID (if `id` parameter provided). Hides `draft`/`pending_review` (get returns "event not found"). A deleted event that was publicly visible returns its tombstone; a deleted event that was never public also returns "event not found" (404-equivalent) with no tombstone. |
 | `search` | public | Cross-entity search across events/places/orgs. Event results hide `draft`/`pending_review`. |
 | `places` | public | List places with filters and pagination, OR get a single place by ULID (if `id` parameter provided) |
 | `organizations` | public | List organizations with filters, OR get a single organization by ULID (if `id` parameter provided) |

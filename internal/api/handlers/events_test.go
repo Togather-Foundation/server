@@ -51,6 +51,10 @@ func (s stubEventsRepo) GetTombstoneByEventULID(_ context.Context, ulid string) 
 	return s.tombstoneFn(ulid)
 }
 
+func (s stubEventsRepo) GetPublicTombstoneByEventULID(ctx context.Context, ulid string) (*events.Tombstone, error) {
+	return s.GetTombstoneByEventULID(ctx, ulid)
+}
+
 func (s stubEventsRepo) GetPlaceByID(_ context.Context, _ string) (*events.PlaceRecord, error) {
 	return nil, events.ErrNotFound
 }

@@ -171,6 +171,26 @@ SELECT t.id,
  ORDER BY t.deleted_at DESC
  LIMIT 1;
 
+-- name: GetPublicEventTombstoneByEventULID :one
+SELECT t.id,
+       t.event_id,
+       t.event_uri,
+       t.deleted_at,
+       t.deletion_reason,
+       t.superseded_by_uri,
+       t.payload
+  FROM event_tombstones t
+  JOIN events e ON e.id = t.event_id
+ WHERE e.ulid = $1
+   AND e.lifecycle_state = 'deleted'
+   AND EXISTS (
+     SELECT 1 FROM event_changes p
+      WHERE p.event_id = e.id
+        AND COALESCE(p.snapshot->>'lifecycle_state', '') = ANY(sqlc.arg('public_states')::text[])
+   )
+ ORDER BY t.deleted_at DESC
+ LIMIT 1;
+
 -- name: CountEventsByLifecycleState :one
 SELECT COUNT(*)::bigint AS count
   FROM events

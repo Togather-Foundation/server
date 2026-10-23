@@ -251,6 +251,97 @@ func TestPublicEventVisibilityMCP(t *testing.T) {
 	})
 }
 
+// TestPublicEventVisibilityMinimalTombstoneNoRow covers the soft-delete path
+// that has no event_tombstones row: a previously-public event must still return
+// 410 with the minimal tombstone fallback on JSON detail and single ICS.
+func TestPublicEventVisibilityMinimalTombstoneNoRow(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "Minimal Tombstone Org")
+	place := insertPlace(t, env, "Minimal Tombstone Venue", "Toronto")
+
+	eventULID := insertEventWithOccurrence(t, env, "Minimal Tombstone Event", org.ID, place.ID, "music", "published", nil, testhelpers.FutureTime(13))
+	eventID := lookupEventIDByULID(t, env, eventULID)
+
+	// Raw soft delete only: no CreateTombstone call, so the public tombstone
+	// lookup returns ErrNotFound and the handler must use its minimal fallback.
+	softDeleteEvent(t, env, eventID)
+
+	var tombstoneCount int
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM event_tombstones WHERE event_id = $1`, eventID).Scan(&tombstoneCount))
+	require.Zero(t, tombstoneCount, "test must exercise the no-tombstone-row path")
+
+	t.Run("JSON detail", func(t *testing.T) {
+		status, body := fetchBody(t, env, "/api/v1/events/"+eventULID, "application/ld+json")
+		require.Equal(t, http.StatusGone, status)
+		require.Contains(t, body, `"sel:tombstone":true`)
+	})
+
+	t.Run("single ICS", func(t *testing.T) {
+		status, body := fetchBody(t, env, "/api/v1/events/"+eventULID+"/ics", "")
+		require.Equal(t, http.StatusGone, status)
+		require.Contains(t, body, `"sel:tombstone":true`)
+	})
+}
+
+// TestPublicEventVisibilityMCPTombstoneRow verifies the MCP get path serves the
+// stored tombstone payload (not just the minimal fallback) for an event that was
+// public before deletion — the prior-visibility gate must not hide real
+// tombstones.
+func TestPublicEventVisibilityMCPTombstoneRow(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "MCP Tombstone Org")
+	place := insertPlace(t, env, "MCP Tombstone Venue", "Toronto")
+
+	const (
+		eventName     = "MCP Public Tombstone Event"
+		tombstoneName = "MCP Tombstone Payload Name"
+	)
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", nil, testhelpers.FutureTime(12))
+	eventID := lookupEventIDByULID(t, env, eventULID)
+
+	repo, err := postgres.NewRepository(env.Pool, testhelpers.TestLogger())
+	require.NoError(t, err)
+
+	payload, err := json.Marshal(map[string]any{
+		"@context":       "https://schema.org",
+		"@type":          "Event",
+		"@id":            "https://togather.test/events/" + eventULID,
+		"name":           tombstoneName,
+		"sel:tombstone":  true,
+		"deletionReason": "organizer_cancelled",
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, repo.Events().CreateTombstone(env.Context, events.TombstoneCreateParams{
+		EventID:   eventID,
+		EventURI:  "https://togather.test/events/" + eventULID,
+		DeletedAt: time.Now(),
+		Reason:    "organizer_cancelled",
+		Payload:   payload,
+	}))
+	softDeleteEvent(t, env, eventID)
+
+	cli := setupMCPClient(t, env)
+	defer func() { _ = cli.Close() }()
+
+	result, err := cli.CallTool(context.Background(), mcpTypes.CallToolRequest{
+		Params: mcpTypes.CallToolParams{Name: "events", Arguments: map[string]any{"id": eventULID}},
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, result.Content)
+
+	text, ok := mcpTypes.AsTextContent(result.Content[0])
+	require.True(t, ok)
+	require.NotContains(t, text.Text, "event not found")
+
+	decoded := decodeToolText(t, result)
+	require.Equal(t, true, decoded["sel:tombstone"])
+	require.Equal(t, tombstoneName, decoded["name"], "MCP must serve the stored tombstone payload")
+}
+
 // TestPublicEventVisibilityChangeFeedSnapshots is the regression guard for
 // pre-publication snapshot leakage: an event that is currently published must
 // not re-expose change rows that were recorded while it was draft or
@@ -449,6 +540,109 @@ func TestPublicEventVisibilityRejectedSubmissionNotInFeed(t *testing.T) {
 	}
 }
 
+// TestPublicEventVisibilityNeverPublicTombstone is the regression guard for the
+// tombstone fallback leak: rejecting a pending_review submission writes an
+// event_tombstones row, but because the event was never public the anonymous
+// surfaces must answer 404 (with no tombstone body) instead of 410.
+func TestPublicEventVisibilityNeverPublicTombstone(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "Never Public Tombstone Org")
+	place := insertPlace(t, env, "Never Public Tombstone Venue", "Toronto")
+
+	const (
+		eventName    = "Rejected Never Public Tombstone"
+		rejectReason = "insufficient_quality"
+	)
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "pending_review", nil, testhelpers.FutureTime(11))
+	eventID := lookupEventIDByULID(t, env, eventULID)
+
+	var reviewID int
+	err := env.Pool.QueryRow(env.Context,
+		`INSERT INTO event_review_queue (event_id, original_payload, normalized_payload, warnings, event_start_time)
+		 VALUES ($1, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, $2)
+		 RETURNING id`,
+		eventID, testhelpers.FutureTime(11)).Scan(&reviewID)
+	require.NoError(t, err)
+
+	insertAdminUser(t, env, "admin", "admin-password-123", "admin@togather.test", "admin")
+	adminToken := adminLogin(t, env, "admin", "admin-password-123")
+
+	body, err := json.Marshal(map[string]string{"reason": rejectReason})
+	require.NoError(t, err)
+	rejectReq, err := http.NewRequest(http.MethodPost,
+		env.Server.URL+"/api/v1/admin/review-queue/"+strconv.Itoa(reviewID)+"/reject",
+		bytes.NewReader(body))
+	require.NoError(t, err)
+	rejectReq.Header.Set("Authorization", "Bearer "+adminToken)
+	rejectReq.Header.Set("Content-Type", "application/json")
+	rejectReq.Header.Set("Accept", "application/json")
+
+	rejectResp, err := env.Server.Client().Do(rejectReq)
+	require.NoError(t, err)
+	defer func() { _ = rejectResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, rejectResp.StatusCode, "reject route must succeed")
+
+	var lifecycle string
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT lifecycle_state FROM events WHERE id = $1`, eventID).Scan(&lifecycle))
+	require.Equal(t, "deleted", lifecycle)
+
+	// The reject path does write a tombstone row — the public lookup, not the
+	// absence of a tombstone, is what must suppress the 410.
+	var tombstoneCount int
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM event_tombstones WHERE event_id = $1`, eventID).Scan(&tombstoneCount))
+	require.Equal(t, 1, tombstoneCount, "reject must create a tombstone row (proving the public filter is under test)")
+
+	t.Run("JSON detail returns 404 without a tombstone body", func(t *testing.T) {
+		status, responseBody := fetchBody(t, env, "/api/v1/events/"+eventULID, "application/ld+json")
+		require.Equal(t, http.StatusNotFound, status)
+		requireNoPublicTombstoneLeak(t, responseBody, eventName, eventULID, rejectReason)
+	})
+
+	t.Run("HTML returns 404 without a tombstone body", func(t *testing.T) {
+		status, responseBody := fetchBody(t, env, "/events/"+eventULID, "text/html")
+		require.Equal(t, http.StatusNotFound, status)
+		requireNoPublicTombstoneLeak(t, responseBody, eventName, eventULID, rejectReason)
+	})
+
+	t.Run("Turtle returns 404 without a tombstone body", func(t *testing.T) {
+		status, responseBody := fetchBody(t, env, "/events/"+eventULID, "text/turtle")
+		require.Equal(t, http.StatusNotFound, status)
+		requireNoPublicTombstoneLeak(t, responseBody, eventName, eventULID, rejectReason)
+	})
+
+	t.Run("public JSON-LD page returns 404 without a tombstone body", func(t *testing.T) {
+		status, responseBody := fetchBody(t, env, "/events/"+eventULID, "application/ld+json")
+		require.Equal(t, http.StatusNotFound, status)
+		requireNoPublicTombstoneLeak(t, responseBody, eventName, eventULID, rejectReason)
+	})
+
+	t.Run("single ICS returns 404", func(t *testing.T) {
+		status, responseBody := fetchBody(t, env, "/api/v1/events/"+eventULID+"/ics", "")
+		require.Equal(t, http.StatusNotFound, status)
+		requireNoPublicTombstoneLeak(t, responseBody, eventName, eventULID, rejectReason)
+	})
+
+	t.Run("MCP get reports not found", func(t *testing.T) {
+		cli := setupMCPClient(t, env)
+		defer func() { _ = cli.Close() }()
+
+		result, err := cli.CallTool(context.Background(), mcpTypes.CallToolRequest{
+			Params: mcpTypes.CallToolParams{Name: "events", Arguments: map[string]any{"id": eventULID}},
+		})
+		require.NoError(t, err)
+
+		text, ok := mcpTypes.AsTextContent(result.Content[0])
+		require.True(t, ok)
+		require.Contains(t, text.Text, "event not found")
+		require.NotContains(t, text.Text, "sel:tombstone")
+		require.NotContains(t, text.Text, eventName)
+		require.NotContains(t, text.Text, rejectReason)
+	})
+}
+
 // TestPublicEventVisibilityAdminListUnfiltered verifies the admin list keeps
 // serving non-public events.
 func TestPublicEventVisibilityAdminListUnfiltered(t *testing.T) {
@@ -550,6 +744,32 @@ func TestPublicEventVisibilityRepositoryFilters(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "deleted", event.LifecycleState)
 	})
+
+	t.Run("GetPublicByULID hides deleted never-public rows", func(t *testing.T) {
+		// The pending_review create snapshot was never public, so deleting it
+		// must not make it readable (which would let callers serve a tombstone).
+		deletedID := lookupEventIDByULID(t, env, seed.PendingReview)
+		softDeleteEvent(t, env, deletedID)
+
+		err := eventsRepo.CreateTombstone(env.Context, events.TombstoneCreateParams{
+			EventID:   deletedID,
+			EventURI:  "https://togather.test/events/" + seed.PendingReview,
+			DeletedAt: time.Now(),
+			Reason:    "test_never_public",
+			Payload:   []byte(`{"sel:tombstone":true}`),
+		})
+		require.NoError(t, err)
+
+		// The raw admin lookup finds the tombstone...
+		_, err = eventsRepo.GetTombstoneByEventULID(env.Context, seed.PendingReview)
+		require.NoError(t, err)
+		// ...but the public lookups must not.
+		_, err = eventsRepo.GetPublicByULID(env.Context, seed.PendingReview)
+		require.ErrorIs(t, err, events.ErrNotFound)
+
+		_, err = eventsRepo.GetPublicTombstoneByEventULID(env.Context, seed.PendingReview)
+		require.ErrorIs(t, err, events.ErrNotFound)
+	})
 }
 
 func getPublicEventStatus(t *testing.T, env *testEnv, ulid string) int {
@@ -565,6 +785,14 @@ func getStatus(t *testing.T, env *testEnv, path string) int {
 func getStatusWithAccept(t *testing.T, env *testEnv, path, accept string) int {
 	t.Helper()
 
+	status, _ := fetchBody(t, env, path, accept)
+	return status
+}
+
+// fetchBody performs a GET and returns the status code plus the raw body.
+func fetchBody(t *testing.T, env *testEnv, path, accept string) (int, string) {
+	t.Helper()
+
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+path, nil)
 	require.NoError(t, err)
 	if accept != "" {
@@ -574,8 +802,31 @@ func getStatusWithAccept(t *testing.T, env *testEnv, path, accept string) int {
 	resp, err := env.Server.Client().Do(req)
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return resp.StatusCode, string(body)
+}
+
+// requireNoPublicTombstoneLeak asserts a response does not reveal that a
+// never-public event existed. The canonical ULID may only appear in the RFC 7807
+// `instance` field, which echoes the request path the caller already supplied;
+// everything else in the payload must be scrubbed of it.
+func requireNoPublicTombstoneLeak(t *testing.T, body, eventName, eventULID, rejectionReason string) {
+	t.Helper()
+
+	require.NotContains(t, body, eventName, "never-public event name must not leak")
+	require.NotContains(t, body, "sel:tombstone", "never-public event must not receive a tombstone body")
+	require.NotContains(t, body, rejectionReason, "rejection reason must not leak")
+
+	var problem map[string]any
+	if err := json.Unmarshal([]byte(body), &problem); err == nil {
+		delete(problem, "instance")
+		scrubbed, err := json.Marshal(problem)
+		require.NoError(t, err)
+		require.NotContains(t, string(scrubbed), eventULID,
+			"event ULID must only appear in the RFC 7807 instance echo")
+	}
 }
 
 // insertChange appends an event_changes row for the given event ID.

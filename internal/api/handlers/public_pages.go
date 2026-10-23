@@ -65,12 +65,12 @@ func (h *PublicPagesHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
 			// Check for tombstone
-			tombstone, tombErr := h.EventsService.GetTombstoneByEventULID(r.Context(), ulidValue)
+			tombstone, tombErr := h.EventsService.GetPublicTombstoneByEventULID(r.Context(), ulidValue)
 			if tombErr == nil && tombstone != nil {
 				h.serveEventTombstone(w, r, tombstone)
 				return
 			}
-			// No tombstone found, return 404
+			// No public tombstone found, return 404
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Not found", err, h.Env)
 			return
 		}
@@ -80,7 +80,7 @@ func (h *PublicPagesHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 
 	// Check if event is soft-deleted
 	if item.LifecycleState == "deleted" {
-		tombstone, tombErr := h.EventsService.GetTombstoneByEventULID(r.Context(), ulidValue)
+		tombstone, tombErr := h.EventsService.GetPublicTombstoneByEventULID(r.Context(), ulidValue)
 		if tombErr == nil && tombstone != nil {
 			h.serveEventTombstone(w, r, tombstone)
 			return

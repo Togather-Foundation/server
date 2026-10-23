@@ -434,6 +434,47 @@ func (q *Queries) GetOccurrenceByID(ctx context.Context, arg GetOccurrenceByIDPa
 	return i, err
 }
 
+const getPublicEventTombstoneByEventULID = `-- name: GetPublicEventTombstoneByEventULID :one
+SELECT t.id,
+       t.event_id,
+       t.event_uri,
+       t.deleted_at,
+       t.deletion_reason,
+       t.superseded_by_uri,
+       t.payload
+  FROM event_tombstones t
+  JOIN events e ON e.id = t.event_id
+ WHERE e.ulid = $1
+   AND e.lifecycle_state = 'deleted'
+   AND EXISTS (
+     SELECT 1 FROM event_changes p
+      WHERE p.event_id = e.id
+        AND COALESCE(p.snapshot->>'lifecycle_state', '') = ANY($2::text[])
+   )
+ ORDER BY t.deleted_at DESC
+ LIMIT 1
+`
+
+type GetPublicEventTombstoneByEventULIDParams struct {
+	Ulid         string   `json:"ulid"`
+	PublicStates []string `json:"public_states"`
+}
+
+func (q *Queries) GetPublicEventTombstoneByEventULID(ctx context.Context, arg GetPublicEventTombstoneByEventULIDParams) (EventTombstone, error) {
+	row := q.db.QueryRow(ctx, getPublicEventTombstoneByEventULID, arg.Ulid, arg.PublicStates)
+	var i EventTombstone
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.EventUri,
+		&i.DeletedAt,
+		&i.DeletionReason,
+		&i.SupersededByUri,
+		&i.Payload,
+	)
+	return i, err
+}
+
 const insertIdempotencyKey = `-- name: InsertIdempotencyKey :one
 INSERT INTO idempotency_keys (key, request_hash, event_id, event_ulid)
 VALUES ($1, $2, $3, $4)

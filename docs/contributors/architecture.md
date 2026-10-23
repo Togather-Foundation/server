@@ -187,7 +187,7 @@ Dereferenceable URIs (e.g., `https://toronto.togather.foundation/events/{id}`) M
 
 ### Tombstones for Deleted Entities
 
-Deleted entities MUST return **HTTP 410 Gone** with a minimal JSON-LD tombstone:
+Entities that were previously publicly visible MUST return **HTTP 410 Gone** with a minimal JSON-LD tombstone when deleted. Entities that were never publicly visible are not addressable and MUST return **HTTP 404 Not Found**, so their prior existence is not leaked:
 
 ```json
 {

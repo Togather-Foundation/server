@@ -300,8 +300,12 @@ paths:
         pointing to the corresponding ICS download URL.
 
         Only publicly visible events are served. `draft` and `pending_review`
-        events return `404 Not Found` so their existence is not leaked; deleted
-        events return `410 Gone` with a tombstone payload.
+        events return `404 Not Found` so their existence is not leaked. Deleted
+        events that were publicly visible return `410 Gone` with a tombstone;
+        deleted events that were never public (including rejected submissions)
+        return `404 Not Found` so their existence is not leaked. Prior visibility
+        is derived from recorded `event_changes` history; legacy rows without a
+        recorded public lifecycle fail closed (404).
       tags: [Events]
       security: []
       parameters:
@@ -321,6 +325,15 @@ paths:
                 $ref: '#/components/schemas/Event'
         '404':
           $ref: '#/components/responses/NotFound'
+        '410':
+          description: Event was publicly visible and has been deleted; response carries the tombstone payload
+          content:
+            application/ld+json:
+              schema:
+                $ref: '#/components/schemas/Tombstone'
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /api/v1/events:batch:
     post:
@@ -456,8 +469,11 @@ paths:
         Useful for importing a specific event into calendar applications.
 
         Only publicly visible events are served. `draft` and `pending_review`
-        events return `404 Not Found`; deleted events return `410 Gone` with a
-        tombstone payload.
+        events return `404 Not Found`. Deleted events that were publicly visible
+        return `410 Gone` with a tombstone payload; deleted events that were
+        never public return `404 Not Found` so their existence is not leaked.
+        Prior visibility is derived from recorded `event_changes` history; legacy
+        rows without a recorded public lifecycle fail closed (404).
       tags: [Events]
       security: []
       parameters:
@@ -483,7 +499,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
         '410':
-          description: Event has been deleted
+          description: Event was publicly visible and has been deleted; response carries the tombstone payload
           content:
             application/problem+json:
               schema:
@@ -745,7 +761,7 @@ paths:
     delete:
       operationId: deleteEvent
       summary: Delete an event
-      description: Soft delete - returns 410 Gone with tombstone thereafter
+      description: Soft delete - returns 410 Gone with tombstone thereafter if the event was publicly visible; events that were never public return 404
       tags: [Admin]
       x-internal: true
       security:
@@ -1381,7 +1397,9 @@ paths:
       summary: Reject a review queue entry
       description: |
         Reject an event in the review queue and mark it as deleted. The event will
-        return HTTP 410 Gone with a tombstone and will not appear in public listings.
+        not appear in public listings. A rejected submission was never publicly
+        visible, so anonymous reads return `404 Not Found` (no tombstone is served);
+        `410 Gone` is reserved for events that were public before deletion.
       tags: [Admin]
       x-internal: true
       security:
@@ -6460,7 +6478,7 @@ components:
       description: Response for deleted entities (HTTP 410)
       properties:
         '@context':
-          type: string
+          type: [string, object]
         '@type':
           type: string
         '@id':

@@ -201,6 +201,7 @@ type Querier interface {
 	GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, arg GetPendingReviewByEventUlidAndDuplicateUlidParams) (GetPendingReviewByEventUlidAndDuplicateUlidRow, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
+	GetPublicEventTombstoneByEventULID(ctx context.Context, arg GetPublicEventTombstoneByEventULIDParams) (EventTombstone, error)
 	// Check if a url_norm was submitted within the given interval (for dedup).
 	// Returns the most recent matching row if found.
 	GetRecentSubmissionByURLNorm(ctx context.Context, arg GetRecentSubmissionByURLNormParams) (ScraperSubmission, error)

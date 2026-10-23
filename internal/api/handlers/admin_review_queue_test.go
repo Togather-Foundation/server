@@ -230,6 +230,10 @@ func (m *MockRepository) GetTombstoneByEventULID(ctx context.Context, eventULID 
 	return args.Get(0).(*events.Tombstone), args.Error(1)
 }
 
+func (m *MockRepository) GetPublicTombstoneByEventULID(ctx context.Context, eventULID string) (*events.Tombstone, error) {
+	return m.GetTombstoneByEventULID(ctx, eventULID)
+}
+
 func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*events.ReviewQueueEntry, error) {
 	args := m.Called(ctx, sourceID, externalID, dedupHash)
 	if args.Get(0) == nil {

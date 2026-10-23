@@ -100,9 +100,12 @@ func (s *Service) GetByULID(ctx context.Context, ulid string) (*Event, error) {
 
 // GetPublicByULID is the anonymous/public detail path. It hides
 // draft/pending_review events with ErrNotFound (so their existence is not
-// leaked) while returning deleted events unchanged so callers can serve the
-// 410 tombstone. The repository filters in SQL; the state check here is
-// defence in depth for repository implementations that do not.
+// leaked). The repository returns deleted events ONLY when a prior
+// event_changes snapshot shows the event was public at some point — that prior
+// public visibility is what makes serving the 410 tombstone safe. Never-public
+// deleted events (including rejected submissions) return ErrNotFound. The state
+// check here is defence in depth for repository implementations that do not
+// apply the prior-visibility gate.
 func (s *Service) GetPublicByULID(ctx context.Context, ulid string) (*Event, error) {
 	event, err := s.repo.GetPublicByULID(ctx, ulid)
 	if err != nil {
@@ -117,8 +120,19 @@ func (s *Service) GetPublicByULID(ctx context.Context, ulid string) (*Event, err
 	return event, nil
 }
 
+// GetTombstoneByEventULID returns a tombstone regardless of whether the event
+// was ever publicly visible. Admin/internal use only — anonymous handlers MUST
+// use GetPublicTombstoneByEventULID (see t_34c3c597).
 func (s *Service) GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {
 	return s.repo.GetTombstoneByEventULID(ctx, eventULID)
+}
+
+// GetPublicTombstoneByEventULID is the anonymous tombstone lookup. It returns a
+// tombstone only for events that were publicly visible before deletion;
+// never-public events (draft/pending_review, rejected submissions) yield
+// ErrNotFound so callers respond 404 instead of leaking a 410 tombstone.
+func (s *Service) GetPublicTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {
+	return s.repo.GetPublicTombstoneByEventULID(ctx, eventULID)
 }
 
 type FilterError struct {

@@ -210,10 +210,14 @@ func TestAdminDeleteEventWithReason(t *testing.T) {
 
 	agentKey := insertAPIKey(t, env, "test-agent")
 
-	// Create event
+	// Create a publicly visible event. The description keeps confidence high
+	// enough that ingest publishes it instead of routing it to pending_review —
+	// the 410 tombstone assertion below is only valid for a previously-public
+	// event (a never-public deletion now returns 404).
 	event := map[string]any{
-		"name":      "Event to Delete with Reason",
-		"startDate": testhelpers.FutureTime(50).Format(time.RFC3339),
+		"name":        "Event to Delete with Reason",
+		"description": "This event is published so that deletion can be verified with a tombstone.",
+		"startDate":   testhelpers.FutureTime(50).Format(time.RFC3339),
 		"location": map[string]any{
 			"name":            "Test Venue",
 			"addressLocality": "Toronto",
@@ -240,6 +244,11 @@ func TestAdminDeleteEventWithReason(t *testing.T) {
 	var created map[string]any
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&created))
 	eventID := eventIDFromPayload(created)
+
+	// The event must be publicly readable before deletion for the 410 assertion
+	// below to exercise the published-then-deleted tombstone path.
+	require.Equal(t, http.StatusOK, getStatus(t, env, "/api/v1/events/"+eventID),
+		"event must be published before it is deleted")
 
 	// Delete event with reason
 	deletePayload := map[string]any{

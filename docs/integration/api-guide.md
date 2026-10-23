@@ -456,7 +456,7 @@ lifecycle state except the system-only ones:
 | `completed` | ✅ visible | Kept for history |
 | `draft` | ❌ hidden | Admin-only; detail returns `404` (no existence leak) |
 | `pending_review` | ❌ hidden | Review queue / system state; detail returns `404` (no existence leak) |
-| `deleted` | ❌ hidden | Detail returns `410 Gone` with a tombstone |
+| `deleted` | ❌ hidden | Returns `410 Gone` with a tombstone if the event was publicly visible before deletion; `404` if it never was |
 
 `GET /api/v1/admin/events` (admin-authenticated) remains unfiltered by the
 public allowlist and returns every non-deleted lifecycle state.
@@ -471,7 +471,10 @@ Accept: application/ld+json
 ```
 
 `draft` and `pending_review` events return `404 Not Found` (their existence is
-not disclosed). Deleted events return `410 Gone` (see below).
+not disclosed). Deleted events that were publicly visible before deletion return
+`410 Gone` with a tombstone. Deleted events that were never public — including
+submissions rejected from the review queue — return `404 Not Found`, so a
+non-public event's existence is never leaked (see below).
 
 #### Response
 
@@ -502,7 +505,8 @@ not disclosed). Deleted events return `410 Gone` (see below).
 
 #### Deleted Events
 
-If an event has been deleted, the endpoint returns a tombstone:
+If an event was publicly visible and has since been deleted, the endpoint returns
+a tombstone:
 
 ```http
 HTTP/1.1 410 Gone
@@ -516,6 +520,17 @@ Content-Type: application/ld+json
   "sel:deletedAt": "2026-01-15T10:30:00Z"
 }
 ```
+
+If the deleted event was **never** publicly visible (it stayed in `draft` or
+`pending_review` and was rejected, retired by consolidation, or otherwise
+soft-deleted), the endpoint returns `404 Not Found` with no tombstone body. This
+applies to every anonymous surface — JSON detail, ICS, HTML/Turtle/JSON-LD pages,
+and MCP `events{id}` — and matches the change feed, which only publishes delete
+rows for previously-public events.
+
+Prior visibility is derived from recorded `event_changes` history. Legacy rows
+with no recorded public lifecycle fail closed (404); the ever-published-signal
+backfill is tracked in ticket `t_06d11c22`.
 
 ---
 
@@ -777,7 +792,8 @@ An event first recorded while `draft`/`pending_review` may therefore first appea
 as an `update` (or `delete`) rather than `create`; consumers that need a canonical
 creation record should fetch `GET /api/v1/events/{ulid}`, or use
 `include_snapshot=true`, which carries the full published snapshot on the approval
-`update`.
+`update`. A submission rejected before it was ever public has no public feed rows
+at all, and its detail/ICS/HTML/MCP reads return `404` rather than `410`.
 
 **Unpublishing is not a deletion.** Unpublishing (transitioning to `draft`)
 withdraws the event's create/update rows from the feed and emits no delete row.

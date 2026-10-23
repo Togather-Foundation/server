@@ -181,7 +181,7 @@ func TestRecomputeAddOccurrenceGoesPublished(t *testing.T) {
 
 	// The retired event should be deleted.
 	retStatus, _ := getEvent(t, env, retireULID)
-	assert.Equal(t, http.StatusGone, retStatus, "retired event should return 410 Gone")
+	assert.Equal(t, http.StatusNotFound, retStatus, "retired never-public event should return 404 Not Found")
 }
 
 // ---------------------------------------------------------------------------
@@ -233,7 +233,7 @@ func TestRecomputeAddOccurrenceStaysPending(t *testing.T) {
 
 	// The retired event should be deleted.
 	retStatus, _ := getEvent(t, env, retireULID)
-	assert.Equal(t, http.StatusGone, retStatus, "retired event should return 410 Gone")
+	assert.Equal(t, http.StatusNotFound, retStatus, "retired never-public event should return 404 Not Found")
 }
 
 // ---------------------------------------------------------------------------
@@ -282,9 +282,9 @@ func TestRecomputeMergeGoesPublished(t *testing.T) {
 	assert.Equal(t, "approved", getReviewStatus(t, env, reviewID),
 		"primary's review entry should be dismissed (approved)")
 
-	// The duplicate should return 410.
+	// The duplicate was never public, so it should return 404.
 	retStatus, _ := getEvent(t, env, dupeULID)
-	assert.Equal(t, http.StatusGone, retStatus, "duplicate event should return 410 Gone")
+	assert.Equal(t, http.StatusNotFound, retStatus, "retired never-public duplicate should return 404 Not Found")
 }
 
 // ---------------------------------------------------------------------------
@@ -333,9 +333,9 @@ func TestRecomputeMergeStaysPending(t *testing.T) {
 	assert.Equal(t, "pending", getReviewStatus(t, env, reviewID),
 		"primary's review entry should remain pending")
 
-	// The duplicate should return 410.
+	// The duplicate was never public, so it should return 404.
 	retStatus, _ := getEvent(t, env, dupeULID)
-	assert.Equal(t, http.StatusGone, retStatus, "duplicate event should return 410 Gone")
+	assert.Equal(t, http.StatusNotFound, retStatus, "retired never-public duplicate should return 404 Not Found")
 }
 
 // ---------------------------------------------------------------------------
@@ -392,7 +392,7 @@ func TestRecomputeConsolidateCanonicalPublished(t *testing.T) {
 
 	// Retired event is gone.
 	retStatus, _ := getEvent(t, env, retiredULID)
-	assert.Equal(t, http.StatusGone, retStatus, "retired event should return 410 Gone")
+	assert.Equal(t, http.StatusNotFound, retStatus, "retired never-public event should return 404 Not Found")
 }
 
 // ---------------------------------------------------------------------------
@@ -449,7 +449,7 @@ func TestRecomputeConsolidateCanonicalStaysPending(t *testing.T) {
 
 	// Retired event is gone.
 	retStatus, _ := getEvent(t, env, retiredULID)
-	assert.Equal(t, http.StatusGone, retStatus, "retired event should return 410 Gone")
+	assert.Equal(t, http.StatusNotFound, retStatus, "retired never-public event should return 404 Not Found")
 }
 
 // ---------------------------------------------------------------------------

@@ -183,7 +183,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 	event, err := t.eventsService.GetPublicByULID(ctx, id)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
-			tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
+			tombstone, tombErr := t.eventsService.GetPublicTombstoneByEventULID(ctx, id)
 			if tombErr != nil && !errors.Is(tombErr, events.ErrNotFound) {
 				// Log tombstone fetch error for diagnostics (don't fail the request)
 				t.logger.Warn().Err(tombErr).Str("event_id", id).Msg("MCP: failed to fetch tombstone for event")
@@ -210,7 +210,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 	}
 
 	if strings.EqualFold(event.LifecycleState, "deleted") {
-		tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
+		tombstone, tombErr := t.eventsService.GetPublicTombstoneByEventULID(ctx, id)
 		if tombErr != nil && !errors.Is(tombErr, events.ErrNotFound) {
 			// Log tombstone fetch error for diagnostics (don't fail the request)
 			t.logger.Warn().Err(tombErr).Str("event_id", id).Msg("MCP: failed to fetch tombstone for deleted event")
