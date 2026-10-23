@@ -7,23 +7,66 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
+// DeveloperService is the subset of *developers.Service used by the account
+// tools. It is an interface so the handlers can be unit-tested without a
+// database.
+type DeveloperService interface {
+	GetDeveloperByID(ctx context.Context, id uuid.UUID) (*developers.Developer, error)
+	ListOwnKeys(ctx context.Context, developerID uuid.UUID) ([]*developers.APIKeyWithUsage, error)
+	CheckAPIKeyOwnership(ctx context.Context, keyID uuid.UUID, developerID uuid.UUID) (bool, error)
+	GetAPIKeyUsageStats(ctx context.Context, keyID uuid.UUID, startDate, endDate time.Time) (totalRequests, totalErrors int64, daily []developers.DailyUsage, err error)
+	CreateAPIKey(ctx context.Context, params developers.CreateAPIKeyParams) (plainKey string, keyInfo *developers.APIKeyWithUsage, err error)
+	RevokeOwnKey(ctx context.Context, developerID uuid.UUID, keyID uuid.UUID) error
+}
+
+var _ DeveloperService = (*developers.Service)(nil)
+
 // DeveloperTools provides MCP tools for developer API key management.
 type DeveloperTools struct {
-	service *developers.Service
+	service DeveloperService
 	baseURL string
 }
 
 // NewDeveloperTools creates a new DeveloperTools instance.
-func NewDeveloperTools(service *developers.Service, baseURL string) *DeveloperTools {
+func NewDeveloperTools(service DeveloperService, baseURL string) *DeveloperTools {
 	return &DeveloperTools{
 		service: service,
 		baseURL: baseURL,
 	}
+}
+
+// actingDeveloper resolves the developer identity for account tools from the
+// authenticated API key. The key's bound developer is authoritative: a
+// developer_id supplied in tool arguments must match it. A non-nil tool result
+// means the caller must stop before touching the service/repository.
+func (t *DeveloperTools) actingDeveloper(ctx context.Context, suppliedDeveloperID string) (uuid.UUID, *mcp.CallToolResult) {
+	key := auth.AgentKeyFromContext(ctx)
+	if key == nil {
+		return uuid.UUID{}, mcp.NewToolResultError("this tool requires an authenticated API key")
+	}
+	if key.DeveloperID == "" {
+		return uuid.UUID{}, mcp.NewToolResultError("this API key is not bound to a developer; account tools require a developer-issued key (use the admin API for admin key management)")
+	}
+	developerID, err := uuid.Parse(key.DeveloperID)
+	if err != nil {
+		return uuid.UUID{}, mcp.NewToolResultError("authenticated API key has an invalid developer binding")
+	}
+	if suppliedDeveloperID != "" {
+		suppliedID, err := uuid.Parse(suppliedDeveloperID)
+		if err != nil {
+			return uuid.UUID{}, mcp.NewToolResultError("invalid developer_id: must be a valid UUID")
+		}
+		if suppliedID != developerID {
+			return uuid.UUID{}, mcp.NewToolResultError("developer_id does not match the authenticated API key's developer")
+		}
+	}
+	return developerID, nil
 }
 
 // APIKeysTool returns the MCP tool definition for listing or getting API keys.
@@ -42,7 +85,7 @@ func (t *DeveloperTools) APIKeysTool() mcp.Tool {
 			Properties: map[string]interface{}{
 				"developer_id": map[string]interface{}{
 					"type":        "string",
-					"description": "UUID of the authenticated developer (required)",
+					"description": "Optional and ignored for identity: the developer is derived from the authenticated API key. If supplied, it must match the key's developer.",
 				},
 				"key_id": map[string]interface{}{
 					"type":        "string",
@@ -57,7 +100,6 @@ func (t *DeveloperTools) APIKeysTool() mcp.Tool {
 					"description": "End date in YYYY-MM-DD format (only used with key_id, default: today)",
 				},
 			},
-			Required: []string{"developer_id"},
 		},
 	}
 }
@@ -87,10 +129,11 @@ func (t *DeveloperTools) APIKeysHandler(ctx context.Context, request mcp.CallToo
 		}
 	}
 
-	// Validate developer ID
-	developerID, err := uuid.Parse(args.DeveloperID)
-	if err != nil {
-		return mcp.NewToolResultError("invalid developer_id: must be a valid UUID"), nil
+	// Derive the acting developer from the authenticated API key. Never trust
+	// developer_id from the tool arguments.
+	developerID, toolErr := t.actingDeveloper(ctx, args.DeveloperID)
+	if toolErr != nil {
+		return toolErr, nil
 	}
 
 	// If key_id is provided, get detailed usage for that specific key
@@ -249,7 +292,7 @@ func (t *DeveloperTools) ManageAPIKeyTool() mcp.Tool {
 				},
 				"developer_id": map[string]interface{}{
 					"type":        "string",
-					"description": "UUID of the authenticated developer (required)",
+					"description": "Optional and ignored for identity: the developer is derived from the authenticated API key. If supplied, it must match the key's developer.",
 				},
 				"name": map[string]interface{}{
 					"type":        "string",
@@ -264,7 +307,7 @@ func (t *DeveloperTools) ManageAPIKeyTool() mcp.Tool {
 					"description": "UUID of the API key to revoke (required for revoke)",
 				},
 			},
-			Required: []string{"action", "developer_id"},
+			Required: []string{"action"},
 		},
 	}
 }
@@ -300,10 +343,11 @@ func (t *DeveloperTools) ManageAPIKeyHandler(ctx context.Context, request mcp.Ca
 		return mcp.NewToolResultError("action must be 'create' or 'revoke'"), nil
 	}
 
-	// Validate developer ID
-	developerID, err := uuid.Parse(args.DeveloperID)
-	if err != nil {
-		return mcp.NewToolResultError("invalid developer_id: must be a valid UUID"), nil
+	// Derive the acting developer from the authenticated API key. Never trust
+	// developer_id from the tool arguments.
+	developerID, toolErr := t.actingDeveloper(ctx, args.DeveloperID)
+	if toolErr != nil {
+		return toolErr, nil
 	}
 
 	// Route to appropriate handler

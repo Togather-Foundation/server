@@ -19,7 +19,7 @@ type APIKeyRepository struct {
 func (r *APIKeyRepository) LookupByPrefix(ctx context.Context, prefix string) (*auth.APIKey, error) {
 	queryer := r.queryer()
 	row := queryer.QueryRow(ctx, `
-SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at, federation_node_id
+SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at, federation_node_id, developer_id
   FROM api_keys
  WHERE prefix = $1
  LIMIT 1
@@ -37,6 +37,7 @@ SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tie
 		IsActive         bool
 		ExpiresAt        *time.Time
 		FederationNodeID *string
+		DeveloperID      *string
 	}
 	if err := row.Scan(
 		&data.ID,
@@ -50,6 +51,7 @@ SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tie
 		&data.IsActive,
 		&data.ExpiresAt,
 		&data.FederationNodeID,
+		&data.DeveloperID,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, auth.ErrInvalidAPIKey
@@ -74,6 +76,9 @@ SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tie
 	}
 	if data.FederationNodeID != nil {
 		key.FederationNodeID = *data.FederationNodeID
+	}
+	if data.DeveloperID != nil {
+		key.DeveloperID = *data.DeveloperID
 	}
 	return key, nil
 }

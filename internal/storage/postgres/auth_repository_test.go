@@ -27,6 +27,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	require.Equal(t, "hash", key.Hash)
 	require.Equal(t, "agent", key.Role)
 	require.Equal(t, "agent", key.RateLimitTier)
+	require.Empty(t, key.DeveloperID, "keys without a developer binding must scan as empty")
 
 	err = repo.UpdateLastUsed(ctx, key.ID)
 	require.NoError(t, err)
@@ -35,6 +36,33 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	err = pool.QueryRow(ctx, `SELECT last_used_at FROM api_keys WHERE id = $1`, key.ID).Scan(&lastUsed)
 	require.NoError(t, err)
 	require.False(t, lastUsed.IsZero())
+}
+
+// TestAPIKeyRepositoryLookupByPrefixPopulatesDeveloperID guards the storage
+// half of the account-tool binding: the developer_id column must be selected
+// and surfaced on auth.APIKey so MCP tools can derive the caller's identity.
+func TestAPIKeyRepositoryLookupByPrefixPopulatesDeveloperID(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &APIKeyRepository{pool: pool}
+
+	var developerID string
+	err := pool.QueryRow(ctx,
+		`INSERT INTO developers (email, name) VALUES ($1, $2) RETURNING id`,
+		"dev@example.com", "Dev",
+	).Scan(&developerID)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, `
+INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, rate_limit_tier, is_active, developer_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+`, "dev_123", "hash", 2, "Developer Key", "agent", "agent", true, developerID)
+	require.NoError(t, err)
+
+	key, err := repo.LookupByPrefix(ctx, "dev_123")
+	require.NoError(t, err)
+	require.Equal(t, developerID, key.DeveloperID)
 }
 
 func TestAPIKeyRepositoryLookupMissing(t *testing.T) {

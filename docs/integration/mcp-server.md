@@ -21,7 +21,8 @@ The MCP server is available as:
 > `search`, `geocode_address`, `reverse_geocode`) work anonymously, exactly like the
 > public REST read endpoints. The key is only required for the write/account tools
 > (`add_event`, `api_keys`, `manage_api_key`) and it enables per-agent rate limits and
-> usage stats.
+> usage stats. Account tools always act on the **developer bound to the Bearer key** —
+> they cannot be pointed at another developer.
 >
 > **Register `/mcp` as a *local* MCP server** with a custom header. Do **not** use a
 > claude.ai *remote connector* — remote connectors speak only OAuth and cannot send a
@@ -80,6 +81,13 @@ Authorization: Bearer <api-key>
 They are rate-limited at the agent tier from `RateLimitConfig`. Get a key at `/dev/login`
 (instant, GitHub OAuth) or by email invitation.
 
+**Account-tool identity.** `api_keys` and `manage_api_key` derive the acting developer
+from the Bearer key (`api_keys.developer_id`), never from tool arguments. `developer_id`
+is still accepted for backwards compatibility but is optional; if supplied it must match
+the key's developer or the call is rejected before anything is read or written. Keys with
+no developer binding (CLI/admin keys) cannot use these tools — use the admin API for
+admin key management instead. (`add_event` does not use a developer identity.)
+
 Behavior on the wire:
 
 - **Anonymous + read tool** → 200, results returned.
@@ -105,8 +113,8 @@ The MCP server provides 9 tools:
 | `geocode_address` | public | Geocode an address or place name to coordinates |
 | `reverse_geocode` | public | Reverse geocode coordinates to a human-readable address |
 | `add_event` | **API key** | Create an event from JSON-LD (requires API key) |
-| `api_keys` | **API key** | List API keys and usage statistics for the authenticated developer |
-| `manage_api_key` | **API key** | Create or revoke API keys (requires API key) |
+| `api_keys` | **API key** | List API keys and usage statistics for the developer bound to the Bearer key |
+| `manage_api_key` | **API key** | Create or revoke API keys for the developer bound to the Bearer key |
 
 ### Unified List/Get Operations
 
@@ -193,6 +201,18 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   curl -H "Authorization: Bearer YOUR_API_KEY" https://localhost:8080/mcp
   ```
 - **Verification**: Check if API key exists: `psql $DATABASE_URL -c "SELECT key_prefix FROM api_keys LIMIT 1;"`
+
+#### Account tool fails with "developer_id does not match the authenticated API key's developer"
+- **Cause**: The `developer_id` argument named a different developer than the one bound to
+  the Bearer key. Identity always comes from the key.
+- **Solution**: Omit `developer_id` (preferred) or pass the key owner's developer UUID.
+  Use the `/api/v1/admin/developers` endpoints to manage another developer's keys.
+
+#### Account tool fails with "this API key is not bound to a developer"
+- **Cause**: The Bearer key has no `developer_id` (CLI/admin-created keys), so there is no
+  developer identity to act as.
+- **Solution**: Use a key created through the developer self-service flow (`/dev/login` or
+  a developer invitation), or use the admin API for admin key management.
 
 #### HTTP/SSE returns 401 Unauthorized
 - **Cause**: An Authorization header was present but the key is missing or invalid.

@@ -41,6 +41,14 @@ type APIKey struct {
 	// payload @id hosts are untrusted input and must be checked against this
 	// value. Unbound keys are rejected by POST /api/v1/federation/sync.
 	FederationNodeID string
+
+	// DeveloperID is the developer account this key belongs to, or an empty
+	// string when the key is not developer-bound (CLI/admin keys).
+	//
+	// It is the ONLY trusted identity for developer self-service operations:
+	// a key may only manage the keys of its own developer. Tool/query arguments
+	// claiming a developer identity must be checked against this value.
+	DeveloperID string
 }
 
 type APIKeyStore interface {
