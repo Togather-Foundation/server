@@ -165,13 +165,14 @@ SELECT ec.id,
     AND ($3::text IS NULL OR ec.action = $3::text)
     -- Public change feed visibility. Create/update rows are visible only when
     -- both the event and the recorded snapshot are in the public allowlist.
-    -- Delete rows are visible only when the event was publicly visible at some
-    -- earlier point (a prior change row carried a public snapshot), so a
+    -- Delete rows are visible only when the event was publicly visible before
+    -- that deletion (events.first_published_at, maintained by the
+    -- trg_events_first_published_at trigger). The <= bound keeps an earlier
+    -- never-public delete row hidden if the event is later republished, so a
     -- rejected submission that never left draft/pending_review does not leak
-    -- its tombstone @id/name/reason. Legacy rows with no snapshot lifecycle are
-    -- fail-closed for the prior-visibility check (COALESCE to ''), while
-    -- create/update rows fall back to the current event state. Mirrors
-    -- events.PublicStates.
+    -- its tombstone @id/name/reason. Rows created before the change log existed
+    -- have a NULL first_published_at and fail closed; create/update rows still
+    -- fall back to the current event state. Mirrors events.PublicStates.
     AND (
       (
         ec.action <> 'delete'
@@ -180,12 +181,8 @@ SELECT ec.id,
       )
       OR (
         ec.action = 'delete'
-        AND EXISTS (
-          SELECT 1 FROM event_changes p
-          WHERE p.event_id = ec.event_id
-            AND p.sequence_number < ec.sequence_number
-            AND COALESCE(p.snapshot->>'lifecycle_state', '') = ANY($4::text[])
-        )
+        AND e.first_published_at IS NOT NULL
+        AND e.first_published_at <= ec.changed_at
       )
     )
  ORDER BY ec.sequence_number ASC

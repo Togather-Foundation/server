@@ -151,6 +151,11 @@ CREATE TABLE events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   published_at TIMESTAMPTZ,
+  -- First time the event entered a public lifecycle state; NULL = never public.
+  -- Maintained by trg_events_first_published_at (BEFORE INSERT OR UPDATE) and
+  -- backfilled once from event_changes by migration 000055. Gates public
+  -- tombstones (410 vs 404) and change-feed delete rows.
+  first_published_at TIMESTAMPTZ,
   deleted_at TIMESTAMPTZ,
   
   -- Soft delete tracking
@@ -182,6 +187,13 @@ CREATE INDEX idx_events_search_vector ON events USING GIN (
 -- Name similarity for fuzzy matching
 CREATE INDEX idx_events_name_trgm ON events USING GIN (name gin_trgm_ops);
 ```
+
+`first_published_at` is maintained by a `BEFORE INSERT OR UPDATE` trigger
+(`trg_events_first_published_at` → `set_event_first_published_at()`): inserts in a
+public state copy `created_at`, transitions into a public state use `now()`, and
+the value is never cleared. The public-state allowlist lives in the SQL function
+`event_is_public_state(text)`, kept aligned with `events.PublicStates` by
+`visibility_drift_test.go`.
 
 **Schema.org Mapping:**
 - `@type`: `Event`, `EventSeries`, or `Festival`

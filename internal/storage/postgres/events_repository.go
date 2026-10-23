@@ -334,10 +334,10 @@ func (r *EventRepository) GetByULID(ctx context.Context, ulid string) (*events.E
 }
 
 // GetPublicByULID returns the event only when it is publicly visible.
-// The allowlist is returned as-is; a deleted event is returned only when a
-// prior event_changes snapshot was public, which is what makes the 410
-// tombstone safe to serve. Deleted events that never left draft/pending_review
-// return ErrNotFound so their existence is not leaked.
+// The allowlist is returned as-is; a deleted event is returned only when
+// events.first_published_at is set (it was public at some point), which is what
+// makes the 410 tombstone safe to serve. Deleted events that never left
+// draft/pending_review return ErrNotFound so their existence is not leaked.
 func (r *EventRepository) GetPublicByULID(ctx context.Context, ulid string) (*events.Event, error) {
 	return r.getByULID(ctx, ulid, events.PublicStates[:])
 }
@@ -372,11 +372,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	     OR e.lifecycle_state = ANY($2::text[])
 	     OR (
 	       e.lifecycle_state = 'deleted'
-	       AND EXISTS (
-	         SELECT 1 FROM event_changes p
-	          WHERE p.event_id = e.id
-	            AND COALESCE(p.snapshot->>'lifecycle_state', '') = ANY($2::text[])
-	       )
+	       AND e.first_published_at IS NOT NULL
 	     )
 	   )
    ORDER BY o.start_time ASC
@@ -2782,16 +2778,13 @@ func (r *EventRepository) GetTombstoneByEventULID(ctx context.Context, eventULID
 }
 
 // GetPublicTombstoneByEventULID retrieves the tombstone for a deleted event by
-// ULID only when a prior event_changes snapshot shows the event was public at
-// some point. Never-public events return ErrNotFound, so anonymous surfaces
-// cannot use a 410 response to confirm their existence.
+// ULID only when events.first_published_at shows the event was public at some
+// point before deletion. Never-public events return ErrNotFound, so anonymous
+// surfaces cannot use a 410 response to confirm their existence.
 func (r *EventRepository) GetPublicTombstoneByEventULID(ctx context.Context, eventULID string) (*events.Tombstone, error) {
 	queries := Queries{db: r.queryer()}
 
-	row, err := queries.GetPublicEventTombstoneByEventULID(ctx, GetPublicEventTombstoneByEventULIDParams{
-		Ulid:         eventULID,
-		PublicStates: events.PublicStates[:],
-	})
+	row, err := queries.GetPublicEventTombstoneByEventULID(ctx, eventULID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, events.ErrNotFound

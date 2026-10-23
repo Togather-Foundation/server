@@ -772,6 +772,192 @@ func TestPublicEventVisibilityRepositoryFilters(t *testing.T) {
 	})
 }
 
+// firstPublishedAtIsSet reports whether the persisted ever-public signal is set.
+func firstPublishedAtIsSet(t *testing.T, env *testEnv, eventID string) bool {
+	t.Helper()
+
+	var set bool
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT first_published_at IS NOT NULL FROM events WHERE id = $1`, eventID).Scan(&set))
+	return set
+}
+
+// TestPublicEventVisibilityUnpublishedThenDeleted is the regression guard for
+// the persisted ever-public signal: an event that was published, unpublished and
+// then deleted must still answer 410 and keep its public change-feed delete row.
+func TestPublicEventVisibilityUnpublishedThenDeleted(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "Unpublished Then Deleted Org")
+	place := insertPlace(t, env, "Unpublished Then Deleted Venue", "Toronto")
+
+	const eventName = "Unpublished Then Deleted Event"
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", nil, testhelpers.FutureTime(14))
+	eventID := lookupEventIDByULID(t, env, eventULID)
+
+	require.True(t, firstPublishedAtIsSet(t, env, eventID), "publishing must persist the ever-public signal")
+
+	// Unpublish.
+	_, err := env.Pool.Exec(env.Context,
+		`UPDATE events SET lifecycle_state = 'draft' WHERE id = $1`, eventID)
+	require.NoError(t, err)
+	require.True(t, firstPublishedAtIsSet(t, env, eventID), "unpublishing must not clear the signal")
+	require.Equal(t, http.StatusNotFound, getPublicEventStatus(t, env, eventULID),
+		"an unpublished event must not be served")
+
+	// Delete after unpublishing.
+	softDeleteEvent(t, env, eventID)
+	insertChange(t, env, eventID, "delete")
+
+	require.Equal(t, http.StatusGone, getPublicEventStatus(t, env, eventULID),
+		"a previously-public event must keep its 410 tombstone after unpublish+delete")
+
+	resp := fetchChangeFeed(t, env, url.Values{"limit": {"200"}})
+	var sawDelete bool
+	for _, change := range resp.Changes {
+		if change.EventID != eventID {
+			continue
+		}
+		require.Equal(t, "delete", change.Action,
+			"only the delete row of a deleted event may remain in the public feed")
+		sawDelete = true
+	}
+	require.True(t, sawDelete, "a previously-public event must keep its public delete row")
+}
+
+// TestPublicEventVisibilityLegacyNullFirstPublishedAt covers rows that predate
+// the column (or were imported without it): a public lifecycle with a NULL
+// signal must be seeded by the trigger when it leaves the public state, so the
+// tombstone contract survives the migration.
+func TestPublicEventVisibilityLegacyNullFirstPublishedAt(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "Legacy Null Signal Org")
+	place := insertPlace(t, env, "Legacy Null Signal Venue", "Toronto")
+
+	const eventName = "Legacy Null Signal Event"
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "published", nil, testhelpers.FutureTime(15))
+	eventID := lookupEventIDByULID(t, env, eventULID)
+
+	// Simulate a legacy row: public lifecycle, no recorded signal and no
+	// recorded change history. This is the case the old EXISTS-over-event_changes
+	// gate could not serve (it would answer 404); the column gate answers 410
+	// because the delete trigger seeds the signal from OLD.created_at.
+	_, err := env.Pool.Exec(env.Context,
+		`UPDATE events SET first_published_at = NULL WHERE id = $1`, eventID)
+	require.NoError(t, err)
+	_, err = env.Pool.Exec(env.Context,
+		`DELETE FROM event_changes WHERE event_id = $1`, eventID)
+	require.NoError(t, err)
+	require.False(t, firstPublishedAtIsSet(t, env, eventID), "test must exercise the legacy NULL case")
+
+	softDeleteEvent(t, env, eventID)
+
+	require.True(t, firstPublishedAtIsSet(t, env, eventID),
+		"leaving a public state with a NULL signal must seed it from created_at")
+	require.Equal(t, http.StatusGone, getPublicEventStatus(t, env, eventULID),
+		"a legacy previously-public event must still answer 410 after deletion")
+}
+
+// TestPublicEventVisibilityNeverPublicDeleteStaysHidden is the negative control:
+// an event that never left pending_review must stay invisible (404, no public
+// delete row) even after deletion.
+func TestPublicEventVisibilityNeverPublicDeleteStaysHidden(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "Never Public Delete Org")
+	place := insertPlace(t, env, "Never Public Delete Venue", "Toronto")
+
+	const eventName = "Never Public Deleted Event"
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "pending_review", nil, testhelpers.FutureTime(16))
+	eventID := lookupEventIDByULID(t, env, eventULID)
+
+	require.False(t, firstPublishedAtIsSet(t, env, eventID), "pending_review must not set the signal")
+
+	softDeleteEvent(t, env, eventID)
+	insertChange(t, env, eventID, "delete")
+
+	require.False(t, firstPublishedAtIsSet(t, env, eventID), "deleting a never-public event must not set the signal")
+	require.Equal(t, http.StatusNotFound, getPublicEventStatus(t, env, eventULID),
+		"a never-public deleted event must remain 404")
+
+	resp := fetchChangeFeed(t, env, url.Values{"limit": {"200"}})
+	for _, change := range resp.Changes {
+		require.NotEqual(t, eventID, change.EventID,
+			"a never-public event must not emit a public delete row")
+	}
+	raw := fetchChangeFeedBody(t, env, url.Values{"limit": {"200"}})
+	require.NotContains(t, raw, eventName, "never-public event name must not appear in the public feed")
+}
+
+// feedActionsForEvent returns the public feed actions served for one event.
+func feedActionsForEvent(t *testing.T, env *testEnv, eventID string) []string {
+	t.Helper()
+
+	feed := fetchChangeFeed(t, env, url.Values{"limit": {"200"}, "include_snapshot": {"true"}})
+	actions := make([]string, 0, 1)
+	for _, change := range feed.Changes {
+		if change.EventID == eventID {
+			actions = append(actions, change.Action)
+		}
+	}
+	return actions
+}
+
+// TestPublicEventVisibilityRepublishedAfterNeverPublicDelete is the regression
+// guard for the delete-row time bound (`first_published_at <= changed_at`): a
+// delete row recorded while the event had never been public must stay hidden
+// even if the event is republished later.
+func TestPublicEventVisibilityRepublishedAfterNeverPublicDelete(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "Republished After Delete Org")
+	place := insertPlace(t, env, "Republished After Delete Venue", "Toronto")
+
+	const eventName = "Republished After Never Public Delete"
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "pending_review", nil, testhelpers.FutureTime(17))
+	eventID := lookupEventIDByULID(t, env, eventULID)
+
+	require.False(t, firstPublishedAtIsSet(t, env, eventID), "pending_review must not set the signal")
+
+	// Delete while the event is still never-public, then insert an explicit
+	// delete change row with a deterministic (earlier) timestamp.
+	softDeleteEvent(t, env, eventID)
+	_, err := env.Pool.Exec(env.Context,
+		`INSERT INTO event_changes (event_id, action, snapshot, changed_at)
+		 VALUES ($1, 'delete', $2, now() - interval '1 minute')`,
+		eventID, []byte(`{"sel:tombstone":true,"name":"Republished After Never Public Delete"}`))
+	require.NoError(t, err)
+
+	// Baseline: the never-public delete row is hidden.
+	require.Empty(t, feedActionsForEvent(t, env, eventID),
+		"a never-public delete row must stay hidden")
+
+	// Republish. This stamps first_published_at *after* the recorded delete row.
+	_, err = env.Pool.Exec(env.Context,
+		`UPDATE events SET lifecycle_state = 'published', deleted_at = NULL, updated_at = now() WHERE id = $1`,
+		eventID)
+	require.NoError(t, err)
+	require.True(t, firstPublishedAtIsSet(t, env, eventID))
+
+	// The current published state is visible via detail...
+	require.Equal(t, http.StatusOK, getPublicEventStatus(t, env, eventULID),
+		"the republished event must be publicly readable")
+
+	// ...but the earlier never-public delete row must still be hidden.
+	actions := feedActionsForEvent(t, env, eventID)
+	require.NotContains(t, actions, "delete",
+		"the earlier never-public delete row must stay hidden after republish")
+	require.Contains(t, actions, "update",
+		"the republished state must be visible in the public feed")
+
+	// Prove the row still exists, so the time bound (not row deletion) is under test.
+	var deleteRows int
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT COUNT(*) FROM event_changes WHERE event_id = $1 AND action = 'delete'`, eventID).Scan(&deleteRows))
+	require.Equal(t, 1, deleteRows, "the hidden delete row must still exist")
+}
+
 func getPublicEventStatus(t *testing.T, env *testEnv, ulid string) int {
 	t.Helper()
 	return getStatusWithAccept(t, env, "/api/v1/events/"+ulid, "application/ld+json")

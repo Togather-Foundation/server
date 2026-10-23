@@ -201,7 +201,10 @@ type Querier interface {
 	GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, arg GetPendingReviewByEventUlidAndDuplicateUlidParams) (GetPendingReviewByEventUlidAndDuplicateUlidRow, error)
 	GetPlaceByULID(ctx context.Context, ulid string) (GetPlaceByULIDRow, error)
 	GetPlaceTombstoneByULID(ctx context.Context, ulid string) (PlaceTombstone, error)
-	GetPublicEventTombstoneByEventULID(ctx context.Context, arg GetPublicEventTombstoneByEventULIDParams) (EventTombstone, error)
+	// A tombstone is public only when the event was public at some point before
+	// deletion (events.first_published_at, kept by trg_events_first_published_at).
+	// Never-public deleted events fail closed and read as ErrNotFound.
+	GetPublicEventTombstoneByEventULID(ctx context.Context, ulid string) (EventTombstone, error)
 	// Check if a url_norm was submitted within the given interval (for dedup).
 	// Returns the most recent matching row if found.
 	GetRecentSubmissionByURLNorm(ctx context.Context, arg GetRecentSubmissionByURLNormParams) (ScraperSubmission, error)

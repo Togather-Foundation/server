@@ -266,9 +266,10 @@ type Repository interface {
 	GetByULID(ctx context.Context, ulid string) (*Event, error)
 	// GetPublicByULID fetches an event only when it is publicly visible
 	// (see PubliclyVisible). Deleted events are still returned so callers can
-	// serve the 410 tombstone, but only when a prior event_changes snapshot
-	// shows they were public at some point; events that were never public
-	// (draft/pending_review, including rejected submissions) return ErrNotFound.
+	// serve the 410 tombstone, but only when events.first_published_at IS NOT
+	// NULL (the trigger-maintained "was ever public" signal); events that were
+	// never public (draft/pending_review, including rejected submissions)
+	// return ErrNotFound.
 	GetPublicByULID(ctx context.Context, ulid string) (*Event, error)
 	Create(ctx context.Context, params EventCreateParams) (*Event, error)
 	CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error
@@ -392,10 +393,10 @@ type Repository interface {
 	// hides tombstones for never-public events.
 	GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error)
 	// GetPublicTombstoneByEventULID returns the tombstone for a deleted event
-	// only when a prior event_changes snapshot shows the event was publicly
-	// visible at some point. Never-public events (draft/pending_review,
-	// rejected submissions) return ErrNotFound so anonymous callers cannot
-	// leak their existence through a 410.
+	// only when events.first_published_at IS NOT NULL (the
+	// trigger-maintained "was ever public" signal). Never-public events
+	// (draft/pending_review, rejected submissions) return ErrNotFound so
+	// anonymous callers cannot leak their existence through a 410.
 	GetPublicTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error)
 
 	// Not-duplicate tracking (suppresses re-flagging during near-duplicate detection)

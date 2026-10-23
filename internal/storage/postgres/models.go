@@ -131,6 +131,8 @@ type Event struct {
 	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
 	MergedIntoID          pgtype.UUID        `json:"merged_into_id"`
 	DeletionReason        pgtype.Text        `json:"deletion_reason"`
+	// First time the event entered a public lifecycle state (NULL = never public). Maintained by trg_events_first_published_at; gates public tombstones and change-feed delete rows.
+	FirstPublishedAt pgtype.Timestamptz `json:"first_published_at"`
 }
 
 type EventChange struct {

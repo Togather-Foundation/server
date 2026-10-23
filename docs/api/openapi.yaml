@@ -304,8 +304,12 @@ paths:
         events that were publicly visible return `410 Gone` with a tombstone;
         deleted events that were never public (including rejected submissions)
         return `404 Not Found` so their existence is not leaked. Prior visibility
-        is derived from recorded `event_changes` history; legacy rows without a
-        recorded public lifecycle fail closed (404).
+        is the persisted `events.first_published_at` signal (NULL = never public),
+        maintained by the `trg_events_first_published_at` trigger. Rows already
+        deleted before the backfill with no recorded public history keep
+        `first_published_at` NULL and stay 404. A legacy row still in a public
+        state is stamped from `created_at` when it next leaves a public state, so
+        a legacy published-then-deleted event returns 410.
       tags: [Events]
       security: []
       parameters:
@@ -472,8 +476,12 @@ paths:
         events return `404 Not Found`. Deleted events that were publicly visible
         return `410 Gone` with a tombstone payload; deleted events that were
         never public return `404 Not Found` so their existence is not leaked.
-        Prior visibility is derived from recorded `event_changes` history; legacy
-        rows without a recorded public lifecycle fail closed (404).
+        Prior visibility is the persisted `events.first_published_at` signal
+        (NULL = never public), maintained by the `trg_events_first_published_at`
+        trigger. Rows already deleted before the backfill with no recorded public
+        history keep `first_published_at` NULL and stay 404. A legacy row still in
+        a public state is stamped from `created_at` when it next leaves a public
+        state, so a legacy published-then-deleted event returns 410.
       tags: [Events]
       security: []
       parameters:
@@ -1156,15 +1164,19 @@ paths:
         sequence order with action type and snapshot.
 
         This is the unconditional public feed. `draft` and `pending_review`
-        changes are omitted entirely. A delete row is exposed only if the event was
-        publicly visible at some earlier point; tombstones for submissions that
-        never left draft/pending_review are not published. A deleted event's
-        `create`/`update` rows are omitted, but its `delete` row is retained so
-        consumers observe tombstones (Interop Profile §4.3). Snapshots are only
-        attached to create/update rows that were recorded while the event was
-        publicly visible and whose event is still public (rows with no recorded
-        lifecycle fall back to the current event state); delete rows carry a
-        tombstone payload only for previously-public events.
+        changes are omitted entirely. A delete row is exposed only if
+        `events.first_published_at IS NOT NULL` and that timestamp is not after
+        the delete row's `changed_at` (the event was publicly visible before that
+        deletion); tombstones for submissions that never left draft/pending_review
+        are not published, and an earlier never-public delete row stays hidden if
+        the event is republished later. Legacy / imported rows whose
+        first_published_at is NULL fail closed, so no delete row is exposed.
+        A deleted event's `create`/`update` rows are omitted, but its `delete` row
+        is retained so consumers observe tombstones (Interop Profile §4.3).
+        Snapshots are only attached to create/update rows that were recorded while
+        the event was publicly visible and whose event is still public (rows with
+        no recorded lifecycle fall back to the current event state); delete rows
+        carry a tombstone payload only for previously-public events.
 
         Unpublishing (transition to `draft`) is not a deletion: it withdraws the
         event's create/update rows from the feed and emits no delete row. Consumers
@@ -1207,9 +1219,11 @@ paths:
             Snapshots are only attached to create/update rows that were recorded
             while the event was publicly visible and whose event is still public
             (rows with no recorded lifecycle fall back to the current event
-            state). Delete rows carry a tombstone payload only for events that
-            were publicly visible at some earlier point, so `include_snapshot` is
-            safe for anonymous consumers.
+            state). Delete rows carry a tombstone payload only when
+            `events.first_published_at IS NOT NULL` and it is not after the delete
+            row's `changed_at` (the event was public before that deletion); rows
+            with a NULL signal fail closed and expose no delete row.
+            `include_snapshot` is therefore safe for anonymous consumers.
           schema:
             type: boolean
             default: false

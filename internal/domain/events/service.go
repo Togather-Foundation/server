@@ -100,12 +100,12 @@ func (s *Service) GetByULID(ctx context.Context, ulid string) (*Event, error) {
 
 // GetPublicByULID is the anonymous/public detail path. It hides
 // draft/pending_review events with ErrNotFound (so their existence is not
-// leaked). The repository returns deleted events ONLY when a prior
-// event_changes snapshot shows the event was public at some point — that prior
-// public visibility is what makes serving the 410 tombstone safe. Never-public
-// deleted events (including rejected submissions) return ErrNotFound. The state
-// check here is defence in depth for repository implementations that do not
-// apply the prior-visibility gate.
+// leaked). The repository returns deleted events ONLY when
+// events.first_published_at IS NOT NULL (the trigger-maintained "was ever
+// public" signal) — that prior public visibility is what makes serving the 410
+// tombstone safe. Never-public deleted events (including rejected submissions)
+// return ErrNotFound. The state check here is defence in depth for repository
+// implementations that do not apply the prior-visibility gate.
 func (s *Service) GetPublicByULID(ctx context.Context, ulid string) (*Event, error) {
 	event, err := s.repo.GetPublicByULID(ctx, ulid)
 	if err != nil {
@@ -128,9 +128,10 @@ func (s *Service) GetTombstoneByEventULID(ctx context.Context, eventULID string)
 }
 
 // GetPublicTombstoneByEventULID is the anonymous tombstone lookup. It returns a
-// tombstone only for events that were publicly visible before deletion;
-// never-public events (draft/pending_review, rejected submissions) yield
-// ErrNotFound so callers respond 404 instead of leaking a 410 tombstone.
+// tombstone only when events.first_published_at IS NOT NULL (the
+// trigger-maintained "was ever public" signal); never-public events
+// (draft/pending_review, rejected submissions) yield ErrNotFound so callers
+// respond 404 instead of leaking a 410 tombstone.
 func (s *Service) GetPublicTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {
 	return s.repo.GetPublicTombstoneByEventULID(ctx, eventULID)
 }

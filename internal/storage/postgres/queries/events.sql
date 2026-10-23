@@ -172,6 +172,9 @@ SELECT t.id,
  LIMIT 1;
 
 -- name: GetPublicEventTombstoneByEventULID :one
+-- A tombstone is public only when the event was public at some point before
+-- deletion (events.first_published_at, kept by trg_events_first_published_at).
+-- Never-public deleted events fail closed and read as ErrNotFound.
 SELECT t.id,
        t.event_id,
        t.event_uri,
@@ -183,11 +186,7 @@ SELECT t.id,
   JOIN events e ON e.id = t.event_id
  WHERE e.ulid = $1
    AND e.lifecycle_state = 'deleted'
-   AND EXISTS (
-     SELECT 1 FROM event_changes p
-      WHERE p.event_id = e.id
-        AND COALESCE(p.snapshot->>'lifecycle_state', '') = ANY(sqlc.arg('public_states')::text[])
-   )
+   AND e.first_published_at IS NOT NULL
  ORDER BY t.deleted_at DESC
  LIMIT 1;
 

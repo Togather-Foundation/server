@@ -52,9 +52,14 @@ This glossary defines canonical terms used throughout the SEL backend codebase a
 is publicly visible (the allowlist implemented by `events.PubliclyVisible` in the
 API). Public list/detail/ICS/HTML/MCP surfaces and the change feed hide the rest;
 admin surfaces remain unfiltered. A `deleted` event is only distinguishable to
-anonymous readers (410 + tombstone, or a changefeed delete row) when a prior
-change snapshot shows it was public before deletion; deleted events that were
-never public return 404 so their existence is not leaked.
+anonymous readers (410 + tombstone, or a changefeed delete row) when
+`events.first_published_at IS NOT NULL` — the persisted "was ever public" signal
+maintained by the `trg_events_first_published_at` trigger (NULL = never public).
+Rows already deleted before the backfill with no recorded public history keep
+`first_published_at` NULL and stay 404. A legacy row still in a public state is
+stamped from `created_at` when it next leaves a public state, so a legacy
+published-then-deleted event returns 410. Deleted events that were never public
+return 404 so their existence is not leaked.
 
 **State Transitions:**
 ```
@@ -208,6 +213,7 @@ https://{origin_node_domain}/events/{ulid}
 - Soft delete: `deleted_at` timestamp set on entity
 - Returns 410 status with JSON-LD tombstone response only for previously-public entities; never-public deletions return 404
 - Change feed publishes delete rows (and their tombstones) only for previously-public events
+- "Previously public" is `events.first_published_at IS NOT NULL` (NULL = never public), maintained by the `trg_events_first_published_at` trigger and seeded once from `event_changes` history by migration `000055`. Rows already deleted before the backfill with no recorded public history keep `first_published_at` NULL and stay 404. A legacy row still in a public state is stamped from `created_at` when it next leaves a public state, so a legacy published-then-deleted event returns 410.
 - Preserves URI for historical references
 - Contains deletion timestamp and optional reason
 

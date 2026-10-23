@@ -125,6 +125,7 @@ Every event tracks its license:
 - `name`, `description`: Core schema.org properties
 - `lifecycle_state`: draft, published, pending_review, postponed, rescheduled, sold_out, cancelled, completed, deleted
 - `event_status`: Schema.org status URIs (EventScheduled, EventCancelled, etc.)
+- `first_published_at` (TIMESTAMPTZ): First time the event entered a public lifecycle state; `NULL` means it was never public. Maintained by the `trg_events_first_published_at` BEFORE INSERT/UPDATE trigger, never cleared on unpublish. Gates public tombstones (410 vs 404) and change-feed delete rows. Not the same as `published_at`, which federation sync writes from a federated occurrence `startDate`.
 - `organizer_id`, `primary_venue_id`: Relationships to normalized entities
 - `dedup_hash`: Generated column for duplicate detection
 
@@ -145,6 +146,19 @@ draft → pending_review (validation warnings) → published → completed
 `pending_review` and `deleted` are system-only (see `docs/glossary.md` and
 `internal/domain/events/visibility.go`). `internal/storage/postgres/visibility_drift_test.go`
 fails CI if this allowlist and the database CHECK constraint diverge.
+
+**Ever-public signal**: `events.first_published_at` is set by
+`trg_events_first_published_at` (BEFORE INSERT OR UPDATE) whenever an event enters
+a public state — on insert it copies `created_at`, on a transition it uses `now()`
+and it is never cleared on unpublish. Leaving a public state with a NULL value
+(legacy rows) seeds it from `OLD.created_at`. Migration `000055` backfills it once
+from `MIN(changed_at)` over `event_changes` rows whose snapshot `lifecycle_state`
+is public, with the change-log trigger disabled so the backfill does not emit
+synthetic `update` rows. Public tombstones and change-feed delete rows require
+`first_published_at IS NOT NULL`. Rows already deleted before the backfill with no
+recorded public history keep `first_published_at` NULL and stay 404. A legacy row
+still in a public state is stamped from `created_at` when it next leaves a public
+state, so a legacy published-then-deleted event returns 410.
 
 **Critical Constraint**: Event must have EITHER `primary_venue_id` OR `virtual_url` (not both null).
 
@@ -527,37 +541,66 @@ CREATE INDEX idx_event_changes_seq ON event_changes (sequence_number);
 CREATE INDEX idx_event_changes_time ON event_changes (changed_at);
 ```
 
-**Trigger: Capture Changes**
+**Trigger: Capture Changes** (migration `000013`)
 
 ```sql
-CREATE OR REPLACE FUNCTION capture_event_change()
+-- Separate functions for INSERT and UPDATE.
+CREATE OR REPLACE FUNCTION create_event_change_on_insert()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO event_changes (
-        sequence_number,
-        event_id,
-        action,
-        changed_fields,
-        snapshot
-    ) VALUES (
-        nextval('event_changes_seq'),
-        COALESCE(NEW.id, OLD.id),
-        TG_OP,
-        -- Compute changed fields for UPDATE
-        CASE WHEN TG_OP = 'UPDATE' THEN
-            array(SELECT key FROM jsonb_each(to_jsonb(NEW))
-                  WHERE to_jsonb(NEW)->key IS DISTINCT FROM to_jsonb(OLD)->key)
-        ELSE NULL END,
-        to_jsonb(NEW)
-    );
-    RETURN NEW;
+  INSERT INTO event_changes (event_id, action, changed_fields, snapshot, changed_at)
+  VALUES (NEW.id, 'create', '{}'::jsonb, row_to_json(NEW)::jsonb, NEW.created_at);
+  RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER events_change_trigger
-AFTER INSERT OR UPDATE OR DELETE ON events
-FOR EACH ROW EXECUTE FUNCTION capture_event_change();
+CREATE OR REPLACE FUNCTION create_event_change_on_update()
+RETURNS TRIGGER AS $$
+DECLARE
+  changed_fields_json jsonb := '[]'::jsonb;
+BEGIN
+  IF OLD.name IS DISTINCT FROM NEW.name THEN
+    changed_fields_json := changed_fields_json || '["name"]'::jsonb;
+  END IF;
+  IF OLD.description IS DISTINCT FROM NEW.description THEN
+    changed_fields_json := changed_fields_json || '["description"]'::jsonb;
+  END IF;
+  IF OLD.lifecycle_state IS DISTINCT FROM NEW.lifecycle_state THEN
+    changed_fields_json := changed_fields_json || '["lifecycle_state"]'::jsonb;
+  END IF;
+  IF OLD.event_status IS DISTINCT FROM NEW.event_status THEN
+    changed_fields_json := changed_fields_json || '["event_status"]'::jsonb;
+  END IF;
+
+  INSERT INTO event_changes (event_id, action, changed_fields, snapshot, changed_at)
+  VALUES (NEW.id, 'update', changed_fields_json, row_to_json(NEW)::jsonb, NEW.updated_at);
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_event_changes_insert
+AFTER INSERT ON events
+FOR EACH ROW EXECUTE FUNCTION create_event_change_on_insert();
+
+CREATE TRIGGER trg_event_changes_update
+AFTER UPDATE ON events
+FOR EACH ROW
+WHEN (OLD.* IS DISTINCT FROM NEW.*)
+EXECUTE FUNCTION create_event_change_on_update();
 ```
+
+Delete rows are written by a separate trigger on `event_tombstones`
+(`trg_event_tombstone_to_changes` → `create_event_change_on_tombstone()`,
+migration `000011`) with `action = 'delete'` and `changed_at = deleted_at`.
+
+**Backfill source for `events.first_published_at`**: migration `000055` reads this
+table once to seed the ever-public signal, taking `MIN(changed_at)` per event over
+`snapshot->>'lifecycle_state'` values in `events.PublicStates`. Because the
+`events` AFTER UPDATE change-log trigger fires on any column change (including a
+BEFORE trigger's assignment), the migration wraps the backfill in
+`ALTER TABLE events DISABLE TRIGGER trg_event_changes_update` /
+`ENABLE TRIGGER` so it does not inject a synthetic `update` row per event into the
+public feed. Rows with no public snapshot stay `NULL` and fail closed.
 
 ### Sync Protocol Implementation
 

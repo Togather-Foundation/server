@@ -528,9 +528,16 @@ applies to every anonymous surface — JSON detail, ICS, HTML/Turtle/JSON-LD pag
 and MCP `events{id}` — and matches the change feed, which only publishes delete
 rows for previously-public events.
 
-Prior visibility is derived from recorded `event_changes` history. Legacy rows
-with no recorded public lifecycle fail closed (404); the ever-published-signal
-backfill is tracked in ticket `t_06d11c22`.
+Prior visibility is the persisted `events.first_published_at` signal, maintained by
+the `trg_events_first_published_at` trigger on every insert and lifecycle change
+(NULL means the event was never public). It is written once, never cleared on
+unpublish, and is what gates both the 410 tombstone and the change-feed delete
+row. The one-time backfill in migration `000055` derives it from
+`MIN(changed_at)` over `event_changes` snapshots whose `lifecycle_state` was
+public. Rows already deleted before the backfill with no recorded public history
+keep `first_published_at` NULL and stay 404 (and produce no change-feed delete
+row). A legacy row still in a public state is stamped from `created_at` when it
+next leaves a public state, so a legacy published-then-deleted event returns 410.
 
 ---
 
@@ -779,11 +786,13 @@ When `next_cursor` is empty, you are caught up. Persist the last non-empty curso
 
 The change feed is an unconditional public feed. `draft` and `pending_review`
 changes are omitted entirely. A delete row is exposed only if the event was
-publicly visible at some earlier point; tombstones for submissions that never
-left `draft`/`pending_review` are not published. A deleted event's
-`create`/`update` rows are omitted, but its `delete` row is retained so consumers
-observe tombstones (Interop Profile §4.3). Snapshots are only attached to
-create/update rows that were recorded while the event was publicly visible and
+publicly visible before that deletion: `events.first_published_at` must be set and
+must not be later than the delete row's `changed_at`. Tombstones for submissions
+that never left `draft`/`pending_review` are not published, and an earlier
+never-public delete row stays hidden if the event is republished later. A deleted
+event's `create`/`update` rows are omitted, but its `delete` row is retained so
+consumers observe tombstones (Interop Profile §4.3). Snapshots are only attached
+to create/update rows that were recorded while the event was publicly visible and
 whose event is still public (rows with no recorded lifecycle fall back to the
 current event state); delete rows carry a tombstone payload only for
 previously-public events.

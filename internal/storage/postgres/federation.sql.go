@@ -138,7 +138,7 @@ func (q *Queries) DeleteFederationNode(ctx context.Context, id pgtype.UUID) erro
 
 const getEventByFederationURI = `-- name: GetEventByFederationURI :one
 
-SELECT id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason
+SELECT id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason, first_published_at
 FROM events
 WHERE federation_uri = $1
 LIMIT 1
@@ -185,6 +185,7 @@ func (q *Queries) GetEventByFederationURI(ctx context.Context, federationUri pgt
 		&i.DeletedAt,
 		&i.MergedIntoID,
 		&i.DeletionReason,
+		&i.FirstPublishedAt,
 	)
 	return i, err
 }
@@ -527,7 +528,7 @@ DO UPDATE SET
   quality_score = EXCLUDED.quality_score,
   version = events.version + 1,
   updated_at = now()
-RETURNING id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason
+RETURNING id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason, first_published_at
 `
 
 type UpsertFederatedEventParams struct {
@@ -630,6 +631,7 @@ func (q *Queries) UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedE
 		&i.DeletedAt,
 		&i.MergedIntoID,
 		&i.DeletionReason,
+		&i.FirstPublishedAt,
 	)
 	return i, err
 }

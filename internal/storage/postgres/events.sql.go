@@ -446,22 +446,16 @@ SELECT t.id,
   JOIN events e ON e.id = t.event_id
  WHERE e.ulid = $1
    AND e.lifecycle_state = 'deleted'
-   AND EXISTS (
-     SELECT 1 FROM event_changes p
-      WHERE p.event_id = e.id
-        AND COALESCE(p.snapshot->>'lifecycle_state', '') = ANY($2::text[])
-   )
+   AND e.first_published_at IS NOT NULL
  ORDER BY t.deleted_at DESC
  LIMIT 1
 `
 
-type GetPublicEventTombstoneByEventULIDParams struct {
-	Ulid         string   `json:"ulid"`
-	PublicStates []string `json:"public_states"`
-}
-
-func (q *Queries) GetPublicEventTombstoneByEventULID(ctx context.Context, arg GetPublicEventTombstoneByEventULIDParams) (EventTombstone, error) {
-	row := q.db.QueryRow(ctx, getPublicEventTombstoneByEventULID, arg.Ulid, arg.PublicStates)
+// A tombstone is public only when the event was public at some point before
+// deletion (events.first_published_at, kept by trg_events_first_published_at).
+// Never-public deleted events fail closed and read as ErrNotFound.
+func (q *Queries) GetPublicEventTombstoneByEventULID(ctx context.Context, ulid string) (EventTombstone, error) {
+	row := q.db.QueryRow(ctx, getPublicEventTombstoneByEventULID, ulid)
 	var i EventTombstone
 	err := row.Scan(
 		&i.ID,
