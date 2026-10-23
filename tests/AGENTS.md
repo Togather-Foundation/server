@@ -58,6 +58,8 @@ Never hardcode a calendar date in a test that goes through HTTP handlers, ingest
 
 **Library escaping — read before wrapping:** when calling a library method that accepts a "text" value (e.g. `SetSummary`, `SetDescription`), check whether the library already applies wire-format escaping internally before adding your own. Double-escaping is invisible to roundtrip tests and produces garbage on the wire. The pattern: pass raw strings, let the library escape; only add custom escaping when the library explicitly documents that it accepts pre-escaped input.
 
+**Schema/allowlist drift guards:** when a database `CHECK` constraint feeds application logic, add a test that parses `pg_get_constraintdef` and compares it to the Go allowlist, so a new enum value cannot bypass the logic silently. Example: `internal/storage/postgres/visibility_drift_test.go` keeps `events.PublicStates` aligned with the `events_lifecycle_state_check` constraint.
+
 **Golden fixtures must be generated, not hand-authored:** fixtures in `tests/testdata/` should be produced by running the serializer under test, not written by hand. Hand-authored fixtures silently diverge from actual output and give false confidence. If a `-update` flag pattern isn't in place yet, generate the fixture once and commit it — then review the diff carefully. See `tests/testdata/ics/README.md` for the naming convention.
 
 ## Scraping Local Fixtures

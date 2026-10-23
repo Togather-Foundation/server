@@ -1,4 +1,4 @@
-.PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles webfiles-bootstrap release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape remote-staging remote-production
+.PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate sqlc-check migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles webfiles-bootstrap release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape remote-staging remote-production
 
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
@@ -561,14 +561,7 @@ ci: sqlc-generate vulncheck
 	@echo "✓ Web files generated"
 	@echo ""
 	@echo "==> Checking SQLc generation is up to date..."
-	@if [ -n "$$(git status --porcelain internal/storage/postgres/sqlc)" ]; then \
-		echo "✗ Generated SQLc code differs from committed version"; \
-		echo "Run 'make sqlc-generate' and commit changes"; \
-		git diff internal/storage/postgres/sqlc; \
-		exit 1; \
-	else \
-		echo "✓ SQLc code is up to date"; \
-	fi
+	@$(MAKE) --no-print-directory sqlc-check
 	@echo ""
 	@$(MAKE) test-ci
 	@echo ""
@@ -586,7 +579,8 @@ ci: sqlc-generate vulncheck
 	@echo "=========================================="
 
 # Fast CI gate for agent pre-commit use (~90s).
-# Skips: vulncheck, sqlc-generate (checks drift instead), webfiles, and docker-dependent checks (lint-yaml, docker-compose-lint).
+# Skips: vulncheck, webfiles, and docker-dependent checks (lint-yaml, docker-compose-lint).
+# The SQLc step regenerates and verifies drift, so stale committed output fails here.
 ci-fast:
 	@echo ""
 	@echo "=========================================="
@@ -626,14 +620,7 @@ ci-fast:
 	@echo "✓ Build successful"
 	@echo ""
 	@echo "==> Checking SQLc generation is up to date..."
-	@if [ -n "$$(git status --porcelain internal/storage/postgres/sqlc)" ]; then \
-		echo "✗ Generated SQLc code differs from committed version"; \
-		echo "Run 'make sqlc-generate' and commit changes"; \
-		git diff internal/storage/postgres/sqlc; \
-		exit 1; \
-	else \
-		echo "✓ SQLc code is up to date"; \
-	fi
+	@$(MAKE) --no-print-directory sqlc-check
 	@echo ""
 	@$(MAKE) test-ci
 	@echo ""
@@ -968,6 +955,21 @@ sqlc-generate:
 # Alias for sqlc-generate
 .PHONY: sqlc
 sqlc: sqlc-generate
+
+# Verify committed SQLc output matches the .sql queries.
+# Generation is required here: comparing git status without regenerating only
+# detects uncommitted local edits, not stale committed output.
+.PHONY: sqlc-check
+sqlc-check:
+	@$(MAKE) --no-print-directory sqlc-generate
+	@if [ -n "$$(git status --porcelain -- 'internal/storage/postgres/*.sql.go' internal/storage/postgres/querier.go internal/storage/postgres/models.go)" ]; then \
+		echo "✗ Generated SQLc code differs from committed version"; \
+		echo "Run 'make sqlc-generate' and commit changes"; \
+		git diff -- 'internal/storage/postgres/*.sql.go' internal/storage/postgres/querier.go internal/storage/postgres/models.go; \
+		exit 1; \
+	else \
+		echo "✓ SQLc code is up to date"; \
+	fi
 
 # Database migrations
 .PHONY: migrate-up

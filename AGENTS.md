@@ -137,7 +137,8 @@ JWT_SECRET=<value> server admin-token --duration 8h
 - OAS 3.1 note: use `type: [string, 'null']` instead of `nullable: true`.
 
 **Generated files — never edit directly:**
-- `internal/storage/postgres/*.sql.go` and `querier.go` — run `make sqlc` after changing `.sql` files
+- `internal/storage/postgres/*.sql.go`, `querier.go` and `models.go` — run `make sqlc` after changing `.sql` files
+- `make sqlc-check` regenerates and fails if committed output drifts; `ci` and `ci-fast` both run it
 - `web/` static assets are Go-embedded; changes require rebuild
 
 **Migrations — use `make` targets only:**

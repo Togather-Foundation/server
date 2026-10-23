@@ -966,11 +966,19 @@ SEL CI pipeline validates:
 5. **SHACL Validation**: JSON-LD exports conform to Artsdata shapes
 6. **Build**: `make build` succeeds
 7. **Migrations**: Migrations apply and rollback cleanly
+8. **Generated code drift**: `make sqlc-check` regenerates SQLc output and fails if the committed `*.sql.go`, `querier.go` or `models.go` files differ from the `.sql` sources
+9. **Schema/allowlist drift**: `internal/storage/postgres/visibility_drift_test.go` fails if `events.PublicStates` and the database lifecycle `CHECK` constraint diverge
 
 **Run Full CI Locally**:
 
 ```bash
 make ci
+```
+
+For a faster pre-commit gate that still includes the SQLc drift check, use:
+
+```bash
+make ci-fast
 ```
 
 This runs all CI checks locally before pushing.

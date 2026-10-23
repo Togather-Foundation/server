@@ -123,7 +123,7 @@ Every event tracks its license:
 - `id` (UUID): Internal primary key
 - `ulid` (TEXT): Time-sortable unique identifier (used in URIs)
 - `name`, `description`: Core schema.org properties
-- `lifecycle_state`: draft, published, postponed, cancelled, completed, deleted
+- `lifecycle_state`: draft, published, pending_review, postponed, rescheduled, sold_out, cancelled, completed, deleted
 - `event_status`: Schema.org status URIs (EventScheduled, EventCancelled, etc.)
 - `organizer_id`, `primary_venue_id`: Relationships to normalized entities
 - `dedup_hash`: Generated column for duplicate detection
@@ -131,14 +131,20 @@ Every event tracks its license:
 **Lifecycle States**:
 
 ```
-draft → published → completed
-             ↓
-          postponed → rescheduled
-             ↓
-          cancelled
-             ↓
-          deleted (merged/spam)
+draft → pending_review (validation warnings) → published → completed
+                                                   ↓
+                                            postponed → rescheduled
+                                                   ↓
+                                                cancelled
+                                                   ↓
+                                            deleted (merged/spam)
 ```
+
+**Public visibility**: only `published`, `postponed`, `rescheduled`, `sold_out`,
+`cancelled` and `completed` are served on anonymous surfaces. `draft`,
+`pending_review` and `deleted` are system-only (see `docs/glossary.md` and
+`internal/domain/events/visibility.go`). `internal/storage/postgres/visibility_drift_test.go`
+fails CI if this allowlist and the database CHECK constraint diverge.
 
 **Critical Constraint**: Event must have EITHER `primary_venue_id` OR `virtual_url` (not both null).
 
@@ -264,6 +270,10 @@ RETURNING *;
 ```bash
 make sqlc
 ```
+
+Never hand-edit the generated files (`*.sql.go`, `querier.go`, `models.go`).
+`make sqlc-check` regenerates them and fails if the committed output differs
+from the `.sql` sources; both `make ci` and `make ci-fast` run that check.
 
 **Step 3: Use Generated Code**
 
