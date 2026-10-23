@@ -11,11 +11,16 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/middleware"
+	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
+
+const handlerNodeIDString = "01010101-0101-0101-0101-010101010101"
+
+var handlerNodeID = pgtype.UUID{Valid: true, Bytes: [16]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}}
 
 type stubSyncRepo struct {
 	lastIdempotencyKey string
@@ -32,7 +37,14 @@ func (s *stubSyncRepo) UpsertFederatedEvent(_ context.Context, arg federation.Up
 }
 
 func (s *stubSyncRepo) GetFederationNodeByDomain(_ context.Context, nodeDomain string) (federation.FederationNode, error) {
-	return federation.FederationNode{ID: pgtype.UUID{Valid: true}, NodeDomain: nodeDomain}, nil
+	return federation.FederationNode{
+		ID:               handlerNodeID,
+		NodeDomain:       nodeDomain,
+		FederationStatus: federation.FederationStatusActive,
+		SyncEnabled:      true,
+		SyncDirection:    federation.SyncDirectionBidirectional,
+		TrustLevel:       5,
+	}, nil
 }
 
 func (s *stubSyncRepo) CreateOccurrence(_ context.Context, _ federation.OccurrenceCreateParams) error {
@@ -67,6 +79,10 @@ func TestFederationHandlerSyncSuccess(t *testing.T) {
 
 	body := `{"@context":"https://schema.org","@type":"Event","@id":"https://example.org/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP","name":"Jazz Fest","startDate":"` + time.Now().UTC().Format(time.RFC3339) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/federation/sync", strings.NewReader(body))
+	req = req.WithContext(middleware.ContextWithAgentKey(req.Context(), &auth.APIKey{
+		ID:               "key-id",
+		FederationNodeID: handlerNodeIDString,
+	}))
 	req.Header.Set("Content-Type", "application/ld+json")
 	req.Header.Set(middleware.IdempotencyHeader, "idem-123")
 	rec := httptest.NewRecorder()
@@ -104,4 +120,47 @@ func TestFederationHandlerSyncValidationError(t *testing.T) {
 	h.Sync(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestFederationHandlerSyncUnboundKey(t *testing.T) {
+	syncService := federation.NewSyncService(&stubSyncRepo{}, nil, zerolog.Nop())
+	h := NewFederationHandler(nil, syncService, "test")
+
+	body := `{"@context":"https://schema.org","@type":"Event","@id":"https://example.org/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP","name":"Jazz Fest","startDate":"` + time.Now().UTC().Format(time.RFC3339) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/federation/sync", strings.NewReader(body))
+	req = req.WithContext(middleware.ContextWithAgentKey(req.Context(), &auth.APIKey{ID: "unbound-key"}))
+	rec := httptest.NewRecorder()
+
+	h.Sync(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+	require.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
+
+	var problemBody map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&problemBody))
+	require.Equal(t, "https://sel.events/problems/forbidden", problemBody["type"])
+	require.Equal(t, "Federation node not authorized", problemBody["title"])
+	require.EqualValues(t, http.StatusForbidden, problemBody["status"])
+}
+
+func TestFederationHandlerSyncNodeMismatch(t *testing.T) {
+	syncService := federation.NewSyncService(&stubSyncRepo{}, nil, zerolog.Nop())
+	h := NewFederationHandler(nil, syncService, "test")
+
+	body := `{"@context":"https://schema.org","@type":"Event","@id":"https://example.org/events/01J0KXMQZ8RPXJPN8J9Q6TK0WP","name":"Jazz Fest","startDate":"` + time.Now().UTC().Format(time.RFC3339) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/federation/sync", strings.NewReader(body))
+	req = req.WithContext(middleware.ContextWithAgentKey(req.Context(), &auth.APIKey{
+		ID:               "other-node-key",
+		FederationNodeID: "02020202-0202-0202-0202-020202020202",
+	}))
+	rec := httptest.NewRecorder()
+
+	h.Sync(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+
+	var problemBody map[string]any
+	require.NoError(t, json.NewDecoder(rec.Body).Decode(&problemBody))
+	require.Equal(t, "https://sel.events/problems/forbidden", problemBody["type"])
+	require.EqualValues(t, http.StatusForbidden, problemBody["status"])
 }

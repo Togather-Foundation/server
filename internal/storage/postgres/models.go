@@ -11,19 +11,20 @@ import (
 )
 
 type ApiKey struct {
-	ID            pgtype.UUID        `json:"id"`
-	Prefix        string             `json:"prefix"`
-	KeyHash       string             `json:"key_hash"`
-	HashVersion   int32              `json:"hash_version"`
-	Name          string             `json:"name"`
-	SourceID      pgtype.UUID        `json:"source_id"`
-	Role          string             `json:"role"`
-	RateLimitTier string             `json:"rate_limit_tier"`
-	IsActive      bool               `json:"is_active"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	LastUsedAt    pgtype.Timestamptz `json:"last_used_at"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
-	DeveloperID   pgtype.UUID        `json:"developer_id"`
+	ID               pgtype.UUID        `json:"id"`
+	Prefix           string             `json:"prefix"`
+	KeyHash          string             `json:"key_hash"`
+	HashVersion      int32              `json:"hash_version"`
+	Name             string             `json:"name"`
+	SourceID         pgtype.UUID        `json:"source_id"`
+	Role             string             `json:"role"`
+	RateLimitTier    string             `json:"rate_limit_tier"`
+	IsActive         bool               `json:"is_active"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	LastUsedAt       pgtype.Timestamptz `json:"last_used_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	DeveloperID      pgtype.UUID        `json:"developer_id"`
+	FederationNodeID pgtype.UUID        `json:"federation_node_id"`
 }
 
 type ApiKeyUsage struct {

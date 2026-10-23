@@ -1038,7 +1038,7 @@ paths:
       security:
         - bearerAuth: []
       requestBody:
-        description: API key name and optional metadata (sourceId, expiresAt)
+        description: API key name and optional metadata.
         required: true
         content:
           application/json:
@@ -1048,12 +1048,34 @@ paths:
               properties:
                 name:
                   type: string
-                sourceId:
-                  type: string
+                  description: Human-readable name for the key.
+                source_id:
+                  type: [string, 'null']
                   format: uuid
-                expiresAt:
+                  description: Optional source UUID to associate with the key.
+                role:
                   type: string
-                  format: date-time
+                  enum: [agent, admin]
+                  default: agent
+                  description: Key role. Defaults to `agent` when omitted.
+                rate_limit_tier:
+                  type: string
+                  default: agent
+                  description: Rate-limit tier for the key. Defaults to `agent` when omitted.
+                expires_in_days:
+                  type: integer
+                  description: |
+                    Number of days until the key expires. Omitted, `0`, or a
+                    negative value means the key does not expire; admin keys are
+                    expected to set it and the CLI enforces this.
+                federation_node_id:
+                  type: [string, 'null']
+                  format: uuid
+                  description: |
+                    Bind the key to a federation node. A bound key may submit
+                    inbound federation sync payloads minted by that node only;
+                    unbound keys are rejected by `POST /api/v1/federation/sync`
+                    with `403`. The node must already exist.
       responses:
         '201':
           description: API key created (secret shown once)
@@ -3370,6 +3392,21 @@ paths:
         Accepts a JSON-LD Event from a trusted federation node and preserves its
         original URI as the canonical `@id`. Requires an API key. Supports
         idempotent retries via `Idempotency-Key`.
+
+        **Node binding (fail closed).** The authenticated API key must be bound
+        to a federation node (`api_keys.federation_node_id`, set at key creation
+        with `federation_node_id`). Unbound keys are rejected with `403`. The
+        bound node must match the host of the payload `@id`, be
+        `federation_status: active`, have `sync_enabled` true (the column
+        default; `NULL` is treated as true), and have `sync_direction`
+        `bidirectional` or `pull_only` (`NULL` is treated as bidirectional).
+        Events from `push_only`, `paused`, `blocked`, `pending`, or
+        `sync_enabled: false` nodes are rejected with `403`.
+
+        Nested `location` and `organizer` objects that carry an `@id` must also
+        belong to the same node domain; a foreign nested `@id` is rejected with
+        `403` before any event, place, or organization row is written.
+        Authorization failures never mutate the database.
       tags: [Federation]
       security:
         - apiKey: []
@@ -5764,42 +5801,70 @@ components:
           $ref: '#/components/schemas/Event'
 
     ApiKeyInfo:
-      description: API key metadata (without secret) for agent authentication management
+      description: API key metadata (without secret), as returned by GET /api/v1/admin/api-keys.
       type: object
       properties:
         id:
           type: string
           format: uuid
-        name:
-          type: string
         prefix:
           type: string
-          description: First 8 chars of key
-        sourceId:
+          description: First 8 chars of the key.
+        name:
           type: string
+        source_id:
+          type: [string, 'null']
           format: uuid
-        createdAt:
+          description: Source this key is associated with, if any.
+        role:
           type: string
-          format: date-time
-        lastUsedAt:
+        rate_limit_tier:
           type: string
-          format: date-time
-        expiresAt:
-          type: string
-          format: date-time
-        isActive:
+        is_active:
           type: boolean
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        federation_node_id:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Federation node this key is bound to, or `null` for an unbound key.
+            Unbound keys are rejected by `POST /api/v1/federation/sync`.
 
     ApiKeyCreated:
-      description: Response when creating a new API key, includes the secret (shown only once)
-      allOf:
-        - $ref: '#/components/schemas/ApiKeyInfo'
-        - type: object
-          required: [key]
-          properties:
-            key:
-              type: string
-              description: Full API key (shown only once)
+      description: Response when creating a new API key, includes the secret (shown only once).
+      type: object
+      required: [api_key, prefix, name, role, warning]
+      properties:
+        api_key:
+          type: string
+          description: Full API key (shown only once).
+        prefix:
+          type: string
+          description: First 8 chars of the key.
+        name:
+          type: string
+        role:
+          type: string
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        federation_node_id:
+          type: [string, 'null']
+          format: uuid
+          description: |
+            Canonical UUID of the federation node the key was bound to, or
+            `null`/absent for an unbound key.
+        warning:
+          type: string
+          description: Security warning instructing the caller to save the key now.
 
     ReviewQueueListResponse:
       description: Paginated list of events awaiting admin review

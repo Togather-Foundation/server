@@ -13,9 +13,9 @@ import (
 func TestFederationSyncIdempotency(t *testing.T) {
 	env := setupTestEnv(t)
 
-	// Create federation node and API key
-	_ = insertFederationNode(t, env, "idempotent.example.org", "Idempotent Node", "https://idempotent.example.org", "active", 8)
-	apiKey := insertAPIKey(t, env, "federation-idempotent-key")
+	// Create federation node and a key bound to it
+	idempotentNodeID := insertFederationNode(t, env, "idempotent.example.org", "Idempotent Node", "https://idempotent.example.org", "active", 8)
+	apiKey := testhelpers.InsertAPIKeyWithFederationNode(t, env.Pool, env.Context, "federation-idempotent-key", idempotentNodeID)
 
 	eventPayload := map[string]any{
 		"@context":  "https://togather.foundation/contexts/sel/v0.1.jsonld",
@@ -103,9 +103,9 @@ func TestFederationSyncIdempotency(t *testing.T) {
 		// Same ULID but different origin should create separate events
 		ulid := "01HYX3KQW7ERTV9XNBM2P8QJZF"
 
-		// Create another federation node
-		_ = insertFederationNode(t, env, "other.example.org", "Other Node", "https://other.example.org", "active", 7)
-		otherAPIKey := insertAPIKey(t, env, "federation-other-key")
+		// Create another federation node and bind a key to it
+		otherNodeID := insertFederationNode(t, env, "other.example.org", "Other Node", "https://other.example.org", "active", 7)
+		otherAPIKey := testhelpers.InsertAPIKeyWithFederationNode(t, env.Pool, env.Context, "federation-other-key", otherNodeID)
 
 		otherPayload := map[string]any{
 			"@context":  "https://togather.foundation/contexts/sel/v0.1.jsonld",

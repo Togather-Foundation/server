@@ -33,6 +33,14 @@ type APIKey struct {
 	RateLimitTier string
 	IsActive      bool
 	ExpiresAt     *time.Time
+
+	// FederationNodeID is the federation node this key is bound to, or an
+	// empty string when the key is not federation-bound.
+	//
+	// It is the ONLY trusted origin identity for inbound federation sync:
+	// payload @id hosts are untrusted input and must be checked against this
+	// value. Unbound keys are rejected by POST /api/v1/federation/sync.
+	FederationNodeID string
 }
 
 type APIKeyStore interface {

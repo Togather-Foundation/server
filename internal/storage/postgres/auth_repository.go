@@ -19,23 +19,24 @@ type APIKeyRepository struct {
 func (r *APIKeyRepository) LookupByPrefix(ctx context.Context, prefix string) (*auth.APIKey, error) {
 	queryer := r.queryer()
 	row := queryer.QueryRow(ctx, `
-SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at
+SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at, federation_node_id
   FROM api_keys
  WHERE prefix = $1
  LIMIT 1
 `, prefix)
 
 	var data struct {
-		ID            string
-		Prefix        string
-		Hash          string
-		HashVersion   int
-		Name          string
-		SourceID      *string
-		Role          string
-		RateLimitTier string
-		IsActive      bool
-		ExpiresAt     *time.Time
+		ID               string
+		Prefix           string
+		Hash             string
+		HashVersion      int
+		Name             string
+		SourceID         *string
+		Role             string
+		RateLimitTier    string
+		IsActive         bool
+		ExpiresAt        *time.Time
+		FederationNodeID *string
 	}
 	if err := row.Scan(
 		&data.ID,
@@ -48,6 +49,7 @@ SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tie
 		&data.RateLimitTier,
 		&data.IsActive,
 		&data.ExpiresAt,
+		&data.FederationNodeID,
 	); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, auth.ErrInvalidAPIKey
@@ -56,18 +58,22 @@ SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tie
 	}
 
 	key := &auth.APIKey{
-		ID:            data.ID,
-		Prefix:        data.Prefix,
-		Hash:          data.Hash,
-		HashVersion:   data.HashVersion,
-		Name:          data.Name,
-		Role:          data.Role,
-		RateLimitTier: data.RateLimitTier,
-		IsActive:      data.IsActive,
-		ExpiresAt:     data.ExpiresAt,
+		ID:               data.ID,
+		Prefix:           data.Prefix,
+		Hash:             data.Hash,
+		HashVersion:      data.HashVersion,
+		Name:             data.Name,
+		Role:             data.Role,
+		RateLimitTier:    data.RateLimitTier,
+		IsActive:         data.IsActive,
+		ExpiresAt:        data.ExpiresAt,
+		FederationNodeID: "",
 	}
 	if data.SourceID != nil {
 		key.SourceID = *data.SourceID
+	}
+	if data.FederationNodeID != nil {
+		key.FederationNodeID = *data.FederationNodeID
 	}
 	return key, nil
 }

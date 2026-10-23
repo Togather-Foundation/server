@@ -203,7 +203,7 @@ func (q *Queries) DeactivateDeveloper(ctx context.Context, id pgtype.UUID) error
 }
 
 const getAPIKeyByID = `-- name: GetAPIKeyByID :one
-SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, created_at, last_used_at, expires_at, developer_id FROM api_keys WHERE id = $1
+SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, created_at, last_used_at, expires_at, developer_id, federation_node_id FROM api_keys WHERE id = $1
 `
 
 func (q *Queries) GetAPIKeyByID(ctx context.Context, id pgtype.UUID) (ApiKey, error) {
@@ -223,6 +223,7 @@ func (q *Queries) GetAPIKeyByID(ctx context.Context, id pgtype.UUID) (ApiKey, er
 		&i.LastUsedAt,
 		&i.ExpiresAt,
 		&i.DeveloperID,
+		&i.FederationNodeID,
 	)
 	return i, err
 }
@@ -349,7 +350,7 @@ func (q *Queries) ListActiveDeveloperInvitations(ctx context.Context) ([]Develop
 
 const listDeveloperAPIKeys = `-- name: ListDeveloperAPIKeys :many
 
-SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, created_at, last_used_at, expires_at, developer_id FROM api_keys 
+SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, created_at, last_used_at, expires_at, developer_id, federation_node_id FROM api_keys 
 WHERE developer_id = $1 
 ORDER BY created_at DESC
 `
@@ -378,6 +379,7 @@ func (q *Queries) ListDeveloperAPIKeys(ctx context.Context, developerID pgtype.U
 			&i.LastUsedAt,
 			&i.ExpiresAt,
 			&i.DeveloperID,
+			&i.FederationNodeID,
 		); err != nil {
 			return nil, err
 		}

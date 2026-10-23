@@ -48,7 +48,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 				repo := &mockSyncRepo{}
 				service := NewSyncService(repo, nil, zerolog.Nop())
 
-				_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: tt.payload})
+				_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: tt.payload, CallerNodeID: mockNodeIDString})
 				require.Error(t, err)
 				assert.ErrorIs(t, err, tt.wantErr)
 			})
@@ -66,7 +66,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"name":     "Test Org",
 		}
 
-		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrUnsupportedType)
 	})
@@ -82,7 +82,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"name":     "Test Event",
 		}
 
-		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrMissingID)
 	})
@@ -99,7 +99,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"startDate": "not-a-date",
 		}
 
-		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrInvalidDateFormat)
 	})
@@ -115,14 +115,14 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"name":     "Test Event",
 		}
 
-		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, ErrMissingID)
 	})
 
-	t.Run("missing federation node", func(t *testing.T) {
+	t.Run("unknown federation node", func(t *testing.T) {
 		repo := &mockSyncRepoWithErrors{
-			federationNodeErr: errors.New("federation node not found"),
+			federationNodeErr: ErrNodeNotFound,
 		}
 		service := NewSyncService(repo, nil, zerolog.Nop())
 
@@ -134,9 +134,31 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"startDate": time.Now().Format(time.RFC3339),
 		}
 
-		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to determine origin node")
+		assert.ErrorIs(t, err, ErrFederationNodeMismatch, "unknown domain must not be distinguishable from a mismatched node")
+	})
+
+	t.Run("node lookup infrastructure error is not masked as forbidden", func(t *testing.T) {
+		dbErr := errors.New("connection reset by peer")
+		repo := &mockSyncRepoWithErrors{
+			federationNodeErr: dbErr,
+		}
+		service := NewSyncService(repo, nil, zerolog.Nop())
+
+		payload := map[string]any{
+			"@context":  "https://schema.org",
+			"@type":     "Event",
+			"@id":       "https://unknown-node.org/e/1",
+			"name":      "Test Event",
+			"startDate": time.Now().Format(time.RFC3339),
+		}
+
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, ErrFederationNodeMismatch, "infrastructure errors must not become 403")
+		assert.ErrorIs(t, err, dbErr, "original cause must be wrapped")
+		assert.Contains(t, err.Error(), `lookup federation node "unknown-node.org"`)
 	})
 
 	t.Run("upsert fails", func(t *testing.T) {
@@ -153,7 +175,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"startDate": time.Now().Format(time.RFC3339),
 		}
 
-		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to upsert event")
 	})
@@ -172,7 +194,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"startDate": time.Now().Format(time.RFC3339),
 		}
 
-		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to create occurrence")
 	})
@@ -192,7 +214,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"startDate": time.Now().Format(time.RFC3339),
 		}
 
-		_, err := service.SyncEvent(ctx, SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(ctx, SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
 	})
@@ -212,7 +234,7 @@ func TestSyncEvent_ErrorPaths(t *testing.T) {
 			"startDate": time.Now().Format(time.RFC3339),
 		}
 
-		_, err := service.SyncEvent(ctx, SyncEventParams{Payload: payload})
+		_, err := service.SyncEvent(ctx, SyncEventParams{Payload: payload, CallerNodeID: mockNodeIDString})
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
 	})
@@ -245,8 +267,12 @@ func (m *mockSyncRepoWithErrors) GetFederationNodeByDomain(ctx context.Context, 
 		return FederationNode{}, m.federationNodeErr
 	}
 	return FederationNode{
-		ID:         pgtype.UUID{Valid: true, Bytes: [16]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
-		NodeDomain: nodeDomain,
+		ID:               mockNodeID,
+		NodeDomain:       nodeDomain,
+		FederationStatus: FederationStatusActive,
+		SyncEnabled:      true,
+		SyncDirection:    SyncDirectionBidirectional,
+		TrustLevel:       5,
 	}, nil
 }
 
@@ -305,8 +331,12 @@ func (m *slowMockSyncRepo) UpsertFederatedEvent(ctx context.Context, arg UpsertF
 func (m *slowMockSyncRepo) GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (FederationNode, error) {
 	time.Sleep(m.delay)
 	return FederationNode{
-		ID:         pgtype.UUID{Valid: true, Bytes: [16]byte{1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}},
-		NodeDomain: nodeDomain,
+		ID:               mockNodeID,
+		NodeDomain:       nodeDomain,
+		FederationStatus: FederationStatusActive,
+		SyncEnabled:      true,
+		SyncDirection:    SyncDirectionBidirectional,
+		TrustLevel:       5,
 	}, nil
 }
 

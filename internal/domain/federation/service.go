@@ -123,10 +123,10 @@ func (s *Service) validateCreateParams(params CreateNodeParams) error {
 
 	// Validate federation status
 	validStatuses := map[string]bool{
-		"pending": true,
-		"active":  true,
-		"paused":  true,
-		"blocked": true,
+		FederationStatusPending: true,
+		FederationStatusActive:  true,
+		FederationStatusPaused:  true,
+		FederationStatusBlocked: true,
 	}
 	if !validStatuses[params.FederationStatus] {
 		return ErrInvalidNodeParams
@@ -134,10 +134,10 @@ func (s *Service) validateCreateParams(params CreateNodeParams) error {
 
 	// Validate sync direction
 	validDirections := map[string]bool{
-		"bidirectional": true,
-		"pull_only":     true,
-		"push_only":     true,
-		"disabled":      true,
+		SyncDirectionBidirectional: true,
+		SyncDirectionPullOnly:      true,
+		SyncDirectionPushOnly:      true,
+		SyncDirectionDisabled:      true,
 	}
 	if !validDirections[params.SyncDirection] {
 		return ErrInvalidNodeParams
@@ -163,10 +163,10 @@ func (s *Service) validateUpdateParams(params UpdateNodeParams) error {
 
 	if params.FederationStatus != nil {
 		validStatuses := map[string]bool{
-			"pending": true,
-			"active":  true,
-			"paused":  true,
-			"blocked": true,
+			FederationStatusPending: true,
+			FederationStatusActive:  true,
+			FederationStatusPaused:  true,
+			FederationStatusBlocked: true,
 		}
 		if !validStatuses[*params.FederationStatus] {
 			return ErrInvalidNodeParams
@@ -175,10 +175,10 @@ func (s *Service) validateUpdateParams(params UpdateNodeParams) error {
 
 	if params.SyncDirection != nil {
 		validDirections := map[string]bool{
-			"bidirectional": true,
-			"pull_only":     true,
-			"push_only":     true,
-			"disabled":      true,
+			SyncDirectionBidirectional: true,
+			SyncDirectionPullOnly:      true,
+			SyncDirectionPushOnly:      true,
+			SyncDirectionDisabled:      true,
 		}
 		if !validDirections[*params.SyncDirection] {
 			return ErrInvalidNodeParams

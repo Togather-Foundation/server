@@ -184,6 +184,29 @@ func InsertAPIKeyWithRole(t *testing.T, pool *pgxpool.Pool, ctx context.Context,
 	return key
 }
 
+// InsertAPIKeyWithFederationNode inserts an API key bound to a federation node.
+// Federation sync requires this binding: an unbound key is rejected with 403.
+// Uses crypto/rand + SHA-256 hashing (same as InsertAPIKey).
+func InsertAPIKeyWithFederationNode(t *testing.T, pool *pgxpool.Pool, ctx context.Context, name, nodeID string) string {
+	t.Helper()
+
+	rawBytes := make([]byte, 16)
+	_, err := rand.Read(rawBytes)
+	require.NoError(t, err, "failed to generate random key bytes")
+	key := hex.EncodeToString(rawBytes)
+	prefix := key[:8]
+	hash := auth.HashAPIKeySHA256(key)
+
+	_, err = pool.Exec(ctx,
+		`INSERT INTO api_keys (prefix, key_hash, hash_version, name, federation_node_id)
+		 VALUES ($1, $2, $3, $4, $5::uuid)`,
+		prefix, hash, auth.HashVersionSHA256, name, nodeID,
+	)
+	require.NoError(t, err, "failed to insert federation-bound API key")
+
+	return key
+}
+
 // InsertAdminUser inserts a user with a bcrypt-hashed password.
 // Note: bcrypt is unavoidable here because the production login handler verifies
 // passwords with bcrypt. Use sparingly — it adds ~100ms per call.

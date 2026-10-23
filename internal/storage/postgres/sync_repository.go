@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -140,16 +141,33 @@ func (r *SyncRepository) UpsertFederatedEvent(ctx context.Context, arg federatio
 func (r *SyncRepository) GetFederationNodeByDomain(ctx context.Context, nodeDomain string) (federation.FederationNode, error) {
 	row, err := r.queries.GetFederationNodeByDomain(ctx, nodeDomain)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return federation.FederationNode{}, fmt.Errorf("federation node not found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			return federation.FederationNode{}, fmt.Errorf("%w: domain %q", federation.ErrNodeNotFound, nodeDomain)
 		}
 		return federation.FederationNode{}, err
 	}
 
 	return federation.FederationNode{
-		ID:         row.ID,
-		NodeDomain: row.NodeDomain,
+		ID:               row.ID,
+		NodeDomain:       row.NodeDomain,
+		FederationStatus: row.FederationStatus,
+		// sync_enabled is nullable with a column default of true: a NULL value
+		// means "enabled".
+		SyncEnabled: !row.SyncEnabled.Valid || row.SyncEnabled.Bool,
+		// sync_direction is nullable with a column default of 'bidirectional':
+		// a NULL/empty value means bidirectional.
+		SyncDirection: effectiveSyncDirection(row.SyncDirection),
+		TrustLevel:    int(row.TrustLevel),
 	}, nil
+}
+
+// effectiveSyncDirection normalises the nullable federation_nodes.sync_direction
+// column, whose default is 'bidirectional'.
+func effectiveSyncDirection(direction pgtype.Text) string {
+	if !direction.Valid || direction.String == "" {
+		return federation.SyncDirectionBidirectional
+	}
+	return direction.String
 }
 
 // CreateOccurrence creates an event occurrence for a federated event.

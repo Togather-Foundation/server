@@ -47,12 +47,12 @@ SET password_hash = $2
 WHERE id = $1;
 
 -- name: CreateAPIKey :one
-INSERT INTO api_keys (prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, prefix, name, role, rate_limit_tier, is_active, created_at, expires_at;
+INSERT INTO api_keys (prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at, federation_node_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, prefix, name, role, rate_limit_tier, is_active, created_at, expires_at, federation_node_id;
 
 -- name: GetAPIKeyByPrefix :one
-SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, last_used_at, expires_at
+SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, last_used_at, expires_at, federation_node_id
 FROM api_keys
 WHERE prefix = $1 AND is_active = true
 LIMIT 1;
@@ -63,7 +63,7 @@ SET last_used_at = now()
 WHERE id = $1;
 
 -- name: ListAPIKeys :many
-SELECT id, prefix, name, source_id, role, rate_limit_tier, is_active, created_at, last_used_at, expires_at
+SELECT id, prefix, name, source_id, role, rate_limit_tier, is_active, created_at, last_used_at, expires_at, federation_node_id
 FROM api_keys
 ORDER BY created_at DESC;
 

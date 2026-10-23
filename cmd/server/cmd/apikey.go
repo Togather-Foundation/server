@@ -18,9 +18,10 @@ import (
 )
 
 var (
-	apiKeyRole          string
-	apiKeySourceID      string
-	apiKeyExpiresInDays int
+	apiKeyRole             string
+	apiKeySourceID         string
+	apiKeyFederationNodeID string
+	apiKeyExpiresInDays    int
 )
 
 // apiKeyCmd represents the api-key command group
@@ -64,7 +65,10 @@ Examples:
   server api-key create my-admin --role admin
 
   # Create agent key linked to a source
-  server api-key create my-scraper --source-id <uuid>`,
+  server api-key create my-scraper --source-id <uuid>
+
+  # Create a federation key bound to a peer node (required for federation sync)
+  server api-key create my-peer --federation-node-id <uuid>`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
@@ -81,7 +85,7 @@ Examples:
 			}
 		}
 
-		_, err := createAPIKey(name, apiKeyRole, apiKeySourceID, expiresAt)
+		_, err := createAPIKey(name, apiKeyRole, apiKeySourceID, apiKeyFederationNodeID, expiresAt)
 		return err
 	},
 }
@@ -134,10 +138,11 @@ func init() {
 	// Flags for create
 	apiKeyCreateCmd.Flags().StringVar(&apiKeyRole, "role", "agent", "role for the API key (agent or admin)")
 	apiKeyCreateCmd.Flags().StringVar(&apiKeySourceID, "source-id", "", "UUID of the source to associate with this key (optional)")
+	apiKeyCreateCmd.Flags().StringVar(&apiKeyFederationNodeID, "federation-node-id", "", "UUID of the federation node to bind this key to (required for federation sync)")
 	apiKeyCreateCmd.Flags().IntVar(&apiKeyExpiresInDays, "expires-in-days", 0, "number of days until the key expires (required for admin keys)")
 }
 
-func createAPIKey(name, role, sourceID string, expiresAt pgtype.Timestamptz) (string, error) {
+func createAPIKey(name, role, sourceID, federationNodeID string, expiresAt pgtype.Timestamptz) (string, error) {
 	// Load DATABASE_URL from environment or .env files
 	dbURL := getDatabaseURL()
 	if dbURL == "" {
@@ -164,23 +169,35 @@ func createAPIKey(name, role, sourceID string, expiresAt pgtype.Timestamptz) (st
 		return "", fmt.Errorf("hash API key: %w", err)
 	}
 
-	// Insert into database; source_id is optional (NULL when not provided)
+	// Insert into database; source_id and federation_node_id are optional
+	// (NULL when not provided). NULLIF avoids branching on the four
+	// combinations of optional bindings.
 	if sourceID != "" {
 		if _, err := uuid.Parse(sourceID); err != nil {
 			return "", fmt.Errorf("--source-id %q is not a valid UUID: %w", sourceID, err)
 		}
-		_, err = pool.Exec(ctx,
-			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, source_id, is_active, expires_at)
-			 VALUES ($1, $2, $3, $4, $5, $6, true, $7)`,
-			prefix, hash, auth.HashVersionBcrypt, name, role, sourceID, expiresAt,
-		)
-	} else {
-		_, err = pool.Exec(ctx,
-			`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, is_active, expires_at)
-			 VALUES ($1, $2, $3, $4, $5, true, $6)`,
-			prefix, hash, auth.HashVersionBcrypt, name, role, expiresAt,
-		)
 	}
+	if federationNodeID != "" {
+		if _, err := uuid.Parse(federationNodeID); err != nil {
+			return "", fmt.Errorf("--federation-node-id %q is not a valid UUID: %w", federationNodeID, err)
+		}
+		// Fail with a clear message instead of a raw foreign-key violation.
+		var nodeExists bool
+		if err := pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM federation_nodes WHERE id = $1)`,
+			federationNodeID,
+		).Scan(&nodeExists); err != nil {
+			return "", fmt.Errorf("check federation node %s: %w", federationNodeID, err)
+		}
+		if !nodeExists {
+			return "", fmt.Errorf("--federation-node-id %q does not match any federation node", federationNodeID)
+		}
+	}
+	_, err = pool.Exec(ctx,
+		`INSERT INTO api_keys (prefix, key_hash, hash_version, name, role, source_id, federation_node_id, is_active, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::uuid, NULLIF($7, '')::uuid, true, $8)`,
+		prefix, hash, auth.HashVersionBcrypt, name, role, sourceID, federationNodeID, expiresAt,
+	)
 	if err != nil {
 		return "", fmt.Errorf("insert API key: %w", err)
 	}
@@ -191,6 +208,9 @@ func createAPIKey(name, role, sourceID string, expiresAt pgtype.Timestamptz) (st
 	fmt.Printf("Role:   %s\n", role)
 	if sourceID != "" {
 		fmt.Printf("Source: %s\n", sourceID)
+	}
+	if federationNodeID != "" {
+		fmt.Printf("Federation node: %s\n", federationNodeID)
 	}
 	fmt.Printf("Key:    %s\n\n", key)
 	fmt.Printf("⚠️  Save this key - it cannot be retrieved later!\n\n")

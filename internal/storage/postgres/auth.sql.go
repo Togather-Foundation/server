@@ -54,32 +54,34 @@ func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int64, 
 }
 
 const createAPIKey = `-- name: CreateAPIKey :one
-INSERT INTO api_keys (prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, prefix, name, role, rate_limit_tier, is_active, created_at, expires_at
+INSERT INTO api_keys (prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, expires_at, federation_node_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, prefix, name, role, rate_limit_tier, is_active, created_at, expires_at, federation_node_id
 `
 
 type CreateAPIKeyParams struct {
-	Prefix        string             `json:"prefix"`
-	KeyHash       string             `json:"key_hash"`
-	HashVersion   int32              `json:"hash_version"`
-	Name          string             `json:"name"`
-	SourceID      pgtype.UUID        `json:"source_id"`
-	Role          string             `json:"role"`
-	RateLimitTier string             `json:"rate_limit_tier"`
-	IsActive      bool               `json:"is_active"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	Prefix           string             `json:"prefix"`
+	KeyHash          string             `json:"key_hash"`
+	HashVersion      int32              `json:"hash_version"`
+	Name             string             `json:"name"`
+	SourceID         pgtype.UUID        `json:"source_id"`
+	Role             string             `json:"role"`
+	RateLimitTier    string             `json:"rate_limit_tier"`
+	IsActive         bool               `json:"is_active"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	FederationNodeID pgtype.UUID        `json:"federation_node_id"`
 }
 
 type CreateAPIKeyRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Prefix        string             `json:"prefix"`
-	Name          string             `json:"name"`
-	Role          string             `json:"role"`
-	RateLimitTier string             `json:"rate_limit_tier"`
-	IsActive      bool               `json:"is_active"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	ID               pgtype.UUID        `json:"id"`
+	Prefix           string             `json:"prefix"`
+	Name             string             `json:"name"`
+	Role             string             `json:"role"`
+	RateLimitTier    string             `json:"rate_limit_tier"`
+	IsActive         bool               `json:"is_active"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	FederationNodeID pgtype.UUID        `json:"federation_node_id"`
 }
 
 func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (CreateAPIKeyRow, error) {
@@ -93,6 +95,7 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Cre
 		arg.RateLimitTier,
 		arg.IsActive,
 		arg.ExpiresAt,
+		arg.FederationNodeID,
 	)
 	var i CreateAPIKeyRow
 	err := row.Scan(
@@ -104,6 +107,7 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Cre
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.ExpiresAt,
+		&i.FederationNodeID,
 	)
 	return i, err
 }
@@ -246,24 +250,25 @@ func (q *Queries) ExpirePendingInvitationsForUser(ctx context.Context, userID pg
 }
 
 const getAPIKeyByPrefix = `-- name: GetAPIKeyByPrefix :one
-SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, last_used_at, expires_at
+SELECT id, prefix, key_hash, hash_version, name, source_id, role, rate_limit_tier, is_active, last_used_at, expires_at, federation_node_id
 FROM api_keys
 WHERE prefix = $1 AND is_active = true
 LIMIT 1
 `
 
 type GetAPIKeyByPrefixRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Prefix        string             `json:"prefix"`
-	KeyHash       string             `json:"key_hash"`
-	HashVersion   int32              `json:"hash_version"`
-	Name          string             `json:"name"`
-	SourceID      pgtype.UUID        `json:"source_id"`
-	Role          string             `json:"role"`
-	RateLimitTier string             `json:"rate_limit_tier"`
-	IsActive      bool               `json:"is_active"`
-	LastUsedAt    pgtype.Timestamptz `json:"last_used_at"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	ID               pgtype.UUID        `json:"id"`
+	Prefix           string             `json:"prefix"`
+	KeyHash          string             `json:"key_hash"`
+	HashVersion      int32              `json:"hash_version"`
+	Name             string             `json:"name"`
+	SourceID         pgtype.UUID        `json:"source_id"`
+	Role             string             `json:"role"`
+	RateLimitTier    string             `json:"rate_limit_tier"`
+	IsActive         bool               `json:"is_active"`
+	LastUsedAt       pgtype.Timestamptz `json:"last_used_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	FederationNodeID pgtype.UUID        `json:"federation_node_id"`
 }
 
 func (q *Queries) GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIKeyByPrefixRow, error) {
@@ -281,6 +286,7 @@ func (q *Queries) GetAPIKeyByPrefix(ctx context.Context, prefix string) (GetAPIK
 		&i.IsActive,
 		&i.LastUsedAt,
 		&i.ExpiresAt,
+		&i.FederationNodeID,
 	)
 	return i, err
 }
@@ -413,22 +419,23 @@ func (q *Queries) GetUserInvitationByTokenHash(ctx context.Context, tokenHash st
 }
 
 const listAPIKeys = `-- name: ListAPIKeys :many
-SELECT id, prefix, name, source_id, role, rate_limit_tier, is_active, created_at, last_used_at, expires_at
+SELECT id, prefix, name, source_id, role, rate_limit_tier, is_active, created_at, last_used_at, expires_at, federation_node_id
 FROM api_keys
 ORDER BY created_at DESC
 `
 
 type ListAPIKeysRow struct {
-	ID            pgtype.UUID        `json:"id"`
-	Prefix        string             `json:"prefix"`
-	Name          string             `json:"name"`
-	SourceID      pgtype.UUID        `json:"source_id"`
-	Role          string             `json:"role"`
-	RateLimitTier string             `json:"rate_limit_tier"`
-	IsActive      bool               `json:"is_active"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	LastUsedAt    pgtype.Timestamptz `json:"last_used_at"`
-	ExpiresAt     pgtype.Timestamptz `json:"expires_at"`
+	ID               pgtype.UUID        `json:"id"`
+	Prefix           string             `json:"prefix"`
+	Name             string             `json:"name"`
+	SourceID         pgtype.UUID        `json:"source_id"`
+	Role             string             `json:"role"`
+	RateLimitTier    string             `json:"rate_limit_tier"`
+	IsActive         bool               `json:"is_active"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	LastUsedAt       pgtype.Timestamptz `json:"last_used_at"`
+	ExpiresAt        pgtype.Timestamptz `json:"expires_at"`
+	FederationNodeID pgtype.UUID        `json:"federation_node_id"`
 }
 
 func (q *Queries) ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error) {
@@ -451,6 +458,7 @@ func (q *Queries) ListAPIKeys(ctx context.Context) ([]ListAPIKeysRow, error) {
 			&i.CreatedAt,
 			&i.LastUsedAt,
 			&i.ExpiresAt,
+			&i.FederationNodeID,
 		); err != nil {
 			return nil, err
 		}

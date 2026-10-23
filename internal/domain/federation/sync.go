@@ -24,6 +24,22 @@ var (
 	ErrUnsupportedType      = errors.New("unsupported @type")
 	ErrMissingRequiredField = errors.New("missing required field")
 	ErrInvalidDateFormat    = errors.New("invalid date format (must be RFC3339)")
+
+	// Authorization failures for inbound federation sync. All fail closed
+	// before any database write.
+
+	// ErrFederationNodeNotBound means the authenticated API key is not bound to
+	// a federation node (or its binding is malformed).
+	ErrFederationNodeNotBound = errors.New("api key is not bound to a federation node")
+	// ErrFederationNodeMismatch means the payload @id host does not resolve to
+	// the federation node bound to the authenticated API key.
+	ErrFederationNodeMismatch = errors.New("payload origin does not match the authenticated federation node")
+	// ErrFederationNodeInactive means the bound node is not permitted to push
+	// events to this node (status, sync_enabled, or sync_direction).
+	ErrFederationNodeInactive = errors.New("federation node may not push events to this node")
+	// ErrForeignEntityURI means a nested location/organizer @id belongs to a
+	// different federation node than the event.
+	ErrForeignEntityURI = errors.New("nested entity URI belongs to a different federation node")
 )
 
 // SyncRepository defines the data access interface for federation sync operations.
@@ -122,6 +138,34 @@ type Event struct {
 type FederationNode struct {
 	ID         pgtype.UUID
 	NodeDomain string
+
+	FederationStatus string
+	SyncEnabled      bool
+	SyncDirection    string
+
+	// TrustLevel is populated for observability only. Inbound sync deliberately
+	// does not gate on trust level (a low-trust active node may still push);
+	// see the low-trust acceptance test.
+	TrustLevel int
+}
+
+// CanAcceptInboundSync reports whether this node may push events to us.
+//
+// A node accepts inbound sync only when it is active, sync is enabled, and its
+// direction allows inbound traffic (bidirectional or pull_only).
+//
+// NULL semantics: federation_nodes.sync_enabled is nullable with a column
+// default of true, and sync_direction is nullable with a default of
+// 'bidirectional'. The repository normalises a NULL/empty value to the default
+// before this method is called, so a zero-value struct is NOT considered
+// inbound-capable — callers must populate SyncEnabled/SyncDirection from the
+// database row.
+func (n FederationNode) CanAcceptInboundSync() bool {
+	if n.FederationStatus != FederationStatusActive || !n.SyncEnabled {
+		return false
+	}
+	return n.SyncDirection == SyncDirectionBidirectional ||
+		n.SyncDirection == SyncDirectionPullOnly
 }
 
 // UpsertFederatedEventParams matches the generated SQLc params.
@@ -177,6 +221,12 @@ func NewSyncService(repo SyncRepository, validator *jsonld.Validator, logger zer
 type SyncEventParams struct {
 	Payload        map[string]any // JSON-LD payload
 	IdempotencyKey string         // Optional idempotency key from header
+
+	// CallerNodeID is the federation node bound to the authenticated API key.
+	// It is the only trusted origin identity for the request: the payload @id
+	// host must resolve to this node. An empty value means the calling key is
+	// unbound and the sync is rejected.
+	CallerNodeID string
 }
 
 // SyncEventResult holds the result of syncing an event.
@@ -250,6 +300,20 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 		Str("idempotency_key", params.IdempotencyKey).
 		Msg("federation sync: starting event sync")
 
+	// Authorize the caller BEFORE any read/write that could leak or mutate
+	// state. The authenticated API key's node binding is the only trusted
+	// origin identity; the payload @id host is untrusted input.
+	originNode, err := s.authorizeSync(ctx, params.CallerNodeID, federationURI)
+	if err != nil {
+		s.logger.Warn().
+			Err(err).
+			Str("federation_uri", federationURI).
+			Str("caller_node_id", params.CallerNodeID).
+			Str("idempotency_key", params.IdempotencyKey).
+			Msg("federation sync: authorization failed")
+		return nil, err
+	}
+
 	// Compute payload hash for idempotency checks
 	payloadHash, err := computePayloadHash(params.Payload)
 	if err != nil {
@@ -304,16 +368,6 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 		existing, err := txRepo.GetEventByFederationURI(ctx, federationURI)
 		isNew := err != nil // If error, event doesn't exist
 
-		// Extract origin node from federation URI
-		originNodeID, err := s.extractOriginNode(ctx, txRepo, federationURI)
-		if err != nil {
-			s.logger.Error().
-				Err(err).
-				Str("federation_uri", federationURI).
-				Msg("federation sync: failed to determine origin node")
-			return fmt.Errorf("failed to determine origin node: %w", err)
-		}
-
 		// Check for context cancellation before upsert
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("context cancelled: %w", err)
@@ -331,16 +385,38 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 			localULID = existing.ULID
 		}
 
-		// Map JSON-LD to database params
-		dbParams, occurrenceData, err := s.mapJSONLDToEvent(params.Payload, localULID, federationURI, originNodeID)
+		// Map JSON-LD to database params. originNode was authorized above; its
+		// ID is the only node this payload may be attributed to.
+		dbParams, occurrenceData, err := s.mapJSONLDToEvent(params.Payload, localULID, federationURI, originNode.ID)
 		if err != nil {
 			return fmt.Errorf("map JSON-LD to event: %w", err)
 		}
 
-		// Extract and upsert place/location if present
-		if placeParams, err := extractPlaceFromPayload(params.Payload); err != nil {
+		// Extract nested entities and authorize their @id hosts BEFORE any
+		// write. A payload that references another node's place/organization
+		// must not upsert (and therefore overwrite) that peer row.
+		placeParams, err := extractPlaceFromPayload(params.Payload)
+		if err != nil {
 			return fmt.Errorf("extract place: %w", err)
-		} else if placeParams != nil {
+		}
+		if placeParams != nil {
+			if err := validateNestedEntityURI(placeParams.FederationURI, originNode.NodeDomain); err != nil {
+				return fmt.Errorf("place: %w", err)
+			}
+		}
+
+		orgParams, err := extractOrganizationFromPayload(params.Payload)
+		if err != nil {
+			return fmt.Errorf("extract organization: %w", err)
+		}
+		if orgParams != nil {
+			if err := validateNestedEntityURI(orgParams.FederationURI, originNode.NodeDomain); err != nil {
+				return fmt.Errorf("organization: %w", err)
+			}
+		}
+
+		// Upsert place/location if present
+		if placeParams != nil {
 			place, err := txRepo.UpsertPlace(ctx, *placeParams)
 			if err != nil {
 				return fmt.Errorf("upsert place: %w", err)
@@ -353,10 +429,8 @@ func (s *SyncService) SyncEvent(ctx context.Context, params SyncEventParams) (*S
 			dbParams.PrimaryVenueID = placeUUID
 		}
 
-		// Extract and upsert organization if present
-		if orgParams, err := extractOrganizationFromPayload(params.Payload); err != nil {
-			return fmt.Errorf("extract organization: %w", err)
-		} else if orgParams != nil {
+		// Upsert organization if present
+		if orgParams != nil {
 			org, err := txRepo.UpsertOrganization(ctx, *orgParams)
 			if err != nil {
 				return fmt.Errorf("upsert organization: %w", err)
@@ -490,20 +564,108 @@ func (s *SyncService) extractType(payload map[string]any) (string, error) {
 	return typeStr, nil
 }
 
-// extractOriginNode determines the origin node ID from the federation URI.
-func (s *SyncService) extractOriginNode(ctx context.Context, repo SyncRepository, federationURI string) (pgtype.UUID, error) {
+// authorizeSync verifies that the authenticated API key is bound to the
+// federation node that minted the payload @id, and that the node may accept
+// inbound sync. It fails closed and must run before any database write.
+func (s *SyncService) authorizeSync(ctx context.Context, callerNodeID, federationURI string) (FederationNode, error) {
+	if callerNodeID == "" {
+		return FederationNode{}, ErrFederationNodeNotBound
+	}
+
+	var callerUUID pgtype.UUID
+	if err := callerUUID.Scan(callerNodeID); err != nil {
+		// A malformed binding is treated as unbound so the response does not
+		// distinguish it from a key that was never bound.
+		return FederationNode{}, ErrFederationNodeNotBound
+	}
+
+	node, err := s.extractOriginNode(ctx, s.repo, federationURI)
+	if err != nil {
+		return FederationNode{}, err
+	}
+
+	// Compare node identity only. The same response is used for an unknown
+	// domain and for a known node bound to a different key, so callers cannot
+	// probe the node registry.
+	if !node.ID.Valid || node.ID != callerUUID {
+		return FederationNode{}, ErrFederationNodeMismatch
+	}
+
+	if !node.CanAcceptInboundSync() {
+		return FederationNode{}, ErrFederationNodeInactive
+	}
+
+	return node, nil
+}
+
+// extractOriginNode resolves the federation node that owns the payload @id.
+func (s *SyncService) extractOriginNode(ctx context.Context, repo SyncRepository, federationURI string) (FederationNode, error) {
 	parsedURL, err := url.Parse(federationURI)
-	if err != nil {
-		return pgtype.UUID{}, err
+	if err != nil || parsedURL.Scheme == "" || parsedURL.Host == "" {
+		return FederationNode{}, fmt.Errorf("%w: invalid origin @id", ErrInvalidFederationURI)
 	}
 
-	// Get federation node by domain
-	node, err := repo.GetFederationNodeByDomain(ctx, parsedURL.Host)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("origin node not found for domain %s", parsedURL.Host)
+	host := normalizeNodeHost(parsedURL)
+	if host == "" {
+		return FederationNode{}, fmt.Errorf("%w: missing origin host", ErrInvalidFederationURI)
 	}
 
-	return node.ID, nil
+	// Get federation node by domain. A missing node is surfaced as a mismatch
+	// (not a 500 and not a distinct "not found") so the endpoint does not
+	// reveal whether a domain is a registered node. Any other lookup failure
+	// is an infrastructure error and must not be masked as a 403.
+	node, err := repo.GetFederationNodeByDomain(ctx, host)
+	if err != nil {
+		if errors.Is(err, ErrNodeNotFound) {
+			s.logger.Debug().
+				Err(err).
+				Str("node_domain", host).
+				Msg("federation sync: origin node not found")
+			return FederationNode{}, ErrFederationNodeMismatch
+		}
+		s.logger.Error().
+			Err(err).
+			Str("node_domain", host).
+			Msg("federation sync: origin node lookup failed")
+		return FederationNode{}, fmt.Errorf("lookup federation node %q: %w", host, err)
+	}
+
+	return node, nil
+}
+
+// normalizeNodeHost returns the canonical federation node domain form for a URL
+// authority: lowercase, no port, no trailing dot (node_domain is stored
+// lowercase, without a port).
+func normalizeNodeHost(u *url.URL) string {
+	return strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+}
+
+// validateNestedEntityURI rejects nested location/organizer @id values that
+// point at a different federation node than the event's origin node. It must
+// be called before the nested entity is upserted.
+func validateNestedEntityURI(federationURI *string, nodeDomain string) error {
+	if federationURI == nil || *federationURI == "" {
+		return nil
+	}
+
+	parsed, err := url.Parse(*federationURI)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("%w: invalid nested entity @id %q", ErrInvalidFederationURI, *federationURI)
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		// ok
+	default:
+		return fmt.Errorf("%w: invalid nested entity @id scheme %q", ErrInvalidFederationURI, parsed.Scheme)
+	}
+
+	host := normalizeNodeHost(parsed)
+	domain := strings.ToLower(strings.TrimSuffix(nodeDomain, "."))
+	if !strings.EqualFold(host, domain) {
+		return fmt.Errorf("%w: nested @id host %q does not match %q", ErrForeignEntityURI, host, domain)
+	}
+
+	return nil
 }
 
 // mapJSONLDToEvent maps JSON-LD payload to database event params and occurrence data.

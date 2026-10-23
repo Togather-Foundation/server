@@ -169,13 +169,31 @@ func (h *FederationHandler) Sync(w http.ResponseWriter, r *http.Request) {
 	// Get idempotency key from middleware (if present)
 	idempotencyKey := middleware.IdempotencyKey(r)
 
+	// The authenticated API key's federation binding is the only trusted
+	// origin identity. An anonymous or unbound key is rejected by the domain
+	// service (fail closed); forward the binding so it can enforce it.
+	var callerNodeID string
+	if key := middleware.AgentKey(r); key != nil {
+		callerNodeID = key.FederationNodeID
+	}
+
 	// Call sync service
 	result, err := h.SyncService.SyncEvent(r.Context(), federation.SyncEventParams{
 		Payload:        payload,
 		IdempotencyKey: idempotencyKey,
+		CallerNodeID:   callerNodeID,
 	})
 	if err != nil {
 		switch {
+		case errors.Is(err, federation.ErrFederationNodeNotBound),
+			errors.Is(err, federation.ErrFederationNodeMismatch),
+			errors.Is(err, federation.ErrFederationNodeInactive),
+			errors.Is(err, federation.ErrForeignEntityURI):
+			problem.Write(w, r, http.StatusForbidden, "https://sel.events/problems/forbidden", "Federation node not authorized", err, h.Env)
+			return
+		case errors.Is(err, federation.ErrInvalidFederationURI):
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid federation URI", err, h.Env)
+			return
 		case errors.Is(err, federation.ErrInvalidJSONLD):
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid JSON-LD", err, h.Env)
 			return

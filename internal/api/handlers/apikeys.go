@@ -4,12 +4,15 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/problem"
 	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -31,15 +34,21 @@ type CreateAPIKeyRequest struct {
 	Role          string  `json:"role"`
 	RateLimitTier string  `json:"rate_limit_tier"`
 	ExpiresInDays *int    `json:"expires_in_days,omitempty"`
+
+	// FederationNodeID binds the key to a federation node. A bound key is
+	// allowed to submit inbound federation sync payloads minted by that node.
+	// Unbound keys are rejected by POST /api/v1/federation/sync.
+	FederationNodeID *string `json:"federation_node_id,omitempty"`
 }
 
 type CreateAPIKeyResponse struct {
-	APIKey    string     `json:"api_key"` // Only shown once!
-	Prefix    string     `json:"prefix"`
-	Name      string     `json:"name"`
-	Role      string     `json:"role"`
-	ExpiresAt *time.Time `json:"expires_at,omitempty"`
-	Warning   string     `json:"warning"` // Security warning to save the key
+	APIKey           string     `json:"api_key"` // Only shown once!
+	Prefix           string     `json:"prefix"`
+	Name             string     `json:"name"`
+	Role             string     `json:"role"`
+	ExpiresAt        *time.Time `json:"expires_at,omitempty"`
+	FederationNodeID *string    `json:"federation_node_id,omitempty"`
+	Warning          string     `json:"warning"` // Security warning to save the key
 }
 
 // CreateAPIKey handles POST /api/v1/admin/api-keys
@@ -57,6 +66,12 @@ func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Role == "" {
 		req.Role = "agent" // Default role
+	}
+	// The api_keys.role CHECK constraint only permits agent/admin; reject other
+	// values here so a bad request gets 400 instead of a 500 from the database.
+	if req.Role != string(auth.RoleAgent) && req.Role != string(auth.RoleAdmin) {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid role", nil, h.Env)
+		return
 	}
 	if req.RateLimitTier == "" {
 		req.RateLimitTier = "agent" // Default tier
@@ -94,34 +109,63 @@ func (h *APIKeyHandler) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Optional federation node binding. Validate both the UUID and that the
+	// node actually exists so a typo cannot create a silently unusable key.
+	var federationNodeIDParam pgtype.UUID
+	if req.FederationNodeID != nil {
+		if err := federationNodeIDParam.Scan(*req.FederationNodeID); err != nil {
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid federation node ID", err, h.Env)
+			return
+		}
+		if _, err := h.Queries.GetFederationNodeByID(r.Context(), federationNodeIDParam); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Federation node not found", err, h.Env)
+				return
+			}
+			problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to look up federation node", err, h.Env)
+			return
+		}
+	}
+
 	var expiresAtParam pgtype.Timestamptz
 	if expiresAt != nil {
 		expiresAtParam = pgtype.Timestamptz{Time: *expiresAt, Valid: true}
 	}
 
 	key, err := h.Queries.CreateAPIKey(r.Context(), postgres.CreateAPIKeyParams{
-		Prefix:        prefix,
-		KeyHash:       keyHash,
-		HashVersion:   int32(auth.HashVersionBcrypt),
-		Name:          req.Name,
-		SourceID:      sourceIDParam,
-		Role:          req.Role,
-		RateLimitTier: req.RateLimitTier,
-		IsActive:      true,
-		ExpiresAt:     expiresAtParam,
+		Prefix:           prefix,
+		KeyHash:          keyHash,
+		HashVersion:      int32(auth.HashVersionBcrypt),
+		Name:             req.Name,
+		SourceID:         sourceIDParam,
+		Role:             req.Role,
+		RateLimitTier:    req.RateLimitTier,
+		IsActive:         true,
+		ExpiresAt:        expiresAtParam,
+		FederationNodeID: federationNodeIDParam,
 	})
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Failed to create API key", err, h.Env)
 		return
 	}
 
+	// Echo the binding the database actually stored, in canonical UUID form,
+	// rather than the request string (which may be uppercase or otherwise
+	// non-canonical).
+	var federationNodeIDResponse *string
+	if key.FederationNodeID.Valid {
+		storedID := uuid.UUID(key.FederationNodeID.Bytes).String()
+		federationNodeIDResponse = &storedID
+	}
+
 	resp := CreateAPIKeyResponse{
-		APIKey:    apiKey,
-		Prefix:    prefix,
-		Name:      key.Name,
-		Role:      key.Role,
-		ExpiresAt: expiresAt,
-		Warning:   "IMPORTANT: Save this API key now. You won't be able to see it again. Store it securely.",
+		APIKey:           apiKey,
+		Prefix:           prefix,
+		Name:             key.Name,
+		Role:             key.Role,
+		ExpiresAt:        expiresAt,
+		FederationNodeID: federationNodeIDResponse,
+		Warning:          "IMPORTANT: Save this API key now. You won't be able to see it again. Store it securely.",
 	}
 
 	writeJSON(w, http.StatusCreated, resp, "application/json")

@@ -463,6 +463,50 @@ curl -H "Authorization: Bearer sel_live_abcdef1234567890..." \
 Authorization: Bearer <api_key>
 ```
 
+### Federation-Bound Keys
+
+Inbound federation sync (`POST /api/v1/federation/sync`) does not trust the
+payload's `@id` host on its own. The authenticated API key must be **bound to a
+federation node**, and the payload must originate from that same node.
+
+Create a bound key with the admin API:
+
+```bash
+curl -X POST "$TOGATHER_BASE_URL/api/v1/admin/api-keys" \
+  -H "Authorization: Bearer $ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "peer-toronto",
+    "federation_node_id": "01234567-89ab-cdef-0123-456789abcdef"
+  }'
+```
+
+Or with the server CLI:
+
+```bash
+server api-key create peer-toronto --federation-node-id 01234567-89ab-cdef-0123-456789abcdef
+```
+
+The node must already exist in `federation_nodes`.
+
+**What binding authorizes:** the key may submit events whose `@id` host matches
+the bound node's `node_domain`, plus nested `location` / `organizer` objects
+whose `@id` hosts match that same domain. The node must also be usable for
+inbound sync: `federation_status: active`, `sync_enabled` true (the column
+default; `NULL` means true), and `sync_direction` `bidirectional` or `pull_only`
+(`NULL` means bidirectional). Trust level does not gate inbound sync.
+
+**Unbound keys are rejected.** A key created without `federation_node_id`
+receives `403 Forbidden` from the sync endpoint, as does a key posting an event
+minted by another node, a nested `@id` belonging to another node, or a node that
+is paused, blocked, pending, `sync_enabled: false`, or `push_only`. Rejections
+use the RFC 7807 envelope and make no database changes.
+
+> **Existing deployments:** keys created before node binding was introduced are
+> unbound. Rebind them before federation sync will work again — either create a
+> replacement key with `federation_node_id`/`--federation-node-id` and rotate it
+> in, or update `api_keys.federation_node_id` for the existing row.
+
 ### API Key Security
 
 **Best Practices:**

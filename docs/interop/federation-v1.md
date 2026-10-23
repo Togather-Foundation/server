@@ -121,18 +121,58 @@ Submitting the same event multiple times (with the same full URI) updates the ex
 
 Federation sync requires API key authentication (`Authorization: Bearer <key>`) with agent-tier rate limiting (300 req/min default).
 
-Each trusted peer node receives a dedicated API key stored in the `federation_nodes` registry:
+Inbound keys are **bound to a federation node**. The binding lives in the
+`api_keys` table (`api_keys.federation_node_id`), not in the `federation_nodes`
+registry. Each trusted peer node therefore receives a dedicated API key created
+with that binding:
 
 ```sql
--- federation_nodes table
+-- api_keys (one row per key; federation_node_id is NULL for unbound keys)
+ALTER TABLE api_keys
+  ADD COLUMN federation_node_id UUID REFERENCES federation_nodes(id) ON DELETE SET NULL;
+```
+
+The `federation_nodes` table stores node metadata (domain, trust level, status,
+sync direction); it does **not** store an inbound key hash. The legacy
+`api_key_encrypted` column is reserved and currently unused by inbound sync
+(no code reads or writes it):
+
+```sql
+-- federation_nodes (abridged; no api_key_hash column)
 CREATE TABLE federation_nodes (
-  id TEXT PRIMARY KEY,
-  domain TEXT NOT NULL UNIQUE,
+  id UUID PRIMARY KEY,
+  node_domain TEXT NOT NULL UNIQUE,
   trust_level INTEGER NOT NULL CHECK (trust_level BETWEEN 1 AND 10),
-  api_key_hash TEXT NOT NULL,
+  federation_status TEXT NOT NULL DEFAULT 'pending',
+  sync_enabled BOOLEAN DEFAULT true,
+  sync_direction TEXT DEFAULT 'bidirectional',
+  api_key_encrypted BYTEA, -- reserved; not used by inbound sync
   ...
 );
 ```
+
+Authorization is **fail closed** and is decided from the authenticated key, never
+from the payload:
+
+1. The key must carry a `federation_node_id`; an unbound key gets `403`.
+2. The payload `@id` host must resolve to that same node; a different domain (or
+   an unknown domain) gets `403`.
+3. The node must be usable for inbound sync: `federation_status = 'active'`,
+   `sync_enabled` true (the column default; `NULL` means true), and
+   `sync_direction` in (`bidirectional`, `pull_only`) — `NULL` means
+   bidirectional. Otherwise `403`.
+4. Nested `location` / `organizer` objects with an `@id` must belong to the same
+   node domain. A foreign nested `@id` gets `403` and is never upserted, so it
+   cannot overwrite a peer's place or organization row.
+
+A rejected request performs no writes. Responses use the RFC 7807 envelope with
+`type: https://sel.events/problems/forbidden`.
+
+> **Operator note (breaking change):** keys created before node binding was
+> introduced have `federation_node_id = NULL` and are rejected by
+> `POST /api/v1/federation/sync` with `403`. Rebind each peer key with
+> `server api-key create <name> --federation-node-id <uuid>` (or the admin API
+> `federation_node_id` field) before resuming sync.
 
 ### JSON-LD Validation
 
@@ -339,7 +379,9 @@ Content-Type: application/ld+json
 }
 ```
 
-**Authentication:** API key required (agent tier, 300 req/min)
+**Authentication:** API key required (agent tier, 300 req/min). The key must be
+bound to the federation node that minted the payload `@id`; unbound keys and
+payloads from a different node receive `403` (see [Authentication](#authentication)).
 
 ## Testing Strategy
 
@@ -404,7 +446,7 @@ All Phase 8 functionality was implemented following TDD:
 
 **Problem:** Federation partners are long-lived, trusted relationships (unlike anonymous public consumers).
 
-**Solution:** API keys provide simple, stateless authentication without session management overhead. Keys are scoped per-node in the `federation_nodes` registry.
+**Solution:** API keys provide simple, stateless authentication without session management overhead. Each key used for federation sync is bound to exactly one peer node via `api_keys.federation_node_id`, so the authenticated principal — not the payload `@id` — determines which origin is trusted.
 
 **Tradeoff:** Key rotation requires manual coordination with federation partners.
 

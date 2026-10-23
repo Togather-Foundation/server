@@ -14,10 +14,10 @@ import (
 func TestFederationSyncURIPreservation(t *testing.T) {
 	env := setupTestEnv(t)
 
-	// Create federation node and API key
+	// Create federation node and a key bound to it
 	nodeDomain := "preserve.example.org"
 	nodeID := insertFederationNode(t, env, nodeDomain, "Preservation Node", "https://preserve.example.org", "active", 8)
-	apiKey := insertAPIKey(t, env, "federation-preserve-key")
+	apiKey := testhelpers.InsertAPIKeyWithFederationNode(t, env.Pool, env.Context, "federation-preserve-key", nodeID)
 
 	originalEventURI := "https://preserve.example.org/events/01HYX3KQW7ERTV9XNBM2P8QJZF"
 
