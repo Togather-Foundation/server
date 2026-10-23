@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
+	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog"
@@ -31,6 +32,9 @@ type ListEventChangesParams struct {
 	Since         pgtype.Timestamptz
 	Action        string
 	Limit         int32
+	// PublicStates is the lifecycle-state allowlist used to filter the public
+	// change feed. Callers pass events.PublicStates.
+	PublicStates []string
 }
 
 // ListEventChangesRow represents a row returned from ListEventChanges query.
@@ -159,8 +163,9 @@ func (s *ChangeFeedService) GetChanges(ctx context.Context, params ChangeFeedPar
 
 	// Build query parameters
 	queryParams := ListEventChangesParams{
-		Limit:  int32(params.Limit + 1), // Fetch one extra to check if there are more results
-		Action: params.Action,
+		Limit:        int32(params.Limit + 1), // Fetch one extra to check if there are more results
+		Action:       params.Action,
+		PublicStates: events.PublicStates[:],
 	}
 
 	// Set sequence filter only if provided (non-zero cursor)

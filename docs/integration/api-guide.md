@@ -757,23 +757,32 @@ When `next_cursor` is empty, you are caught up. Persist the last non-empty curso
 |-----------|-------------|
 | `since` | ISO 8601 timestamp (bootstrap) **or** opaque cursor from `next_cursor` (subsequent polls). Cursors are sequence-based and never expire. |
 | `action` | Filter by `create`, `update`, or `delete`. Omit to receive all change types. |
-| `include_snapshot` | `true` embeds the full JSON-LD event in each change entry — no second request needed. Snapshots are only attached to create/update rows recorded while the event was publicly visible and whose event is still public (rows with no recorded lifecycle fall back to the current event state); delete rows carry their tombstone payload. Safe for anonymous consumers. |
+| `include_snapshot` | `true` embeds the full JSON-LD event in each change entry — no second request needed. Snapshots are only attached to create/update rows recorded while the event was publicly visible and whose event is still public (rows with no recorded lifecycle fall back to the current event state); delete rows carry a tombstone payload only for previously-public events. Safe for anonymous consumers. |
 | `limit` | 1–200, default 50. |
 
 ### Public visibility
 
 The change feed is an unconditional public feed. `draft` and `pending_review`
-changes are omitted entirely; a deleted event's `create`/`update` rows are
-omitted, but its `delete` row is always retained so consumers observe tombstones
-(Interop Profile §4.3). Snapshots are only attached to create/update rows that
-were recorded while the event was publicly visible and whose event is still
-public (rows with no recorded lifecycle fall back to the current event state).
+changes are omitted entirely. A delete row is exposed only if the event was
+publicly visible at some earlier point; tombstones for submissions that never
+left `draft`/`pending_review` are not published. A deleted event's
+`create`/`update` rows are omitted, but its `delete` row is retained so consumers
+observe tombstones (Interop Profile §4.3). Snapshots are only attached to
+create/update rows that were recorded while the event was publicly visible and
+whose event is still public (rows with no recorded lifecycle fall back to the
+current event state); delete rows carry a tombstone payload only for
+previously-public events.
 
 An event first recorded while `draft`/`pending_review` may therefore first appear
 as an `update` (or `delete`) rather than `create`; consumers that need a canonical
 creation record should fetch `GET /api/v1/events/{ulid}`, or use
 `include_snapshot=true`, which carries the full published snapshot on the approval
 `update`.
+
+**Unpublishing is not a deletion.** Unpublishing (transitioning to `draft`)
+withdraws the event's create/update rows from the feed and emits no delete row.
+Consumers holding a copy must re-fetch `GET /api/v1/events/{ulid}` and treat
+`404` as withdrawal.
 
 Filtering happens before `ORDER BY sequence_number`, so cursor ordering and
 `next_cursor` paging are unaffected — you simply skip hidden rows.

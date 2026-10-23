@@ -1140,12 +1140,22 @@ paths:
         sequence order with action type and snapshot.
 
         This is the unconditional public feed. `draft` and `pending_review`
-        changes are omitted entirely; a deleted event's `create`/`update` rows are
-        omitted, but its `delete` row is always retained so consumers observe
-        tombstones (Interop Profile §4.3). Snapshots are only attached to
-        create/update rows that were recorded while the event was publicly visible
-        and whose event is still public (rows with no recorded lifecycle fall back
-        to the current event state). Cursor/sequence ordering is preserved:
+        changes are omitted entirely. A delete row is exposed only if the event was
+        publicly visible at some earlier point; tombstones for submissions that
+        never left draft/pending_review are not published. A deleted event's
+        `create`/`update` rows are omitted, but its `delete` row is retained so
+        consumers observe tombstones (Interop Profile §4.3). Snapshots are only
+        attached to create/update rows that were recorded while the event was
+        publicly visible and whose event is still public (rows with no recorded
+        lifecycle fall back to the current event state); delete rows carry a
+        tombstone payload only for previously-public events.
+
+        Unpublishing (transition to `draft`) is not a deletion: it withdraws the
+        event's create/update rows from the feed and emits no delete row. Consumers
+        holding a copy must re-fetch `GET /api/v1/events/{ulid}` and treat `404` as
+        withdrawal.
+
+        Cursor/sequence ordering is preserved:
         filtering happens in SQL before `ORDER BY sequence_number`, and
         `next_cursor` walks only the rows that were returned.
       tags: [Feeds]
@@ -1181,8 +1191,9 @@ paths:
             Snapshots are only attached to create/update rows that were recorded
             while the event was publicly visible and whose event is still public
             (rows with no recorded lifecycle fall back to the current event
-            state). Delete rows carry their tombstone payload, so
-            `include_snapshot` is safe for anonymous consumers.
+            state). Delete rows carry a tombstone payload only for events that
+            were publicly visible at some earlier point, so `include_snapshot` is
+            safe for anonymous consumers.
           schema:
             type: boolean
             default: false

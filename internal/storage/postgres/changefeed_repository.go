@@ -25,6 +25,7 @@ func (r *ChangeFeedRepository) ListEventChanges(ctx context.Context, arg federat
 		AfterSequence:  arg.AfterSequence,
 		AfterTimestamp: arg.Since,
 		Limit:          arg.Limit,
+		PublicStates:   arg.PublicStates,
 	}
 
 	// Set action filter (nullable text - empty string means no filter)

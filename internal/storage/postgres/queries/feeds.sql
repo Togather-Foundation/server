@@ -40,19 +40,29 @@ SELECT ec.id,
   WHERE (sqlc.narg('after_sequence')::bigint IS NULL OR ec.sequence_number > sqlc.narg('after_sequence')::bigint)
     AND (sqlc.narg('after_timestamp')::timestamptz IS NULL OR ec.changed_at >= sqlc.narg('after_timestamp')::timestamptz)
     AND (sqlc.narg('action')::text IS NULL OR ec.action = sqlc.narg('action')::text)
-    -- Public change feed visibility. Delete rows are always retained so
-    -- consumers observe tombstones (Interop Profile §4.3). Create/update rows
-    -- are hidden when the event is currently non-public OR when the snapshot
-    -- recorded the change while the event was non-public — otherwise an event
-    -- approved from pending_review to published would re-expose its
-    -- pre-publication snapshots. Legacy rows without a snapshot lifecycle fall
-    -- back to the current event state. Mirrors events.PubliclyVisible.
+    -- Public change feed visibility. Create/update rows are visible only when
+    -- both the event and the recorded snapshot are in the public allowlist.
+    -- Delete rows are visible only when the event was publicly visible at some
+    -- earlier point (a prior change row carried a public snapshot), so a
+    -- rejected submission that never left draft/pending_review does not leak
+    -- its tombstone @id/name/reason. Legacy rows with no snapshot lifecycle are
+    -- fail-closed for the prior-visibility check (COALESCE to ''), while
+    -- create/update rows fall back to the current event state. Mirrors
+    -- events.PublicStates.
     AND (
-      ec.action = 'delete'
+      (
+        ec.action <> 'delete'
+        AND e.lifecycle_state = ANY(sqlc.arg('public_states')::text[])
+        AND COALESCE(ec.snapshot->>'lifecycle_state', e.lifecycle_state) = ANY(sqlc.arg('public_states')::text[])
+      )
       OR (
-        e.lifecycle_state IN ('published','postponed','rescheduled','sold_out','cancelled','completed')
-        AND COALESCE(ec.snapshot->>'lifecycle_state', e.lifecycle_state)
-            IN ('published','postponed','rescheduled','sold_out','cancelled','completed')
+        ec.action = 'delete'
+        AND EXISTS (
+          SELECT 1 FROM event_changes p
+          WHERE p.event_id = ec.event_id
+            AND p.sequence_number < ec.sequence_number
+            AND COALESCE(p.snapshot->>'lifecycle_state', '') = ANY(sqlc.arg('public_states')::text[])
+        )
       )
     )
  ORDER BY ec.sequence_number ASC

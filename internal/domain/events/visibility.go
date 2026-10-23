@@ -1,26 +1,35 @@
 package events
 
-// PubliclyVisible reports whether an event in the given lifecycle state may be
+// PublicStates is the single source of truth for lifecycle states that may be
 // served on anonymous/public surfaces (list, detail, ICS, HTML pages, MCP
 // tools, change feed).
 //
-// The allowlist is every lifecycle state EXCEPT the system-only states:
-// draft, pending_review, and deleted. Cancelled, completed, postponed,
-// rescheduled, sold_out and published events stay visible — they are public
-// states per docs/glossary.md. Deleted events are intentionally not public;
-// they are surfaced only as 410 tombstones by the caller.
+// It is a fixed-size array so it cannot be appended to accidentally. The set is
+// every lifecycle state EXCEPT the system-only states draft, pending_review and
+// deleted. Cancelled, completed, postponed, rescheduled, sold_out and published
+// events stay visible — they are public states per docs/glossary.md.
 //
-// This helper is the Go-side single source of truth for visibility. SQL
-// predicates in the storage layer mirror it as the primary filter; callers use
-// this for defence in depth.
+// SQL call sites pass this slice as a `text[]` parameter instead of repeating
+// the allowlist literal; query-parameter validation (isAllowedLifecycleState)
+// is a separate concern and intentionally differs from this visibility list.
+var PublicStates = [...]string{
+	"published",
+	"postponed",
+	"rescheduled",
+	"sold_out",
+	"cancelled",
+	"completed",
+}
+
+// PubliclyVisible reports whether an event in the given lifecycle state may be
+// served publicly. Deleted events are intentionally not public; they are
+// surfaced only as 410 tombstones by the caller.
 func PubliclyVisible(state string) bool {
-	switch state {
-	case "draft", "pending_review", "deleted":
-		return false
-	case "published", "postponed", "rescheduled", "sold_out", "cancelled", "completed":
-		return true
-	default:
-		// Unknown lifecycle states are not public: fail closed.
-		return false
+	for _, public := range PublicStates {
+		if state == public {
+			return true
+		}
 	}
+	// Draft, pending_review, deleted and unknown states are not public: fail closed.
+	return false
 }

@@ -1,11 +1,13 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -384,6 +386,69 @@ func TestPublicEventVisibilityApprovalTransition(t *testing.T) {
 	require.True(t, sawPublishedUpdate, "approval must surface a visible update row for the event")
 }
 
+// TestPublicEventVisibilityRejectedSubmissionNotInFeed guards the tombstone
+// leak: rejecting a submission that never left pending_review must not publish
+// a delete row (with @id/name/deletion reason) on the anonymous feed.
+func TestPublicEventVisibilityRejectedSubmissionNotInFeed(t *testing.T) {
+	env := setupTestEnv(t)
+
+	org := insertOrganization(t, env, "Rejected Submission Org")
+	place := insertPlace(t, env, "Rejected Submission Venue", "Toronto")
+
+	const eventName = "Rejected Never Public Submission"
+	eventULID := insertEventWithOccurrence(t, env, eventName, org.ID, place.ID, "music", "pending_review", nil, testhelpers.FutureTime(10))
+	eventID := lookupEventIDByULID(t, env, eventULID)
+
+	var reviewID int
+	err := env.Pool.QueryRow(env.Context,
+		`INSERT INTO event_review_queue (event_id, original_payload, normalized_payload, warnings, event_start_time)
+		 VALUES ($1, '{}'::jsonb, '{}'::jsonb, '[]'::jsonb, $2)
+		 RETURNING id`,
+		eventID, testhelpers.FutureTime(10)).Scan(&reviewID)
+	require.NoError(t, err)
+
+	insertAdminUser(t, env, "admin", "admin-password-123", "admin@togather.test", "admin")
+	adminToken := adminLogin(t, env, "admin", "admin-password-123")
+
+	body, err := json.Marshal(map[string]string{"reason": "insufficient_quality"})
+	require.NoError(t, err)
+	rejectReq, err := http.NewRequest(http.MethodPost,
+		env.Server.URL+"/api/v1/admin/review-queue/"+strconv.Itoa(reviewID)+"/reject",
+		bytes.NewReader(body))
+	require.NoError(t, err)
+	rejectReq.Header.Set("Authorization", "Bearer "+adminToken)
+	rejectReq.Header.Set("Content-Type", "application/json")
+	rejectReq.Header.Set("Accept", "application/json")
+
+	rejectResp, err := env.Server.Client().Do(rejectReq)
+	require.NoError(t, err)
+	defer func() { _ = rejectResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, rejectResp.StatusCode, "reject route must succeed")
+
+	var lifecycle string
+	require.NoError(t, env.Pool.QueryRow(env.Context,
+		`SELECT lifecycle_state FROM events WHERE id = $1`, eventID).Scan(&lifecycle))
+	require.Equal(t, "deleted", lifecycle)
+
+	for _, includeSnapshot := range []bool{false, true} {
+		params := url.Values{"limit": {"200"}}
+		if includeSnapshot {
+			params.Set("include_snapshot", "true")
+		}
+
+		raw := fetchChangeFeedBody(t, env, params)
+		require.NotContains(t, raw, eventID, "event UUID must not appear in the public feed")
+		require.NotContains(t, raw, eventULID, "event ULID must not appear in the public feed")
+		require.NotContains(t, raw, eventName, "never-public event name must not appear in the public feed")
+
+		feed := fetchChangeFeed(t, env, params)
+		for _, change := range feed.Changes {
+			require.NotEqual(t, eventID, change.EventID,
+				"a rejected never-public submission must not emit a delete row")
+		}
+	}
+}
+
 // TestPublicEventVisibilityAdminListUnfiltered verifies the admin list keeps
 // serving non-public events.
 func TestPublicEventVisibilityAdminListUnfiltered(t *testing.T) {
@@ -542,6 +607,26 @@ func insertChangeWithSnapshot(t *testing.T, env *testEnv, eventID, action string
 	require.NoError(t, err)
 
 	time.Sleep(2 * time.Millisecond)
+}
+
+// fetchChangeFeedBody returns the raw change-feed response body so tests can
+// assert that forbidden identifiers/names appear nowhere in the payload.
+func fetchChangeFeedBody(t *testing.T, env *testEnv, params url.Values) string {
+	t.Helper()
+
+	u := env.Server.URL + "/api/v1/feeds/changes?" + params.Encode()
+	req, err := http.NewRequest(http.MethodGet, u, nil)
+	require.NoError(t, err)
+	req.Header.Set("Accept", "application/ld+json")
+
+	resp, err := env.Server.Client().Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+	return string(body)
 }
 
 func mcpEventNames(t *testing.T, payload map[string]any) []string {

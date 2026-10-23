@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/federation"
 	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,6 +30,7 @@ func TestChangeFeedRepositoryListEventChanges(t *testing.T) {
 	rows, err := repo.ListEventChanges(ctx, federation.ListEventChangesParams{
 		AfterSequence: pgtype.Int8{Int64: 0, Valid: false},
 		Limit:         10,
+		PublicStates:  events.PublicStates[:],
 	})
 	require.NoError(t, err)
 	require.NotEmpty(t, rows)

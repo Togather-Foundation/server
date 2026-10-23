@@ -163,29 +163,40 @@ SELECT ec.id,
   WHERE ($1::bigint IS NULL OR ec.sequence_number > $1::bigint)
     AND ($2::timestamptz IS NULL OR ec.changed_at >= $2::timestamptz)
     AND ($3::text IS NULL OR ec.action = $3::text)
-    -- Public change feed visibility. Delete rows are always retained so
-    -- consumers observe tombstones (Interop Profile §4.3). Create/update rows
-    -- are hidden when the event is currently non-public OR when the snapshot
-    -- recorded the change while the event was non-public — otherwise an event
-    -- approved from pending_review to published would re-expose its
-    -- pre-publication snapshots. Legacy rows without a snapshot lifecycle fall
-    -- back to the current event state. Mirrors events.PubliclyVisible.
+    -- Public change feed visibility. Create/update rows are visible only when
+    -- both the event and the recorded snapshot are in the public allowlist.
+    -- Delete rows are visible only when the event was publicly visible at some
+    -- earlier point (a prior change row carried a public snapshot), so a
+    -- rejected submission that never left draft/pending_review does not leak
+    -- its tombstone @id/name/reason. Legacy rows with no snapshot lifecycle are
+    -- fail-closed for the prior-visibility check (COALESCE to ''), while
+    -- create/update rows fall back to the current event state. Mirrors
+    -- events.PublicStates.
     AND (
-      ec.action = 'delete'
+      (
+        ec.action <> 'delete'
+        AND e.lifecycle_state = ANY($4::text[])
+        AND COALESCE(ec.snapshot->>'lifecycle_state', e.lifecycle_state) = ANY($4::text[])
+      )
       OR (
-        e.lifecycle_state IN ('published','postponed','rescheduled','sold_out','cancelled','completed')
-        AND COALESCE(ec.snapshot->>'lifecycle_state', e.lifecycle_state)
-            IN ('published','postponed','rescheduled','sold_out','cancelled','completed')
+        ec.action = 'delete'
+        AND EXISTS (
+          SELECT 1 FROM event_changes p
+          WHERE p.event_id = ec.event_id
+            AND p.sequence_number < ec.sequence_number
+            AND COALESCE(p.snapshot->>'lifecycle_state', '') = ANY($4::text[])
+        )
       )
     )
  ORDER BY ec.sequence_number ASC
- LIMIT $4
+ LIMIT $5
 `
 
 type ListEventChangesParams struct {
 	AfterSequence  pgtype.Int8        `json:"after_sequence"`
 	AfterTimestamp pgtype.Timestamptz `json:"after_timestamp"`
 	Action         pgtype.Text        `json:"action"`
+	PublicStates   []string           `json:"public_states"`
 	Limit          int32              `json:"limit"`
 }
 
@@ -218,6 +229,7 @@ func (q *Queries) ListEventChanges(ctx context.Context, arg ListEventChangesPara
 		arg.AfterSequence,
 		arg.AfterTimestamp,
 		arg.Action,
+		arg.PublicStates,
 		arg.Limit,
 	)
 	if err != nil {

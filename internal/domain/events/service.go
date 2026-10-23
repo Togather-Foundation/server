@@ -356,6 +356,9 @@ func parseLimit(values url.Values) (int, error) {
 	return parsed, nil
 }
 
+// isAllowedLifecycleState validates the `state` query parameter. This is a
+// separate concern from visibility: it lists the values a caller may filter by.
+// Public visibility is governed by PublicStates in visibility.go.
 func isAllowedLifecycleState(value string) bool {
 	switch value {
 	case "draft", "published", "postponed", "rescheduled", "sold_out", "cancelled", "completed":

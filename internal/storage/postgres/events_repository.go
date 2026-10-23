@@ -113,6 +113,12 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 	// Escape ILIKE patterns to prevent SQL injection
 	escapedQuery := escapeILIKEPattern(filters.Query)
 
+	// Public visibility allowlist. nil (admin list) disables the filter.
+	var publicStates []string
+	if filters.PublicOnly {
+		publicStates = events.PublicStates[:]
+	}
+
 	rows, err := queryer.Query(ctx, `
 SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	   lifecycle_state, event_status, attendance_mode, event_domain,
@@ -154,7 +160,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
     AND ($6 = '' OR e.event_domain = $6)
     AND ($7 = '' OR (e.name ILIKE '%' || $7 || '%' ESCAPE '\' OR e.description ILIKE '%' || $7 || '%' ESCAPE '\'))
     AND (coalesce(cardinality($8::text[]), 0) = 0 OR e.keywords && $8::text[])
-    AND ($11::boolean IS FALSE OR e.lifecycle_state IN ('published','postponed','rescheduled','sold_out','cancelled','completed'))
+    AND ($11::text[] IS NULL OR e.lifecycle_state = ANY($11::text[]))
     AND (
       $9::timestamptz IS NULL OR
       o.start_time > $9::timestamptz OR
@@ -175,7 +181,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 		keywordArray,
 		cursorTimestamp,
 		cursorULID,
-		filters.PublicOnly,
+		publicStates,
 		limitPlusOne,
 	)
 	if err != nil {
@@ -324,17 +330,17 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 }
 
 func (r *EventRepository) GetByULID(ctx context.Context, ulid string) (*events.Event, error) {
-	return r.getByULID(ctx, ulid, false)
+	return r.getByULID(ctx, ulid, nil)
 }
 
 // GetPublicByULID returns the event only when it is publicly visible.
-// Draft and pending_review events are excluded in SQL; deleted events are
-// still returned so callers can serve the 410 tombstone.
+// The allowlist plus deleted are the only states returned; deleted events are
+// included so callers can serve the 410 tombstone.
 func (r *EventRepository) GetPublicByULID(ctx context.Context, ulid string) (*events.Event, error) {
-	return r.getByULID(ctx, ulid, true)
+	return r.getByULID(ctx, ulid, events.PublicStates[:])
 }
 
-func (r *EventRepository) getByULID(ctx context.Context, ulid string, publicOnly bool) (*events.Event, error) {
+func (r *EventRepository) getByULID(ctx context.Context, ulid string, publicStates []string) (*events.Event, error) {
 	queryer := r.queryer()
 
 	rows, err := queryer.Query(ctx, `
@@ -359,9 +365,9 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	  LEFT JOIN organizations org ON org.id = e.organizer_id
 	  LEFT JOIN event_series es ON es.id = e.series_id
 	 WHERE e.ulid = $1
-	   AND ($2::boolean IS FALSE OR e.lifecycle_state NOT IN ('draft','pending_review'))
+	   AND ($2::text[] IS NULL OR e.lifecycle_state = ANY($2::text[]) OR e.lifecycle_state = 'deleted')
    ORDER BY o.start_time ASC
-`, ulid, publicOnly)
+`, ulid, publicStates)
 	if err != nil {
 		return nil, fmt.Errorf("get event: %w", err)
 	}
