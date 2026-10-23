@@ -622,6 +622,52 @@ func TestSyncEvent_Authorization(t *testing.T) {
 		assert.Zero(t, repo.orgUpserts)
 	})
 
+	t.Run("non-string nested place @id is rejected before any write", func(t *testing.T) {
+		repo := &mockSyncRepo{}
+		service := NewSyncService(repo, nil, zerolog.Nop())
+
+		payload := basePayload("https://example.org/events/non-string-place-id")
+		payload["location"] = map[string]any{
+			"@type": "Place",
+			"@id":   123,
+			"name":  "Bad Venue",
+		}
+
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{
+			Payload:      payload,
+			CallerNodeID: mockNodeIDString,
+		})
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrInvalidFederationURI)
+		assert.Zero(t, repo.eventUpserts, "rejected sync must not write events")
+		assert.Zero(t, repo.placeUpserts, "rejected sync must not write places")
+		assert.Zero(t, repo.orgUpserts)
+	})
+
+	t.Run("non-string nested organizer @id is rejected before any write", func(t *testing.T) {
+		repo := &mockSyncRepo{}
+		service := NewSyncService(repo, nil, zerolog.Nop())
+
+		payload := basePayload("https://example.org/events/non-string-org-id")
+		payload["organizer"] = map[string]any{
+			"@type": "Organization",
+			"@id":   map[string]any{"value": "https://example.org/organizations/1"},
+			"name":  "Bad Org",
+		}
+
+		_, err := service.SyncEvent(context.Background(), SyncEventParams{
+			Payload:      payload,
+			CallerNodeID: mockNodeIDString,
+		})
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrInvalidFederationURI)
+		assert.Zero(t, repo.eventUpserts, "rejected sync must not write events")
+		assert.Zero(t, repo.placeUpserts)
+		assert.Zero(t, repo.orgUpserts, "rejected sync must not write organizations")
+	})
+
 	t.Run("foreign nested organizer uri is rejected before any write", func(t *testing.T) {
 		repo := &mockSyncRepo{}
 		service := NewSyncService(repo, nil, zerolog.Nop())

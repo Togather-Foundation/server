@@ -31,13 +31,14 @@ func NewService(repo Repository, requireHTTPS bool) *Service {
 
 // CreateNode creates a new federation node with validation
 func (s *Service) CreateNode(ctx context.Context, params CreateNodeParams) (*Node, error) {
+	// Normalize the domain before validation so a canonical form is both
+	// validated and stored (inbound sync compares against a normalized host).
+	params.NodeDomain = strings.ToLower(strings.TrimSpace(params.NodeDomain))
+
 	// Validate required fields
 	if err := s.validateCreateParams(params); err != nil {
 		return nil, err
 	}
-
-	// Normalize domain
-	params.NodeDomain = strings.ToLower(strings.TrimSpace(params.NodeDomain))
 
 	// Check if domain already exists
 	existing, err := s.repo.GetByDomain(ctx, params.NodeDomain)
@@ -102,6 +103,15 @@ func (s *Service) DeleteNode(ctx context.Context, id uuid.UUID) error {
 func (s *Service) validateCreateParams(params CreateNodeParams) error {
 	if params.NodeDomain == "" {
 		return ErrInvalidNodeParams
+	}
+	// Domain is normalized by CreateNode before this runs. Inbound sync
+	// compares the stored value against a normalized payload host, so reject
+	// anything that can never match: scheme, port, path, or invalid shape.
+	if err := ValidateNodeDomain(params.NodeDomain); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidNodeParams, err)
+	}
+	if strings.ContainsAny(params.NodeDomain, ":/") {
+		return fmt.Errorf("%w: node domain must not contain a scheme or port", ErrInvalidNodeParams)
 	}
 	if params.NodeName == "" {
 		return ErrInvalidNodeParams

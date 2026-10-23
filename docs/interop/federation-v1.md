@@ -135,7 +135,8 @@ ALTER TABLE api_keys
 The `federation_nodes` table stores node metadata (domain, trust level, status,
 sync direction); it does **not** store an inbound key hash. The legacy
 `api_key_encrypted` column is reserved and currently unused by inbound sync
-(no code reads or writes it):
+(no hand-written code reads or writes it; the generated `SELECT *` queries
+merely scan it into a struct field):
 
 ```sql
 -- federation_nodes (abridged; no api_key_hash column)

@@ -910,8 +910,14 @@ func extractPlaceFromPayload(payload map[string]any) (*PlaceCreateParams, error)
 		params.Description = desc
 	}
 
-	// Extract federation URI from @id
-	if id, ok := location["@id"].(string); ok && id != "" {
+	// Extract federation URI from @id. When @id is present it must be a
+	// non-empty string: silently ignoring other types would create a fresh,
+	// unattributed place row on every sync.
+	if rawID, exists := location["@id"]; exists && rawID != nil {
+		id, ok := rawID.(string)
+		if !ok || id == "" {
+			return nil, fmt.Errorf("%w: location @id must be a non-empty string", ErrInvalidFederationURI)
+		}
 		params.FederationURI = &id
 	}
 
@@ -993,8 +999,14 @@ func extractOrganizationFromPayload(payload map[string]any) (*OrganizationCreate
 		params.URL = u
 	}
 
-	// Extract federation URI from @id
-	if id, ok := organizer["@id"].(string); ok && id != "" {
+	// Extract federation URI from @id. When @id is present it must be a
+	// non-empty string: silently ignoring other types would create a fresh,
+	// unattributed organization row on every sync.
+	if rawID, exists := organizer["@id"]; exists && rawID != nil {
+		id, ok := rawID.(string)
+		if !ok || id == "" {
+			return nil, fmt.Errorf("%w: organizer @id must be a non-empty string", ErrInvalidFederationURI)
+		}
 		params.FederationURI = &id
 	}
 

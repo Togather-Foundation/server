@@ -416,6 +416,44 @@ func TestCreateNode(t *testing.T) {
 		}
 	})
 
+	t.Run("rejects non-canonical domains", func(t *testing.T) {
+		// A stored domain with a scheme, port, path, or invalid shape can
+		// never match the normalized payload host used by inbound sync, so it
+		// must be rejected at creation rather than silently failing closed.
+		invalidDomains := []string{
+			"peer.example.org:8443",
+			"https://peer.example.org",
+			"peer.example.org/federation",
+			"localhost",
+			"127.0.0.1",
+			"not_a_domain",
+		}
+
+		for _, domain := range invalidDomains {
+			t.Run(domain, func(t *testing.T) {
+				repo := &mockFederationRepo{
+					getByDomainFunc: func(ctx context.Context, domain string) (*Node, error) {
+						return nil, ErrNodeNotFound
+					},
+				}
+				service := NewService(repo, false)
+
+				_, err := service.CreateNode(ctx, CreateNodeParams{
+					NodeDomain:       domain,
+					NodeName:         "Bad Domain",
+					BaseURL:          "https://peer.example.org",
+					TrustLevel:       5,
+					FederationStatus: "active",
+					SyncDirection:    "bidirectional",
+				})
+
+				if !errors.Is(err, ErrInvalidNodeParams) {
+					t.Fatalf("Expected ErrInvalidNodeParams for %q, got: %v", domain, err)
+				}
+			})
+		}
+	})
+
 	t.Run("duplicate domain", func(t *testing.T) {
 		repo := &mockFederationRepo{
 			getByDomainFunc: func(ctx context.Context, domain string) (*Node, error) {
