@@ -15,39 +15,46 @@ import (
 // fakeDeveloperService implements DeveloperService and records every call so
 // tests can assert that rejected calls never reach the service/repository.
 type fakeDeveloperService struct {
-	calls           []string
+	calls []string
+	// developerIDs and keyIDs are parallel to calls. keyIDs holds uuid.Nil for
+	// methods whose signature has no key argument; it is asserted only on the
+	// key_id/usage path.
 	developerIDs    []uuid.UUID
+	keyIDs          []uuid.UUID
 	keys            []*developers.APIKeyWithUsage
 	createKeyResult *developers.APIKeyWithUsage
 }
 
-func (f *fakeDeveloperService) record(name string, developerID uuid.UUID) {
+func (f *fakeDeveloperService) record(name string, developerID, keyID uuid.UUID) {
 	f.calls = append(f.calls, name)
 	f.developerIDs = append(f.developerIDs, developerID)
+	f.keyIDs = append(f.keyIDs, keyID)
 }
 
 func (f *fakeDeveloperService) GetDeveloperByID(_ context.Context, id uuid.UUID) (*developers.Developer, error) {
-	f.record("GetDeveloperByID", id)
+	f.record("GetDeveloperByID", id, uuid.Nil)
 	return &developers.Developer{ID: id, MaxKeys: developers.DefaultMaxKeys, IsActive: true}, nil
 }
 
 func (f *fakeDeveloperService) ListOwnKeys(_ context.Context, developerID uuid.UUID) ([]*developers.APIKeyWithUsage, error) {
-	f.record("ListOwnKeys", developerID)
+	f.record("ListOwnKeys", developerID, uuid.Nil)
 	return f.keys, nil
 }
 
 func (f *fakeDeveloperService) CheckAPIKeyOwnership(_ context.Context, keyID uuid.UUID, developerID uuid.UUID) (bool, error) {
-	f.record("CheckAPIKeyOwnership", developerID)
+	f.record("CheckAPIKeyOwnership", developerID, keyID)
 	return true, nil
 }
 
-func (f *fakeDeveloperService) GetAPIKeyUsageStats(_ context.Context, _ uuid.UUID, _, _ time.Time) (int64, int64, []developers.DailyUsage, error) {
-	f.record("GetAPIKeyUsageStats", uuid.Nil)
+func (f *fakeDeveloperService) GetAPIKeyUsageStats(_ context.Context, keyID uuid.UUID, _, _ time.Time) (int64, int64, []developers.DailyUsage, error) {
+	// GetAPIKeyUsageStats takes no developer argument, so only keyID is
+	// meaningful here.
+	f.record("GetAPIKeyUsageStats", uuid.Nil, keyID)
 	return 0, 0, nil, nil
 }
 
 func (f *fakeDeveloperService) CreateAPIKey(_ context.Context, params developers.CreateAPIKeyParams) (string, *developers.APIKeyWithUsage, error) {
-	f.record("CreateAPIKey", params.DeveloperID)
+	f.record("CreateAPIKey", params.DeveloperID, uuid.Nil)
 	keyInfo := f.createKeyResult
 	if keyInfo == nil {
 		keyInfo = &developers.APIKeyWithUsage{ID: uuid.New(), Name: params.Name, Role: "agent"}
@@ -55,8 +62,8 @@ func (f *fakeDeveloperService) CreateAPIKey(_ context.Context, params developers
 	return "plain-key", keyInfo, nil
 }
 
-func (f *fakeDeveloperService) RevokeOwnKey(_ context.Context, developerID uuid.UUID, _ uuid.UUID) error {
-	f.record("RevokeOwnKey", developerID)
+func (f *fakeDeveloperService) RevokeOwnKey(_ context.Context, developerID uuid.UUID, keyID uuid.UUID) error {
+	f.record("RevokeOwnKey", developerID, keyID)
 	return nil
 }
 
@@ -141,6 +148,59 @@ func TestAPIKeysHandler_BindsToAuthenticatedDeveloper(t *testing.T) {
 		require.Empty(t, service.calls)
 	})
 
+	t.Run("non-UUID developer binding on the key is rejected with no service calls", func(t *testing.T) {
+		service := &fakeDeveloperService{}
+		tools := NewDeveloperTools(service, "")
+
+		result, err := callTool(contextWithDeveloper("not-a-uuid"), tools.APIKeysHandler, map[string]any{})
+
+		require.NoError(t, err)
+		require.True(t, result.IsError)
+		require.Contains(t, resultText(t, result), "authenticated API key has an invalid developer binding")
+		require.Empty(t, service.calls)
+	})
+
+	t.Run("zero-UUID developer binding on the key is rejected with no service calls", func(t *testing.T) {
+		service := &fakeDeveloperService{}
+		tools := NewDeveloperTools(service, "")
+
+		result, err := callTool(contextWithDeveloper(uuid.Nil.String()), tools.APIKeysHandler, map[string]any{})
+
+		require.NoError(t, err)
+		require.True(t, result.IsError)
+		require.Contains(t, resultText(t, result), "authenticated API key has an invalid developer binding")
+		require.Empty(t, service.calls)
+	})
+
+	t.Run("non-UUID developer_id argument is rejected with no service calls", func(t *testing.T) {
+		service := &fakeDeveloperService{}
+		tools := NewDeveloperTools(service, "")
+
+		result, err := callTool(contextWithDeveloper(developerA.String()), tools.APIKeysHandler, map[string]any{
+			"developer_id": "not-a-uuid",
+		})
+
+		require.NoError(t, err)
+		require.True(t, result.IsError)
+		require.Contains(t, resultText(t, result), "invalid developer_id: must be a valid UUID")
+		require.Empty(t, service.calls)
+	})
+
+	t.Run("key_id with a mismatched developer_id is rejected with no service calls", func(t *testing.T) {
+		service := &fakeDeveloperService{}
+		tools := NewDeveloperTools(service, "")
+
+		result, err := callTool(contextWithDeveloper(developerA.String()), tools.APIKeysHandler, map[string]any{
+			"developer_id": developerB.String(),
+			"key_id":       uuid.New().String(),
+		})
+
+		require.NoError(t, err)
+		require.True(t, result.IsError)
+		require.Contains(t, resultText(t, result), "developer_id does not match the authenticated API key's developer")
+		require.Empty(t, service.calls)
+	})
+
 	t.Run("anonymous caller is rejected with no service calls", func(t *testing.T) {
 		service := &fakeDeveloperService{}
 		tools := NewDeveloperTools(service, "")
@@ -157,14 +217,17 @@ func TestAPIKeysHandler_BindsToAuthenticatedDeveloper(t *testing.T) {
 		service := &fakeDeveloperService{}
 		tools := NewDeveloperTools(service, "")
 
+		keyID := uuid.New()
 		result, err := callTool(contextWithDeveloper(developerA.String()), tools.APIKeysHandler, map[string]any{
-			"key_id": uuid.New().String(),
+			"key_id": keyID.String(),
 		})
 
 		require.NoError(t, err)
 		require.False(t, result.IsError)
 		require.Equal(t, []string{"CheckAPIKeyOwnership", "GetAPIKeyUsageStats"}, service.calls)
 		require.Equal(t, developerA, service.developerIDs[0])
+		// The requested key_id must be forwarded to both service calls.
+		require.Equal(t, []uuid.UUID{keyID, keyID}, service.keyIDs)
 	})
 }
 
@@ -223,16 +286,33 @@ func TestManageAPIKeyHandler_BindsToAuthenticatedDeveloper(t *testing.T) {
 		service := &fakeDeveloperService{}
 		tools := NewDeveloperTools(service, "")
 
+		keyID := uuid.New()
 		result, err := callTool(contextWithDeveloper(developerA.String()), tools.ManageAPIKeyHandler, map[string]any{
 			"action":       "revoke",
 			"developer_id": developerA.String(),
-			"key_id":       uuid.New().String(),
+			"key_id":       keyID.String(),
 		})
 
 		require.NoError(t, err)
 		require.False(t, result.IsError)
 		require.Equal(t, []string{"RevokeOwnKey"}, service.calls)
 		require.Equal(t, []uuid.UUID{developerA}, service.developerIDs)
+		require.Equal(t, []uuid.UUID{keyID}, service.keyIDs)
+	})
+
+	t.Run("anonymous caller is rejected with no service calls", func(t *testing.T) {
+		service := &fakeDeveloperService{}
+		tools := NewDeveloperTools(service, "")
+
+		result, err := callTool(context.Background(), tools.ManageAPIKeyHandler, map[string]any{
+			"action": "create",
+			"name":   "new key",
+		})
+
+		require.NoError(t, err)
+		require.True(t, result.IsError)
+		require.Contains(t, resultText(t, result), "this tool requires an authenticated API key")
+		require.Empty(t, service.calls)
 	})
 
 	t.Run("unbound key is rejected with no service calls", func(t *testing.T) {

@@ -54,7 +54,7 @@ func (t *DeveloperTools) actingDeveloper(ctx context.Context, suppliedDeveloperI
 		return uuid.UUID{}, mcp.NewToolResultError("this API key is not bound to a developer; account tools require a developer-issued key (use the admin API for admin key management)")
 	}
 	developerID, err := uuid.Parse(key.DeveloperID)
-	if err != nil {
+	if err != nil || developerID == uuid.Nil {
 		return uuid.UUID{}, mcp.NewToolResultError("authenticated API key has an invalid developer binding")
 	}
 	if suppliedDeveloperID != "" {

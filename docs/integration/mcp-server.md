@@ -206,7 +206,10 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 - **Cause**: The `developer_id` argument named a different developer than the one bound to
   the Bearer key. Identity always comes from the key.
 - **Solution**: Omit `developer_id` (preferred) or pass the key owner's developer UUID.
-  Use the `/api/v1/admin/developers` endpoints to manage another developer's keys.
+  To inspect or revoke any key regardless of owner, use
+  `GET /api/v1/admin/api-keys` / `DELETE /api/v1/admin/api-keys/{id}`. Admin-created keys
+  have no `developer_id` field, so they are unbound. A developer who needs account-tool
+  access must mint their own developer-bound key via `/dev/login`.
 
 #### Account tool fails with "this API key is not bound to a developer"
 - **Cause**: The Bearer key has no `developer_id` (CLI/admin-created keys), so there is no
@@ -587,4 +590,4 @@ If Claude Desktop integration isn't working:
 
 ---
 
-**Last Updated:** 2026-08-09
+**Last Updated:** 2026-10-23

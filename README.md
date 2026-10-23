@@ -145,8 +145,8 @@ Get a free API key at `/dev/login` (GitHub OAuth, instant).
 | `add_event` | Submit a new event from JSON-LD (requires API key) |
 | `geocode_address` | Geocode an address or place name to coordinates |
 | `reverse_geocode` | Reverse geocode coordinates to a human-readable address |
-| `api_keys` | List API keys and usage statistics for the authenticated developer |
-| `manage_api_key` | Create or revoke API keys (requires API key) |
+| `api_keys` | List API keys and usage statistics for the developer bound to the Bearer key |
+| `manage_api_key` | Create or revoke API keys for the developer bound to the Bearer key |
 
 > **Setup note for agents:** this server has **no OAuth**. Register `/mcp` as a **local**
 > MCP server with an `Authorization: Bearer <key>` header. A claude.ai *remote connector*
