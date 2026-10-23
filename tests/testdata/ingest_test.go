@@ -73,6 +73,20 @@ func (m *IngestMockRepository) GetByULID(ctx context.Context, ulid string) (*eve
 	return event, nil
 }
 
+func (m *IngestMockRepository) GetPublicByULID(ctx context.Context, ulid string) (*events.Event, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	event, ok := m.events[ulid]
+	if !ok {
+		return nil, events.ErrNotFound
+	}
+	if event == nil || (!events.PubliclyVisible(event.LifecycleState) && event.LifecycleState != "deleted") {
+		return nil, events.ErrNotFound
+	}
+	return event, nil
+}
+
 func (m *IngestMockRepository) Create(ctx context.Context, params events.EventCreateParams) (*events.Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -188,7 +188,7 @@ func (t *SearchTools) searchEvents(ctx context.Context, query string, limit int)
 	if err != nil {
 		return nil, err
 	}
-	result, err := t.eventsService.List(ctx, filters, pagination)
+	result, err := t.eventsService.ListPublic(ctx, filters, pagination)
 	if err != nil {
 		return nil, err
 	}

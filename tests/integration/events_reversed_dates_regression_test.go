@@ -533,18 +533,26 @@ func TestReversedDatesRegressions_LifecycleStateTransitions(t *testing.T) {
 	eventID := eventIDFromPayload(created)
 	require.NotEmpty(t, eventID, "Event should have an ID")
 
-	// Check database directly to see what's stored
+	// Check database directly to see what's stored. Public detail endpoints now
+	// hide pending_review events, so the corrected dates are verified via SQL.
 	var dbStartDate, dbEndDate *time.Time
 	err = env.Pool.QueryRow(env.Context,
-		"SELECT start_date, end_date FROM event_occurrences WHERE event_ulid = $1",
+		`SELECT o.start_time, o.end_time
+		   FROM event_occurrences o
+		   JOIN events e ON e.id = o.event_id
+		  WHERE e.ulid = $1
+		  ORDER BY o.start_time ASC
+		  LIMIT 1`,
 		eventID).Scan(&dbStartDate, &dbEndDate)
-	if err != nil {
-		t.Logf("DB query error: %v", err)
-	} else {
-		t.Logf("DB dates - start: %v, end: %v", dbStartDate, dbEndDate)
-	}
+	require.NoError(t, err, "pending_review event must still have its occurrence persisted")
+	require.NotNil(t, dbStartDate)
+	require.True(t, dbStartDate.Equal(testhelpers.FutureTimeAt(70, 23, 0)),
+		"start_time should be %s (got %s)", testhelpers.FutureTimeAt(70, 23, 0).Format(time.RFC3339), dbStartDate.Format(time.RFC3339))
+	require.NotNil(t, dbEndDate, "end_time should be auto-corrected, not left NULL")
+	require.True(t, dbEndDate.Equal(testhelpers.FutureTimeAt(71, 2, 0)),
+		"end_time should be auto-corrected to %s (got %s)", testhelpers.FutureTimeAt(71, 2, 0).Format(time.RFC3339), dbEndDate.Format(time.RFC3339))
 
-	// Fetch the full event to verify dates were corrected
+	// Public GET must not leak the pending_review event: no 200, no 410, 404.
 	getReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/events/"+eventID, nil)
 	require.NoError(t, err)
 	getReq.Header.Set("Accept", "application/ld+json")
@@ -556,49 +564,8 @@ func TestReversedDatesRegressions_LifecycleStateTransitions(t *testing.T) {
 			t.Logf("failed to close response body: %v", closeErr)
 		}
 	}()
-	require.Equal(t, http.StatusOK, getResp.StatusCode)
-
-	var fullEvent map[string]any
-	require.NoError(t, json.NewDecoder(getResp.Body).Decode(&fullEvent))
-
-	// Verify the dates were actually corrected
-	startDate, ok := fullEvent["startDate"].(string)
-	if !ok {
-		t.Logf("Full event response: %+v", fullEvent)
-		require.Fail(t, "startDate should be present in response")
-	}
-	parsedStart, err := time.Parse(time.RFC3339, startDate)
-	require.NoError(t, err)
-	expectedStart := testhelpers.FutureTimeAt(70, 23, 0)
-	require.True(t, parsedStart.Equal(expectedStart), "startDate should be %s (got %s)", expectedStart.Format(time.RFC3339), startDate)
-
-	// End date should be corrected to next day - BUT it might not be in API response
-	// Check if occurrence has endDate
-	endDate, hasEnd := fullEvent["endDate"].(string)
-	if !hasEnd {
-		// Check if there are occurrences instead
-		if occurrences, hasOcc := fullEvent["occurrences"].([]any); hasOcc && len(occurrences) > 0 {
-			if occ, ok := occurrences[0].(map[string]any); ok {
-				if occEnd, ok := occ["endDate"].(string); ok {
-					endDate = occEnd
-					hasEnd = true
-				}
-			}
-		}
-	}
-
-	if !hasEnd {
-		t.Logf("Full event response: %+v", fullEvent)
-		// For now, just verify the event was created and is in pending_review
-		// The date correction logic is tested in unit tests
-		t.Log("SKIPPING endDate verification - not returned in API response for this event")
-		return
-	}
-	parsedEnd, err := time.Parse(time.RFC3339, endDate)
-	require.NoError(t, err)
-	expectedEnd := testhelpers.FutureTimeAt(71, 2, 0)
-	require.True(t, parsedEnd.Equal(expectedEnd),
-		"endDate should be auto-corrected to %s (got %s)", expectedEnd.Format(time.RFC3339), endDate)
+	require.Equal(t, http.StatusNotFound, getResp.StatusCode,
+		"pending_review events must be hidden from anonymous readers")
 }
 
 // TestReversedDatesRegressions_WarningMessageContent tests that warning messages

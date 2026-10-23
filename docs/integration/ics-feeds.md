@@ -11,6 +11,15 @@ and debugging existing ones. For general scraper operations, see
 [ICS Feed Discovery](event-platforms.md#ics-feed-discovery) section of the platform
 knowledge base.
 
+> **Public ICS export:** The event ICS endpoints served by the API
+> (`GET /api/v1/events.ics` and `GET /api/v1/events/{id}/ics`) contain only
+> **publicly visible** events (`published`, `postponed`, `rescheduled`, `sold_out`,
+> `cancelled`, `completed`). `draft`, `pending_review`, and `deleted` events are
+> excluded; a single-event request for a `draft`/`pending_review` event returns
+> `404`, and a deleted event returns `410 Gone` with a tombstone. This is separate
+> from **ingesting** an upstream ICS feed, which is what the rest of this runbook
+> covers.
+
 ## Table of Contents
 
 1. [Source Config Setup](#1-source-config-setup)

@@ -128,7 +128,7 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.Service.List(r.Context(), filters, pagination)
+	result, err := h.Service.ListPublic(r.Context(), filters, pagination)
 	if err != nil {
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
@@ -351,7 +351,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	item, err := h.Service.GetByULID(r.Context(), ulidValue)
+	item, err := h.Service.GetPublicByULID(r.Context(), ulidValue)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
 			// Check if there's a tombstone for this event

@@ -51,6 +51,14 @@ func (m *MockRepository) GetByULID(ctx context.Context, ulid string) (*events.Ev
 	return args.Get(0).(*events.Event), args.Error(1)
 }
 
+func (m *MockRepository) GetPublicByULID(ctx context.Context, ulid string) (*events.Event, error) {
+	args := m.Called(ctx, ulid)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.Event), args.Error(1)
+}
+
 func (m *MockRepository) Create(ctx context.Context, params events.EventCreateParams) (*events.Event, error) {
 	args := m.Called(ctx, params)
 	if args.Get(0) == nil {

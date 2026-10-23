@@ -566,6 +566,12 @@ func TestMCPCreateEvent(t *testing.T) {
 		idStr, _ := payload["id"].(string)
 		require.NotEmpty(t, idStr, "should return event ID")
 
+		// MCP add_event lands in pending_review; publish it so the read path
+		// exercises the public success case (visibility hiding is covered by
+		// TestMCPPublicEventVisibility).
+		_, err = env.Pool.Exec(ctx, `UPDATE events SET lifecycle_state = 'published' WHERE ulid = $1`, idStr)
+		require.NoError(t, err)
+
 		getResult, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{
 			Params: mcpTypes.CallToolParams{
 				Name: "events",
@@ -621,6 +627,11 @@ func TestMCPGetEvent(t *testing.T) {
 	result, err := ingestService.Ingest(ctx, eventInput)
 	require.NoError(t, err)
 	eventID := result.Event.ULID
+
+	// Ingest can land in pending_review; publish so the MCP success path is
+	// exercised. Non-public visibility is covered by TestMCPPublicEventVisibility.
+	_, err = env.Pool.Exec(ctx, `UPDATE events SET lifecycle_state = 'published' WHERE ulid = $1`, eventID)
+	require.NoError(t, err)
 
 	t.Run("success", func(t *testing.T) {
 		result, err := cli.CallTool(ctx, mcpTypes.CallToolRequest{

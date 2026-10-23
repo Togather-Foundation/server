@@ -180,7 +180,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 	}
 
 	// Get event by ULID
-	event, err := t.eventsService.GetByULID(ctx, id)
+	event, err := t.eventsService.GetPublicByULID(ctx, id)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
 			tombstone, tombErr := t.eventsService.GetTombstoneByEventULID(ctx, id)
@@ -300,7 +300,7 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
 	}
 
-	result, err := t.eventsService.List(ctx, filters, pagination)
+	result, err := t.eventsService.ListPublic(ctx, filters, pagination)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("failed to list events", err), nil
 	}

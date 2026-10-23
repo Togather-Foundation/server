@@ -39,6 +39,15 @@ func (s *Service) List(ctx context.Context, filters Filters, pagination Paginati
 	return s.repo.List(ctx, filters, pagination)
 }
 
+// ListPublic is the anonymous/public list path: it restricts results to
+// publicly visible lifecycle states (see PubliclyVisible) and otherwise
+// delegates to List, preserving the geographic-boundary short-circuit.
+// Admin surfaces must keep calling List (unfiltered).
+func (s *Service) ListPublic(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error) {
+	filters.PublicOnly = true
+	return s.List(ctx, filters, pagination)
+}
+
 // locationWithinNode reports whether the requested city/region falls within the
 // node's configured geographic boundary. City/region are NOT matched against
 // address_locality data (frequently null or mis-parsed); instead the node is
@@ -87,6 +96,25 @@ func (s *Service) regionAllowed(region string) bool {
 
 func (s *Service) GetByULID(ctx context.Context, ulid string) (*Event, error) {
 	return s.repo.GetByULID(ctx, ulid)
+}
+
+// GetPublicByULID is the anonymous/public detail path. It hides
+// draft/pending_review events with ErrNotFound (so their existence is not
+// leaked) while returning deleted events unchanged so callers can serve the
+// 410 tombstone. The repository filters in SQL; the state check here is
+// defence in depth for repository implementations that do not.
+func (s *Service) GetPublicByULID(ctx context.Context, ulid string) (*Event, error) {
+	event, err := s.repo.GetPublicByULID(ctx, ulid)
+	if err != nil {
+		return nil, err
+	}
+	if event == nil {
+		return nil, ErrNotFound
+	}
+	if !PubliclyVisible(event.LifecycleState) && event.LifecycleState != "deleted" {
+		return nil, ErrNotFound
+	}
+	return event, nil
 }
 
 func (s *Service) GetTombstoneByEventULID(ctx context.Context, eventULID string) (*Tombstone, error) {

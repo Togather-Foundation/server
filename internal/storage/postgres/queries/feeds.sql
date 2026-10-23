@@ -40,6 +40,21 @@ SELECT ec.id,
   WHERE (sqlc.narg('after_sequence')::bigint IS NULL OR ec.sequence_number > sqlc.narg('after_sequence')::bigint)
     AND (sqlc.narg('after_timestamp')::timestamptz IS NULL OR ec.changed_at >= sqlc.narg('after_timestamp')::timestamptz)
     AND (sqlc.narg('action')::text IS NULL OR ec.action = sqlc.narg('action')::text)
+    -- Public change feed visibility. Delete rows are always retained so
+    -- consumers observe tombstones (Interop Profile §4.3). Create/update rows
+    -- are hidden when the event is currently non-public OR when the snapshot
+    -- recorded the change while the event was non-public — otherwise an event
+    -- approved from pending_review to published would re-expose its
+    -- pre-publication snapshots. Legacy rows without a snapshot lifecycle fall
+    -- back to the current event state. Mirrors events.PubliclyVisible.
+    AND (
+      ec.action = 'delete'
+      OR (
+        e.lifecycle_state IN ('published','postponed','rescheduled','sold_out','cancelled','completed')
+        AND COALESCE(ec.snapshot->>'lifecycle_state', e.lifecycle_state)
+            IN ('published','postponed','rescheduled','sold_out','cancelled','completed')
+      )
+    )
  ORDER BY ec.sequence_number ASC
  LIMIT sqlc.arg('limit');
 

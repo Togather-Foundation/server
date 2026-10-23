@@ -121,7 +121,10 @@ alone to request a historical range.
 - region            — requested region/state; same boundary semantics as city
 - venueId           — ULID of the venue/place to filter by  (alias: venue_id)
 - organizerId       — ULID of the organizer to filter by    (alias: organizer_id)
-- state             — lifecycle state filter                 (alias: lifecycle_state)
+- state             — lifecycle state filter                 (alias: lifecycle_state).
+                      Public endpoints only return published/postponed/rescheduled/
+                      sold_out/cancelled/completed; `state=draft` returns an empty list,
+                      and `pending_review` is rejected with 400.
 - domain            — event domain filter                    (alias: event_domain)
 - limit             — max results (default 50, max 200)
 - after             — pagination cursor (from previous response next_cursor); `cursor` is

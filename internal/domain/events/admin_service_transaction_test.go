@@ -271,6 +271,13 @@ func (m *mockTransactionalRepo) GetByULID(ctx context.Context, ulid string) (*Ev
 	return nil, ErrNotFound
 }
 
+func (m *mockTransactionalRepo) GetPublicByULID(ctx context.Context, ulid string) (*Event, error) {
+	if m.getByULIDFunc != nil {
+		return m.getByULIDFunc(ctx, ulid)
+	}
+	return nil, ErrNotFound
+}
+
 func (m *mockTransactionalRepo) MergeEvents(ctx context.Context, duplicateULID, primaryULID string) error {
 	if m.mergeEventsFunc != nil {
 		return m.mergeEventsFunc(ctx, duplicateULID, primaryULID)

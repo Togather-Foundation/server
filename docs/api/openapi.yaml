@@ -200,6 +200,14 @@ paths:
         returned); one outside it matches nothing; a dimension the node does not
         configure is not filtered. When both are omitted, the node's configured
         scope applies.
+
+        Only publicly visible events are returned. Publicly visible lifecycle
+        states are `published`, `postponed`, `rescheduled`, `sold_out`, `cancelled`
+        and `completed`; `draft`, `pending_review` and `deleted` events are never
+        returned by this endpoint. Passing `state=draft` therefore yields an empty
+        list (the explicit state intersects with the public allowlist). Admin
+        clients must use `GET /api/v1/admin/events` to see every non-deleted
+        lifecycle state.
       tags: [Events]
       security: []
       parameters:
@@ -290,6 +298,10 @@ paths:
         For iCalendar output use `GET /api/v1/events/{id}/ics`.
         A `Link: rel=alternate; type=text/calendar` header is included in the response
         pointing to the corresponding ICS download URL.
+
+        Only publicly visible events are served. `draft` and `pending_review`
+        events return `404 Not Found` so their existence is not leaked; deleted
+        events return `410 Gone` with a tombstone payload.
       tags: [Events]
       security: []
       parameters:
@@ -384,6 +396,10 @@ paths:
         Returns a valid VCALENDAR even when no events match (empty feed).
         `city` and `region` are interpreted against the node's configured
         geographic boundary as described on the JSON list endpoint.
+
+        The feed contains only publicly visible events (`published`, `postponed`,
+        `rescheduled`, `sold_out`, `cancelled`, `completed`). `draft`,
+        `pending_review` and `deleted` events are excluded.
       tags: [Events]
       security: []
       parameters:
@@ -438,6 +454,10 @@ paths:
       description: |
         Retrieve a single event by its ULID as an iCalendar (ICS) download.
         Useful for importing a specific event into calendar applications.
+
+        Only publicly visible events are served. `draft` and `pending_review`
+        events return `404 Not Found`; deleted events return `410 Gone` with a
+        tombstone payload.
       tags: [Events]
       security: []
       parameters:
@@ -1118,6 +1138,16 @@ paths:
       description: |
         Ordered stream of changes for federation sync. Returns events in 
         sequence order with action type and snapshot.
+
+        This is the unconditional public feed. `draft` and `pending_review`
+        changes are omitted entirely; a deleted event's `create`/`update` rows are
+        omitted, but its `delete` row is always retained so consumers observe
+        tombstones (Interop Profile §4.3). Snapshots are only attached to
+        create/update rows that were recorded while the event was publicly visible
+        and whose event is still public (rows with no recorded lifecycle fall back
+        to the current event state). Cursor/sequence ordering is preserved:
+        filtering happens in SQL before `ORDER BY sequence_number`, and
+        `next_cursor` walks only the rows that were returned.
       tags: [Feeds]
       security: []
       parameters:
@@ -1146,7 +1176,13 @@ paths:
             enum: [create, update, delete]
         - name: include_snapshot
           in: query
-          description: When `true`, each change embeds the full JSON-LD event snapshot.
+          description: |
+            When `true`, each change embeds the full JSON-LD event snapshot.
+            Snapshots are only attached to create/update rows that were recorded
+            while the event was publicly visible and whose event is still public
+            (rows with no recorded lifecycle fall back to the current event
+            state). Delete rows carry their tombstone payload, so
+            `include_snapshot` is safe for anonymous consumers.
           schema:
             type: boolean
             default: false
@@ -3589,9 +3625,10 @@ paths:
       operationId: listAllEventsForAdmin
       summary: List all events (admin)
       description: |
-        Same filters as the public list endpoint, but returns every lifecycle state
-        and adds admin-only fields (`description`, `confidence`, `lifecycle_state`,
-        `start_date`, `all_day`).
+        Same filters as the public list endpoint, but returns every non-deleted
+        lifecycle state and adds admin-only fields (`description`, `confidence`,
+        `lifecycle_state`, `start_date`, `all_day`). Soft-deleted rows are never
+        listed.
       tags: [Admin]
       x-internal: true
       security:
@@ -4541,7 +4578,12 @@ components:
     lifecycleState:
       name: state
       in: query
-      description: Filter by lifecycle state
+      description: |
+        Filter by lifecycle state. `draft` is accepted but intersects the public
+        allowlist on public endpoints, so `state=draft` returns an empty result.
+        `pending_review` and `deleted` are not accepted values (400). On admin
+        endpoints the filter is unfiltered by the public allowlist (soft-deleted
+        rows are still never listed).
       schema:
         type: string
         enum: [draft, published, postponed, rescheduled, sold_out, cancelled, completed]

@@ -61,7 +61,7 @@ func (h *PublicPagesHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch event data
-	item, err := h.EventsService.GetByULID(r.Context(), ulidValue)
+	item, err := h.EventsService.GetPublicByULID(r.Context(), ulidValue)
 	if err != nil {
 		if errors.Is(err, events.ErrNotFound) {
 			// Check for tombstone

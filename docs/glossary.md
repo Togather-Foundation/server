@@ -38,7 +38,8 @@ This glossary defines canonical terms used throughout the SEL backend codebase a
 **Definition:** The current state of an event in its publication lifecycle, controlling visibility and behavior.
 
 **Valid States:**
-- `draft` — Not published, visible only to admins
+- `draft` — Not published, visible only to admins (never served publicly)
+- `pending_review` — System state: awaiting review-queue approval; never served publicly and its existence is not disclosed (public detail returns 404)
 - `published` — Publicly visible and active
 - `postponed` — Temporarily suspended, may resume
 - `rescheduled` — Date/time changed, see new occurrence
@@ -46,6 +47,11 @@ This glossary defines canonical terms used throughout the SEL backend codebase a
 - `cancelled` — Event will not occur, visible with status
 - `completed` — Past event, archived but visible
 - `deleted` — Soft-deleted, returns 410 Gone with tombstone
+
+**Public Visibility:** Everything except `draft`, `pending_review`, and `deleted`
+is publicly visible (the allowlist implemented by `events.PubliclyVisible` in the
+API). Public list/detail/ICS/HTML/MCP surfaces and the change feed hide the rest;
+admin surfaces remain unfiltered.
 
 **State Transitions:**
 ```

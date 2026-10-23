@@ -34,8 +34,15 @@ func TestFeedsTombstoneInChangeFeed(t *testing.T) {
 	t.Run("delete action appears in change feed", func(t *testing.T) {
 		resp := fetchChangeFeed(t, env, url.Values{"limit": {"100"}})
 
-		// Should have one more change event
-		require.Greater(t, len(resp.Changes), initialCount, "should have new change event after delete")
+		// The deleted event's create/update rows (including the trigger-created
+		// update from the soft delete) are hidden; exactly its delete row remains.
+		// Exact-count + per-row checks catch any re-exposure, unlike >=.
+		require.Len(t, resp.Changes, initialCount, "the deleted event's create/update rows must be replaced by exactly its delete row")
+		for _, item := range resp.Changes {
+			if item.EventID == eventID {
+				require.Equal(t, "delete", item.Action, "only the delete row may remain for a deleted event")
+			}
+		}
 
 		// Find the delete event
 		var foundDelete bool

@@ -36,6 +36,10 @@ func (s stubEventsRepo) GetByULID(_ context.Context, ulid string) (*events.Event
 	return s.getFn(ulid)
 }
 
+func (s stubEventsRepo) GetPublicByULID(_ context.Context, ulid string) (*events.Event, error) {
+	return s.getFn(ulid)
+}
+
 func (s stubEventsRepo) GetTombstoneByEventID(_ context.Context, _ string) (*events.Tombstone, error) {
 	return nil, events.ErrNotFound
 }
@@ -539,7 +543,7 @@ func TestEventsHandlerGetSuccess(t *testing.T) {
 			return events.ListResult{}, nil
 		},
 		getFn: func(_ string) (*events.Event, error) {
-			return &events.Event{Name: "Jazz Fest"}, nil
+			return &events.Event{Name: "Jazz Fest", LifecycleState: "published"}, nil
 		},
 	}
 
@@ -640,9 +644,10 @@ func TestEventsHandlerAllDayRendering(t *testing.T) {
 				},
 				getFn: func(_ string) (*events.Event, error) {
 					return &events.Event{
-						ULID:        "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
-						Name:        "Art Show",
-						Occurrences: []events.Occurrence{tc.occ},
+						ULID:           "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+						Name:           "Art Show",
+						LifecycleState: "published",
+						Occurrences:    []events.Occurrence{tc.occ},
 					}, nil
 				},
 			}
@@ -775,7 +780,8 @@ func TestEventsHandlerGetMultipleOccurrencesSubEvent(t *testing.T) {
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
 			return &events.Event{
-				Name: "Weekly Jazz",
+				Name:           "Weekly Jazz",
+				LifecycleState: "published",
 				Occurrences: []events.Occurrence{
 					// First occurrence: full fields — endDate, doorTime, virtualURL
 					{
@@ -854,7 +860,8 @@ func TestEventsHandlerGetSubEventMixedZoneLabel(t *testing.T) {
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
 			return &events.Event{
-				Name: "Cross-Canada Series",
+				Name:           "Cross-Canada Series",
+				LifecycleState: "published",
 				Occurrences: []events.Occurrence{
 					{StartTime: start, Timezone: "America/Toronto"},
 					{StartTime: start, Timezone: "America/Vancouver"},
@@ -931,7 +938,8 @@ func TestEventsHandlerGetSubEventPhysicalVenueOverride(t *testing.T) {
 		getFn: func(_ string) (*events.Event, error) {
 			overrideULIDVal := overrideULID
 			return &events.Event{
-				Name: "Touring Series",
+				Name:           "Touring Series",
+				LifecycleState: "published",
 				Occurrences: []events.Occurrence{
 					// First occurrence: has a venue override (different from primary).
 					{StartTime: t0, Timezone: "America/Toronto", VenueULID: &overrideULIDVal},
@@ -1034,7 +1042,8 @@ func TestEventsHandlerGetSubEventVenueURIFallback(t *testing.T) {
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
 			return &events.Event{
-				Name: "Fallback URI Event",
+				Name:           "Fallback URI Event",
+				LifecycleState: "published",
 				Occurrences: []events.Occurrence{
 					{StartTime: t0, Timezone: "America/Toronto", VenueULID: &venueULIDVal},
 				},
@@ -1091,8 +1100,9 @@ func TestEventsHandlerGetRecurringEventHasEventSchedule(t *testing.T) {
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
 			return &events.Event{
-				Name: "Weekly Jazz Series",
-				ULID: "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+				Name:           "Weekly Jazz Series",
+				LifecycleState: "published",
+				ULID:           "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
 				Recurrence: &events.RecurrenceRule{
 					RRule:       "FREQ=WEEKLY;BYDAY=MO,WE",
 					TZID:        "America/Toronto",
@@ -1143,8 +1153,9 @@ func TestEventsHandlerGetRecurringEventScheduleFallbackToOccurrences(t *testing.
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
 			return &events.Event{
-				Name: "Weekly Jazz Series",
-				ULID: "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+				Name:           "Weekly Jazz Series",
+				ULID:           "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+				LifecycleState: "published",
 				Recurrence: &events.RecurrenceRule{
 					RRule: "FREQ=WEEKLY;BYDAY=MO",
 					TZID:  "America/Toronto",
@@ -1184,10 +1195,11 @@ func TestEventsHandlerGetNonRecurringEventNoEventSchedule(t *testing.T) {
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
 			return &events.Event{
-				Name:        "One-off Gig",
-				ULID:        "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
-				Recurrence:  nil,
-				Occurrences: []events.Occurrence{{StartTime: t0}},
+				Name:           "One-off Gig",
+				LifecycleState: "published",
+				ULID:           "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+				Recurrence:     nil,
+				Occurrences:    []events.Occurrence{{StartTime: t0}},
 			}, nil
 		},
 	}
@@ -1214,8 +1226,9 @@ func TestEventsHandlerGetEventScheduleWithInterval(t *testing.T) {
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
 			return &events.Event{
-				Name: "Biweekly Meetup",
-				ULID: "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
+				Name:           "Biweekly Meetup",
+				LifecycleState: "published",
+				ULID:           "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
 				Recurrence: &events.RecurrenceRule{
 					RRule: "FREQ=WEEKLY;INTERVAL=2;BYDAY=FR",
 					TZID:  "US/Eastern",
@@ -1346,8 +1359,9 @@ func TestEventsHandlerGetEmitsNodeTimeZone(t *testing.T) {
 	repo := stubEventsRepo{
 		getFn: func(_ string) (*events.Event, error) {
 			return &events.Event{
-				Name:        "Summer Concert",
-				Occurrences: []events.Occurrence{{StartTime: start}},
+				Name:           "Summer Concert",
+				LifecycleState: "published",
+				Occurrences:    []events.Occurrence{{StartTime: start}},
 			}, nil
 		},
 	}

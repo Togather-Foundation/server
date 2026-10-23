@@ -412,7 +412,7 @@ GET /api/v1/events
 | `region` | string | Requested region/state, interpreted against the node's configured regions the same way as `city`; ignored when the node configures no regions. |
 | `venueId` | ULID | Filter by specific venue |
 | `organizerId` | ULID | Filter by specific organizer |
-| `state` | string | Filter by lifecycle state: `draft`, `published`, `postponed`, `rescheduled`, `sold_out`, `cancelled`, `completed` |
+| `state` | string | Filter by lifecycle state: `draft`, `published`, `postponed`, `rescheduled`, `sold_out`, `cancelled`, `completed`. Public endpoints intersect this with the public allowlist, so `state=draft` returns an empty list. |
 | `q` | string | Full-text search query (searches name and description); `search` is accepted as an alias |
 | `keywords` | string | Comma-separated keywords |
 | `domain` | string | Event domain: `arts`, `music`, `culture`, `sports`, `community`, `education`, `general` |
@@ -441,6 +441,26 @@ GET /api/v1/events
 }
 ```
 
+#### Public visibility
+
+Anonymous readers only ever see publicly visible events. The allowlist is every
+lifecycle state except the system-only ones:
+
+| Lifecycle state | Public list / detail / ICS / HTML / MCP | Notes |
+|---|---|---|
+| `published` | ✅ visible | Normal state |
+| `postponed` | ✅ visible | Dates may be TBD |
+| `rescheduled` | ✅ visible | |
+| `sold_out` | ✅ visible | |
+| `cancelled` | ✅ visible | Kept so consumers learn of cancellations |
+| `completed` | ✅ visible | Kept for history |
+| `draft` | ❌ hidden | Admin-only; detail returns `404` (no existence leak) |
+| `pending_review` | ❌ hidden | Review queue / system state; detail returns `404` (no existence leak) |
+| `deleted` | ❌ hidden | Detail returns `410 Gone` with a tombstone |
+
+`GET /api/v1/admin/events` (admin-authenticated) remains unfiltered by the
+public allowlist and returns every non-deleted lifecycle state.
+
 ### Get Single Event
 
 Retrieve a specific event by ULID.
@@ -449,6 +469,9 @@ Retrieve a specific event by ULID.
 GET /api/v1/events/{ulid}
 Accept: application/ld+json
 ```
+
+`draft` and `pending_review` events return `404 Not Found` (their existence is
+not disclosed). Deleted events return `410 Gone` (see below).
 
 #### Response
 
@@ -716,14 +739,14 @@ time, so you only ever need to store one cursor value.
 
 **First run — bootstrap with a timestamp:**
 ```bash
-curl 'https://<node>/api/v1/feeds/changes?since=2026-06-01T00:00:00Z&action=create&include_snapshot=true&limit=200'
+curl 'https://<node>/api/v1/feeds/changes?since=2026-06-01T00:00:00Z&include_snapshot=true&limit=200'
 ```
 
 **Store `next_cursor` from the response** (e.g. `"c2VxXzQyNDc"`).
 
 **Subsequent runs — pass the cursor:**
 ```bash
-curl 'https://<node>/api/v1/feeds/changes?since=<next_cursor>&action=create&include_snapshot=true&limit=200'
+curl 'https://<node>/api/v1/feeds/changes?since=<next_cursor>&include_snapshot=true&limit=200'
 ```
 
 When `next_cursor` is empty, you are caught up. Persist the last non-empty cursor for the next run.
@@ -734,8 +757,26 @@ When `next_cursor` is empty, you are caught up. Persist the last non-empty curso
 |-----------|-------------|
 | `since` | ISO 8601 timestamp (bootstrap) **or** opaque cursor from `next_cursor` (subsequent polls). Cursors are sequence-based and never expire. |
 | `action` | Filter by `create`, `update`, or `delete`. Omit to receive all change types. |
-| `include_snapshot` | `true` embeds the full JSON-LD event in each change entry — no second request needed. |
+| `include_snapshot` | `true` embeds the full JSON-LD event in each change entry — no second request needed. Snapshots are only attached to create/update rows recorded while the event was publicly visible and whose event is still public (rows with no recorded lifecycle fall back to the current event state); delete rows carry their tombstone payload. Safe for anonymous consumers. |
 | `limit` | 1–200, default 50. |
+
+### Public visibility
+
+The change feed is an unconditional public feed. `draft` and `pending_review`
+changes are omitted entirely; a deleted event's `create`/`update` rows are
+omitted, but its `delete` row is always retained so consumers observe tombstones
+(Interop Profile §4.3). Snapshots are only attached to create/update rows that
+were recorded while the event was publicly visible and whose event is still
+public (rows with no recorded lifecycle fall back to the current event state).
+
+An event first recorded while `draft`/`pending_review` may therefore first appear
+as an `update` (or `delete`) rather than `create`; consumers that need a canonical
+creation record should fetch `GET /api/v1/events/{ulid}`, or use
+`include_snapshot=true`, which carries the full published snapshot on the approval
+`update`.
+
+Filtering happens before `ORDER BY sequence_number`, so cursor ordering and
+`next_cursor` paging are unaffected — you simply skip hidden rows.
 
 ### Response shape
 

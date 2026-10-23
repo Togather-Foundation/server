@@ -28,8 +28,9 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 	filters.Set("endDate", today.AddDate(0, 1, 0).Format("2006-01-02"))
 	filters.Set("limit", "1")
 
-	// city= is a no-op on a single-city node, so all three seeded events are in
-	// the window (Toronto + Ottawa venues) and pagination walks all of them.
+	// city= is a no-op on a single-city node, so the two published seeded events
+	// are in the window (Toronto + Ottawa venues; the third is a draft and must
+	// never be served publicly) and pagination walks both of them.
 	first := fetchEventsList(t, env, filters)
 	require.Len(t, first.Items, 1)
 	require.NotEmpty(t, first.NextCursor)
@@ -39,13 +40,8 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 	second := fetchEventsList(t, env, filters)
 	require.Len(t, second.Items, 1)
 	require.NotEqual(t, first.Items[0], second.Items[0])
-	require.Equal(t, seed.EventBName, eventName(second.Items[0]))
-
-	filters.Set("after", second.NextCursor)
-	third := fetchEventsList(t, env, filters)
-	require.Len(t, third.Items, 1)
-	require.Equal(t, "Ottawa Winter Fest", eventName(third.Items[0]))
-	require.Empty(t, third.NextCursor)
+	require.Equal(t, "Ottawa Winter Fest", eventName(second.Items[0]))
+	require.Empty(t, second.NextCursor)
 
 	filters = url.Values{}
 	filters.Set("venueId", seed.PlaceAULID)
@@ -57,15 +53,18 @@ func TestEventsListFiltersAndPagination(t *testing.T) {
 	orgResp := fetchEventsList(t, env, filters)
 	require.ElementsMatch(t, []string{seed.EventAName}, eventNames(orgResp.Items))
 
+	// Draft events are never publicly visible, so an explicit state=draft
+	// filter intersects with the public allowlist and yields an empty list.
 	filters = url.Values{}
 	filters.Set("state", "draft")
 	stateResp := fetchEventsList(t, env, filters)
-	require.ElementsMatch(t, []string{seed.EventBName}, eventNames(stateResp.Items))
+	require.Empty(t, stateResp.Items)
 
+	// The only arts-domain seed is a draft, so the public list is empty.
 	filters = url.Values{}
 	filters.Set("domain", "arts")
 	domainResp := fetchEventsList(t, env, filters)
-	require.ElementsMatch(t, []string{seed.EventBName}, eventNames(domainResp.Items))
+	require.Empty(t, domainResp.Items)
 
 	filters = url.Values{}
 	filters.Set("q", "Jazz")

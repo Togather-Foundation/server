@@ -131,6 +131,20 @@ func (m *MockRepository) GetByULID(ctx context.Context, ulid string) (*Event, er
 	return event, nil
 }
 
+func (m *MockRepository) GetPublicByULID(ctx context.Context, ulid string) (*Event, error) {
+	event, err := m.GetByULID(ctx, ulid)
+	if err != nil {
+		return nil, err
+	}
+	if event == nil {
+		return nil, ErrNotFound
+	}
+	if !PubliclyVisible(event.LifecycleState) && event.LifecycleState != "deleted" {
+		return nil, ErrNotFound
+	}
+	return event, nil
+}
+
 func (m *MockRepository) Create(ctx context.Context, params EventCreateParams) (*Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

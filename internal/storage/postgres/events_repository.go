@@ -154,6 +154,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
     AND ($6 = '' OR e.event_domain = $6)
     AND ($7 = '' OR (e.name ILIKE '%' || $7 || '%' ESCAPE '\' OR e.description ILIKE '%' || $7 || '%' ESCAPE '\'))
     AND (coalesce(cardinality($8::text[]), 0) = 0 OR e.keywords && $8::text[])
+    AND ($11::boolean IS FALSE OR e.lifecycle_state IN ('published','postponed','rescheduled','sold_out','cancelled','completed'))
     AND (
       $9::timestamptz IS NULL OR
       o.start_time > $9::timestamptz OR
@@ -162,7 +163,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
   ) filtered
  WHERE row_num = 1
  ORDER BY start_time ASC, ulid ASC
- LIMIT $11
+ LIMIT $12
  `,
 		filters.StartDate,
 		filters.EndDate,
@@ -174,6 +175,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 		keywordArray,
 		cursorTimestamp,
 		cursorULID,
+		filters.PublicOnly,
 		limitPlusOne,
 	)
 	if err != nil {
@@ -322,6 +324,17 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 }
 
 func (r *EventRepository) GetByULID(ctx context.Context, ulid string) (*events.Event, error) {
+	return r.getByULID(ctx, ulid, false)
+}
+
+// GetPublicByULID returns the event only when it is publicly visible.
+// Draft and pending_review events are excluded in SQL; deleted events are
+// still returned so callers can serve the 410 tombstone.
+func (r *EventRepository) GetPublicByULID(ctx context.Context, ulid string) (*events.Event, error) {
+	return r.getByULID(ctx, ulid, true)
+}
+
+func (r *EventRepository) getByULID(ctx context.Context, ulid string, publicOnly bool) (*events.Event, error) {
 	queryer := r.queryer()
 
 	rows, err := queryer.Query(ctx, `
@@ -346,8 +359,9 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	  LEFT JOIN organizations org ON org.id = e.organizer_id
 	  LEFT JOIN event_series es ON es.id = e.series_id
 	 WHERE e.ulid = $1
+	   AND ($2::boolean IS FALSE OR e.lifecycle_state NOT IN ('draft','pending_review'))
    ORDER BY o.start_time ASC
-`, ulid)
+`, ulid, publicOnly)
 	if err != nil {
 		return nil, fmt.Errorf("get event: %w", err)
 	}

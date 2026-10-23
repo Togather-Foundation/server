@@ -245,6 +245,10 @@ type Filters struct {
 	Query          string
 	Keywords       []string
 	Domain         string
+	// PublicOnly restricts results to publicly visible lifecycle states
+	// (see PubliclyVisible). Anonymous/public surfaces set this; admin
+	// surfaces leave it false to see every state.
+	PublicOnly bool
 }
 
 type Pagination struct {
@@ -260,6 +264,10 @@ type ListResult struct {
 type Repository interface {
 	List(ctx context.Context, filters Filters, pagination Pagination) (ListResult, error)
 	GetByULID(ctx context.Context, ulid string) (*Event, error)
+	// GetPublicByULID fetches an event only when it is publicly visible
+	// (see PubliclyVisible). Deleted events are still returned so callers can
+	// serve the 410 tombstone; draft/pending_review events return ErrNotFound.
+	GetPublicByULID(ctx context.Context, ulid string) (*Event, error)
 	Create(ctx context.Context, params EventCreateParams) (*Event, error)
 	CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error
 	CreateSource(ctx context.Context, params EventSourceCreateParams) error

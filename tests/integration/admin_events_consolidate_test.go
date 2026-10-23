@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -226,9 +227,38 @@ func TestAdminConsolidatePromote_Success(t *testing.T) {
 	retStatus, _ := getEvent(t, env, ulid2)
 	assert.Equal(t, http.StatusGone, retStatus, "retired event should return 410 Gone")
 
-	// Promoted canonical event should still return 200 OK
+	// The promoted canonical was created in pending_review and still has its
+	// pending review, so it must not leak to anonymous readers (404) while
+	// remaining visible on the admin surface.
 	canonStatus, canonBody := getEvent(t, env, ulid1)
-	assert.Equal(t, http.StatusOK, canonStatus, "promoted canonical event should return 200 OK; body: %v", canonBody)
+	assert.Equal(t, http.StatusNotFound, canonStatus, "pending_review canonical must be hidden publicly; body: %v", canonBody)
+
+	adminReq, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/admin/events?limit=200", nil)
+	require.NoError(t, err)
+	adminReq.Header.Set("Authorization", "Bearer "+adminToken)
+	adminReq.Header.Set("Accept", "application/json")
+	adminResp, err := env.Server.Client().Do(adminReq)
+	require.NoError(t, err)
+	defer func() { _ = adminResp.Body.Close() }()
+	require.Equal(t, http.StatusOK, adminResp.StatusCode, "admin list must still serve pending_review events")
+
+	var adminList struct {
+		Items []struct {
+			ID             string `json:"@id"`
+			LifecycleState string `json:"lifecycle_state"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.NewDecoder(adminResp.Body).Decode(&adminList))
+	adminCanonicalIdx := -1
+	for i := range adminList.Items {
+		if strings.Contains(adminList.Items[i].ID, ulid1) {
+			adminCanonicalIdx = i
+			break
+		}
+	}
+	require.NotEqual(t, -1, adminCanonicalIdx, "admin list must include the pending_review canonical event")
+	assert.Equal(t, "pending_review", adminList.Items[adminCanonicalIdx].LifecycleState,
+		"admin list stays unfiltered and shows the canonical's real lifecycle")
 }
 
 // ---------------------------------------------------------------------------

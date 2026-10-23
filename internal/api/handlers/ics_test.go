@@ -202,7 +202,7 @@ func TestICSSingleEventHandler(t *testing.T) {
 				return &events.Event{
 					ULID:           "01J0KXMQZ8RPXJPN8J9Q6TK0WP",
 					Name:           "Jazz Fest",
-					LifecycleState: "active",
+					LifecycleState: "published",
 					Occurrences: []events.Occurrence{
 						{StartTime: time.Date(2026, 7, 10, 19, 0, 0, 0, tz), Timezone: "America/Toronto"},
 					},
