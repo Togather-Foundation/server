@@ -1,5 +1,8 @@
 # Project-Specific Review Extension — Togather (SEL) Server
 
+> **Naming note:** "beads" in this file/agent name is legacy naming only — it does not
+> mean the Beads issue tracker is in use. Task tracking is the `togather` kanban board.
+
 This is read by `beads-go-reviewer` (the generic Go reviewer) when it reviews
 this project. It layers **on top of** the generic Go review + the `web-backend`
 domain profile. Define only what's unique to this project.
@@ -72,7 +75,7 @@ Problem Details (`application/problem+json`).
 - SHACL shapes tested: create a valid event, serialize to JSON-LD, validate
   against the shape — and test a shape violation is rejected.
 
-## Common bead-worthy findings (SEL-specific)
+## Common review-worthy findings (SEL-specific)
 
 - SQL built by string concatenation instead of SQLc → P0–P1.
 - JSON-LD context URL wrong/versioned → P1.

@@ -26,6 +26,17 @@ Use `--limit` to cap a batch:
   --server ... --key ...
 ```
 
+**Recurring floods:** if a confirmed-legitimate source produces the same benign
+warning on nearly every event every run (libraries, universities, comedy clubs),
+batch approval only clears one cycle. The durable fix is per-source
+`suppress_review_warnings` in the source YAML plus `server scrape sync`, so future
+events publish without a review row. It is not retroactive — clear the items already
+queued for that source (`server review batch --source <name> --action approve`).
+Warnings are still generated; they are stored only if a review entry is created for
+another reason, and a suppressed code that was present is audit-INFO-logged. Only the
+benign allowlist can be suppressed — never duplicate, boundary or date-plausibility
+codes. See [Per-source review-warning suppression](https://github.com/Togather-Foundation/server/blob/main/docs/integration/scraper.md#per-source-review-warning-suppression).
+
 ## Name-substring profiling (narrow targeting)
 
 When you want to approve a subset of a source, find common name substrings:

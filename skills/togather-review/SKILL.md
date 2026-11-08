@@ -55,6 +55,19 @@ source .env && ./server review batch --source "<uuid>" --warning "missing_descri
   --action approve --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
 ```
 
+**Recurring-flood exception.** If a source legitimately generates the same benign
+warning on nearly every event (e.g. a public-library calendar where
+`cross_week_series_companion` fires on each recurring programme), repeated batch
+approval is the wrong fix. Configure per-source `suppress_review_warnings` in the
+source YAML, run `server scrape sync`, and let future runs publish without a review
+row. Suppression is not retroactive: it only affects future ingest, so clear the
+items already queued for that source
+(`server review batch --source <name> --action approve`). Only the benign allowlist
+can be suppressed (never duplicate, boundary or date-plausibility codes); warnings
+are still generated, stored only if a review entry is created for another reason,
+and a suppressed code that was present is audit-INFO-logged. See
+[Per-source review-warning suppression](https://github.com/Togather-Foundation/server/blob/main/docs/integration/scraper.md#per-source-review-warning-suppression).
+
 ### Step 3: Batch approve remaining patterns by name
 
 For any pending items not caught by Step 2, group by name and batch-approve

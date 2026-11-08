@@ -244,6 +244,13 @@ Derive a short, hyphenated, lowercase name from the domain:
 - Convert to lowercase-hyphenated (e.g. `harbourfrontcentre.com` → `harbourfront-centre`)
 - Keep it recognizable but concise (max ~4 words)
 
+**The name is provenance identity.** Renaming an existing config's `name:` sends new
+events to a new provenance row; the old row keeps its past events but receives no new
+ones (renaming back re-resolves to it). Keep an existing config's `name:` unchanged.
+For a new feed on a host that already has configs (e.g. several feeds under
+`gateway.bibliocommons.com`), choose a distinct, stable name. See
+`docs/integration/scraper.md` § "Per-Feed Provenance and Source Identity".
+
 ### Step 3 — Check for an existing config
 
 ```bash
@@ -251,7 +258,7 @@ ls configs/sources/<name>.yaml 2>/dev/null
 ```
 
 If it exists:
-- `conflict_policy: skip` → return `RESULT | <URL> | <name> | - | skipped | config already exists`
+- `conflict_policy: skip` → return `RESULT | <URL> | <name> | - | - | skipped | config already exists`
 - `conflict_policy: overwrite` → proceed, overwrite silently
 - If no conflict policy was provided (standalone invocation), ask the user
 
@@ -323,9 +330,50 @@ SCRAPER_HEADLESS_ENABLED=true ./server scrape source <name> \
 ./server scrape source <name> --dry-run --verbose
 ```
 
-**The `--verbose` flag** shows individual event details (name, start date, end date, URL, venue) for each extracted event, plus any quality warnings. Always use it during validation — it is the primary tool for diagnosing selector problems.
+**The `--verbose` flag** adds per-event detail (name, start date, end date, URL, venue) for each extracted event — use it when diagnosing selectors. Quality warnings appear on **any** run regardless of `--verbose`: the CLI prints them to stderr, and scheduled runs log them at WARN with `quality_warning=`.
 
 **Do not use third-party embed URLs** (Showpass, Eventbrite, Ticketmaster iframes) as the config `url`. The config `url` must be the venue's own page. Cross-origin iframe sources (Ticket Spot, Elevent) ARE now supported when using the `iframe:` config block — the config `url` is still the venue's own page, but the scraper navigates into the iframe's execution context to extract its rendered HTML. If the venue page contains a cross-origin iframe from an unsupported platform, document the blocker and return `failed`.
+
+**Sync after every YAML edit.** The scraper reads configs from the database by default,
+so YAML changes are ignored at runtime until synced:
+
+```bash
+./server scrape sync
+```
+
+On staging/production, deploy first — the YAML is baked into the image and `deploy.sh`
+runs `scrape sync --json` automatically in the new container. Only run
+`scripts/remote.sh staging "scrape sync"` manually when you are sure the running image
+already contains the YAML you want; from an undeployed tree it would upsert the old
+image's configs.
+
+#### Suppressing benign review warnings on recurring feeds
+
+**Leave `suppress_review_warnings` unset for a new source.** A new config has no ingest
+history, and suppression only affects future ingest. Setting it is an operator decision
+made after a real run shows a confirmed-legitimate source flooding `pending_review`
+with the same benign warning on nearly every event. Document the mechanism, but do not
+pre-suppress a source you are only onboarding.
+
+When an operator does set it:
+
+```yaml
+suppress_review_warnings:
+  - cross_week_series_companion
+```
+
+- Canonical allowlist: `cross_week_series_companion`, `low_confidence`,
+  `missing_description`, `missing_image`, `multi_session_likely`
+  (`docs/integration/scraper.md` — the doc wins if copies differ). Duplicate, boundary
+  and date-plausibility codes are **rejected** by config validation — never suppress them.
+- Warnings are still generated; they are stored only on review entries that are
+  created for another reason (a published event has no review row), and a suppressed
+  code that was actually present is audit-INFO-logged. Suppression only stops the
+  warning from gating review. Suppressing `cross_week_series_companion` also disables
+  companion cross-linking for that source.
+- Not retroactive: clear the items already queued for that source
+  (`server review batch --source <name> --action approve`); future runs publish
+  without a review row. See `docs/integration/scraper.md` § "Per-source review-warning suppression".
 
 #### Using `date_selectors` for sites without `<time>` elements
 
@@ -359,14 +407,26 @@ When `date_selectors` is set, it takes priority over `start_date`/`end_date`.
 
 #### Interpreting quality warnings
 
-The `--verbose` dry-run output includes **quality warnings** that diagnose selector problems.
-Use these to iteratively fix selectors:
+The run output includes **quality warnings** that diagnose selector problems. They
+appear with or without `--verbose` — the CLI prints them to stderr, and scheduled runs
+log them at WARN with `quality_warning=`. Use these to iteratively fix selectors:
 
 | Warning | Meaning | Fix |
 |---------|---------|-----|
 | `date_selector_never_matched: selector #N ("...") matched 0/M events` | That CSS selector finds no elements in any event card | The selector is wrong — inspect the DOM and fix it |
 | `date_selector_partial_match: selector #N ("...") matched X/M events` | Selector works for some events but not all | May need a more general selector, or some events genuinely lack that element |
 | `all_midnight: N/N events have T00:00:00 start times` | Time extraction failed — all events have midnight start times | The time selector is broken or missing; add/fix a `date_selectors` entry for the time element |
+| `max_pages_reached` | `bibliocommons_rss` only: paging hit `max_pages` while the last page was still full, so the feed may continue | Raise `max_pages` (for BiblioCommons, roughly one page per 25 events) and re-run to confirm the tail is collected |
+| `result_truncated_by_limit` | `bibliocommons_rss` only: the per-run `Limit` (`scraper_config.max_batch_size` on scheduled runs, or an explicit `--limit`) dropped events. Not visible on a default dry run because `--limit` defaults to 0; it fires whenever `Limit > 0` | Raise `max_batch_size` (global setting) to at least the feed's inventory and raise `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` if the run is long |
+
+The last two warnings are coverage caps, not selector bugs: extraction worked, but the
+run did not collect the whole feed. Only `bibliocommons_rss` reports them — ICS,
+JSON-LD/CSS and sitemap (`max_urls`) truncate silently. For those paths, compare a dry
+run's found count against `max_batch_size` / `--limit`; for sitemap, use the
+`sitemap_total` / `scraping` Info log from URL discovery. Warnings print on any run
+(CLI stderr; WARN `quality_warning=` in scheduled logs) and are persisted in
+`scraper_runs.metadata.ics_warnings` — the durable record for scheduled runs, since no
+CLI/admin endpoint exposes it. Report the cap status in the RESULT notes.
 
 **Probe diagnostics:** When `date_selectors` match 0 events, the quality warning includes
 a **first-container probe** showing what each selector found (or didn't) in the first
@@ -686,7 +746,15 @@ Where `status` = `written` (enabled=true), `failed` (kept disabled), or `downgra
 - Detected platform (e.g. `platform: Drupal+Cloudflare`)
 - Final tier used (e.g. `tier: 2`)
 - Any headless flags set (e.g. `undetected: true`)
-- Any quality warnings from `--verbose` dry-run (e.g. `quality: all_midnight`)
+- Any quality warnings from the dry run (e.g. `quality: all_midnight`)
+- `max_pages: <N>`
+- `cap: none | max_pages_reached | result_truncated_by_limit | manual (found N vs cap/limit M)`
+  — from the dry run. Only `bibliocommons_rss` emits the two warnings;
+  `result_truncated_by_limit` fires whenever `Limit > 0` (including an explicit
+  `--limit`) but not on a default dry run. For other extraction paths, report the
+  manual comparison.
+- `suppression: none (new source)` — or the existing source's configured list when
+  editing one. Do not invent suppression for a new config.
 
 **On `failed` or `downgraded`, also include:**
 - What tiers were attempted and why each was rejected (e.g. `T1: 403; T2: containers empty after 25s`)

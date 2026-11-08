@@ -9,6 +9,9 @@ permission:
 
 # Deprecated — use global `beads-code-reviewer`
 
+> **Naming note:** "beads" in this agent name is legacy naming only — it does not mean
+> the Beads issue tracker is in use. Task tracking is the `togather` kanban board.
+
 This agent has been replaced. The global `beads-code-reviewer` (installed at
 `~/.config/opencode/agent/beads-code-reviewer.md`) is now multi-language. It
 detects Go from `go.mod`, loads the Go language module, auto-loads the

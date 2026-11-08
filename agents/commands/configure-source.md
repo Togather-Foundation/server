@@ -92,12 +92,23 @@ validation, and YAML template logic.
 Each subagent returns a structured report including a result line in this format:
 
 ```
-RESULT | <url> | <name> | <event_count> | <status> | <notes>
+RESULT | <url> | <name> | <event_count> | <domain> | <status> | <notes>
 ```
 
 Where:
 - `status` is one of: `written`, `failed`, `skipped`, `js-rendered`, `blocked`, `downgraded`
 - `event_count` is a number, or `-` if not applicable
+- `domain` is the configured `event_domain`, or `-` if not applicable
+
+Each written source must also report:
+- the chosen `suppress_review_warnings` list — `none` for a new source (leave it
+  unset), or the existing source's configured list when editing one
+- the chosen `max_pages`
+- `cap: none | max_pages_reached | result_truncated_by_limit | manual (found N vs cap/limit M)`
+  from the dry run. Only `bibliocommons_rss` emits the two warnings;
+  `result_truncated_by_limit` fires whenever `Limit > 0` (including an explicit
+  `--limit`) but not on a default dry run. For non-BiblioCommons paths, report the
+  manual comparison; for sitemap, use the `sitemap_total` / `scraping` discovery log.
 
 The worker also returns an **Issues** section reporting any scraper bugs, UX problems,
 or documentation gaps encountered. Collect these for the summary.
@@ -109,10 +120,14 @@ After all batches complete, print:
 ```
 ## Selector Generation Results
 
-| URL | Name | Events | Domain | Status | Notes |
-|-----|------|--------|--------|--------|-------|
-| ... | ...  | ...    | ...    | ✓ written / ✗ failed / — skipped / ⚠ js-rendered | ... |
+| URL | Name | Events | Domain | Suppression | max_pages | Cap | Status | Notes |
+|-----|------|--------|--------|-------------|-----------|-----|--------|-------|
+| ... | ...  | ...    | ...    | ...         | ...       | ... | ✓ written / ✗ failed / — skipped / ⚠ js-rendered | ... |
 ```
+
+`Suppression` is `none (new source)` or the existing source's list; `Cap` is
+`none` / `max_pages_reached` / `result_truncated_by_limit` from the dry run, or
+`manual (found N vs cap/limit M)` for paths that truncate silently.
 
 If any workers reported issues, print them in a consolidated section:
 
@@ -128,3 +143,12 @@ Then, if any configs were written:
 > make ci-fast
 > git add configs/sources/ && git commit -m "feat(scraper): add selectors for <names>"
 > ```
+> After the config lands, sync it to the running server:
+> ```
+> ./server scrape sync
+> ```
+> On staging/production, deploy first — the YAML is baked into the image and
+> `deploy.sh` runs `scrape sync --json` automatically in the new container. Only run
+> `scripts/remote.sh staging "scrape sync"` manually when you are sure the running
+> image already contains the YAML you want; from an undeployed tree it would upsert the
+> old image's configs. YAML changes are ignored at runtime until synced.

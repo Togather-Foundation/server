@@ -7,7 +7,7 @@ metadata:
   author: togather-foundation
   version: "2.0"
   hermes:
-    tags: [togather, server, admin, api, mcp, data-quality]
+    tags: [togather, server, admin, api, mcp, data-quality, scraper, coverage-caps, provenance]
     category: devops
     related_skills: [togather-review]
 ---
@@ -149,6 +149,58 @@ hermes mcp test togather
 
 The MCP server auto-discovers tools. API key is sent as a bearer token.
 
+## Scraper Operations
+
+Operational rules that prevent silent data loss and provenance mistakes:
+
+- **Per-run caps are global settings, not per-feed.** `scraper_config.max_batch_size`
+  (default 100, one `scraper_config` row) is the per-run event cap the scheduled job
+  passes as `ScrapeOptions.Limit` — it is **not** the ingest POST size, which is a
+  separate hardcoded chunk of 100 events. `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS`
+  (process-wide env, default 300) wraps scrape **and** ingest. Set both for large
+  inventories. See
+  [Coverage caps and truncation warnings](https://github.com/Togather-Foundation/server/blob/main/docs/integration/scraper.md#coverage-caps-and-truncation-warnings).
+- **Coverage caps are not universally reported.** Only `bibliocommons_rss` emits
+  `max_pages_reached` (stopped at `max_pages` with a full final page) and
+  `result_truncated_by_limit` (run truncated to `Limit`). ICS, JSON-LD/CSS and sitemap
+  (`max_urls`) truncate silently — for those paths compare a dry run's found count
+  against `max_batch_size` / `--limit`; for sitemap, use the `sitemap_total` /
+  `scraping` Info log from URL discovery. Warnings print on any run (CLI stderr; WARN
+  `quality_warning=` in scheduled logs) and are persisted in
+  `scraper_runs.metadata.ics_warnings`. That table is the durable record for scheduled
+  runs — no CLI/admin endpoint exposes it. Query it directly (`ics_warnings` is the
+  legacy key name and also holds BiblioCommons warnings):
+
+  ```sql
+  SELECT source_name, started_at, metadata->'ics_warnings'
+  FROM scraper_runs
+  WHERE source_name = $1
+    AND metadata ? 'ics_warnings'
+  ORDER BY started_at DESC
+  LIMIT 5;
+  ```
+
+- **Per-feed provenance identity.** Named `sources` rows are keyed by
+  `(base_url, name)`. The YAML `name:` is identity: renaming it sends new events to a
+  new row; the old row keeps its existing events but receives no new ones (renaming
+  back re-resolves to it). There is no retroactive merge. Keep names stable, and
+  always set `name:` (blank groups by host). See
+  [Per-Feed Provenance and Source Identity](https://github.com/Togather-Foundation/server/blob/main/docs/integration/scraper.md#per-feed-provenance-and-source-identity).
+- **Legitimate recurring floods.** If a confirmed source trips the same benign
+  warning on nearly every event, set `suppress_review_warnings` in its YAML config
+  and `server scrape sync` instead of repeatedly batch-approving. On staging/production
+  deploy first — the YAML is baked into the image and `deploy.sh` syncs automatically;
+  only run `scripts/remote.sh staging "scrape sync"` manually when you are sure the
+  running image already contains the YAML you want. Canonical allowlist:
+  [Per-source review-warning suppression](https://github.com/Togather-Foundation/server/blob/main/docs/integration/scraper.md#per-source-review-warning-suppression)
+  — `cross_week_series_companion`, `low_confidence`, `missing_description`,
+  `missing_image`, `multi_session_likely`; the doc wins if copies differ. Duplicate,
+  boundary and date-plausibility codes are rejected. Warnings are still generated; they
+  are stored only on review entries created for another reason, and a suppressed code
+  that was present is audit-INFO-logged. Suppression is not retroactive: it only
+  affects future ingest, so clear the items already queued for that source
+  (`server review batch --source <name> --action approve`).
+
 ## Data Quality Patterns
 
 Common warning types and their prevalence on a typical instance:
@@ -156,7 +208,7 @@ Common warning types and their prevalence on a typical instance:
 | Warning | Typical Cause | Action |
 |---------|--------------|--------|
 | `missing_description` | Source has no description field | Usually approve if name/location good |
-| `cross_week_series_companion` | Weekly recurring event, each occurrence separate | merge-into-primary or approve as individual |
+| `cross_week_series_companion` | Weekly recurring event, each occurrence separate | merge-into-primary, approve as individual, or (for a confirmed recurring flood) per-source suppression — see [Scraper Operations](#scraper-operations) |
 | `multi_session_likely` | Event spans multiple dates | Check if intentional, approve or fix |
 | `zero_duration_occurrence` | Start date = end date | Check if date extraction failed |
 | `near_duplicate_of_new_event` | Same event scraped from two sources | Check, consolidate or mark not-duplicate |
