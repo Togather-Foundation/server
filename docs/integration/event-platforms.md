@@ -951,10 +951,11 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
 - **Prerequisite 1 — `max_batch_size`:** the scrape job copies `scraper_config.max_batch_size`
   into `ScrapeOptions.Limit`, and the `bibliocommons_rss` extractor truncates its output to
   that limit. It must therefore be **at least the inventory size (~6,500)**; a smaller value
-  (e.g. the observed staging value of 100) silently submits only the first N events — about
-  one day of TPL's date-ordered calendar — with no error or partial-coverage warning. The
-  ingest client already chunks POSTs at 100 internally, so `max_batch_size` is acting as a
-  per-run cap, not a batch size.
+  (e.g. the observed staging value of 100) keeps only the first N events — about one day of
+  TPL's date-ordered calendar. This is no longer silent: the run emits a
+  `result_truncated_by_limit` quality warning (persisted in `scraper_runs.metadata`), but
+  the events past the limit are still not submitted. The ingest client already chunks POSTs
+  at 100 internally, so `max_batch_size` is acting as a per-run cap, not a batch size.
 - **Prerequisite 2 — `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS`:** raise it to roughly **900-1800 s**.
   A full run is ~235 s of extraction plus ~6,100 event submissions; the 300 s default wraps
   scrape + ingest for the whole source and will cancel the job part-way.

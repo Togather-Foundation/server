@@ -5096,7 +5096,10 @@ components:
           default: 3
         max_batch_size:
           type: integer
-          description: Maximum number of events to batch per source
+          description: Maximum number of events to batch per source. Scheduled
+            bibliocommons_rss runs also use this as the per-run event cap; when a
+            source extracts more, only the first N are kept and a
+            result_truncated_by_limit quality warning is recorded on the run.
           default: 100
         rate_limit_ms:
           type: integer

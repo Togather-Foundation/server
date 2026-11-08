@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -357,4 +358,172 @@ func TestMapBCItem_ImageUpgradeOnlyRewritesScheme(t *testing.T) {
 	in, _, ok := mapBCItem(item, "abc", bcTestSource("http://x"), time.UTC, nil)
 	require.True(t, ok)
 	assert.Equal(t, "/img.jpg?src=http://origin.example/a.jpg", in.Image)
+}
+
+// bcPageXML renders one feed page of n distinct, valid, virtual events. Virtual
+// events need no location, which keeps the fixture small.
+func bcPageXML(page, n int) string {
+	var b strings.Builder
+	b.WriteString(`<?xml version="1.0"?><rss xmlns:bc="http://bibliocommons.com/rss/1.0/modules/event/" version="2.0"><channel><title>Events | Paged Library</title>`)
+	for i := 0; i < n; i++ {
+		id := fmt.Sprintf("p%d-e%d", page, i)
+		fmt.Fprintf(&b, `<item><title>Event %s</title><link>https://x.example/events/%s</link><guid>https://x.example/events/%s</guid>`+
+			`<bc:start_date_local>2030-11-01T10:00</bc:start_date_local><bc:end_date_local>2030-11-01T11:00</bc:end_date_local>`+
+			`<bc:is_cancelled>false</bc:is_cancelled><bc:is_virtual>true</bc:is_virtual></item>`, id, id, id)
+	}
+	b.WriteString(`</channel></rss>`)
+	return b.String()
+}
+
+// bcPagedServer serves fullPages pages of bcRSSPageSize events followed by a final
+// page of finalItems events (omit for a full final page) and then empty pages.
+// It counts requests via the returned func.
+func bcPagedServer(t *testing.T, fullPages, finalItems int) (*httptest.Server, func() int) {
+	t.Helper()
+	empty := readBCFixture(t, "bibliocommons_rss_empty.xml")
+	var mu sync.Mutex
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		n++
+		mu.Unlock()
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		page, err := strconv.Atoi(r.URL.Query().Get("page"))
+		if err != nil || page < 1 {
+			page = 1
+		}
+		lastPage := fullPages + 1
+		switch {
+		case page <= fullPages:
+			_, _ = w.Write([]byte(bcPageXML(page, bcRSSPageSize)))
+		case finalItems > 0 && page == lastPage:
+			_, _ = w.Write([]byte(bcPageXML(page, finalItems)))
+		default:
+			_, _ = w.Write(empty)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return n
+	}
+}
+
+func bcWarningsText(warnings []string) string { return strings.Join(warnings, "\n") }
+
+func TestBiblioCommonsRSS_MaxPagesReachedWarnsOnFullFinalPage(t *testing.T) {
+	srv, requests := bcPagedServer(t, 5, 0)
+
+	src := bcTestSource(srv.URL + "/rss/events")
+	src.MaxPages = 3
+	evs, warnings, err := newBCTestExtractor().Extract(context.Background(), src)
+	require.NoError(t, err)
+	assert.Len(t, evs, 3*bcRSSPageSize)
+	assert.Equal(t, 3, requests(), "walk stops at the page cap")
+
+	assert.Contains(t, bcWarningsText(warnings), "max_pages_reached")
+	assert.Contains(t, bcWarningsText(warnings), "max_pages=3")
+	assert.Contains(t, bcWarningsText(warnings), "full final page")
+	assert.Contains(t, bcWarningsText(warnings), "results may be truncated")
+}
+
+func TestBiblioCommonsRSS_MaxPagesZeroUsesDefaultAndWarns(t *testing.T) {
+	// MaxPages <= 0 falls back to 10; a feed longer than that must still warn.
+	srv, requests := bcPagedServer(t, 12, 0)
+
+	src := bcTestSource(srv.URL + "/rss/events")
+	src.MaxPages = 0
+	evs, warnings, err := newBCTestExtractor().Extract(context.Background(), src)
+	require.NoError(t, err)
+	assert.Len(t, evs, 10*bcRSSPageSize)
+	assert.Equal(t, 10, requests(), "default page cap is 10")
+	assert.Contains(t, bcWarningsText(warnings), "max_pages_reached")
+	assert.Contains(t, bcWarningsText(warnings), "max_pages=10")
+}
+
+func TestBiblioCommonsRSS_ExactFeedDoesNotWarn(t *testing.T) {
+	// Two pages, the last one partial: the feed is complete and the page cap
+	// happens to match, so no truncation may be reported.
+	srv, _ := bcPagedServer(t, 1, 7)
+
+	src := bcTestSource(srv.URL + "/rss/events")
+	src.MaxPages = 2
+	evs, warnings, err := newBCTestExtractor().Extract(context.Background(), src)
+	require.NoError(t, err)
+	assert.Len(t, evs, bcRSSPageSize+7)
+	assert.NotContains(t, bcWarningsText(warnings), "max_pages_reached")
+}
+
+func TestBiblioCommonsRSS_EmptyPageBeforeCapDoesNotWarn(t *testing.T) {
+	srv, _ := bcPagedServer(t, 1, 0)
+
+	src := bcTestSource(srv.URL + "/rss/events")
+	src.MaxPages = 9
+	evs, warnings, err := newBCTestExtractor().Extract(context.Background(), src)
+	require.NoError(t, err)
+	assert.Len(t, evs, bcRSSPageSize)
+	assert.NotContains(t, bcWarningsText(warnings), "max_pages_reached")
+}
+
+func TestBiblioCommonsRSS_EmptyPageAtCapDoesNotWarn(t *testing.T) {
+	// The feed ends naturally on the same iteration the page cap is reached:
+	// an empty final page means nothing was dropped.
+	srv, requests := bcPagedServer(t, 2, 0)
+
+	src := bcTestSource(srv.URL + "/rss/events")
+	src.MaxPages = 3
+	evs, warnings, err := newBCTestExtractor().Extract(context.Background(), src)
+	require.NoError(t, err)
+	assert.Len(t, evs, 2*bcRSSPageSize)
+	assert.Equal(t, 3, requests(), "the empty page at the cap is still fetched")
+	assert.NotContains(t, bcWarningsText(warnings), "max_pages_reached")
+}
+
+func TestScrapeBiblioCommonsRSS_LimitTruncationWarnsAndKeepsFirstN(t *testing.T) {
+	srv, _ := bcPagedServer(t, 3, 0)
+
+	s := NewScraper(NewIngestClient("http://unused", "test-key"), nil, zerolog.Nop())
+	s.SetPastEventGrace(testPastEventGrace)
+	noDelay := time.Duration(0)
+	s.bcPageDelay = &noDelay
+
+	src := bcTestSource(srv.URL + "/rss/events")
+	result, err := s.scrapeBiblioCommonsRSS(context.Background(), src, ScrapeOptions{
+		DryRun:  true,
+		Verbose: true,
+		Limit:   10,
+	})
+	require.NoError(t, err)
+	require.NoError(t, result.Error)
+
+	total := 3 * bcRSSPageSize
+	require.Len(t, result.DryRunEvents, 10, "only the first N events are kept")
+	assert.Equal(t, "Event p1-e0", result.DryRunEvents[0].Name)
+	assert.Equal(t, "Event p1-e9", result.DryRunEvents[9].Name)
+
+	text := bcWarningsText(result.QualityWarnings)
+	want := fmt.Sprintf("result_truncated_by_limit: extracted %d events but limit is 10; keeping the first 10 (scheduled runs set this from scraper_config.max_batch_size)", total)
+	assert.Contains(t, text, want)
+}
+
+func TestScrapeBiblioCommonsRSS_LimitEqualToResultDoesNotWarn(t *testing.T) {
+	srv, _ := bcPagedServer(t, 3, 0)
+
+	s := NewScraper(NewIngestClient("http://unused", "test-key"), nil, zerolog.Nop())
+	s.SetPastEventGrace(testPastEventGrace)
+	noDelay := time.Duration(0)
+	s.bcPageDelay = &noDelay
+
+	src := bcTestSource(srv.URL + "/rss/events")
+	total := 3 * bcRSSPageSize
+	result, err := s.scrapeBiblioCommonsRSS(context.Background(), src, ScrapeOptions{
+		DryRun:  true,
+		Verbose: true,
+		Limit:   total,
+	})
+	require.NoError(t, err)
+	require.NoError(t, result.Error)
+	assert.Len(t, result.DryRunEvents, total, "an exact fit is not truncated")
+	assert.NotContains(t, bcWarningsText(result.QualityWarnings), "result_truncated_by_limit")
 }

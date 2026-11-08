@@ -747,6 +747,8 @@ SCRAPER_HEADLESS_ENABLED=true ./server scrape source lula-lounge \
 | `date_selector_never_matched` | A `date_selectors` entry matched 0 events | The CSS selector is wrong — inspect the DOM and fix it |
 | `date_selector_partial_match` | A `date_selectors` entry matched some but not all events | The selector may need to be more general, or some events genuinely lack that element |
 | `all_midnight` | All extracted events have `T00:00:00` start times | Time extraction failed — the time selector is broken or missing |
+| `max_pages_reached` | A `bibliocommons_rss` feed still had a full page when `max_pages` was hit | The feed is longer than the configured cap — events past it were not collected |
+| `result_truncated_by_limit` | A `bibliocommons_rss` source extracted more events than the per-run limit | Only the first N events were kept; raise `scraper_config.max_batch_size` or the CLI `--limit` if that is unintended |
 
 When a `date_selector` fails, the warning includes **first-container diagnostic
 detail** showing what the selector found (or didn't) in the first event container:
@@ -832,6 +834,35 @@ skips cancelled events (reported as quality warnings). The channel title
 [event-platforms.md §23](event-platforms.md#23-bibliocommons-public-libraries) for the feed
 shape, filter ids and the terms/licence notes. `extraction_method` is constrained in the DB
 (migration 000053), so run `make migrate-up` before `server scrape sync`.
+
+#### Coverage caps and truncation warnings
+
+Two independent caps can limit how many events a run collects. Both emit a quality
+warning instead of dropping events silently:
+
+- **`max_pages` is a hard cap per source.** The extractor requests `?page=1..max_pages`
+  and stops there. If the final page is still full (25 items), the feed may continue
+  beyond the cap and the extractor returns
+  `max_pages_reached: stopped at max_pages=N with a full final page; results may be truncated`.
+  Because a full final page is indistinguishable from an exactly-ending feed, this
+  warning means "check the tail", not necessarily "events were lost". No warning is
+  emitted when paging stops earlier because a page was empty or repeated — that is the
+  feed's natural end. Raise `max_pages` (roughly one page per 25 events) to widen
+  coverage.
+- **`scraper_config.max_batch_size` is a per-run cap.** The scheduled job passes it as
+  `ScrapeOptions.Limit` (the CLI `--limit` flag sets the same cap), and the extracted
+  list is truncated to that many events before submission. When `len(events) > limit`,
+  the first `limit` events are kept (the truncation behaviour is deliberately unchanged)
+  and a
+  `result_truncated_by_limit: extracted X events but limit is Y; keeping the first Y`
+  warning is emitted. It is recorded once through the run's quality warnings (see the
+  persistence note below), not as a separate log line. Raise `max_batch_size` if a
+  source routinely exceeds it.
+
+Both warnings are part of the run's quality warnings and are persisted in
+`scraper_runs.metadata` as `ics_warnings` (see
+[Database Run Tracking](#database-run-tracking)), so a completed run record shows the
+caps that were hit.
 
 ### Full Config with Tier 3 GraphQL
 
@@ -1182,7 +1213,7 @@ that apply to all scrape runs.
 | `max_concurrent_sources` | int | `3` | Max sources scraped in parallel during `scrape all` |
 | `request_timeout_seconds` | int | `30` | HTTP request timeout per page fetch |
 | `retry_max_attempts` | int | `3` | Retries on transient network errors |
-| `max_batch_size` | int | `100` | Max events per ingest batch POST |
+| `max_batch_size` | int | `100` | Max events per ingest batch POST; also the per-run event cap for scheduled runs (truncation is reported as `result_truncated_by_limit`) |
 | `rate_limit_ms` | int | `0` | Minimum ms between requests to the same domain |
 
 ### Admin API

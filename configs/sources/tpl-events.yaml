@@ -6,9 +6,10 @@ name: "tpl-events"
 # - `max_batch_size` >= the inventory size (~6,500). The scrape job copies max_batch_size into
 #   ScrapeOptions.Limit, and the bibliocommons_rss extractor truncates its result to that limit
 #   (internal/jobs/scrape_source.go, internal/scraper/bibliocommons_rss.go). A smaller value
-#   therefore SILENTLY submits only the first N events of the run — no error, no partial-coverage
-#   warning. This feed is largely ordered by date, so the observed staging value of 100 is
-#   roughly one day of TPL's calendar.
+#   therefore keeps only the first N events of the run; this is reported as a
+#   `result_truncated_by_limit` quality warning (persisted in scraper_runs.metadata), but the
+#   tail is still not submitted. This feed is largely ordered by date, so the observed staging
+#   value of 100 is roughly one day of TPL's calendar.
 # - `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` raised (suggest 900-1800; default is 300). A full run
 #   costs ~235 s of extraction (measured 2026-11-07) plus ~6,100 event submissions, which does
 #   not fit in 300 s; the job ctx is cancelled and the run fails part-way.

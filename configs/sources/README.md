@@ -23,8 +23,10 @@ page that repeats what was already seen), so generous headroom is cheap.
 Two operational prerequisites for full coverage:
 - **`max_batch_size` must be at least the inventory size** (~6,500 for TPL). The scrape job copies
   `max_batch_size` into the per-run limit and the extractor truncates its result to it, so a smaller
-  value silently submits only the first N events — no error, no warning (the ingest client already
-  chunks POSTs at 100 internally, so this is a per-run cap, not a batch size).
+  value keeps only the first N events. The run now reports this as a `result_truncated_by_limit`
+  quality warning (persisted in `scraper_runs.metadata`), but the tail is still not submitted
+  (the ingest client already chunks POSTs at 100 internally, so this is a per-run cap, not a batch
+  size).
 - **`SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` must accommodate extraction + submissions** — raising it to
   roughly 900-1800 s for a full TPL run; the 300 s default is not enough for ~235 s of extraction
   plus ~6,100 submissions.

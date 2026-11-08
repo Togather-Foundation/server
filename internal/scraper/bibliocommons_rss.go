@@ -41,6 +41,11 @@ const defaultBCPageDelay = 500 * time.Millisecond
 // defaultBCMaxBodyBytes caps a single feed page (real pages are ~75 KB).
 const defaultBCMaxBodyBytes int64 = 5 * 1024 * 1024
 
+// bcRSSPageSize is the number of items BiblioCommons puts on one RSS page. A final
+// page at the MaxPages cap that still holds this many items may have a successor,
+// so it is reported as a possible truncation.
+const bcRSSPageSize = 25
+
 // bcPrivacyNoticeMarker starts TPL's per-event privacy boilerplate, which carries no
 // event information and would otherwise dominate short descriptions.
 const bcPrivacyNoticeMarker = "Information Collection Notice"
@@ -138,9 +143,10 @@ func (e *BiblioCommonsRSSExtractor) Extract(ctx context.Context, cfg SourceConfi
 	}
 
 	var (
-		out      []events.EventInput
-		warnings []string
-		seen     = make(map[string]bool)
+		out        []events.EventInput
+		warnings   []string
+		seen       = make(map[string]bool)
+		hitPageCap bool
 	)
 	for page := 1; page <= maxPages; page++ {
 		if page > 1 && e.pageDelay > 0 {
@@ -155,7 +161,8 @@ func (e *BiblioCommonsRSSExtractor) Extract(ctx context.Context, cfg SourceConfi
 		if err != nil {
 			return out, warnings, fmt.Errorf("bibliocommons_rss page %d: %w", page, err)
 		}
-		if len(feed.Channel.Items) == 0 {
+		itemsOnPage := len(feed.Channel.Items)
+		if itemsOnPage == 0 {
 			break
 		}
 
@@ -188,6 +195,16 @@ func (e *BiblioCommonsRSSExtractor) Extract(ctx context.Context, cfg SourceConfi
 		if added == 0 {
 			break // page repeated what we already have (server ignored ?page)
 		}
+		// The walk ends at the page cap with a full final page: the feed may
+		// continue past maxPages, so the tail would be dropped silently.
+		if page == maxPages && itemsOnPage >= bcRSSPageSize {
+			hitPageCap = true
+		}
+	}
+	if hitPageCap {
+		warnings = append(warnings, fmt.Sprintf(
+			"max_pages_reached: stopped at max_pages=%d with a full final page; results may be truncated (raise max_pages to collect more)",
+			maxPages))
 	}
 	return out, warnings, nil
 }
@@ -495,7 +512,12 @@ func (s *Scraper) scrapeBiblioCommonsRSS(ctx context.Context, source SourceConfi
 			return 0, nil, warnings, err
 		}
 		if opts.Limit > 0 && len(eventInputs) > opts.Limit {
-			eventInputs = eventInputs[:opts.Limit]
+			total := len(eventInputs)
+			kept := opts.Limit
+			eventInputs = eventInputs[:kept]
+			warnings = append(warnings, fmt.Sprintf(
+				"result_truncated_by_limit: extracted %d events but limit is %d; keeping the first %d (scheduled runs set this from scraper_config.max_batch_size)",
+				total, kept, kept))
 		}
 		return len(eventInputs), eventInputs, warnings, nil
 	}), nil
