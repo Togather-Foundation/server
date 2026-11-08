@@ -1,5 +1,10 @@
 # Agent Collaboration Summary (Jan 2026)
 
+> **Status note (Nov 2026):** the Beads issue tracker was retired in favour of the shared
+> Hermes kanban board `togather`. Historical `bd`/bead references below are kept as a
+> record of how the work was tracked at the time; do not use them for new work.
+
+
 This summary is based on the filtered instruction log (204 entries, Jan 25–27, 2026). It focuses on high-signal collaboration patterns: task orchestration, quality gates, review/triage, and documentation alignment.
 
 ## What the human did

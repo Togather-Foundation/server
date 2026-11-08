@@ -93,13 +93,6 @@ reports/
 # Spec kit
 .specify/
 
-# beads
-# beads JSONL backup (state lives in .beads/dolt/, not this file)
-.beads/issues.jsonl
-.beads/interactions.jsonl
-
-# Deployment files
-# Environment files (allow .env.example for documentation)
 *.env
 !*.env.example
 # Explicit exclusions for deployment environment files
@@ -152,10 +145,6 @@ failure-reports/
 
 # Dolt database files (added by bd init)
 .dolt/
-
-# Beads / Dolt files (added by bd init)
-.beads-credential-key
-.beads/export-state.json
 
 # Database snapshots (created by deploy/migrate tooling)
 snapshots/

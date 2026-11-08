@@ -1,5 +1,10 @@
 # Working on Multiple Branches with OpenCode
 
+> **Status note (Nov 2026):** the Beads issue tracker was retired in favour of the shared
+> Hermes kanban board `togather`. Historical `bd`/bead references below are kept as a
+> record of how the work was tracked at the time; do not use them for new work.
+
+
 This guide explains how to work on the MCP server (in `002-mcp-server` branch) while simultaneously working on other features in different branches.
 
 ## The Challenge

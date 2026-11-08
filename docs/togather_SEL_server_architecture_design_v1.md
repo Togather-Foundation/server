@@ -895,7 +895,7 @@ HTTP_MAX_HEADER_BYTES=1048576  # 1 MB header limit
 - **Code Review:** Comprehensive security review documented in `CODE_REVIEW.md` (20 issues categorized P0-P2)
 - **P0 Vulnerabilities:** All critical (P0) issues resolved in v0.1.2
 - **Integration Tests:** Security fixes include regression tests (e.g., SQL injection attempt tests in `events_repository_escape_test.go`)
-- **Ongoing Monitoring:** Security is tracked through beads issue system for transparency and prioritization
+- **Ongoing Monitoring:** Security is tracked through the kanban board for transparency and prioritization
 
 **Threat Model Summary:**
 

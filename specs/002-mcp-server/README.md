@@ -19,7 +19,7 @@ Think of it as a "USB-C port for AI" - a standardized way to connect AI applicat
 
 ### Implementation Summary
 
-#### Phase 1: Initial Implementation (20 beads)
+#### Phase 1: Initial Implementation (20 tickets)
 - **Completed**: 2026-02-05
 - **Beads**: server-66za through server-2r4z
 - **Phases**: 9 (Dependency Setup → Documentation)
@@ -27,7 +27,7 @@ Think of it as a "USB-C port for AI" - a standardized way to connect AI applicat
 - All 3 transports (stdio, SSE, HTTP) operational
 - Resources and prompts fully integrated
 
-#### Phase 2: Code Review & Quality Improvements (~20 beads)
+#### Phase 2: Code Review & Quality Improvements (~20 tickets)
 - **Completed**: 2026-02-06
 - **Focus**: SEL compliance, Go idioms, concurrency safety, test coverage
 - All P0 (critical) issues resolved

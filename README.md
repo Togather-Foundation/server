@@ -221,7 +221,7 @@ make build
 
 ## Thanks
 
-This project is built with help from [OpenCode](https://opencode.ai/), [Spec Kit](https://github.com/github/spec-kit), and [Beads](https://github.com/steveyegge/beads), along with the teams behind:
+This project is built with help from [OpenCode](https://opencode.ai/), [Spec Kit](https://github.com/github/spec-kit), along with the teams behind:
 
 - ChatGPT 5.2 Codex
 - Claude Sonnet 4.5

@@ -7,7 +7,7 @@
 # Usage:
 #   scripts/land-worktree.sh <worktree-path>
 #
-# Example (matches Phase 9 of the orchestrate workflow):
+# Example:
 #   scripts/land-worktree.sh .worktrees/togather-srv-8jk24
 
 set -euo pipefail

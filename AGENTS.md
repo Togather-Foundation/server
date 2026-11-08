@@ -6,7 +6,7 @@ Go 1.24+ SEL backend (Togather server). PostgreSQL 16+/PostGIS, SQLc, River, net
 
 - Spec driven red/green TDD.
 - Use parallel tools whenever applicable.
-- Use the kanban board `togather` (via `hermes-kanban-*` MCP tools) for task tracking — not markdown todo lists, not beads.
+- Use the kanban board `togather` (via `hermes-kanban-*` MCP tools) for task tracking — not markdown todo lists, and not any other issue tracker.
 - Use `context7` MCP server for external library docs.
 - Act without confirmation unless blocked by missing info or irreversibility.
 - When stuck (cryptic errors, multiple failed approaches): escalate via Task tool with `subagent_type: "diagnose"`.

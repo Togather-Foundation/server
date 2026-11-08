@@ -169,7 +169,7 @@ During the release process, commit messages are parsed to:
 1. **Categorize changes** into `Added`, `Fixed`, `Changed`, etc. in the changelog
 2. **Detect breaking changes** that require MAJOR version bumps
 3. **Generate release summaries** that are readable and useful
-4. **Link changes** back to beads issues for traceability
+4. **Link changes** back to kanban tickets for traceability
 
 The more consistently commit messages follow this format, the higher quality the
 auto-generated changelog entries will be.

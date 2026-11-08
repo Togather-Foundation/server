@@ -8,8 +8,8 @@
 #   scripts/worktree-setup.sh <worktree-path>
 #
 # Example (matches Phase 3 of the orchestrate workflow):
-#   WORKTREE=".worktrees/togather-beads-abc"
-#   git worktree add -b feat/beads-abc-my-feature "$WORKTREE" main
+#   WORKTREE=".worktrees/togather-t_abc123-my-feature"
+#   git worktree add -b feat/t_abc123-my-feature "$WORKTREE" main
 #   scripts/worktree-setup.sh "$WORKTREE"
 
 set -euo pipefail
@@ -117,16 +117,7 @@ copy_if_missing "web/robots.txt"
 copy_if_missing "web/sitemap.xml"
 
 # ---------------------------------------------------------------------------
-# 3. Symlink the beads database
-#    All worktrees share the same issue tracker so bead state isn't fragmented.
-# ---------------------------------------------------------------------------
-
-echo ""
-echo "Symlinking beads database..."
-symlink ".beads"
-
-# ---------------------------------------------------------------------------
-# 4. Create fresh local directories
+# 3. Create fresh local directories
 #    These should NOT be shared — each worktree has its own logs and artifacts.
 # ---------------------------------------------------------------------------
 
@@ -137,7 +128,7 @@ mkdir_if_missing ".agent-output"
 mkdir_if_missing ".ci-logs"
 
 # ---------------------------------------------------------------------------
-# 5. Convenience symlink: ./server → worktree binary
+# 4. Convenience symlink: ./server → worktree binary
 #    So you can always use './server' regardless of which worktree is active.
 # ---------------------------------------------------------------------------
 
@@ -160,7 +151,7 @@ if [ ! -e "$SERVER_LINK" ] && [ ! -L "$SERVER_LINK" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-# 6. Check PostgreSQL connectivity
+# 5. Check PostgreSQL connectivity
 #    Postgres integration tests (internal/storage/postgres/) need a running DB.
 #    The worktree inherits DATABASE_URL from .env. Warn if unreachable so agents
 #    know ci-fast will time out on DB tests and can skip to unit tests instead.
