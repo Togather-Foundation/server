@@ -128,15 +128,17 @@ func buildRunMetadata(failures []IngestError, validEvents []events.EventInput) (
 // Scraper orchestrates fetching, normalising, and ingesting events from
 // configured sources.
 type Scraper struct {
-	ingest         *IngestClient
-	queries        *postgres.Queries        // may be nil — DB tracking skipped when nil
-	sourceRepo     domainScraper.Repository // may be nil — falls back to YAML when nil
-	logger         zerolog.Logger
-	slot           string                  // deployment slot for Prometheus metrics labeling; empty = no metrics
-	scraperMetrics *metrics.ScraperMetrics // may be nil — falls back to package-level globals
-	rodExtractor   *RodExtractor           // nil when headless is disabled/unconfigured
-	icsConfig      config.ICSConfig        // ICS feed extraction defaults
-	bcPageDelay    *time.Duration          // pause between BiblioCommons RSS pages; nil = default (tests set 0)
+	ingest          *IngestClient
+	queries         *postgres.Queries        // may be nil — DB tracking skipped when nil
+	sourceRepo      domainScraper.Repository // may be nil — falls back to YAML when nil
+	logger          zerolog.Logger
+	slot            string                  // deployment slot for Prometheus metrics labeling; empty = no metrics
+	scraperMetrics  *metrics.ScraperMetrics // may be nil — falls back to package-level globals
+	rodExtractor    *RodExtractor           // nil when headless is disabled/unconfigured
+	icsConfig       config.ICSConfig        // ICS feed extraction defaults
+	pastEventGrace  time.Duration           // events ended within this window are still ingested; 0 = strict
+	defaultLocation *time.Location          // timezone for date-only/offset-less dates; nil = time.Local
+	bcPageDelay     *time.Duration          // pause between BiblioCommons RSS pages; nil = default (tests set 0)
 }
 
 // NewScraper constructs a Scraper. queries may be nil; DB run tracking is
@@ -210,6 +212,23 @@ func (s *Scraper) SetRodExtractor(r *RodExtractor) {
 // called, zero-value defaults apply (the ICSExtractor uses its own defaults).
 func (s *Scraper) SetICSConfig(cfg config.ICSConfig) {
 	s.icsConfig = cfg
+}
+
+// SetPastEventGrace configures how long after an event has ended it may
+// still be ingested. Zero means skip every already-ended event; negative
+// values are clamped to zero.
+func (s *Scraper) SetPastEventGrace(d time.Duration) {
+	if d < 0 {
+		d = 0
+	}
+	s.pastEventGrace = d
+}
+
+// SetDefaultLocation sets the timezone used to interpret date-only and
+// offset-less timestamps during past-event filtering. A nil location falls
+// back to time.Local.
+func (s *Scraper) SetDefaultLocation(loc *time.Location) {
+	s.defaultLocation = loc
 }
 
 // loadSourceConfigs returns the active SourceConfig slice. It tries the DB
@@ -976,6 +995,151 @@ func (s *Scraper) scrapeSitemapSelectorPage(
 	return valid, warnings, rawCount, nil
 }
 
+// filterPastEvents drops events whose effective end is before now-grace.
+// Events with no parseable dates are KEPT, as are events whose supplied end
+// dates cannot be parsed (never drop on unknown). Ongoing multi-day events
+// whose end is still in the future are KEPT.
+//
+// Date-only and offset-less values are interpreted in loc (nil = time.Local).
+// Date-only boundaries are inclusive: start-of-day for a start, the last
+// instant of the day for an end. Occurrence dates are considered, and an event
+// with no end is kept through the end of its start day so timed events are not
+// dropped the moment they begin.
+//
+// Returns the kept slice and the number dropped. The kept slice is newly
+// allocated; the input is not mutated.
+func filterPastEvents(evts []events.EventInput, now time.Time, grace time.Duration, loc *time.Location) ([]events.EventInput, int) {
+	if loc == nil {
+		loc = time.Local
+	}
+	if grace < 0 {
+		grace = 0
+	}
+	cutoff := now.Add(-grace)
+	kept := make([]events.EventInput, 0, len(evts))
+	dropped := 0
+	for _, evt := range evts {
+		end, ok := effectiveEventEnd(evt, loc)
+		if ok && end.Before(cutoff) {
+			dropped++
+			continue
+		}
+		kept = append(kept, evt)
+	}
+	return kept, dropped
+}
+
+// effectiveEventEnd returns the latest known instant at which an event is still
+// happening. ok is false when no date could be parsed; callers must keep such
+// events rather than drop them.
+//
+// End dates win: every parseable end (event-level and per-occurrence) is
+// collected and the latest is used; all-day/date-only ends are inclusive of the
+// whole day. If end dates were supplied but none parse, the event is kept
+// (never drop on unknown). Only when no end date exists at all are start dates
+// reinterpreted as end-of-day, so an event that started earlier today survives.
+// An end before the start is treated as bad source data and widened to
+// end-of-start-day so validation can flag it instead of the event being
+// silently dropped.
+func effectiveEventEnd(evt events.EventInput, loc *time.Location) (time.Time, bool) {
+	if loc == nil {
+		loc = time.Local
+	}
+
+	var maxEnd time.Time
+	haveEnd := false      // at least one end bound parsed
+	haveEndValue := false // at least one non-empty end bound was supplied
+	collectEnd := func(value string, allDay bool) {
+		if strings.TrimSpace(value) == "" {
+			return
+		}
+		haveEndValue = true
+		t, ok := parseBound(value, true, loc)
+		if !ok {
+			return
+		}
+		if allDay {
+			t = endOfDay(t, loc)
+		}
+		if !haveEnd || t.After(maxEnd) {
+			maxEnd, haveEnd = t, true
+		}
+	}
+	collectEnd(evt.EndDate, evt.AllDay)
+	for _, occ := range evt.Occurrences {
+		collectEnd(occ.EndDate, occ.AllDay)
+	}
+
+	// Latest parseable start: used for the no-end fallback and the
+	// end-before-start sanity check.
+	var maxStart time.Time
+	haveStart := false
+	collectStart := func(value string) {
+		t, ok := parseBound(value, false, loc)
+		if !ok {
+			return
+		}
+		if !haveStart || t.After(maxStart) {
+			maxStart, haveStart = t, true
+		}
+	}
+	collectStart(evt.StartDate)
+	for _, occ := range evt.Occurrences {
+		collectStart(occ.StartDate)
+	}
+
+	if haveEnd {
+		if haveStart && maxEnd.Before(maxStart) {
+			return endOfDay(maxStart, loc), true
+		}
+		return maxEnd, true
+	}
+	if haveEndValue {
+		// An end date was supplied but none could be parsed: never drop on
+		// unknown data; let validation decide.
+		return time.Time{}, false
+	}
+	if haveStart {
+		return endOfDay(maxStart, loc), true
+	}
+	return time.Time{}, false
+}
+
+// parseBound parses a start or end date value. Accepted formats, in order:
+// RFC3339 (exact instant), bare date (start-of-day or end-of-day depending on
+// the end flag), and offset-less datetimes with or without seconds. Bare dates
+// and offset-less values are interpreted in loc.
+func parseBound(value string, end bool, loc *time.Location) (time.Time, bool) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}, false
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		return t, true
+	}
+	if t, err := time.ParseInLocation(time.DateOnly, value, loc); err == nil {
+		if end {
+			return endOfDay(t, loc), true
+		}
+		return t, true
+	}
+	for _, layout := range []string{"2006-01-02T15:04:05", "2006-01-02T15:04"} {
+		if t, err := time.ParseInLocation(layout, value, loc); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// endOfDay returns the last instant of the calendar day of t in loc.
+func endOfDay(t time.Time, loc *time.Location) time.Time {
+	y, m, d := t.In(loc).Date()
+	return time.Date(y, m, d, 23, 59, 59, 999999999, loc)
+}
+
 // runWithTracking wraps a scrapeFunc with DB scraper_run insert/update bookkeeping.
 // If queries is nil all DB operations are skipped (best-effort).
 // It returns the final ScrapeResult (Error field set on failure).
@@ -1004,6 +1168,24 @@ func (s *Scraper) runWithTracking(
 
 	eventsFound, validEvents, qualityWarnings, err := fn(ctx)
 	result.EventsFound = eventsFound
+
+	// Defensive past-event guard: skip events that already ended before they
+	// reach submission. Applies to every extraction path because they all run
+	// through runWithTracking.
+	if err == nil {
+		var skippedPast int
+		validEvents, skippedPast = filterPastEvents(validEvents, time.Now(), s.pastEventGrace, s.defaultLocation)
+		if skippedPast > 0 {
+			qualityWarnings = append(qualityWarnings,
+				fmt.Sprintf("skipped %d event(s) that already ended (grace %s)", skippedPast, s.pastEventGrace))
+			s.logger.Info().
+				Str("source", result.SourceName).
+				Int("skipped_past", skippedPast).
+				Dur("grace", s.pastEventGrace).
+				Msg("scraper: skipped already-ended events")
+		}
+	}
+
 	result.QualityWarnings = append(result.QualityWarnings, qualityWarnings...)
 
 	// Log quality warnings at WARN level so they appear in structured logs

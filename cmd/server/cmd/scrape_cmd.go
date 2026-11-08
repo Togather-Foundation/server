@@ -207,6 +207,32 @@ func newScraperWithDB(serverURL, apiKey string, logger zerolog.Logger) (*scraper
 		s.SetICSConfig(cfg.Scraper.ICS)
 	}
 
+	// Wire past-event filtering even when config.Load() failed: fall back to
+	// reading the env var directly so the guard still honours operator intent.
+	graceHours := 0
+	defaultTimezone := ""
+	if err == nil {
+		graceHours = cfg.Scraper.PastEventGraceHours
+		defaultTimezone = cfg.DefaultTimezone
+	} else if v := os.Getenv("SCRAPER_PAST_EVENT_GRACE_HOURS"); v != "" {
+		if n, convErr := strconv.Atoi(v); convErr == nil {
+			graceHours = n
+		}
+	}
+	if defaultTimezone == "" {
+		defaultTimezone = os.Getenv("DEFAULT_TIMEZONE")
+	}
+	if defaultTimezone == "" {
+		defaultTimezone = "America/Toronto"
+	}
+	s.SetPastEventGrace(time.Duration(graceHours) * time.Hour)
+	if loc, locErr := time.LoadLocation(defaultTimezone); locErr == nil {
+		s.SetDefaultLocation(loc)
+	} else {
+		logger.Warn().Err(locErr).Str("timezone", defaultTimezone).
+			Msg("scraper: invalid DEFAULT_TIMEZONE, using local time for date parsing")
+	}
+
 	// Wire in Tier 2 headless extractor if enabled via env vars.
 	if os.Getenv("SCRAPER_HEADLESS_ENABLED") == "true" {
 		chromePath := os.Getenv("SCRAPER_CHROME_PATH")

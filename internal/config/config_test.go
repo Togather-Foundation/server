@@ -339,6 +339,37 @@ func TestLoad_ScraperPolling_InvalidHTTPClientTimeout(t *testing.T) {
 	}
 }
 
+func TestLoad_ScraperPolling_NegativePastEventGrace(t *testing.T) {
+	originalEnv := map[string]string{
+		"ENVIRONMENT":                    os.Getenv("ENVIRONMENT"),
+		"DATABASE_URL":                   os.Getenv("DATABASE_URL"),
+		"JWT_SECRET":                     os.Getenv("JWT_SECRET"),
+		"SCRAPER_PAST_EVENT_GRACE_HOURS": os.Getenv("SCRAPER_PAST_EVENT_GRACE_HOURS"),
+	}
+	defer func() {
+		for k, v := range originalEnv {
+			if v == "" {
+				_ = os.Unsetenv(k)
+			} else {
+				_ = os.Setenv(k, v)
+			}
+		}
+	}()
+
+	_ = os.Setenv("ENVIRONMENT", "development")
+	_ = os.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+	_ = os.Setenv("JWT_SECRET", "12345678901234567890123456789012")
+	_ = os.Setenv("SCRAPER_PAST_EVENT_GRACE_HOURS", "-1")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Expected error for negative SCRAPER_PAST_EVENT_GRACE_HOURS, got nil")
+	}
+	if !strings.Contains(err.Error(), "SCRAPER_PAST_EVENT_GRACE_HOURS") {
+		t.Errorf("Expected error to mention SCRAPER_PAST_EVENT_GRACE_HOURS, got: %v", err)
+	}
+}
+
 func TestLoad_ScraperPolling_ValidConfig(t *testing.T) {
 	originalEnv := map[string]string{
 		"ENVIRONMENT":                    os.Getenv("ENVIRONMENT"),

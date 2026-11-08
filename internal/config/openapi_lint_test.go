@@ -73,6 +73,10 @@ var openapiConfigEntries = []struct {
 		envVar:     "IDENTITY_CONFLICT_LIMIT_MAX",
 		wantSubstr: "IDENTITY_CONFLICT_LIMIT_MAX",
 	},
+	{
+		envVar:     "SCRAPER_PAST_EVENT_GRACE_HOURS",
+		wantSubstr: "SCRAPER_PAST_EVENT_GRACE_HOURS",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

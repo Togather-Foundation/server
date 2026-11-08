@@ -309,6 +309,7 @@ schedule: manual
 	require.NoError(t, os.WriteFile(cfgPath, []byte(cfgYAML), 0o644))
 
 	s := NewScraper(NewIngestClient("http://unused", "test-key"), nil, zerolog.Nop())
+	s.SetPastEventGrace(testPastEventGrace)
 	noDelay := time.Duration(0)
 	s.bcPageDelay = &noDelay
 	result, err := s.ScrapeSource(t.Context(), "test-bc-rss", ScrapeOptions{DryRun: true, Verbose: true, SourceFile: cfgPath})

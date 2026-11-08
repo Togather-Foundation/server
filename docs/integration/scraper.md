@@ -1303,6 +1303,36 @@ These variables control the batch status polling behavior during scrape ingestio
 | `SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS` | 5000 | Timeout (ms) when enqueueing the next source in a serial run-all chain |
 | `SCRAPER_CHAIN_ENQUEUE_RETRIES` | 3 | Retry attempts for enqueueing the next source in a serial run-all chain |
 
+### Past-Event Filtering
+
+By default the scraper drops events that have already ended before submitting
+them to the ingest API. The cutoff (`now - grace`) is evaluated after extraction
+and normalisation, immediately before submission, and runs on every extraction
+path (Tiers 0–3, sitemap detail pages, ICS feeds, and BiblioCommons RSS), so a
+source cannot flood the catalogue with historical events.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SCRAPER_PAST_EVENT_GRACE_HOURS` | 0 | Hours after an event's effective end during which it is still ingested (clock skew / late-night runs). `0` is strict: any event that ended before the scrape starts is skipped. Negative values are rejected by server config validation; the CLI clamps them to 0 |
+
+Accepted date formats are RFC 3339 (`2026-03-15T20:00:00-04:00`), bare dates
+(`2026-03-15`), and offset-less datetimes (`2026-03-15T20:00` or
+`2026-03-15T20:00:00`). Bare dates and offset-less values are interpreted in
+`DEFAULT_TIMEZONE`, which itself falls back to `America/Toronto` when unset.
+
+A date-only or all-day `endDate` is inclusive of the whole day (the last instant
+of the day, 23:59:59.999999999). Only a genuinely absent `endDate` makes the
+guard fall back to the end of the start day, so a timed event is not dropped the
+moment it starts. An `endDate` that is present but unparseable never causes a
+drop — the event is kept and left for validation. Occurrence dates are
+considered too: a multi-session series survives while any occurrence is still in
+the future. If an `endDate` is earlier than its `startDate`, the guard widens it
+to the end of the start day and leaves the mismatch for validation to report.
+Missing or unparseable dates never cause an event to be dropped on their own.
+
+The number skipped is recorded as a quality warning on the run
+(`skipped N event(s) that already ended (grace …)`).
+
 ---
 
 ## Staging Scrape Workflow

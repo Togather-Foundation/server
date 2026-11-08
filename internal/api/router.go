@@ -189,6 +189,15 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		)
 		scraperSvc = scraper.NewScraperWithSourceRepoAndSlot(ingestClient, queries, scraperSourceRepo, logger, slot)
 		scraperSvc.SetICSConfig(cfg.Scraper.ICS)
+		scraperSvc.SetPastEventGrace(time.Duration(cfg.Scraper.PastEventGraceHours) * time.Hour)
+		if cfg.DefaultTimezone != "" {
+			if loc, locErr := time.LoadLocation(cfg.DefaultTimezone); locErr == nil {
+				scraperSvc.SetDefaultLocation(loc)
+			} else {
+				logger.Warn().Err(locErr).Str("timezone", cfg.DefaultTimezone).
+					Msg("router: invalid DEFAULT_TIMEZONE, using local time for scraper date parsing")
+			}
+		}
 		logger.Info().Msg("router: scraper configured for periodic jobs and admin trigger")
 
 		// Wire Tier 2 headless browser extractor when enabled (srv-1zrrt).

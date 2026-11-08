@@ -16,13 +16,19 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// testPastEventGrace disables the past-event guard for legacy fixtures whose
+// dates are fixed in the past. Guard behaviour is covered by past_event_test.go.
+const testPastEventGrace = 100 * 365 * 24 * time.Hour
+
 // newTestScraper builds a Scraper with a real IngestClient pointing at
 // baseURL. queries is nil — DB tracking is skipped.
 func newTestScraper(t *testing.T, ingestBaseURL string) *Scraper {
 	t.Helper()
 	client := NewIngestClient(ingestBaseURL, "test-api-key")
 	logger := zerolog.Nop()
-	return NewScraper(client, nil, logger)
+	s := NewScraper(client, nil, logger)
+	s.SetPastEventGrace(testPastEventGrace)
+	return s
 }
 
 // serveFile starts an httptest server that serves the given testdata file at

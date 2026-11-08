@@ -333,11 +333,14 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 		// All rows have non-parseable dates (e.g., "Every Day •Hours Vary").
 		// This is a recurring/ongoing event — create a placeholder occurrence
 		// at midnight today so it's clear this is a placeholder (not a specific time).
+		// Span the whole day so the past-event guard does not drop an ongoing
+		// event just because the scrape runs after midnight.
 		loc := loadTimezone(tz)
-		midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-		placeholderStart := midnight.Format(time.RFC3339)
+		localNow := now.In(loc)
+		midnight := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, loc)
 		occurrences = append(occurrences, events.OccurrenceInput{
-			StartDate: placeholderStart,
+			StartDate: midnight.Format(time.RFC3339),
+			EndDate:   endOfDay(midnight, loc).Format(time.RFC3339),
 		})
 	}
 

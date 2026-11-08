@@ -83,6 +83,12 @@ type ScraperConfig struct {
 	// Environment variable: SCRAPER_CHAIN_ENQUEUE_RETRIES (default: 3)
 	ChainEnqueueRetries int
 
+	// PastEventGraceHours allows events that ended within this many hours to
+	// still be ingested (clock skew / late-night runs). 0 = strict (skip any
+	// event whose effective end is before now).
+	// Environment variable: SCRAPER_PAST_EVENT_GRACE_HOURS (default: 0)
+	PastEventGraceHours int
+
 	// ICS holds defaults for ICS feed ingestion.
 	ICS ICSConfig
 }
@@ -596,6 +602,7 @@ func Load() (Config, error) {
 			SourceJobTimeoutSeconds: getEnvInt("SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS", 300),
 			ChainEnqueueTimeoutMs:   getEnvInt("SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS", 5000),
 			ChainEnqueueRetries:     getEnvInt("SCRAPER_CHAIN_ENQUEUE_RETRIES", 3),
+			PastEventGraceHours:     getEnvInt("SCRAPER_PAST_EVENT_GRACE_HOURS", 0),
 			ICS: ICSConfig{
 				HorizonDays:    getEnvInt("ICS_HORIZON_DAYS", 90),
 				MaxOccurrences: getEnvInt("ICS_MAX_OCCURRENCES", 100),
@@ -824,6 +831,9 @@ func validateScraperPollingConfig(scraper ScraperConfig) error {
 	}
 	if scraper.ChainEnqueueRetries < 0 {
 		return fmt.Errorf("SCRAPER_CHAIN_ENQUEUE_RETRIES must be >= 0, got %d", scraper.ChainEnqueueRetries)
+	}
+	if scraper.PastEventGraceHours < 0 {
+		return fmt.Errorf("SCRAPER_PAST_EVENT_GRACE_HOURS must be >= 0, got %d", scraper.PastEventGraceHours)
 	}
 	return nil
 }

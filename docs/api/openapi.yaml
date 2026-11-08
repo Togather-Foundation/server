@@ -2990,6 +2990,11 @@ paths:
         - `SCRAPER_CHAIN_ENQUEUE_TIMEOUT_MS` (default 5000)
         - `SCRAPER_CHAIN_ENQUEUE_RETRIES` (default 3)
 
+        Past-event filtering is configurable via
+        `SCRAPER_PAST_EVENT_GRACE_HOURS` (default 0): events that ended within
+        this many hours are still ingested, and 0 skips every already-ended
+        event.
+
         Options:
         - `respect_auto_scrape` (default: true): If true and global auto_scrape is disabled, skip the run
         - `skip_up_to_date` (default: true): Skip sources with fresh runs (daily <24h, weekly <7d)
