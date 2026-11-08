@@ -53,42 +53,44 @@ type AdminScraperHandler struct {
 
 // scraperSourceResponse is the JSON representation of a scraper source.
 type scraperSourceResponse struct {
-	ID                  int64      `json:"id"`
-	Name                string     `json:"name"`
-	URL                 string     `json:"url"`
-	Tier                int32      `json:"tier"`
-	Schedule            string     `json:"schedule"`
-	License             string     `json:"license"`
-	Enabled             bool       `json:"enabled"`
-	ExtractionMethod    string     `json:"extraction_method,omitempty"`
-	TLSFingerprint      string     `json:"tls_fingerprint,omitempty"`
-	LastRunStatus       string     `json:"last_run_status,omitempty"`
-	LastRunStartedAt    *time.Time `json:"last_run_started_at,omitempty"`
-	LastRunCompletedAt  *time.Time `json:"last_run_completed_at,omitempty"`
-	LastRunEventsFound  int32      `json:"last_run_events_found"`
-	LastRunEventsNew    int32      `json:"last_run_events_new"`
-	LastRunEventsDup    int32      `json:"last_run_events_dup"`
-	LastRunEventsFailed int32      `json:"last_run_events_failed"`
-	LastRunErrorMessage string     `json:"last_run_error_message,omitempty"`
+	ID                     int64      `json:"id"`
+	Name                   string     `json:"name"`
+	URL                    string     `json:"url"`
+	Tier                   int32      `json:"tier"`
+	Schedule               string     `json:"schedule"`
+	License                string     `json:"license"`
+	Enabled                bool       `json:"enabled"`
+	ExtractionMethod       string     `json:"extraction_method,omitempty"`
+	TLSFingerprint         string     `json:"tls_fingerprint,omitempty"`
+	SuppressReviewWarnings []string   `json:"suppress_review_warnings,omitempty"`
+	LastRunStatus          string     `json:"last_run_status,omitempty"`
+	LastRunStartedAt       *time.Time `json:"last_run_started_at,omitempty"`
+	LastRunCompletedAt     *time.Time `json:"last_run_completed_at,omitempty"`
+	LastRunEventsFound     int32      `json:"last_run_events_found"`
+	LastRunEventsNew       int32      `json:"last_run_events_new"`
+	LastRunEventsDup       int32      `json:"last_run_events_dup"`
+	LastRunEventsFailed    int32      `json:"last_run_events_failed"`
+	LastRunErrorMessage    string     `json:"last_run_error_message,omitempty"`
 }
 
 // toScraperSourceResponse converts a ListScraperSourcesWithLatestRunRow to a scraperSourceResponse.
 func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) scraperSourceResponse {
 	resp := scraperSourceResponse{
-		ID:                  row.ScraperSource.ID,
-		Name:                row.ScraperSource.Name,
-		URL:                 row.ScraperSource.Url,
-		Tier:                row.ScraperSource.Tier,
-		Schedule:            row.ScraperSource.Schedule,
-		License:             row.ScraperSource.License,
-		Enabled:             row.ScraperSource.Enabled,
-		ExtractionMethod:    row.ScraperSource.ExtractionMethod,
-		TLSFingerprint:      row.ScraperSource.TlsFingerprint,
-		LastRunStatus:       row.LastRunStatus,
-		LastRunEventsFound:  row.LastRunEventsFound,
-		LastRunEventsNew:    row.LastRunEventsNew,
-		LastRunEventsDup:    row.LastRunEventsDup,
-		LastRunEventsFailed: row.LastRunEventsFailed,
+		ID:                     row.ScraperSource.ID,
+		Name:                   row.ScraperSource.Name,
+		URL:                    row.ScraperSource.Url,
+		Tier:                   row.ScraperSource.Tier,
+		Schedule:               row.ScraperSource.Schedule,
+		License:                row.ScraperSource.License,
+		Enabled:                row.ScraperSource.Enabled,
+		ExtractionMethod:       row.ScraperSource.ExtractionMethod,
+		TLSFingerprint:         row.ScraperSource.TlsFingerprint,
+		SuppressReviewWarnings: row.ScraperSource.SuppressReviewWarnings,
+		LastRunStatus:          row.LastRunStatus,
+		LastRunEventsFound:     row.LastRunEventsFound,
+		LastRunEventsNew:       row.LastRunEventsNew,
+		LastRunEventsDup:       row.LastRunEventsDup,
+		LastRunEventsFailed:    row.LastRunEventsFailed,
 	}
 	if row.LastRunStartedAt.Valid {
 		t := row.LastRunStartedAt.Time
@@ -107,14 +109,15 @@ func toScraperSourceResponse(row postgres.ListScraperSourcesWithLatestRunRow) sc
 // scraperSourceFromSetEnabled converts a postgres.SetScraperSourceEnabledRow to a scraperSourceResponse.
 func scraperSourceFromSetEnabled(s postgres.SetScraperSourceEnabledRow) scraperSourceResponse {
 	return scraperSourceResponse{
-		ID:               s.ScraperSource.ID,
-		Name:             s.ScraperSource.Name,
-		URL:              s.ScraperSource.Url,
-		Tier:             s.ScraperSource.Tier,
-		Schedule:         s.ScraperSource.Schedule,
-		License:          s.ScraperSource.License,
-		Enabled:          s.ScraperSource.Enabled,
-		ExtractionMethod: s.ScraperSource.ExtractionMethod,
+		ID:                     s.ScraperSource.ID,
+		Name:                   s.ScraperSource.Name,
+		URL:                    s.ScraperSource.Url,
+		Tier:                   s.ScraperSource.Tier,
+		Schedule:               s.ScraperSource.Schedule,
+		License:                s.ScraperSource.License,
+		Enabled:                s.ScraperSource.Enabled,
+		ExtractionMethod:       s.ScraperSource.ExtractionMethod,
+		SuppressReviewWarnings: s.ScraperSource.SuppressReviewWarnings,
 	}
 }
 

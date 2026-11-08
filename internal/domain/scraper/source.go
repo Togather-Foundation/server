@@ -32,11 +32,14 @@ type Source struct {
 	EventURLPattern               string
 	SkipMultiSessionCheck         bool
 	MultiSessionDurationThreshold string
-	FollowEventURLs               bool
-	Timezone                      string
-	LastScrapedAt                 *time.Time
-	CreatedAt                     time.Time
-	UpdatedAt                     time.Time
+	// SuppressReviewWarnings lists review-warning codes that must not gate
+	// review for events from this source (warnings are still recorded).
+	SuppressReviewWarnings []string
+	FollowEventURLs        bool
+	Timezone               string
+	LastScrapedAt          *time.Time
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
 	// Headless fields (Tier 2)
 	HeadlessWaitSelector    string
 	HeadlessWaitTimeoutMs   int
@@ -81,9 +84,12 @@ type UpsertParams struct {
 	EventURLPattern               string
 	SkipMultiSessionCheck         bool
 	MultiSessionDurationThreshold string
-	FollowEventURLs               bool
-	Timezone                      string
-	LastScrapedAt                 *time.Time
+	// SuppressReviewWarnings lists review-warning codes that must not gate
+	// review for events from this source (warnings are still recorded).
+	SuppressReviewWarnings []string
+	FollowEventURLs        bool
+	Timezone               string
+	LastScrapedAt          *time.Time
 	// Headless fields (Tier 2)
 	HeadlessWaitSelector    string
 	HeadlessWaitTimeoutMs   int

@@ -527,3 +527,19 @@ func TestScrapeBiblioCommonsRSS_LimitEqualToResultDoesNotWarn(t *testing.T) {
 	assert.Len(t, result.DryRunEvents, total, "an exact fit is not truncated")
 	assert.NotContains(t, bcWarningsText(result.QualityWarnings), "result_truncated_by_limit")
 }
+
+// TestBiblioCommonsRSS_PropagatesSuppressReviewWarnings verifies the TPL-style
+// per-source suppression list reaches every mapped EventInput so the ingest API
+// can skip the review gate for those warning codes.
+func TestBiblioCommonsRSS_PropagatesSuppressReviewWarnings(t *testing.T) {
+	srv, _ := bcFeedServer(t)
+	src := bcTestSource(srv.URL + "/rss/events")
+	src.SuppressReviewWarnings = []string{"cross_week_series_companion"}
+
+	evs, _, err := newBCTestExtractor().Extract(context.Background(), src)
+	require.NoError(t, err)
+	require.NotEmpty(t, evs)
+	for i, e := range evs {
+		assert.Equal(t, []string{"cross_week_series_companion"}, e.SuppressReviewWarnings, "event %d", i)
+	}
+}

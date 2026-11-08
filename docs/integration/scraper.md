@@ -1007,6 +1007,7 @@ at debug level and the URL is left empty.
 | `event_url_pattern` | `""` | Colly URL allow-list pattern |
 | `max_pages` | `10` | Tier 1 pagination limit |
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
+| `suppress_review_warnings` | `[]` | Review-warning codes that must not route events from this source into `pending_review` (warnings are still recorded and shown to reviewers). See [Per-source review-warning suppression](#per-source-review-warning-suppression). |
 | `domain` | `""` | Default `event_domain` for events from this source. Valid values: `arts`, `music`, `culture`, `sports`, `community`, `education`, `general`. When empty, falls back to schema.org `@type`-to-domain mapping (defaulting to `arts`). |
 | `timezone` | `""` | IANA timezone for date parsing (e.g. `"America/Toronto"`). Overrides `DEFAULT_TIMEZONE` env var. Falls back to `America/Toronto` if neither is set. |
 | `tls_fingerprint` | `""` | TLS fingerprint spoofing mode. `"chrome_auto"` mimics Chrome's TLS handshake using uTLS to bypass WAF detection (Akamai, Cloudflare). ALPN is restricted to `http/1.1` only — h2 is intentionally stripped to avoid HTTP/2 protocol mismatches on Cloudflare-protected sites. When set, browser-mimicking headers (User-Agent, Accept, Sec-Fetch-*, Cache-Control) are automatically applied. Not used by Tier 2 (headless browser). |
@@ -1015,6 +1016,76 @@ at debug level and the URL is left empty.
 | `graphql` | — | Required for `tier: 3` GraphQL variant (mutually exclusive with `rest`) |
 | `rest` | — | Required for `tier: 3` REST variant (mutually exclusive with `graphql`) |
 | `sitemap` | — | Sitemap-based URL discovery (mutually exclusive with `urls`). See [Sitemap-Based URL Discovery](#sitemap-based-url-discovery). |
+
+### Per-source review-warning suppression
+
+Some sources legitimately trip a review heuristic on nearly every event. A public-library
+calendar, for example, is mostly recurring programmes, so `cross_week_series_companion`
+fires on almost the whole feed and would send thousands of valid events to
+`pending_review` — where the daily review-queue cleanup job soft-deletes them once they
+start.
+
+`suppress_review_warnings` lets a source name the benign warning codes that must **not**
+gate review:
+
+```yaml
+suppress_review_warnings:
+  - cross_week_series_companion
+  - multi_session_likely
+```
+
+What suppression does and does not change:
+
+- Warnings are **still generated** and passed through the ingest pipeline. They are
+  stored in the review entry's warnings JSON whenever a review entry is created, and are
+  returned to the HTTP caller on review-flagged responses (`needsReview` events). A
+  published event has no review row, so its warnings are only visible to the ingest
+  pipeline, not in the public API response.
+- Duplicate detection is unchanged. `exact_duplicate`, `potential_duplicate` and
+  `near_duplicate_of_new_event` are still produced and still gate review — they cannot be
+  suppressed.
+- Companion cross-linking happens **only when `cross_week_series_companion` is not
+  suppressed**. Suppressing it also skips the post-commit cross-link, because otherwise a
+  cleanly published week-2 event would give week-1's already-published event a fresh
+  review row. Sources that do not suppress the code keep bidirectional companion linking.
+- Suppression applies to events ingested **after** the config is synced. It does not
+  retroactively publish or approve entries already in the review queue.
+
+Only this allowlist may be suppressed (from YAML or from an API payload):
+
+| Code | Source heuristic |
+|------|------------------|
+| `cross_week_series_companion` | Same named event at the same venue 7–21 days away (recurring series). |
+| `low_confidence` | Data-quality score below the review threshold. |
+| `missing_description` | No description. |
+| `missing_image` | No image, when images are required by config. |
+| `multi_session_likely` | Name/description looks like a recurring series or multi-session course. |
+
+`missing_description`, `missing_image` and `low_confidence` are included because they
+describe content the caller already controls and cannot hide duplicates or geographic
+problems. Everything else — `exact_duplicate`, `potential_duplicate`,
+`near_duplicate_of_new_event`, `outside_geo_boundary`, `place_possible_duplicate`,
+`org_possible_duplicate`, `reversed_dates_*`, `zero_duration_occurrence`,
+`too_far_future`, `ambiguous_year_far_future` and the inert `link_check_failed` — is
+**rejected**, not silently ignored. This is deliberate: an agent API key must not be able
+to switch off duplicate or boundary safety, and the date-plausibility codes are the only
+guard against parser year errors (e.g. 2026 parsed as 2062), so mis-dated events must
+always reach review.
+
+`server scrape sync` validates the list (trim, dedupe, sort) and exits non-zero if any
+config contains an unknown or non-suppressible code, while still syncing the valid
+configs. The ingest API validates the same allowlist on every event, including each event
+in a batch (`POST /api/v1/events:batch` rejects the whole batch with a 400 validation
+error).
+
+The value is stored on the `scraper_sources` row (`suppress_review_warnings TEXT[]`) and
+propagated to every event submitted over the batch ingest API on
+`EventInput.suppress_review_warnings`. `GET /api/v1/admin/scraper/sources` returns it on
+each source summary. To change it: edit the YAML and run `server scrape sync`.
+
+When a suppression actually changes the outcome (a listed code was present and ignored for
+gating), the server writes an INFO log with the event name, event ULID and the suppressed
+codes.
 
 ### Headless Config Fields (`headless:`)
 

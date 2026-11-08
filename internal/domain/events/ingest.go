@@ -553,30 +553,42 @@ func eventNeedsReview(input EventInput, linkStatuses map[string]int, validationC
 	// Use zero-value defaults if config is uninitialized (RequireImage defaults to false)
 	// This should never happen in practice since all callers pass initialized config,
 	// but defensive check prevents potential panics.
+	//
+	// A warning code the source has listed in suppress_review_warnings does not
+	// gate review here either — this function mirrors the review triggers that
+	// appendQualityWarnings turns into warnings.
+	suppressed := suppressedWarningSet(input.SuppressReviewWarnings)
 
-	if reviewConfidence(input, false, validationConfig) < validationConfig.ReviewConfidenceThreshold {
+	if warningRequiresReview("low_confidence", suppressed) &&
+		reviewConfidence(input, false, validationConfig) < validationConfig.ReviewConfidenceThreshold {
 		return true
 	}
-	if strings.TrimSpace(input.Description) == "" {
+	if warningRequiresReview("missing_description", suppressed) &&
+		strings.TrimSpace(input.Description) == "" {
 		return true
 	}
-	if validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
+	if warningRequiresReview("missing_image", suppressed) &&
+		validationConfig.RequireImage && strings.TrimSpace(input.Image) == "" {
 		return true
 	}
-	if input.YearWasInferred && isTooFarFuture(input.StartDate, validationConfig.AmbiguousDateMaxFutureDays) {
+	if warningRequiresReview("ambiguous_year_far_future", suppressed) &&
+		input.YearWasInferred && isTooFarFuture(input.StartDate, validationConfig.AmbiguousDateMaxFutureDays) {
 		return true
 	}
-	if isTooFarFuture(input.StartDate, validationConfig.MaxFutureDays) {
+	if warningRequiresReview("too_far_future", suppressed) &&
+		isTooFarFuture(input.StartDate, validationConfig.MaxFutureDays) {
 		return true
 	}
-	if !input.SkipMultiSessionCheck {
+	if warningRequiresReview("multi_session_likely", suppressed) && !input.SkipMultiSessionCheck {
 		if isMulti, _ := IsMultiSessionEvent(input); isMulti {
 			return true
 		}
 	}
-	for _, code := range linkStatuses {
-		if code >= 400 {
-			return true
+	if warningRequiresReview("link_check_failed", suppressed) {
+		for _, code := range linkStatuses {
+			if code >= 400 {
+				return true
+			}
 		}
 	}
 	return false
@@ -736,7 +748,12 @@ func appendQualityWarnings(warnings []ValidationWarning, input EventInput, linkS
 }
 
 func normalizedInputForHash(input EventInput) EventInput {
-	return NormalizeEventInput(input)
+	normalized := NormalizeEventInput(input)
+	// The suppression list is a policy hint, not event data. Excluding it keeps
+	// the idempotency request hash stable when a source adds/removes a code
+	// between submissions of the same event.
+	normalized.SuppressReviewWarnings = nil
+	return normalized
 }
 
 func hashInput(input EventInput) (string, error) {

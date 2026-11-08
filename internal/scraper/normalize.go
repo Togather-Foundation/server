@@ -96,6 +96,7 @@ func NormalizeJSONLDEvent(raw json.RawMessage, source SourceConfig) (events.Even
 		License:                       source.License,
 		SkipMultiSessionCheck:         source.SkipMultiSessionCheck,
 		MultiSessionDurationThreshold: multiSessionThreshold,
+		SuppressReviewWarnings:        source.SuppressReviewWarnings,
 		Source: &events.SourceInput{
 			URL:     source.URL,
 			EventID: eventIDForJSONLD(raw, urlStr, source.URL),
@@ -270,6 +271,7 @@ func NormalizeRawEvent(raw RawEvent, source SourceConfig, now time.Time) (events
 		License:                       source.License,
 		SkipMultiSessionCheck:         source.SkipMultiSessionCheck,
 		MultiSessionDurationThreshold: multiSessionThreshold,
+		SuppressReviewWarnings:        source.SuppressReviewWarnings,
 		Source: &events.SourceInput{
 			URL:     source.URL,
 			EventID: eventIDFromRaw(raw, source),
@@ -393,6 +395,7 @@ func consolidateOccurrences(raws []RawEvent, source SourceConfig, now time.Time)
 		License:                       source.License,
 		SkipMultiSessionCheck:         source.SkipMultiSessionCheck,
 		MultiSessionDurationThreshold: multiSessionThreshold,
+		SuppressReviewWarnings:        source.SuppressReviewWarnings,
 		Source: &events.SourceInput{
 			URL:     source.URL,
 			EventID: eventIDFromRaw(first, source),

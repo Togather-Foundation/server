@@ -298,15 +298,16 @@ func mapBCItem(item bcItem, id string, cfg SourceConfig, loc *time.Location, org
 	}
 
 	in := events.EventInput{
-		Name:        name,
-		Description: buildBCDescription(item),
-		StartDate:   start,
-		EndDate:     end,
-		URL:         link,
-		Image:       upgradeToHTTPS(strings.TrimSpace(item.Enclosure.URL)),
-		EventDomain: cfg.Domain,
-		License:     cfg.License,
-		Organizer:   organizer,
+		Name:                   name,
+		Description:            buildBCDescription(item),
+		StartDate:              start,
+		EndDate:                end,
+		URL:                    link,
+		Image:                  upgradeToHTTPS(strings.TrimSpace(item.Enclosure.URL)),
+		EventDomain:            cfg.Domain,
+		License:                cfg.License,
+		Organizer:              organizer,
+		SuppressReviewWarnings: cfg.SuppressReviewWarnings,
 		Source: &events.SourceInput{
 			URL:     cfg.URL,
 			EventID: id,

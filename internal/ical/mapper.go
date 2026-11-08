@@ -63,6 +63,10 @@ type MapperOptions struct {
 	DefaultLocation *events.PlaceInput // Fallback location when VEVENT LOCATION is empty
 	HorizonDays     int                // RRULE expansion window (default: 90)
 	MaxOccurrences  int                // Safety cap on expanded occurrences (default: 100)
+	// SuppressReviewWarnings carries the source's suppress_review_warnings list
+	// through to each EventInput so the ingest API does not gate review on
+	// those warning codes.
+	SuppressReviewWarnings []string
 	// Now is the reference time used to filter out past events. If zero,
 	// time.Now() is called once at the start of MapToEventInputs.
 	Now    time.Time
@@ -314,18 +318,19 @@ func mapSingleEvent(ev ParsedEvent, startTime, endTime time.Time, fallbackLoc *t
 	}
 
 	return &events.EventInput{
-		Name:            name,
-		Description:     description,
-		StartDate:       startDate,
-		EndDate:         endDate,
-		AllDay:          ev.AllDay,
-		URL:             eventURL,
-		Location:        location,
-		VirtualLocation: virtualLoc,
-		Organizer:       organizer,
-		Keywords:        keywords,
-		License:         opts.License,
-		Source:          source,
+		Name:                   name,
+		Description:            description,
+		StartDate:              startDate,
+		EndDate:                endDate,
+		AllDay:                 ev.AllDay,
+		URL:                    eventURL,
+		Location:               location,
+		VirtualLocation:        virtualLoc,
+		Organizer:              organizer,
+		Keywords:               keywords,
+		License:                opts.License,
+		SuppressReviewWarnings: opts.SuppressReviewWarnings,
+		Source:                 source,
 	}, warnings
 }
 

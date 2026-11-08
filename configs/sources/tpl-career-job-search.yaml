@@ -25,3 +25,15 @@ domain: education
 timezone: "America/Toronto"
 enabled: true
 max_pages: 6
+
+# Per-source review-warning suppression. TPL publishes mostly recurring
+# programmes, so the cross-week-series heuristic fires on nearly every event
+# and would send the whole feed to pending_review (which the daily cleanup job
+# then soft-deletes at event start). Suppress only the review GATE: warnings
+# are still generated and passed to the ingest pipeline, and suppressing
+# cross_week_series_companion also skips companion cross-linking (otherwise a
+# cleanly published week-2 event gives week-1 a fresh review row). Duplicate and
+# boundary detection cannot be suppressed. See docs/integration/scraper.md
+# "Per-source review-warning suppression".
+suppress_review_warnings:
+  - cross_week_series_companion

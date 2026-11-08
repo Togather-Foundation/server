@@ -890,27 +890,50 @@ func buildFieldProvenancePayload(provenanceInfo []provenance.FieldProvenanceInfo
 
 // CreateBatch handles batch event submission via POST /api/v1/events:batch
 func (h *EventsHandler) CreateBatch(w http.ResponseWriter, r *http.Request) {
-	if h == nil || h.RiverClient == nil {
-		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, h.Env)
+	if h == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, "")
 		return
 	}
+	env := h.Env
 
 	// Parse batch request
 	var input struct {
 		Events []events.EventInput `json:"events"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, env)
 		return
 	}
 
 	// Validate batch size
 	if len(input.Events) == 0 {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Events array cannot be empty", nil, h.Env)
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Events array cannot be empty", nil, env)
 		return
 	}
 	if len(input.Events) > 100 {
-		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Batch size exceeds maximum of 100 events", nil, h.Env)
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Batch size exceeds maximum of 100 events", nil, env)
+		return
+	}
+
+	// Reject unknown or non-suppressible review-warning codes synchronously so
+	// the batch returns a normal RFC 7807 validation error instead of surfacing
+	// per-item failures later. The ingest pipeline validates again for callers
+	// that bypass this handler.
+	for i, ev := range input.Events {
+		if err := events.ValidateSuppressReviewWarnings(ev.SuppressReviewWarnings); err != nil {
+			problem.Write(w, r, http.StatusBadRequest,
+				"https://sel.events/problems/validation-error",
+				"Invalid request",
+				fmt.Errorf("events[%d].suppress_review_warnings: %w", i, err),
+				env)
+			return
+		}
+	}
+
+	// River is required to enqueue the job; check it only after request
+	// validation so malformed requests stay 4xx regardless of server wiring.
+	if h.RiverClient == nil {
+		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", nil, env)
 		return
 	}
 

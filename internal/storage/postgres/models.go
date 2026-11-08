@@ -562,6 +562,7 @@ type ScraperSource struct {
 	MaxBodyBytes                  int64              `json:"max_body_bytes"`
 	EventDomain                   pgtype.Text        `json:"event_domain"`
 	TlsFingerprint                string             `json:"tls_fingerprint"`
+	SuppressReviewWarnings        []string           `json:"suppress_review_warnings"`
 }
 
 type ScraperSubmission struct {

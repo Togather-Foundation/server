@@ -48,6 +48,7 @@ Examples:
 		var created, updated, warnings, errors int
 
 		configs, err := scraper.LoadSourceConfigs(dir, zerolog.Nop())
+		loadErr := err
 		if err != nil {
 			warnings++
 			if !syncJSON {
@@ -62,9 +63,12 @@ Examples:
 					return fmt.Errorf("marshal JSON output: %w", jsonErr)
 				}
 				fmt.Println(string(jsonOut))
-				return nil
+				return loadErr
 			}
 			fmt.Printf("No source configs found in %s\n", dir)
+			if loadErr != nil {
+				return fmt.Errorf("no valid source configs: %w", loadErr)
+			}
 			return nil
 		}
 
@@ -120,11 +124,20 @@ Examples:
 				return fmt.Errorf("marshal JSON output: %w", jsonErr)
 			}
 			fmt.Println(string(jsonOut))
+			// Valid configs were still synced, but invalid ones must fail the
+			// command so operators notice. Unknown suppress_review_warnings codes
+			// land here.
+			if loadErr != nil {
+				return fmt.Errorf("sync completed with invalid source configs: %w", loadErr)
+			}
 			return nil
 		}
 
 		fmt.Printf("Sync complete: %d created, %d updated (total %d sources)\n",
 			created, updated, total)
+		if loadErr != nil {
+			return fmt.Errorf("sync completed with invalid source configs: %w", loadErr)
+		}
 		return nil
 	},
 }

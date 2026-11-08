@@ -122,8 +122,11 @@ func (s *IngestService) createEventCore(
 		Int("total_warnings", len(warnings)).
 		Msg("createEventCore: after quality warnings")
 
-	// Check if review is needed
-	needsReview := len(warnings) > 0 || eventNeedsReview(validated, nil, s.validationConfig)
+	// Check if review is needed. Warning codes the source has suppressed (e.g.
+	// cross_week_series_companion for legitimate recurring programmes) are
+	// ignored for gating but still kept in the warnings slice and returned.
+	suppressedWarnings := suppressedWarningSet(validated.SuppressReviewWarnings)
+	needsReview := warningsRequireReview(warnings, suppressedWarnings) || eventNeedsReview(validated, nil, s.validationConfig)
 
 	// Honour scraper-set lifecycle hint
 	if input.LifecycleState == "review" {
@@ -159,7 +162,7 @@ func (s *IngestService) createEventCore(
 					Code:    "exact_duplicate",
 					Message: fmt.Sprintf("source external-ID match with existing event %s — review recommended", existing.ULID),
 				})
-				needsReview = true
+				needsReview = needsReview || warningRequiresReview("exact_duplicate", suppressedWarnings)
 			} else {
 				// Standard ingest: auto-merge
 				existingTrust, err := s.repo.GetSourceTrustLevel(ctx, existing.ID)
@@ -210,7 +213,7 @@ func (s *IngestService) createEventCore(
 				}
 				if !excluded {
 					isDuplicate = true
-					needsReview = true
+					needsReview = needsReview || warningRequiresReview("exact_duplicate", suppressedWarnings)
 					warnings = append(warnings, ValidationWarning{
 						Code:    "exact_duplicate",
 						Message: fmt.Sprintf("exact dedup-hash match with existing event %s — review recommended", existing.ULID),
@@ -367,7 +370,7 @@ func (s *IngestService) createEventCore(
 		IsAccessibleForFree: validated.IsAccessibleForFree,
 		LicenseURL:          licenseURL(validated.License),
 		LicenseStatus:       "cc0",
-		Confidence:          floatPtr(reviewConfidence(validated, needsReview, s.validationConfig)),
+		Confidence:          floatPtr(reviewConfidence(validated, len(warnings) > 0, s.validationConfig)),
 		OriginNodeID:        nil,
 	}
 
@@ -531,7 +534,7 @@ func (s *IngestService) createEventCore(
 								Code:    "place_possible_duplicate",
 								Details: placeDetails,
 							})
-							needsReview = true
+							needsReview = needsReview || warningRequiresReview("place_possible_duplicate", suppressedWarnings)
 						}
 					}
 				}
@@ -554,8 +557,17 @@ func (s *IngestService) createEventCore(
 				ulidValue, opts.ExcludeFromNearDup, s.dedupConfig.NearDuplicateThreshold,
 			)
 			warnings = append(warnings, dedupWarnings...)
-			if len(dedupWarnings) > 0 {
+			if warningsRequireReview(dedupWarnings, suppressedWarnings) {
 				needsReview = true
+			}
+			// Suppressing cross_week_series_companion also suppresses companion
+			// cross-linking. Otherwise a suppressed week-2 event publishes while
+			// week-1's already-published event gets a fresh pending review row,
+			// re-flooding the queue with exactly the entries this policy exists
+			// to prevent. Sources that do not suppress the code keep the
+			// bidirectional cross-link.
+			if !warningRequiresReview("cross_week_series_companion", suppressedWarnings) {
+				seriesCompanion = nil
 			}
 		}
 	}
@@ -688,7 +700,7 @@ func (s *IngestService) createEventCore(
 							Code:    "org_possible_duplicate",
 							Details: orgDetails,
 						})
-						needsReview = true
+						needsReview = needsReview || warningRequiresReview("org_possible_duplicate", suppressedWarnings)
 					}
 				}
 			}
@@ -848,6 +860,16 @@ func (s *IngestService) createEventCore(
 
 		// Clear candidates — we already handled them
 		nearDuplicateCandidates = nil
+	}
+
+	// Audit trace: suppression is otherwise invisible once the event is
+	// published. Log only when a listed code was actually present and ignored.
+	if ignored := ignoredReviewWarningCodes(warnings, suppressedWarnings); len(ignored) > 0 {
+		s.logger.Info().
+			Str("event_name", event.Name).
+			Str("event_ulid", event.ULID).
+			Strs("suppressed_warning_codes", ignored).
+			Msg("review warnings ignored for gating by source suppression policy")
 	}
 
 	return &CreateEventCoreResult{

@@ -39,6 +39,11 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		urls = []string{}
 	}
 
+	suppressReviewWarnings := params.SuppressReviewWarnings
+	if suppressReviewWarnings == nil {
+		suppressReviewWarnings = []string{}
+	}
+
 	row, err := r.queries().UpsertScraperSource(ctx, UpsertScraperSourceParams{
 		Name:                          params.Name,
 		Url:                           params.URL,
@@ -56,6 +61,7 @@ func (r *ScraperSourceRepository) Upsert(ctx context.Context, params scraper.Ups
 		EventUrlPattern:               params.EventURLPattern,
 		SkipMultiSessionCheck:         params.SkipMultiSessionCheck,
 		MultiSessionDurationThreshold: params.MultiSessionDurationThreshold,
+		SuppressReviewWarnings:        suppressReviewWarnings,
 		FollowEventUrls:               params.FollowEventURLs,
 		Timezone:                      params.Timezone,
 		LastScrapedAt:                 lastScraped,
@@ -251,6 +257,7 @@ func (s *ScraperSource) toDomain() *scraper.Source {
 		EventURLPattern:               s.EventUrlPattern,
 		SkipMultiSessionCheck:         s.SkipMultiSessionCheck,
 		MultiSessionDurationThreshold: s.MultiSessionDurationThreshold,
+		SuppressReviewWarnings:        s.SuppressReviewWarnings,
 		FollowEventURLs:               s.FollowEventUrls,
 		Timezone:                      s.Timezone,
 		HeadlessWaitTimeoutMs:         int(s.HeadlessWaitTimeoutMs),

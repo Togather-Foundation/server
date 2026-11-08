@@ -2856,3 +2856,197 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 		}
 	})
 }
+
+// TestCrossWeekSeriesCompanion_SuppressedDoesNotGate exercises the per-source
+// review-warning suppression policy end-to-end through the ingest pipeline,
+// including the post-commit companion cross-link.
+func TestCrossWeekSeriesCompanion_SuppressedDoesNotGate(t *testing.T) {
+	const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+	const placeUUID = "c3d4e5f6-a7b8-9012-cdef-123456789012"
+	const companionULID = "01ARZ3NDEKTSV4RRFFQ69G5FBV"
+
+	build := func() (*MockRepository, *Event, *IngestService) {
+		repo := NewMockRepository()
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "Community Centre")
+
+		// Seed the companion (week 1) event. Without this GetByULID fails and
+		// crossLinkSeriesCompanions silently skips, which would make the
+		// suppressed case pass for the wrong reason.
+		venueID := placeUUID
+		companion := &Event{
+			ID:             "id-week1",
+			ULID:           companionULID,
+			Name:           "Pottery Class",
+			LifecycleState: "published",
+			PrimaryVenueID: &venueID,
+		}
+		repo.mu.Lock()
+		repo.events[companionULID] = companion
+		repo.mu.Unlock()
+
+		repo.seriesCompanion = &CrossWeekCompanion{
+			ULID:      companionULID,
+			Name:      "Pottery Class",
+			StartDate: "2026-11-24T19:00:00Z",
+			StartTime: "19:00:00",
+			VenueName: "Community Centre",
+		}
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop()).
+			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
+		return repo, companion, svc
+	}
+
+	newInput := func() EventInput {
+		return EventInput{
+			Name:        "Pottery Class",
+			Description: "A hands-on pottery programme.",
+			License:     "CC0-1.0",
+			StartDate:   "2026-12-01T19:00:00Z",
+			EndDate:     "2026-12-01T21:00:00Z",
+			Location:    &PlaceInput{ID: "https://test.togather.ca/places/" + placeULID},
+			Occurrences: []OccurrenceInput{{StartDate: "2026-12-01T19:00:00Z"}},
+		}
+	}
+
+	findCode := func(warnings []ValidationWarning, code string) *ValidationWarning {
+		for i := range warnings {
+			if warnings[i].Code == code {
+				return &warnings[i]
+			}
+		}
+		return nil
+	}
+
+	countReviewRowsFor := func(repo *MockRepository, eventID string) int {
+		repo.mu.Lock()
+		defer repo.mu.Unlock()
+		n := 0
+		for _, entry := range repo.reviewQueue {
+			if entry.EventID == eventID {
+				n++
+			}
+		}
+		return n
+	}
+
+	t.Run("suppressed companion warning publishes and creates no review rows", func(t *testing.T) {
+		repo, companion, svc := build()
+		input := newInput()
+		input.SuppressReviewWarnings = []string{"cross_week_series_companion"}
+
+		result, err := svc.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+
+		if result.NeedsReview {
+			t.Error("NeedsReview = true, want false when the only warning code is suppressed")
+		}
+		if result.Event == nil {
+			t.Fatal("result.Event is nil")
+		}
+		if result.Event.LifecycleState != "published" {
+			t.Errorf("LifecycleState = %q, want published", result.Event.LifecycleState)
+		}
+		if findCode(result.Warnings, "cross_week_series_companion") == nil {
+			t.Error("cross_week_series_companion warning missing from result.Warnings — suppression must not drop warnings")
+		}
+
+		// The new event must not be queued, and the companion cross-link must be
+		// skipped too: otherwise week 1 (already published) gains a review row.
+		if got := len(repo.reviewQueue); got != 0 {
+			t.Errorf("review queue has %d entries, want 0", got)
+		}
+		if got := countReviewRowsFor(repo, companion.ID); got != 0 {
+			t.Errorf("companion has %d review rows, want 0", got)
+		}
+	})
+
+	t.Run("unsuppressed companion warning gates and cross-links the companion", func(t *testing.T) {
+		repo, companion, svc := build()
+
+		result, err := svc.Ingest(context.Background(), newInput())
+		if err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+
+		if !result.NeedsReview {
+			t.Error("NeedsReview = false, want true without suppression")
+		}
+		if result.Event.LifecycleState != "pending_review" {
+			t.Errorf("LifecycleState = %q, want pending_review", result.Event.LifecycleState)
+		}
+		if got := len(repo.reviewQueue); got != 2 {
+			t.Fatalf("review queue has %d entries, want 2 (new event + companion cross-link)", got)
+		}
+		if got := countReviewRowsFor(repo, result.Event.ID); got != 1 {
+			t.Errorf("new event has %d review rows, want 1", got)
+		}
+		if got := countReviewRowsFor(repo, companion.ID); got != 1 {
+			t.Errorf("companion has %d review rows, want 1 (cross-link must still happen when not suppressed)", got)
+		}
+		for _, entry := range repo.reviewQueue {
+			var stored []ValidationWarning
+			if err := json.Unmarshal(entry.Warnings, &stored); err != nil {
+				t.Fatalf("unmarshal stored warnings: %v", err)
+			}
+			if findCode(stored, "cross_week_series_companion") == nil {
+				t.Error("cross_week_series_companion missing from stored review warnings")
+			}
+		}
+	})
+
+	t.Run("non-suppressed duplicate code still gates and is persisted", func(t *testing.T) {
+		repo, _, svc := build()
+		repo.nearDuplicates = []NearDuplicateCandidate{{
+			ULID:       "01ARZ3NDEKTSV4RRFFQ69G5FCV",
+			Name:       "Pottery Class",
+			Similarity: 0.92,
+			VenueName:  "Community Centre",
+			StartDate:  "2026-12-01T19:00:00Z",
+		}}
+
+		input := newInput()
+		// Suppress only the companion warning: potential_duplicate must still gate.
+		input.SuppressReviewWarnings = []string{"cross_week_series_companion"}
+
+		result, err := svc.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+
+		if !result.NeedsReview {
+			t.Error("NeedsReview = false, want true because potential_duplicate is not suppressible")
+		}
+		if result.Event.LifecycleState != "pending_review" {
+			t.Errorf("LifecycleState = %q, want pending_review", result.Event.LifecycleState)
+		}
+		if findCode(result.Warnings, "potential_duplicate") == nil {
+			t.Fatal("potential_duplicate warning missing from result.Warnings")
+		}
+		if findCode(result.Warnings, "cross_week_series_companion") == nil {
+			t.Error("suppressed cross_week_series_companion warning should still be returned")
+		}
+
+		// Only the new event is queued: companion cross-linking stays suppressed.
+		if got := countReviewRowsFor(repo, result.Event.ID); got != 1 {
+			t.Fatalf("new event has %d review rows, want 1", got)
+		}
+		var newEventWarnings []ValidationWarning
+		for _, entry := range repo.reviewQueue {
+			if entry.EventID != result.Event.ID {
+				continue
+			}
+			if err := json.Unmarshal(entry.Warnings, &newEventWarnings); err != nil {
+				t.Fatalf("unmarshal stored warnings: %v", err)
+			}
+		}
+		if findCode(newEventWarnings, "cross_week_series_companion") == nil {
+			t.Error("suppressed warning must still be persisted in the new event's review entry")
+		}
+		if findCode(newEventWarnings, "potential_duplicate") == nil {
+			t.Error("potential_duplicate missing from the new event's stored review warnings")
+		}
+	})
+}

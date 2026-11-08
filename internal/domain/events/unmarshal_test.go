@@ -823,6 +823,10 @@ func TestEventInput_JSONRoundTrip_AllFields(t *testing.T) {
 		Recurrence:            recurrence,
 		LifecycleState:        "pending_review",
 		SkipMultiSessionCheck: true,
+		SuppressReviewWarnings: []string{
+			"cross_week_series_companion",
+			"multi_session_likely",
+		},
 	}
 
 	payload, err := json.Marshal(original)
@@ -860,6 +864,7 @@ func TestEventInput_JSONRoundTrip_AllFields(t *testing.T) {
 	assert.Len(t, decoded.Occurrences, 1, "Occurrences")
 	assert.Equal(t, original.LifecycleState, decoded.LifecycleState, "LifecycleState")
 	assert.True(t, decoded.SkipMultiSessionCheck, "SkipMultiSessionCheck")
+	assert.Equal(t, original.SuppressReviewWarnings, decoded.SuppressReviewWarnings, "SuppressReviewWarnings")
 
 	require.NotNil(t, decoded.Recurrence, "Recurrence must survive round-trip — if this fails, the rawEvent struct in UnmarshalJSON is missing the field")
 	assert.Equal(t, "source:uid-123", decoded.Recurrence.ExternalKey, "Recurrence.ExternalKey")

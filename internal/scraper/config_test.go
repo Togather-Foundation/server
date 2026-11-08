@@ -2571,6 +2571,7 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 				EventURLPattern:               params.EventURLPattern,
 				SkipMultiSessionCheck:         params.SkipMultiSessionCheck,
 				MultiSessionDurationThreshold: params.MultiSessionDurationThreshold,
+				SuppressReviewWarnings:        params.SuppressReviewWarnings,
 				FollowEventURLs:               params.FollowEventURLs,
 				Timezone:                      params.Timezone,
 				HeadlessWaitSelector:          params.HeadlessWaitSelector,
@@ -3332,4 +3333,148 @@ func TestValidateConfigWithWarnings_Domain(t *testing.T) {
 		assert.Contains(t, err.Error(), "domain: invalid")
 		assert.Empty(t, warnings)
 	})
+}
+
+// --------------------------------------------------------------------------
+// suppress_review_warnings
+// --------------------------------------------------------------------------
+
+func TestValidateConfig_SuppressReviewWarnings(t *testing.T) {
+	baseCfg := func() SourceConfig {
+		return SourceConfig{
+			Name:       "TPL",
+			URL:        "https://example.com/events",
+			Tier:       0,
+			Enabled:    true,
+			TrustLevel: 5,
+			MaxPages:   10,
+			Schedule:   "daily",
+		}
+	}
+
+	t.Run("allowlisted codes accepted", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.SuppressReviewWarnings = []string{
+			"cross_week_series_companion",
+			"low_confidence",
+			"missing_description",
+			"missing_image",
+			"multi_session_likely",
+		}
+		warnings, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+		assert.Empty(t, warnings)
+	})
+
+	t.Run("known but non-suppressible code rejected", func(t *testing.T) {
+		t.Parallel()
+		for _, code := range []string{
+			"too_far_future",
+			"ambiguous_year_far_future",
+			"exact_duplicate",
+			"potential_duplicate",
+			"near_duplicate_of_new_event",
+			"outside_geo_boundary",
+			"place_possible_duplicate",
+			"org_possible_duplicate",
+			"reversed_dates_corrected_needs_review",
+			"zero_duration_occurrence",
+		} {
+			cfg := baseCfg()
+			cfg.SuppressReviewWarnings = []string{code}
+			_, err := ValidateConfigWithWarnings(cfg)
+			require.Error(t, err, "code %q must be rejected", code)
+			assert.Contains(t, err.Error(), "cannot be suppressed by a payload")
+			assert.Contains(t, err.Error(), code)
+		}
+	})
+
+	t.Run("trims surrounding whitespace", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.SuppressReviewWarnings = []string{"  cross_week_series_companion  "}
+		_, err := ValidateConfigWithWarnings(cfg)
+		require.NoError(t, err)
+	})
+
+	t.Run("unknown code rejected naming the bad value", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.SuppressReviewWarnings = []string{"cross_week_series_companion", "not_a_warning"}
+		_, err := ValidateConfigWithWarnings(cfg)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "suppress_review_warnings: entry 1")
+		assert.Contains(t, err.Error(), `"not_a_warning"`)
+		assert.Contains(t, err.Error(), "cross_week_series_companion", "error should list suppressible codes")
+	})
+
+	t.Run("empty entry rejected", func(t *testing.T) {
+		t.Parallel()
+		cfg := baseCfg()
+		cfg.SuppressReviewWarnings = []string{"   "}
+		_, err := ValidateConfigWithWarnings(cfg)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "suppress_review_warnings: entry 0: must not be empty")
+	})
+
+	t.Run("nil list accepted", func(t *testing.T) {
+		t.Parallel()
+		_, err := ValidateConfigWithWarnings(baseCfg())
+		require.NoError(t, err)
+	})
+}
+
+func TestLoadSourceConfigs_SuppressReviewWarnings(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, "tpl.yaml", `
+name: "TPL"
+url: "https://example.com/events"
+tier: 0
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+enabled: true
+max_pages: 5
+suppress_review_warnings:
+  - multi_session_likely
+  - cross_week_series_companion
+  - " cross_week_series_companion "
+`)
+
+	configs, err := LoadSourceConfigs(dir, zerolog.Nop())
+	require.NoError(t, err)
+	require.Len(t, configs, 1)
+	// Normalized after validation: trimmed, de-duplicated and sorted.
+	assert.Equal(t, []string{"cross_week_series_companion", "multi_session_likely"}, configs[0].SuppressReviewWarnings)
+}
+
+func TestLoadSourceConfigs_EmptySuppressReviewWarningFails(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, "bad.yaml", `
+name: "Bad"
+url: "https://example.com/events"
+tier: 0
+suppress_review_warnings:
+  - ""
+`)
+
+	_, err := LoadSourceConfigs(dir, zerolog.Nop())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "must not be empty")
+}
+
+func TestLoadSourceConfigs_UnknownSuppressReviewWarningFails(t *testing.T) {
+	dir := t.TempDir()
+	writeYAML(t, dir, "bad.yaml", `
+name: "Bad"
+url: "https://example.com/events"
+tier: 0
+suppress_review_warnings:
+  - definately_not_a_code
+`)
+
+	_, err := LoadSourceConfigs(dir, zerolog.Nop())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "definately_not_a_code")
 }

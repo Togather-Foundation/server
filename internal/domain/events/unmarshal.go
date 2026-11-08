@@ -51,6 +51,7 @@ func (e *EventInput) UnmarshalJSON(data []byte) error {
 		LifecycleState                string                `json:"lifecycle_state,omitempty"`
 		SkipMultiSessionCheck         bool                  `json:"skip_multi_session_check,omitempty"`
 		MultiSessionDurationThreshold time.Duration         `json:"multi_session_duration_threshold,omitempty"`
+		SuppressReviewWarnings        []string              `json:"suppress_review_warnings,omitempty"`
 	}
 
 	var raw rawEvent
@@ -80,6 +81,7 @@ func (e *EventInput) UnmarshalJSON(data []byte) error {
 	e.LifecycleState = raw.LifecycleState
 	e.SkipMultiSessionCheck = raw.SkipMultiSessionCheck
 	e.MultiSessionDurationThreshold = raw.MultiSessionDurationThreshold
+	e.SuppressReviewWarnings = raw.SuppressReviewWarnings
 
 	// Handle location: object or text string
 	if len(raw.Location) > 0 {

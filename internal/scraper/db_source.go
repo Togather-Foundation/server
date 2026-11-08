@@ -6,6 +6,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/Togather-Foundation/server/internal/domain/events"
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 )
 
@@ -62,6 +63,7 @@ func SourceConfigFromDomain(src domainScraper.Source, logger zerolog.Logger) (So
 	cfg.EventURLPattern = src.EventURLPattern
 	cfg.SkipMultiSessionCheck = src.SkipMultiSessionCheck
 	cfg.MultiSessionDurationThreshold = src.MultiSessionDurationThreshold
+	cfg.SuppressReviewWarnings = events.NormalizeReviewWarningCodes(src.SuppressReviewWarnings)
 	cfg.FollowEventURLs = src.FollowEventURLs
 	cfg.Timezone = src.Timezone
 

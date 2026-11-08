@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/Togather-Foundation/server/internal/domain/events"
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 )
 
@@ -104,6 +105,7 @@ func SourceConfigToUpsertParams(cfg SourceConfig) (domainScraper.UpsertParams, e
 		EventURLPattern:               cfg.EventURLPattern,
 		SkipMultiSessionCheck:         cfg.SkipMultiSessionCheck,
 		MultiSessionDurationThreshold: cfg.MultiSessionDurationThreshold,
+		SuppressReviewWarnings:        events.NormalizeReviewWarningCodes(cfg.SuppressReviewWarnings),
 		FollowEventURLs:               cfg.FollowEventURLs,
 		Timezone:                      cfg.Timezone,
 		HeadlessWaitSelector:          cfg.Headless.WaitSelector,

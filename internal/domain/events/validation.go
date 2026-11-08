@@ -69,7 +69,12 @@ type EventInput struct {
 	LifecycleState                string                `json:"lifecycle_state,omitempty"`                  // Scraper hint: "review" forces pending_review
 	SkipMultiSessionCheck         bool                  `json:"skip_multi_session_check,omitempty"`         // Disables multi-session heuristic for this event
 	MultiSessionDurationThreshold time.Duration         `json:"multi_session_duration_threshold,omitempty"` // Custom duration threshold for multi-session detection; 0 means use default (168h)
-	YearWasInferred               bool                  `json:"yearWasInferred,omitempty"`                  // True when the source date lacked an explicit year and the parser inferred it
+	// SuppressReviewWarnings lists review-warning codes that must not push this
+	// event into pending_review. Warnings are still generated, stored and
+	// returned — only the review gate ignores them. Populated from the scraper
+	// source config field `suppress_review_warnings`.
+	SuppressReviewWarnings []string `json:"suppress_review_warnings,omitempty"`
+	YearWasInferred        bool     `json:"yearWasInferred,omitempty"` // True when the source date lacked an explicit year and the parser inferred it
 }
 
 // RecurrenceInput carries series-level recurrence metadata populated by the ICS mapper.
@@ -182,6 +187,15 @@ func ValidateEventInputWithWarnings(input EventInput, nodeDomain string, origina
 	if utf8.RuneCountInString(strings.TrimSpace(input.Description)) > maxDescriptionLength {
 		return nil, ValidationError{Field: "description", Message: "too long"}
 	}
+
+	// Reject unknown or non-suppressible review-warning codes at the ingest
+	// boundary. This is also the batch path's validation: the batch worker calls
+	// the same ingest pipeline per event.
+	if err := ValidateSuppressReviewWarnings(input.SuppressReviewWarnings); err != nil {
+		return nil, ValidationError{Field: "suppress_review_warnings", Message: err.Error()}
+	}
+	// Normalize (trim, dedupe, sort) so direct callers get a stable value too.
+	input.SuppressReviewWarnings = NormalizeReviewWarningCodes(input.SuppressReviewWarnings)
 
 	// All-day detection: an explicit allDay flag, or a bare YYYY-MM-DD
 	// startDate, marks the event as date-only.

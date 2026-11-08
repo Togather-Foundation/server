@@ -3,6 +3,7 @@ package scraper
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -2187,5 +2188,50 @@ func TestOccurrencesFromRawMessages_YearWasInferred(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestNormalizeJSONLDEvent_PropagatesSuppressReviewWarnings verifies the
+// per-source suppression list travels onto every EventInput built by the
+// JSON-LD normalizer (and therefore over the batch ingest API).
+func TestNormalizeJSONLDEvent_PropagatesSuppressReviewWarnings(t *testing.T) {
+	t.Parallel()
+
+	source := testSource
+	source.SuppressReviewWarnings = []string{"cross_week_series_companion", "multi_session_likely"}
+
+	raw := `{
+		"@type": "Event",
+		"name": "Weekly Storytime",
+		"startDate": "2026-03-15T10:00:00",
+		"location": {"@type": "Place", "name": "Library"}
+	}`
+
+	got, err := NormalizeJSONLDEvent(json.RawMessage(raw), source)
+	if err != nil {
+		t.Fatalf("NormalizeJSONLDEvent() error = %v", err)
+	}
+	if !reflect.DeepEqual(source.SuppressReviewWarnings, got.SuppressReviewWarnings) {
+		t.Errorf("SuppressReviewWarnings = %v, want %v", got.SuppressReviewWarnings, source.SuppressReviewWarnings)
+	}
+}
+
+// TestNormalizeRawEvent_PropagatesSuppressReviewWarnings covers the Tier 1/2
+// generic raw-event normalizer.
+func TestNormalizeRawEvent_PropagatesSuppressReviewWarnings(t *testing.T) {
+	t.Parallel()
+
+	source := testSource
+	source.SuppressReviewWarnings = []string{"cross_week_series_companion"}
+
+	got, err := NormalizeRawEvent(RawEvent{
+		Name:      "Weekly Storytime",
+		StartDate: "2026-03-15T10:00:00Z",
+	}, source, time.Now())
+	if err != nil {
+		t.Fatalf("NormalizeRawEvent() error = %v", err)
+	}
+	if !reflect.DeepEqual(source.SuppressReviewWarnings, got.SuppressReviewWarnings) {
+		t.Errorf("SuppressReviewWarnings = %v, want %v", got.SuppressReviewWarnings, source.SuppressReviewWarnings)
 	}
 }

@@ -235,6 +235,7 @@ func NormalizeEventInput(input EventInput) EventInput {
 	input.Keywords = normalizeStringSlice(input.Keywords, true)
 	input.InLanguage = normalizeStringSlice(input.InLanguage, true)
 	input.SameAs = normalizeStringSlice(input.SameAs, false)
+	input.SuppressReviewWarnings = NormalizeReviewWarningCodes(input.SuppressReviewWarnings)
 
 	if input.Location != nil {
 		input.Location = normalizePlaceInput(*input.Location)

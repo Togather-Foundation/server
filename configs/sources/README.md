@@ -50,6 +50,7 @@ Platform details: `docs/integration/event-platforms.md` § "BiblioCommons (publi
 | Field | Type | Default | Valid Values | Notes |
 |-------|------|---------|--------------|-------|
 | `domain` | string | `arts` | `arts`, `music`, `culture`, `sports`, `community`, `education`, `general` | Sets the default `event_domain` for all events from this source. Falls back to schema.org `@type` mapping (defaults to `arts`) when empty. |
+| `suppress_review_warnings` | []string | `[]` | One of `cross_week_series_companion`, `low_confidence`, `missing_description`, `missing_image`, `multi_session_likely` | Benign heuristic codes that must not push events from this source into `pending_review`. Warnings are still generated and passed to the ingest pipeline, and are stored/returned when the event is review-flagged; duplicate, boundary and date-plausibility codes (`too_far_future`, `ambiguous_year_far_future`) cannot be suppressed. Any other code makes config validation fail (`server scrape sync` exits non-zero). Suppressing `cross_week_series_companion` also skips companion cross-linking. See `docs/integration/scraper.md` § "Per-source review-warning suppression". |
 
 ## Status Summary
 

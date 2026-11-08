@@ -77,6 +77,16 @@ type SourceConfig struct {
 	// (e.g., festivals spanning multiple weeks). Value is a Go duration string
 	// like "720h" (30 days). Zero value means use the default (168h).
 	MultiSessionDurationThreshold string `yaml:"multi_session_duration_threshold,omitempty" json:"multi_session_duration_threshold,omitempty"`
+	// SuppressReviewWarnings lists review-warning codes that must not push
+	// events from this source into the review queue. Warnings are still
+	// generated, stored and returned to reviewers — only the review gate
+	// ignores them. Use for sources that legitimately trip a heuristic on
+	// every event (e.g. a public-library calendar that publishes recurring
+	// programmes, which trips cross_week_series_companion constantly).
+	// Accepted values are the review warning codes listed in
+	// docs/integration/scraper.md ("Per-source review-warning suppression");
+	// unknown codes fail config validation.
+	SuppressReviewWarnings []string `yaml:"suppress_review_warnings,omitempty" json:"suppress_review_warnings,omitempty"`
 	// Headless holds Tier 2 headless-browser options. Ignored for tier 0/1.
 	Headless HeadlessConfig `yaml:"headless,omitempty" json:"headless,omitempty"`
 	// GraphQL holds Tier 3 GraphQL API options. Ignored for tier 0/1/2.
@@ -756,6 +766,12 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 		errs = append(errs, fmt.Sprintf("tls_fingerprint: invalid value %q (valid: \"\" (disabled), \"chrome_auto\")", cfg.TLSFingerprint))
 	}
 
+	// Validate against the same payload-suppressible allowlist the ingest API
+	// enforces, so YAML cannot request something the server silently ignores.
+	if err := events.ValidateSuppressReviewWarnings(cfg.SuppressReviewWarnings); err != nil {
+		errs = append(errs, "suppress_review_warnings: "+err.Error())
+	}
+
 	if cfg.MaxPages < 0 {
 		errs = append(errs, fmt.Sprintf("max_pages: must be > 0, got %d", cfg.MaxPages))
 	}
@@ -839,6 +855,9 @@ func LoadSourceConfigs(dir string, logger zerolog.Logger) ([]SourceConfig, error
 				fmt.Sprintf("%s: duplicate source name %q (already defined in %s)", filePath, cfg.Name, first))
 			continue
 		}
+		// Validate the raw list first (an empty entry must fail, matching the
+		// HTTP boundary), then store the normalized form.
+		cfg.SuppressReviewWarnings = events.NormalizeReviewWarningCodes(cfg.SuppressReviewWarnings)
 		seen[cfg.Name] = filePath
 		configs = append(configs, cfg)
 	}
@@ -860,6 +879,8 @@ func LoadSourceConfig(path string, logger zerolog.Logger) (SourceConfig, error) 
 	if err := ValidateConfig(cfg); err != nil {
 		return SourceConfig{}, fmt.Errorf("%s: %w", path, err)
 	}
+	// Validate the raw list first (see LoadSourceConfigs), then normalize.
+	cfg.SuppressReviewWarnings = events.NormalizeReviewWarningCodes(cfg.SuppressReviewWarnings)
 	return cfg, nil
 }
 
