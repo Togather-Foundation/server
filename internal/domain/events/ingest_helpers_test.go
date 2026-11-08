@@ -160,13 +160,13 @@ func TestSourceName(t *testing.T) {
 			name:     "source without name but with eventID",
 			source:   &SourceInput{EventID: "evt-123"},
 			fallback: "Fallback",
-			expected: "evt-123",
+			expected: "unknown",
 		},
 		{
 			name:     "source with empty strings",
 			source:   &SourceInput{Name: "   ", EventID: "   "},
 			fallback: "Fallback",
-			expected: "Fallback",
+			expected: "unknown",
 		},
 	}
 

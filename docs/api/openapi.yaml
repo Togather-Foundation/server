@@ -6729,6 +6729,10 @@ components:
         total_sources:
           type: integer
           format: int64
+          description: |
+            Number of source rows. Since migration 000056 a source row is a feed
+            (`base_url` + `name`), not a provider, so one provider that serves several
+            feeds contributes several rows.
         total_users:
           type: integer
           format: int64

@@ -2,7 +2,9 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 
@@ -55,19 +57,22 @@ func TestUpsertPlaceReconciliation(t *testing.T) {
 	})
 }
 
-// TestGetOrCreateSourceReconciliation tests source reconciliation by base_url,
-// including handling of NULL/empty base_url values
+// TestGetOrCreateSourceReconciliation tests source reconciliation by
+// (base_url, name) for named feeds, including the legacy base_url-only
+// behaviour for empty names and NULL/empty base_url values.
 func TestGetOrCreateSourceReconciliation(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
-	t.Run("same base_url deduplicates regardless of name", func(t *testing.T) {
+	t.Run("different names sharing a base_url create separate sources", func(t *testing.T) {
+		// All TPL BiblioCommons feeds share gateway.bibliocommons.com; each feed
+		// must get its own provenance row.
 		source1, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
-			Name:        "BACKROOM COMEDY CLUB Events",
+			Name:        "tpl-events",
 			SourceType:  "api",
-			BaseURL:     "https://www.eventbrite.ca",
+			BaseURL:     "https://gateway.bibliocommons.com",
 			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
 			LicenseType: "CC0",
 			TrustLevel:  5,
@@ -75,16 +80,83 @@ func TestGetOrCreateSourceReconciliation(t *testing.T) {
 		require.NoError(t, err)
 
 		source2, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
-			Name:        "DROM Taberna Events",
+			Name:        "tpl-career-job-search",
 			SourceType:  "api",
-			BaseURL:     "https://www.eventbrite.ca",
+			BaseURL:     "https://gateway.bibliocommons.com",
 			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
 			LicenseType: "CC0",
 			TrustLevel:  5,
 		})
 		require.NoError(t, err)
 
-		require.Equal(t, source1, source2, "Same base_url should return same source ID regardless of name")
+		require.NotEqual(t, source1, source2, "Different feed names on the same base_url must not share a source")
+
+		var count int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT count(*) FROM sources WHERE base_url = $1`,
+			"https://gateway.bibliocommons.com",
+		).Scan(&count), "count rows for base_url")
+		require.Equal(t, 2, count, "two names on one base_url must produce exactly two rows")
+	})
+
+	t.Run("same base_url and name deduplicates", func(t *testing.T) {
+		params := events.SourceLookupParams{
+			Name:        "tpl-events",
+			SourceType:  "api",
+			BaseURL:     "https://gateway.bibliocommons.com",
+			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+			LicenseType: "CC0",
+			TrustLevel:  5,
+		}
+
+		source1, err := repo.GetOrCreateSource(ctx, params)
+		require.NoError(t, err)
+
+		source2, err := repo.GetOrCreateSource(ctx, params)
+		require.NoError(t, err)
+
+		require.Equal(t, source1, source2, "Same (base_url, name) should return the same source ID")
+	})
+
+	t.Run("existing pair keeps its stored metadata", func(t *testing.T) {
+		const baseURL = "https://metadata.example.com"
+		params := events.SourceLookupParams{
+			Name:        "metadata-feed",
+			SourceType:  "api",
+			BaseURL:     baseURL,
+			LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+			LicenseType: "CC0",
+			TrustLevel:  7,
+		}
+
+		first, err := repo.GetOrCreateSource(ctx, params)
+		require.NoError(t, err)
+
+		// A later lookup with different descriptive fields must not rewrite the row.
+		params.SourceType = "scraper"
+		params.LicenseURL = "https://creativecommons.org/licenses/by/4.0/"
+		params.LicenseType = "CC-BY"
+		params.TrustLevel = 2
+
+		second, err := repo.GetOrCreateSource(ctx, params)
+		require.NoError(t, err)
+		require.Equal(t, first, second)
+
+		var (
+			gotName, gotSourceType, gotLicenseURL, gotLicenseType string
+			gotTrust                                              int
+		)
+		require.NoError(t, pool.QueryRow(ctx, `
+SELECT name, source_type, license_url, license_type, trust_level
+  FROM sources
+ WHERE id = $1
+`, first).Scan(&gotName, &gotSourceType, &gotLicenseURL, &gotLicenseType, &gotTrust))
+
+		require.Equal(t, "metadata-feed", gotName)
+		require.Equal(t, "api", gotSourceType, "source_type must not be rewritten by a repeat lookup")
+		require.Equal(t, "https://creativecommons.org/publicdomain/zero/1.0/", gotLicenseURL)
+		require.Equal(t, "CC0", gotLicenseType)
+		require.Equal(t, 7, gotTrust)
 	})
 
 	t.Run("empty base_url deduplicates by name", func(t *testing.T) {
@@ -112,6 +184,54 @@ func TestGetOrCreateSourceReconciliation(t *testing.T) {
 		require.Equal(t, source1, source2, "Empty base_url should deduplicate correctly")
 	})
 
+	t.Run("empty name resolves deterministically and prefers the unknown row", func(t *testing.T) {
+		// Callers that do not send a feed name must still resolve by base_url
+		// alone. With several feeds on one host the choice is deterministic:
+		// the neutral "unknown" row wins, then oldest, then id.
+		const baseURL = "https://deterministic.example.com"
+		licenseURL := "https://creativecommons.org/publicdomain/zero/1.0/"
+
+		named, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+			Name:        "Toronto Open Data Events",
+			SourceType:  "api",
+			BaseURL:     baseURL,
+			LicenseURL:  licenseURL,
+			LicenseType: "CC0",
+			TrustLevel:  7,
+		})
+		require.NoError(t, err)
+
+		neutral, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+			Name:        "unknown",
+			SourceType:  "api",
+			BaseURL:     baseURL,
+			LicenseURL:  licenseURL,
+			LicenseType: "CC0",
+			TrustLevel:  1,
+		})
+		require.NoError(t, err)
+		require.NotEqual(t, named, neutral)
+
+		for i := 0; i < 3; i++ {
+			resolved, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+				Name:        "",
+				SourceType:  "api",
+				BaseURL:     baseURL,
+				LicenseURL:  licenseURL,
+				LicenseType: "CC0",
+				TrustLevel:  5,
+			})
+			require.NoError(t, err)
+			require.Equal(t, neutral, resolved, "empty name must deterministically prefer the unknown row")
+		}
+
+		var count int
+		require.NoError(t, pool.QueryRow(ctx,
+			`SELECT count(*) FROM sources WHERE base_url = $1`, baseURL,
+		).Scan(&count), "count rows for base_url")
+		require.Equal(t, 2, count, "empty-name lookups must not insert a third row")
+	})
+
 	t.Run("different base_url creates different sources", func(t *testing.T) {
 		source1, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
 			Name:        "Toronto Events",
@@ -135,6 +255,92 @@ func TestGetOrCreateSourceReconciliation(t *testing.T) {
 
 		require.NotEqual(t, source1, source2, "Different base_url should create separate sources")
 	})
+}
+
+// TestCreateSourceUpsertOnReingest verifies that recording the same
+// (event, source, url) attribution again refreshes retrieval metadata instead
+// of failing on the UNIQUE constraint, while append-only columns stay put.
+func TestCreateSourceUpsertOnReingest(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+
+	var eventID string
+	require.NoError(t, pool.QueryRow(ctx, `
+INSERT INTO events (ulid, name, lifecycle_state, virtual_url)
+VALUES ($1, 'Provenance Event', 'published', 'https://example.com/provenance-event')
+RETURNING id
+`, ulid.Make().String()).Scan(&eventID))
+
+	sourceID, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
+		Name:        "upsert-feed",
+		SourceType:  "api",
+		BaseURL:     "https://upsert.example.com",
+		LicenseURL:  "https://creativecommons.org/publicdomain/zero/1.0/",
+		LicenseType: "CC0",
+		TrustLevel:  5,
+	})
+	require.NoError(t, err)
+
+	const sourceURL = "https://upsert.example.com/events/1"
+	confidence := 0.4
+	first := events.EventSourceCreateParams{
+		EventID:       eventID,
+		SourceID:      sourceID,
+		SourceURL:     sourceURL,
+		SourceEventID: "ext-1",
+		Payload:       []byte(`{"version":1}`),
+		PayloadHash:   "hash-1",
+		Confidence:    &confidence,
+	}
+	require.NoError(t, repo.CreateSource(ctx, first))
+
+	var firstRetrieved time.Time
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT retrieved_at
+  FROM event_sources
+ WHERE event_id = $1 AND source_id = $2 AND source_url = $3
+`, eventID, sourceID, sourceURL).Scan(&firstRetrieved))
+
+	secondConfidence := 0.9
+	second := first
+	second.SourceEventID = "ext-2"
+	second.Payload = []byte(`{"version":2}`)
+	second.PayloadHash = "hash-2"
+	second.Confidence = &secondConfidence
+	require.NoError(t, repo.CreateSource(ctx, second), "repeat attribution must be conflict-tolerant")
+
+	var (
+		payload       []byte
+		payloadHash   string
+		sourceEventID *string
+		gotConfidence *float64
+		retrievedAt   time.Time
+	)
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT payload, payload_hash, source_event_id, confidence::float8, retrieved_at
+  FROM event_sources
+ WHERE event_id = $1 AND source_id = $2 AND source_url = $3
+`, eventID, sourceID, sourceURL).Scan(&payload, &payloadHash, &sourceEventID, &gotConfidence, &retrievedAt))
+
+	var decoded map[string]int
+	require.NoError(t, json.Unmarshal(payload, &decoded))
+	require.Equal(t, 2, decoded["version"], "payload must be refreshed on re-ingest")
+	require.Equal(t, "hash-2", payloadHash, "payload_hash must be refreshed on re-ingest")
+	require.NotNil(t, sourceEventID)
+	require.Equal(t, "ext-1", *sourceEventID, "source_event_id must not be rewritten")
+	require.NotNil(t, gotConfidence)
+	require.InDelta(t, 0.4, *gotConfidence, 1e-9, "confidence must not be rewritten")
+	require.False(t, retrievedAt.Before(firstRetrieved), "retrieved_at must be refreshed")
+
+	var count int
+	require.NoError(t, pool.QueryRow(ctx, `
+SELECT count(*)
+  FROM event_sources
+ WHERE event_id = $1 AND source_id = $2 AND source_url = $3
+`, eventID, sourceID, sourceURL).Scan(&count))
+	require.Equal(t, 1, count, "re-ingest must update in place, not duplicate the row")
 }
 
 // TestUpsertOrganizationReconciliation tests organizations reconciliation

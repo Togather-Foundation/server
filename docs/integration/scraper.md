@@ -550,6 +550,37 @@ applies only when it exceeds the global request timeout; the larger of the two w
 Source configs live in `configs/sources/*.yaml`. The `_example.yaml` file is a
 fully-documented template. Sources starting with `_` are ignored by the loader.
 
+### Per-Feed Provenance and Source Identity
+
+Each scraped event carries `Source.Name` = the config's `name:` and `Source.URL` = the
+feed URL. On ingest the URL is reduced to `scheme://host`, and the `sources` row is
+resolved by **`(base_url, name)`**. Row identity is therefore per **feed**, not per host:
+several configs pointing at different feeds on the same host get separate provenance
+rows. This matters wherever one platform serves many feeds — every TPL BiblioCommons
+config uses `https://gateway.bibliocommons.com` (see
+[event-platforms.md §23](event-platforms.md#23-bibliocommons-public-libraries)).
+
+Consequences when re-running or adding a feed:
+
+- Re-running a feed resolves to its own `(base_url, name)` row every time; the row is not
+  recreated or renamed.
+- **Renaming a config's `name:` creates a new provenance row.** Identity includes the name,
+  so subsequent runs resolve to a new `sources` row. Events already attributed to the old
+  row keep that attribution — there is no retroactive merge — and the old row is left
+  orphaned. Keep feed names stable; do not rename casually.
+- Events already ingested from another feed are matched by event identity, not by source
+  row. The first post-deploy re-run has no source-external-id history under its new
+  per-feed row, so it matches by dedup hash; later re-runs match by external id within the
+  feed, then dedup hash. Auto-merge then records the current feed's source attribution
+  against the existing event, so a re-run backfills per-feed provenance going forward.
+- Events ingested **before** the per-feed identity change keep their original attribution.
+  A row that lumped several feeds cannot be split retroactively: `event_sources` stores
+  only the source id, not the feed name. Accept the historical lumping; new runs add the
+  correct attribution on top.
+- A source config with an empty/absent `name` is labelled `unknown` and groups per host;
+  always set `name:` so provenance stays per-feed. (Ingest deliberately does not fall back
+  to the event id or title, which would create a new `sources` row per event.)
+
 ### Minimal Tier 0 Config
 
 ```yaml
@@ -830,7 +861,9 @@ Behaviour: sets `?page=N` (other query params are preserved), identifies as
 address + coordinates, virtual events to a `VirtualLocation`, categories to keywords
 (language categories to `inLanguage`), registration state + room into the description, and
 skips cancelled events (reported as quality warnings). The channel title
-(`Events | <Library>`) becomes the organizer. See
+(`Events | <Library>`) becomes the organizer. Each RSS config is its own provenance
+source: identity is `(base_url, name)`, so feeds that share
+`gateway.bibliocommons.com` no longer collapse into one `sources` row. See
 [event-platforms.md §23](event-platforms.md#23-bibliocommons-public-libraries) for the feed
 shape, filter ids and the terms/licence notes. `extraction_method` is constrained in the DB
 (migration 000053), so run `make migrate-up` before `server scrape sync`.

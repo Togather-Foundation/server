@@ -10,6 +10,12 @@ var ErrNotFound = errors.New("event not found")
 
 var ErrConflict = errors.New("event conflict")
 
+// ErrDuplicateSourceAttribution indicates the event_sources row for this
+// (event, source, source_url) already exists. Repositories translate the
+// underlying unique-violation into this sentinel so domain code can treat a
+// repeated attribution write as non-fatal without importing a database driver.
+var ErrDuplicateSourceAttribution = errors.New("duplicate event source attribution")
+
 // ErrOccurrenceOverlap is returned when a new occurrence would overlap an existing one.
 var ErrOccurrenceOverlap = errors.New("occurrence overlaps an existing occurrence")
 

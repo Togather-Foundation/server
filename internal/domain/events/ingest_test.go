@@ -49,6 +49,8 @@ type MockRepository struct {
 	mergePlacesDupID           string
 	mergePlacesPriID           string
 	getOrCreateSourceCallCount int
+	createdSources             []EventSourceCreateParams
+	sourceLookupParams         []SourceLookupParams
 	placeTombstoneCreated      bool
 	placeTombstoneParams       PlaceTombstoneCreateParams
 	orgTombstoneCreated        bool
@@ -209,6 +211,7 @@ func (m *MockRepository) CreateSource(ctx context.Context, params EventSourceCre
 		return errors.New("mock create source error")
 	}
 
+	m.createdSources = append(m.createdSources, params)
 	return nil
 }
 
@@ -248,6 +251,7 @@ func (m *MockRepository) GetOrCreateSource(ctx context.Context, params SourceLoo
 	defer m.mu.Unlock()
 
 	m.getOrCreateSourceCallCount++
+	m.sourceLookupParams = append(m.sourceLookupParams, params)
 
 	if m.shouldFailGetOrCreateSource {
 		return "", errors.New("mock get or create source error")

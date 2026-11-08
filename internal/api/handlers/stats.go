@@ -43,7 +43,7 @@ type StatsResponse struct {
 	TotalEvents        int64 `json:"total_events"`
 	TotalPlaces        int64 `json:"total_places"`
 	TotalOrganizations int64 `json:"total_organizations"`
-	TotalSources       int64 `json:"total_sources"`
+	TotalSources       int64 `json:"total_sources"` // counts feed-level sources, not providers
 	TotalUsers         int64 `json:"total_users"`
 
 	// Event lifecycle breakdown

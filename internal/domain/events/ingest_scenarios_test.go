@@ -2843,3 +2843,100 @@ func TestScenario_WithSourceID(t *testing.T) {
 		}
 	})
 }
+
+// TestScenario_PerFeedProvenance covers per-feed source identity: two feeds on
+// the same host are distinct sources, and re-running an event from a different
+// feed matches it by event identity (dedup hash) and records the new feed as an
+// additional attribution.
+func TestScenario_PerFeedProvenance(t *testing.T) {
+	t.Run("rerun_from_another_feed_records_per_feed_attribution", func(t *testing.T) {
+		repo := NewMockRepository()
+		existingULID, _ := ids.NewULID()
+		startDate := validFutureDate()
+		dedupHash := BuildDedupHash(DedupCandidate{
+			Name:      "Career Workshop",
+			VenueID:   NormalizeVenueKey(EventInput{Location: &PlaceInput{Name: "Test Venue"}}),
+			StartDate: startDate,
+		})
+
+		// Event first ingested by the full-coverage TPL feed.
+		existingEvent := &Event{
+			ID:             "existing-1",
+			ULID:           existingULID,
+			Name:           "Career Workshop",
+			Description:    "A complete event description for testing",
+			LifecycleState: "published",
+			DedupHash:      dedupHash,
+		}
+		repo.AddEventByDedupHash(dedupHash, existingEvent)
+		repo.AddExistingEvent("source-tpl-events", "tpl-events-1", existingEvent)
+		repo.SetSourceTrust("source-tpl-events", 5)
+
+		// The subset feed is a distinct source row on the same base_url.
+		repo.sources["tpl-career-job-search|https://gateway.bibliocommons.com"] = "source-career"
+		repo.SetSourceTrust("source-career", 5)
+
+		service := newTestService(repo)
+		input := completeEventInputWithSource(
+			"Career Workshop",
+			"https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events?types=68b050d1023ff32800756704",
+			"tpl-career-1",
+			"tpl-career-job-search",
+		)
+
+		result, err := service.Ingest(context.Background(), input)
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+		if !result.IsDuplicate {
+			t.Error("Expected IsDuplicate = true for an event already present from another feed")
+		}
+
+		// The re-run must record the subset feed against the existing event, so
+		// per-feed provenance is backfilled even though the event predates it.
+		found := false
+		for _, created := range repo.createdSources {
+			if created.EventID == existingEvent.ID && created.SourceID == "source-career" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("Expected event_sources attribution for source-career on existing event, got %+v", repo.createdSources)
+		}
+
+		// The lumped/other feed's attribution is untouched.
+		for _, created := range repo.createdSources {
+			if created.SourceID == "source-tpl-events" {
+				t.Errorf("Did not expect new attribution for source-tpl-events, got %+v", created)
+			}
+		}
+	})
+
+	t.Run("unnamed_source_does_not_become_per_event_identity", func(t *testing.T) {
+		// External submitters often send source.url + source.eventId without a
+		// name. Those must keep base_url-only grouping ("unknown"), not create a
+		// sources row named after the event id.
+		repo := NewMockRepository()
+		service := newTestService(repo)
+
+		for _, eventID := range []string{"evt-1", "evt-2"} {
+			input := completeEventInputWithSource("Unnamed Source Event", "https://unnamed.example.com/events", eventID, "")
+			if _, err := service.Ingest(context.Background(), input); err != nil {
+				t.Fatalf("Ingest() unexpected error = %v", err)
+			}
+		}
+
+		if len(repo.sourceLookupParams) != 2 {
+			t.Fatalf("Expected 2 source lookups, got %d", len(repo.sourceLookupParams))
+		}
+		for _, params := range repo.sourceLookupParams {
+			if params.Name != "unknown" {
+				t.Errorf("Source name = %q, want %q (must not use per-event identity)", params.Name, "unknown")
+			}
+			if params.BaseURL != "https://unnamed.example.com" {
+				t.Errorf("BaseURL = %q, want %q", params.BaseURL, "https://unnamed.example.com")
+			}
+		}
+	})
+}

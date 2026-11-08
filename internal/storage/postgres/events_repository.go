@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -892,6 +893,11 @@ func (r *EventRepository) LockEventForUpdate(ctx context.Context, eventID string
 func (r *EventRepository) CreateSource(ctx context.Context, params events.EventSourceCreateParams) error {
 	queryer := r.queryer()
 
+	// event_sources is append-like provenance: every re-scrape of the same event
+	// from the same feed hits UNIQUE (event_id, source_id, source_url). Do not
+	// drop those re-runs: refresh retrieval metadata in place so re-scrapes stay
+	// idempotent and provenance timestamps stay current. source_event_id and
+	// confidence are deliberately left untouched.
 	_, err := queryer.Exec(ctx, `
 INSERT INTO event_sources (
 	event_id,
@@ -902,6 +908,10 @@ INSERT INTO event_sources (
 	payload_hash,
 	confidence
 ) VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7)
+ON CONFLICT (event_id, source_id, source_url) DO UPDATE
+SET retrieved_at = now(),
+    payload = EXCLUDED.payload,
+    payload_hash = EXCLUDED.payload_hash
 `,
 		params.EventID,
 		params.SourceID,
@@ -912,6 +922,10 @@ INSERT INTO event_sources (
 		params.Confidence,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return fmt.Errorf("%w: %w", events.ErrDuplicateSourceAttribution, err)
+		}
 		return fmt.Errorf("create event source: %w", err)
 	}
 	return nil
@@ -1050,14 +1064,68 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	return event, nil
 }
 
+// GetOrCreateSource resolves the provenance source row for an ingest.
+//
+// A named feed is identified by the pair (base_url, name): several distinct
+// feeds can share one host (all TPL BiblioCommons feeds live under
+// https://gateway.bibliocommons.com), so base_url alone would attribute every
+// feed's events to whichever row was created first. The scraper sets
+// Source.Name to the config's `name:` and Source.URL to the feed URL, which
+// makes (base_url, name) a stable per-feed key.
+//
+// Resolution uses a single INSERT ... ON CONFLICT (base_url, name) DO UPDATE ...
+// RETURNING id so concurrent feeds racing on the same row cannot create
+// duplicates or fail: the conflicting row is returned in the same statement.
+// DO UPDATE (rather than DO NOTHING) is deliberate — it guarantees RETURNING
+// yields a row. The update is a logical no-op that leaves existing metadata
+// untouched, but it is a physical row rewrite per ingest (HOT update), not a
+// read-only probe.
+//
+// When no name is supplied (legacy/caller-supplied sources), the original
+// base_url-only behaviour is preserved: reuse any row with that base_url, and
+// only insert when none exists. That lookup is ordered deterministically, with
+// the neutral "unknown" row (used by ingest for unnamed submissions) preferred,
+// then oldest row, then id.
 func (r *EventRepository) GetOrCreateSource(ctx context.Context, params events.SourceLookupParams) (string, error) {
 	queryer := r.queryer()
+	baseURL := strings.TrimSpace(params.BaseURL)
+	name := strings.TrimSpace(params.Name)
+
+	if baseURL != "" && name != "" {
+		var id string
+		err := queryer.QueryRow(ctx, `
+INSERT INTO sources (
+	name,
+	source_type,
+	base_url,
+	license_url,
+	license_type,
+	trust_level
+) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (base_url, name) WHERE base_url IS NOT NULL
+DO UPDATE SET name = EXCLUDED.name
+RETURNING id
+`,
+			name,
+			params.SourceType,
+			baseURL,
+			params.LicenseURL,
+			params.LicenseType,
+			params.TrustLevel,
+		).Scan(&id)
+		if err != nil {
+			return "", fmt.Errorf("get or create source: %w", err)
+		}
+		return id, nil
+	}
+
 	row := queryer.QueryRow(ctx, `
 SELECT id
   FROM sources
  WHERE base_url IS NOT DISTINCT FROM NULLIF($1, '')
+ ORDER BY (name = 'unknown') DESC, created_at, id
  LIMIT 1
-`, strings.TrimSpace(params.BaseURL))
+`, baseURL)
 
 	var id string
 	if err := row.Scan(&id); err == nil {
@@ -1077,9 +1145,9 @@ INSERT INTO sources (
 ) VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6)
 RETURNING id
 `,
-		params.Name,
+		name,
 		params.SourceType,
-		params.BaseURL,
+		baseURL,
 		params.LicenseURL,
 		params.LicenseType,
 		params.TrustLevel,

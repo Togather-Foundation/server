@@ -166,6 +166,11 @@ Always include `source.eventId` and `source.url` to enable server-side deduplica
 - If found, merges new data with existing event (updates fields)
 - If not found, creates new event
 
+**Provenance**: add `source.name` (a stable name for your feed) so events are attributed to
+a distinct `sources` row. SEL identifies a source by `(base_url, name)`; submissions without
+a name are grouped under `unknown` for the host. Never put the event id or title in
+`source.name` — it is not an event identifier.
+
 ### Solution 3: Local Cache
 
 Maintain a local cache of submitted events to avoid unnecessary API calls:

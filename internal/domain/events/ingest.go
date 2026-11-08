@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -387,6 +388,27 @@ func (s *IngestService) recordSourceForExisting(ctx context.Context, event *Even
 	})
 }
 
+// logSourceAttributionError reports a failed attribution write against an
+// existing event. The merge already succeeded, so this must not fail the
+// ingest. A duplicate attribution is expected when the repository predates the
+// CreateSource upsert (or a race slips past it) and is only logged at debug;
+// any other error is a real provenance gap and is logged as a warning.
+func (s *IngestService) logSourceAttributionError(event *Event, sourceID string, err error) {
+	if errors.Is(err, ErrDuplicateSourceAttribution) {
+		s.logger.Debug().
+			Err(err).
+			Str("event_ulid", event.ULID).
+			Str("source_id", sourceID).
+			Msg("source attribution already recorded")
+		return
+	}
+	s.logger.Warn().
+		Err(err).
+		Str("event_ulid", event.ULID).
+		Str("source_id", sourceID).
+		Msg("failed to record source attribution for existing event")
+}
+
 // primaryVenueKey returns the raw venue key from the input without normalization.
 // Deprecated: Use NormalizeVenueKey for dedup hashing. This function is kept for
 // backward compatibility in non-dedup contexts.
@@ -417,17 +439,21 @@ func virtualURL(input EventInput) string {
 	return strings.TrimSpace(input.VirtualLocation.URL)
 }
 
+// sourceName returns the stable source name used for provenance identity.
+//
+// Only an explicitly supplied name (the scraper's YAML `name:`) is used.
+// Source identity is (base_url, name), so falling back to the per-event
+// EventID or event title would create a new sources row for every submission
+// that does not name its source. Unnamed sources are labelled "unknown" and
+// therefore share one row per base_url, which keeps the legacy grouping.
 func sourceName(source *SourceInput, fallback string) string {
 	if source == nil {
 		return fallbackOrUnknown(fallback)
 	}
-	if strings.TrimSpace(source.Name) != "" {
-		return strings.TrimSpace(source.Name)
+	if name := strings.TrimSpace(source.Name); name != "" {
+		return name
 	}
-	if strings.TrimSpace(source.EventID) != "" {
-		return strings.TrimSpace(source.EventID)
-	}
-	return fallbackOrUnknown(fallback)
+	return "unknown"
 }
 
 func sourceLicense(input EventInput) string {

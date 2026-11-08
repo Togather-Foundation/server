@@ -715,8 +715,10 @@ Tracks all data sources with trust levels and license information.
 CREATE TABLE sources (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   
-  -- Identification
-  name TEXT NOT NULL UNIQUE,
+  -- Identification: identity is (base_url, name) when base_url IS NOT NULL,
+  -- otherwise name alone. The global UNIQUE on name was replaced in 000023 and
+  -- the base_url-only index in 000056 (see indexes below).
+  name TEXT NOT NULL,
   source_type TEXT NOT NULL CHECK (
     source_type IN ('scraper', 'api', 'partner', 'user', 'federation', 'manual')
   ),
@@ -765,6 +767,13 @@ CREATE TABLE sources (
 
 CREATE INDEX idx_sources_active ON sources (is_active, trust_level DESC);
 CREATE INDEX idx_sources_type ON sources (source_type);
+
+-- Source identity (000056): a source row is a feed, not a provider.
+-- (base_url, name) for URLs; name alone for sources without a base_url.
+CREATE UNIQUE INDEX sources_base_url_name_unique
+  ON sources (base_url, name) WHERE base_url IS NOT NULL;
+CREATE UNIQUE INDEX sources_name_unique_when_no_url
+  ON sources (name) WHERE base_url IS NULL;
 ```
 
 ### 3.2 Event Sources (Row-Level Provenance)

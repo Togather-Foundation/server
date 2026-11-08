@@ -407,6 +407,43 @@ Every data source is registered with:
 - `license`: License for data from this source (cc0, cc-by, proprietary)
 - `contact_email`: Maintainer contact
 
+**Source identity rules (per-feed provenance)**
+
+A source row is identified by **`(base_url, name)`** when both are present. The partial
+unique index `sources_base_url_name_unique` enforces this for non-NULL `base_url`s.
+Sources with a NULL/empty `base_url` keep the older rule: `name` alone must be unique
+(`sources_name_unique_when_no_url`).
+
+The pair matters because one host can serve several distinct feeds. All five TPL
+BiblioCommons feeds share `https://gateway.bibliocommons.com`; identifying sources by
+`base_url` alone attributed every feed's events to whichever row was created first.
+Scraper-fed events carry `Source.Name` = the YAML `name:` and `Source.URL` = the feed
+URL, reduced to `scheme://host` before lookup, so `(base_url, name)` is stable per feed.
+
+`EventRepository.GetOrCreateSource` resolves named feeds with a single
+`INSERT … ON CONFLICT (base_url, name) WHERE base_url IS NOT NULL DO UPDATE … RETURNING id`,
+so concurrent feeds cannot race into duplicate rows. Callers that send no name keep the
+legacy base_url-only lookup: an ingest whose `source.name` is absent is labelled `unknown`
+(never the event id or title), and the lookup prefers that neutral row, then the oldest row,
+then id. Migration `000023` already grouped unnamed submissions per host via `base_url`;
+keeping the `unknown` label preserves that grouping now that `name` participates in identity.
+Using the event id or title as the name would instead create one `sources` row per event.
+
+**Renaming a feed creates a new source row.** `name` is part of the identity key, so renaming
+a config's `name:` makes subsequent ingests resolve to a new `(base_url, name)` row. Events
+already attributed to the old row stay there; nothing is moved or merged retroactively, and
+the old row is left behind. Do not rename a feed casually — keep the YAML `name:`/source
+name stable.
+
+**Historical rows are not rewritten.** Migration `000056_per_feed_source_provenance`
+replaced the `base_url`-only index from `000023`, but existing `sources` rows keep their
+names and existing `event_sources` rows keep their `source_id`. A lumped row cannot be
+split retroactively because `event_sources` stores only the source id, not the feed name.
+Re-running a feed attaches the new per-feed row to the events it still returns. The first
+post-deploy re-run has no source-external-id history under the new row, so it matches by
+dedup hash; later re-runs match by source external id within the feed, then dedup hash. The
+matched path records the new source attribution.
+
 **Creating a Source**
 
 ```sql

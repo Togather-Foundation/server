@@ -50,6 +50,22 @@ gunzip -c /var/lib/togather/db-snapshots/<snapshot-file>.sql.gz | psql "$DATABAS
 server deploy rollback <environment> --force
 ```
 
+### Per-feed source identity (migration 000056)
+
+Migration `000056_per_feed_source_provenance` replaces `sources_base_url_unique` with
+`sources_base_url_name_unique (base_url, name)`. The per-feed build **requires** that index:
+`GetOrCreateSource` uses `ON CONFLICT (base_url, name)`, so rolling the migration back while
+the new binary is running makes every ingest fail with
+
+```
+no unique or exclusion constraint matching the ON CONFLICT specification
+```
+
+Correct order: roll the **application** back first, then run the migration down. The down
+migration also fails while multiple sources share a `base_url` (the per-feed state); merge or
+delete the extra rows before reverting, and expect historical `event_sources` attribution for
+the removed rows to be lost.
+
 ## Troubleshooting
 
 - **No previous deployment found**: first deployment or cleared state; redeploy target version.

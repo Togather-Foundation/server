@@ -177,7 +177,9 @@ func (s *IngestService) createEventCore(
 						return nil, fmt.Errorf("source-external-id auto-merge update: %w", err)
 					}
 				}
-				_ = s.recordSourceForExisting(ctx, existing, validated, sourceID)
+				if err := s.recordSourceForExisting(ctx, existing, validated, sourceID); err != nil {
+					s.logSourceAttributionError(existing, sourceID, err)
+				}
 				return &CreateEventCoreResult{
 					IngestResult: &IngestResult{Event: existing, IsDuplicate: true, IsMerged: changed, Warnings: warnings},
 				}, nil
@@ -236,7 +238,9 @@ func (s *IngestService) createEventCore(
 					}
 				}
 				if sourceID != "" {
-					_ = s.recordSourceForExisting(ctx, existing, validated, sourceID)
+					if err := s.recordSourceForExisting(ctx, existing, validated, sourceID); err != nil {
+						s.logSourceAttributionError(existing, sourceID, err)
+					}
 				}
 				return &CreateEventCoreResult{
 					IngestResult: &IngestResult{Event: existing, IsDuplicate: true, IsMerged: changed, Warnings: warnings},
