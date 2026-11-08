@@ -14,6 +14,23 @@ This directory contains YAML configuration files for each scrape source.
 source. ICS feed extraction (via `extraction_method: ics`) bypasses CSS selectors and parses calendar events
 directly. For detailed ICS configuration, see [ics-feeds.md](ics-feeds.md).
 
+**BiblioCommons RSS notes** (`extraction_method: bibliocommons_rss`): the events feed paginates at
+**25 items per page**, so `max_pages` must be large enough to cover the source's full upcoming
+inventory — e.g. `max_pages: 260` is page capacity for ~6,500 events, which covers Toronto Public
+Library's ~6,111 measured upcoming events (2026-11-07). Paging stops at the first empty page (or a
+page that repeats what was already seen), so generous headroom is cheap.
+
+Two operational prerequisites for full coverage:
+- **`max_batch_size` must be at least the inventory size** (~6,500 for TPL). The scrape job copies
+  `max_batch_size` into the per-run limit and the extractor truncates its result to it, so a smaller
+  value silently submits only the first N events — no error, no warning (the ingest client already
+  chunks POSTs at 100 internally, so this is a per-run cap, not a batch size).
+- **`SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` must accommodate extraction + submissions** — raising it to
+  roughly 900-1800 s for a full TPL run; the 300 s default is not enough for ~235 s of extraction
+  plus ~6,100 submissions.
+
+Platform details: `docs/integration/event-platforms.md` § "BiblioCommons (public libraries)".
+
 ## Headless Config Fields (Tier 2 YAML)
 
 | Field | Type | Default | Notes |
@@ -49,6 +66,7 @@ directly. For detailed ICS configuration, see [ics-feeds.md](ics-feeds.md).
 |--------|--------|--------|-------|
 | harbourfront-centre | **enabled** | 106/page | CSS selectors on /whats-on/ |
 | toronto-reference-library | disabled (superseded by tpl-* RSS sources) | 21/page | tpl.bibliocommons.com/v2/events |
+| tpl-events | **enabled** | ~6,100 | BiblioCommons RSS, full feed (no filter); 25/page, `max_pages: 260` |
 | tpl-career-job-search | **enabled** | 33 | BiblioCommons RSS `types=68b050d1…` |
 | tpl-artificial-intelligence | **enabled** | 79 | BiblioCommons RSS `types=68caafcb…` |
 | tpl-career-coaches-in-residence | **enabled** | 12 | BiblioCommons RSS `programs=68b0553a…` |

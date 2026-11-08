@@ -923,7 +923,9 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
 
 - Filters are server-side and combinable: `types=` (category), `programs=`, `audiences=`,
   `q=` (keyword). 25 items/page; the extractor pages until an empty page or `max_pages`.
-  Find ids from the `?types=` / `?programs=` links on the HTML event pages.
+  Omitting every filter returns the library's **full upcoming inventory** — for TPL that is
+  `max_pages: 260`, page capacity for ~6,500 events at 25/page (measured inventory
+  ~6,111 on 2026-11-07). Find ids from the `?types=` / `?programs=` links on the HTML event pages.
 - Items carry `bc:start_date_local` / `end_date_local` (venue wall-clock — used; the UTC
   values are 4–5 h ahead), `bc:location` (name, street, city, zip, **latitude/longitude**,
   room), `bc:is_virtual`, `bc:is_cancelled`, `bc:registration_info`
@@ -934,6 +936,38 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
   later cancelled is **not** updated (no event-status field on `EventInput` yet).
 - Descriptions are converted HTML → text; TPL's "Information Collection Notice" privacy
   boilerplate is dropped; room and registration state are appended as plain lines.
+
+**TPL coverage (measured 2026-11-07):**
+- `tpl-events.yaml` is the **full-coverage** TPL source: no `types=` / `programs=` /
+  `audiences=` / `q=` filter, `max_pages: 260` at 25 items/page (page capacity for ~6,500
+  events), paging stops at the first empty page. It is the source that covers TPL's whole
+  calendar. A full walk on 2026-11-07 returned **~6,111 upcoming events** (6,061 non-cancelled
+  after 50 cancelled items were skipped), so 260 pages is capacity, not the measured size.
+  The four narrower feeds are **subsets of the same feed** and are kept enabled:
+  `tpl-career-job-search` (`types=`), `tpl-artificial-intelligence` (`types=`),
+  `tpl-career-coaches-in-residence` (`programs=`), `tpl-innovator-in-residence`
+  (`programs=`). They duplicate events already present in `tpl-events`; cross-source
+  dedup absorbs that, so do not disable them for that reason alone.
+- **Prerequisite 1 — `max_batch_size`:** the scrape job copies `scraper_config.max_batch_size`
+  into `ScrapeOptions.Limit`, and the `bibliocommons_rss` extractor truncates its output to
+  that limit. It must therefore be **at least the inventory size (~6,500)**; a smaller value
+  (e.g. the observed staging value of 100) silently submits only the first N events — about
+  one day of TPL's date-ordered calendar — with no error or partial-coverage warning. The
+  ingest client already chunks POSTs at 100 internally, so `max_batch_size` is acting as a
+  per-run cap, not a batch size.
+- **Prerequisite 2 — `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS`:** raise it to roughly **900-1800 s**.
+  A full run is ~235 s of extraction plus ~6,100 event submissions; the 300 s default wraps
+  scrape + ingest for the whole source and will cancel the job part-way.
+- Daily cost: the source re-submits ~6,100 mostly-duplicate events every day. Ingest dedup
+  absorbs the duplicates, but the extraction and submission load is paid on every run.
+- Scale: TPL Open Data's "Branch Programs and Events Feed" reports ~7,078 upcoming
+  occurrences (measured 2026-11-07); an earlier count cited 7,290 events. The BiblioCommons
+  RSS carries ~5,700-6,111 upcoming events (vs. ~103 upcoming TPL events in staging when
+  only the four subset feeds existed).
+- The feed only serves **upcoming** occurrences (it does not return fully-past events);
+  the scraper's past-event guard (`SCRAPER_PAST_EVENT_GRACE_HOURS`, events that have
+  already ended are skipped during the scrape run) is a second line of defence against
+  historical or stale items.
 
 **Why not the other surfaces:**
 - **HTML listing (Tier 1 CSS):** works, but BiblioCommons' terms
@@ -949,8 +983,8 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
   `library-branch-programs-and-events-feed`; JSON/CSV/XML, daily): TPL's Open Data Policy
   says open data is "freely available for anyone to use and republish as they wish, without
   restrictions" under TPL's Open Government Licence. But it has no description, URL,
-  coordinates or programme, cannot be filtered (7,290 events, all categories), and the CKAN
-  record says "License not specified".
+  coordinates or programme, cannot be filtered (previously cited 7,290 events, all
+  categories; ~7,078 measured 2026-11-07), and the CKAN record says "License not specified".
 
 **Terms / licence status (2026-10-15) — ambiguous; get TPL's OK in writing before enabling.**
 - BiblioCommons terms (`tpl.bibliocommons.com/info/terms`, last updated 2018-09-19) bar
@@ -976,11 +1010,12 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
   is recorded as provenance only.
 - Not legal advice; this reflects only the text retrieved on 2026-10-15.
 
-The TPL RSS sources were enabled 2026-10-16 on the operator's instruction; the operator is confirming the terms with TPL directly. Disable them (YAML `enabled: false` + `server scrape sync`) if TPL objects.
+The four TPL RSS subset sources were enabled 2026-10-16 on the operator's instruction; the full-coverage `tpl-events` source was added 2026-11-07 on the same instruction. The operator is confirming the terms with TPL directly. With the full feed, the unresolved republication exposure now covers essentially TPL's whole calendar, not only four programme/category feeds. Disable them (YAML `enabled: false` + `server scrape sync`) if TPL objects. Source inventory and coverage: see **TPL coverage (measured 2026-11-07)** above.
 
 **Known examples:**
+- `tpl-events.yaml` — RSS, full feed (no filter), `max_pages: 260` — enabled
 - `tpl-career-job-search.yaml`, `tpl-artificial-intelligence.yaml`,
-  `tpl-career-coaches-in-residence.yaml`, `tpl-innovator-in-residence.yaml` — RSS, enabled
+  `tpl-career-coaches-in-residence.yaml`, `tpl-innovator-in-residence.yaml` — RSS subsets, enabled
 - `toronto-reference-library.yaml` — **legacy HTML Tier 1** (disabled 2026-10-16). Page 1 only,
   no times, polluted names/locations; superseded by the RSS sources above.
 

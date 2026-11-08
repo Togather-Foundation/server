@@ -1,0 +1,55 @@
+name: "tpl-events"
+# Toronto Public Library - FULL events feed (all branches, categories, audiences and programmes).
+# No server-side filter: no `types=`, `programs=`, `audiences=` or `q=` query string.
+#
+# OPERATIONAL PREREQUISITES — full coverage needs BOTH of these on the scraper_config row:
+# - `max_batch_size` >= the inventory size (~6,500). The scrape job copies max_batch_size into
+#   ScrapeOptions.Limit, and the bibliocommons_rss extractor truncates its result to that limit
+#   (internal/jobs/scrape_source.go, internal/scraper/bibliocommons_rss.go). A smaller value
+#   therefore SILENTLY submits only the first N events of the run — no error, no partial-coverage
+#   warning. This feed is largely ordered by date, so the observed staging value of 100 is
+#   roughly one day of TPL's calendar.
+# - `SCRAPER_SOURCE_JOB_TIMEOUT_SECONDS` raised (suggest 900-1800; default is 300). A full run
+#   costs ~235 s of extraction (measured 2026-11-07) plus ~6,100 event submissions, which does
+#   not fit in 300 s; the job ctx is cancelled and the run fails part-way.
+# Daily load: this source re-submits ~6,100 events every day. Ingest dedup absorbs the
+# duplicates, but the extraction and submission cost is paid on every scheduled run.
+#
+# Coverage: the feed serves upcoming occurrences only (it does not return fully-past events).
+# Measured 2026-11-07: TPL Open Data reports ~7,078 upcoming occurrences across all branches;
+# this RSS feed carried ~6,111 upcoming events on a full walk (our 2026-11-07 dry run yielded
+# 6,061 non-cancelled items, 50 cancelled items were skipped). At ~25 items per page, max_pages
+# 260 is capacity worth ~6,500 events; paging stops at the first empty page (or a page that adds
+# nothing new), so the headroom costs nothing when the inventory is smaller.
+#
+# Relationship to the tpl-* subset feeds: tpl-career-job-search, tpl-artificial-intelligence,
+# tpl-career-coaches-in-residence and tpl-innovator-in-residence are category/programme
+# filters over the same feed. They are subsets of this source and will duplicate events;
+# cross-source dedup handles that, so do NOT disable them here (the narrow feeds are useful
+# for provenance/reporting per programme).
+#
+# BiblioCommons events RSS (extraction_method: bibliocommons_rss). The RSS feed is the
+# surface BiblioCommons' terms expressly permit for automated access ("except as may be
+# specifically permitted using RSS/XML feeds"); the HTML listing is NOT, so do not
+# scrape tpl.bibliocommons.com/v2/events for this. The feed carries venue address +
+# coordinates, local start/end times, registration state, virtual flag and cancelled
+# flag (cancelled events are skipped).
+#
+# Terms: added 2026-11-07 on the same operator instruction as the four tpl-* subset feeds
+# (they are working with TPL and are confirming republication terms with TPL directly); the
+# open terms question is recorded in docs/integration/event-platforms.md
+# "BiblioCommons (public libraries)". Disable here (and `server scrape sync`) if TPL objects.
+#
+# Past events: the feed only serves upcoming occurrences, and the scraper's past-event guard
+# (SCRAPER_PAST_EVENT_GRACE_HOURS) is a second line of defence against stale/historical data.
+#
+# Organization: the feed channel title ("Events | Toronto Public Library") becomes the organizer.
+url: "https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events"
+extraction_method: bibliocommons_rss
+schedule: "daily"
+trust_level: 8
+license: "CC0-1.0"
+domain: education
+timezone: "America/Toronto"
+enabled: true
+max_pages: 260
