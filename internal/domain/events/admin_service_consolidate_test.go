@@ -1537,6 +1537,7 @@ func TestConsolidate_TransferOccurrences_CopiesOccurrenceToCanonical(t *testing.
 				ID:        "occ-uuid-1",
 				StartTime: occStart,
 				Timezone:  "America/Vancouver",
+				IsAllDay:  true,
 				VenueID:   &retiredVenueID,
 			},
 		},
@@ -1592,6 +1593,11 @@ func TestConsolidate_TransferOccurrences_CopiesOccurrenceToCanonical(t *testing.
 	}
 	if capturedCreateParams.VenueID == nil || *capturedCreateParams.VenueID != retiredVenueID {
 		t.Errorf("CreateOccurrence venue ID mismatch: got %v, want %q", capturedCreateParams.VenueID, retiredVenueID)
+	}
+	// The all-day marker must survive the transfer, otherwise a date-only event
+	// becomes a timed midnight row on the canonical.
+	if !capturedCreateParams.IsAllDay {
+		t.Error("CreateOccurrence must carry IsAllDay=true from the source occurrence")
 	}
 
 	// DeleteOccurrencesByEventULID must be called for the retired event.

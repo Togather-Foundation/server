@@ -1864,6 +1864,7 @@ func (s *AdminService) consolidateRetireEvents(
 					StartTime:     occ.StartTime,
 					EndTime:       occ.EndTime,
 					Timezone:      occTimezone,
+					IsAllDay:      occ.IsAllDay,
 					DoorTime:      occ.DoorTime,
 					VenueID:       occVenueID,
 					VirtualURL:    occ.VirtualURL,
