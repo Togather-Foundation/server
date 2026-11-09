@@ -59,6 +59,7 @@ type MockRepository struct {
 	orgTombstoneParams         OrganizationTombstoneCreateParams
 
 	// Behavior controls
+	upsertReviewRowFunc            func(params ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error)
 	shouldFailCreate               bool
 	shouldFailGetIdempotencyKey    bool
 	shouldFailInsertIdempotencyKey bool
@@ -755,6 +756,10 @@ func mergeReviewWarnings(existing, incoming []byte, mode ReviewWarningMergeMode)
 // create-or-merge. The real implementation locks the events row and merges in
 // SQL; tests only need the observable result.
 func (m *MockRepository) UpsertReviewRow(_ context.Context, params ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error) {
+	if m.upsertReviewRowFunc != nil {
+		return m.upsertReviewRowFunc(params)
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -2724,6 +2729,63 @@ func appendWarnings(existing []byte, toAdd []byte) ([]byte, error) {
 		}
 	}
 	return json.Marshal(existingList)
+}
+
+func TestUpsertReviewRowWithRetry(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("retries retryable errors and succeeds", func(t *testing.T) {
+		repo := NewMockRepository()
+		calls := 0
+		repo.upsertReviewRowFunc = func(_ ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error) {
+			calls++
+			if calls < 3 {
+				return nil, ErrRetryable
+			}
+			return &ReviewQueueUpsertResult{Entry: &ReviewQueueEntry{}}, nil
+		}
+		svc := newTestService(repo)
+		if err := svc.upsertReviewRowWithRetry(ctx, ReviewQueueUpsertParams{EventULID: "01HX"}); err != nil {
+			t.Fatalf("expected success after retries, got %v", err)
+		}
+		if calls != 3 {
+			t.Fatalf("calls = %d, want 3", calls)
+		}
+	})
+
+	t.Run("does not retry non-retryable errors", func(t *testing.T) {
+		repo := NewMockRepository()
+		calls := 0
+		repo.upsertReviewRowFunc = func(_ ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error) {
+			calls++
+			return nil, ErrConflict
+		}
+		svc := newTestService(repo)
+		err := svc.upsertReviewRowWithRetry(ctx, ReviewQueueUpsertParams{EventULID: "01HX"})
+		if !errors.Is(err, ErrConflict) {
+			t.Fatalf("err = %v, want ErrConflict", err)
+		}
+		if calls != 1 {
+			t.Fatalf("calls = %d, want 1", calls)
+		}
+	})
+
+	t.Run("returns the last retryable error after exhausting attempts", func(t *testing.T) {
+		repo := NewMockRepository()
+		calls := 0
+		repo.upsertReviewRowFunc = func(_ ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error) {
+			calls++
+			return nil, ErrRetryable
+		}
+		svc := newTestService(repo)
+		err := svc.upsertReviewRowWithRetry(ctx, ReviewQueueUpsertParams{EventULID: "01HX"})
+		if !errors.Is(err, ErrRetryable) {
+			t.Fatalf("err = %v, want ErrRetryable", err)
+		}
+		if calls != 3 {
+			t.Fatalf("calls = %d, want 3", calls)
+		}
+	})
 }
 
 func TestAppendWarnings(t *testing.T) {

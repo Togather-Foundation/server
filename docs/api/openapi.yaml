@@ -291,6 +291,8 @@ paths:
             application/ld+json:
               schema:
                 $ref: '#/components/schemas/Event'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/events/{id}:
     get:
@@ -1118,6 +1120,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '422':
           description: |
             Unprocessable request. Possible reasons:
@@ -1626,6 +1630,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1696,6 +1702,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1784,6 +1792,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -7791,6 +7801,19 @@ components:
 
     NotFound:
       description: Resource not found
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+
+    ServiceUnavailable:
+      description: Transient database contention — retry after a brief delay
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+          example: 1
       content:
         application/problem+json:
           schema:

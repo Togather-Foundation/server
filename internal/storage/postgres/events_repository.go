@@ -887,10 +887,10 @@ func (r *EventRepository) LockEventForUpdate(ctx context.Context, eventID string
 	var dummy string
 	err := queryer.QueryRow(ctx, `SELECT id FROM events WHERE id = $1 FOR UPDATE`, eventID).Scan(&dummy)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("lock event %s: %w", eventID, events.ErrNotFound)
 		}
-		return fmt.Errorf("lock event %s for update: %w", eventID, err)
+		return mapDBContention(fmt.Errorf("lock event %s for update: %w", eventID, err))
 	}
 	return nil
 }
@@ -3771,9 +3771,10 @@ func (r *EventRepository) effectiveReviewRowLockTimeout() string {
 	return reviewRowLockTimeout
 }
 
-// mapDBContention translates transient lock contention into
-// events.ErrRetryable and the other unique indexes on event_review_queue into
-// events.ErrConflict, so callers can retry or surface a 409 instead of a 500.
+// mapDBContention translates transient lock contention (lock timeout,
+// deadlock detection, serialisation failure) into events.ErrRetryable and a
+// unique violation into events.ErrConflict, so callers can retry or surface a
+// 409/503 instead of a 500.
 func mapDBContention(err error) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
@@ -3814,10 +3815,10 @@ func (r *EventRepository) LockReviewQueueEntryForUpdate(ctx context.Context, id 
 	var dummy int32
 	err := queryer.QueryRow(ctx, `SELECT id FROM event_review_queue WHERE id = $1 FOR UPDATE`, int32(id)).Scan(&dummy)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("lock review queue entry %d: %w", id, events.ErrNotFound)
 		}
-		return nil, fmt.Errorf("lock review queue entry %d for update: %w", id, err)
+		return nil, mapDBContention(fmt.Errorf("lock review queue entry %d for update: %w", id, err))
 	}
 	// Re-read the full row now that we hold the lock.
 	queries := Queries{db: queryer}

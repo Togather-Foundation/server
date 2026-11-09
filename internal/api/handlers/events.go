@@ -231,6 +231,11 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		result, err = h.Ingest.Ingest(r.Context(), input, ingestOpts...)
 	}
 	if err != nil {
+		if errors.Is(err, events.ErrRetryable) {
+			w.Header().Set("Retry-After", "1")
+			problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/server-error", "Transient contention — retry the request", err, h.Env)
+			return
+		}
 		if errors.Is(err, events.ErrConflict) {
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Conflict", err, h.Env)
 			return

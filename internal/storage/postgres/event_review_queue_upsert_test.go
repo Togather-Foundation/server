@@ -512,6 +512,9 @@ func TestUpsertReviewRow_RestoresCallerLockTimeout(t *testing.T) {
 	defer func() { _ = tx.Rollback(ctx) }()
 	txRepo := &EventRepository{pool: pool, tx: tx, logger: zerolog.Nop()}
 
+	var previous string
+	require.NoError(t, tx.QueryRow(ctx, `SHOW lock_timeout`).Scan(&previous))
+
 	_, err = txRepo.UpsertReviewRow(ctx, events.ReviewQueueUpsertParams{
 		EventULID:         event.ULID,
 		OriginalPayload:   []byte(`{"name":"x"}`),
@@ -525,5 +528,20 @@ func TestUpsertReviewRow_RestoresCallerLockTimeout(t *testing.T) {
 
 	var current string
 	require.NoError(t, tx.QueryRow(ctx, `SHOW lock_timeout`).Scan(&current))
-	require.Equal(t, "0", current, "the caller's lock_timeout must be restored after the operation")
+	require.Equal(t, previous, current, "success must restore the caller's lock_timeout")
+
+	// An error that does not abort the transaction (ErrNotFound) must also
+	// restore it, otherwise the rest of the caller's transaction inherits 3s.
+	_, err = txRepo.UpsertReviewRow(ctx, events.ReviewQueueUpsertParams{
+		EventULID:         "01HNONEXISTENT00000000000000",
+		OriginalPayload:   []byte(`{"name":"missing"}`),
+		NormalizedPayload: []byte(`{"name":"missing"}`),
+		EventStartTime:    reviewQueueStart(),
+		Warnings:          []byte(`[{"field":"name","code":"x","message":"y"}]`),
+		WarningMode:       events.ReviewWarningMerge,
+		Promotion:         events.ReviewPromotionNone,
+	})
+	require.ErrorIs(t, err, events.ErrNotFound)
+	require.NoError(t, tx.QueryRow(ctx, `SHOW lock_timeout`).Scan(&current))
+	require.Equal(t, previous, current, "a non-aborting error must restore the caller's lock_timeout")
 }
