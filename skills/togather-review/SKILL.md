@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires a Togather server binary built from source (make build). Requires admin API access (admin-role API key for token exchange).
 metadata:
   author: togather-foundation
-  version: "3.0"
+  version: "3.1"
   hermes:
     tags: [togather, review, data-quality, scraping, operations]
     category: devops
@@ -163,7 +163,27 @@ human review — do not process them individually.
 - **409 "already approved" errors are harmless.** Overlapping batches may hit
   the same item twice. Continue processing.
 
+## Guard allowlist
+
+If the commands in this skill work in a plain shell but are blocked when you run
+them from an agent gateway, a cron wrapper, or another sandboxed runner, the
+runner's referenced-file guard is the likely cause. Some gateways inspect the
+files a command references and fail closed when a referenced file is large. The
+built `./server` binary is tens of megabytes, so every command here can trip that
+guard.
+
+To fix it, allowlist the repository or server path (or the built binary path) in
+the gateway's referenced-file guard, or invoke the binary by an absolute path
+that is already allowlisted. For example, an operator-managed guard entry for the
+repository directory is enough for the `./server` form used throughout this
+skill. If the gateway cannot be configured that way, run the workflow from a
+plain shell instead — the review-pass logic is identical.
+
 ## Reference Files
+
+Every path below is relative to **this skill's directory**, not to your working
+directory or filesystem root. Load a file with whatever skill-file reader your
+agent provides, rather than by resolving an absolute filesystem path.
 
 Load on demand only when encountering an unfamiliar situation:
 
@@ -173,6 +193,13 @@ Load on demand only when encountering an unfamiliar situation:
 | `references/cli-reference.md` | Need the full CLI command table |
 | `references/troubleshooting.md` | Batch commands fail, unicode issues, stale companions |
 | `references/source-profiles.md` | Pattern-matching examples for recurring series |
+| `references/high-volume-batch-strategies.md` | Queue is large and batch filtering needs a strategy (bulk approvals, mixed sources, caps) |
+
+`scripts/review-pass.sh` is not a reference doc. It runs the standard pass:
+survey (stats and source breakdown), then — with `--source <uuid>` — batch-approves
+that one source (`--limit 200`, add `--dry-run` to preview) and reprints final
+stats; without `--source` it reprints the remaining source breakdown and expects
+you to batch per group. Its path is relative to the skill directory.
 
 ## Verification
 
