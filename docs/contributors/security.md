@@ -434,14 +434,14 @@ GO-2026-5932 marks `golang.org/x/crypto/openpgp` unsafe and unmaintained. The
 package was removed upstream in `v0.58.1-0.20261009181718-2f1f834330b2`; SEL
 imports only `x/crypto/bcrypt` and `x/crypto/hkdf`. `go.mod` pins that
 pseudo-version (the only release without the package) and should move to the
-next tagged `v0.59.0` or later once published.
+next tagged release that contains the removal (e.g. `v0.58.1`) once published.
 
 ### Accepted risks (no upstream fix)
 
-| ID | Module | Affected package | Why accepted | Mitigation / review trigger |
-|----|--------|------------------|--------------|------------------------------|
-| GO-2025-3884 (CVE-2025-47909) | `github.com/gorilla/csrf` v1.7.3 | `TrustedOrigins` | No fixed release. The flaw only downgrades a host listed in `TrustedOrigins` from HTTPS to HTTP; SEL never sets `TrustedOrigins` (`internal/api/middleware/csrf.go`), and no other code path calls the symbol. | Keep `TrustedOrigins` unset. If a trusted origin becomes necessary, migrate to `filippo.io/csrf/gorilla` or `net/http.CrossOriginProtection` instead of configuring hosts. |
-| GO-2026-6911 | `github.com/mark3labs/mcp-go` v0.43.2 | `client/transport` | No known fixed version. The flaw is in the outbound MCP client transport (`NewStreamableHTTP`), which SEL does not use — `internal/mcp` imports only `mcp-go/mcp` to serve the MCP endpoint. | Re-evaluate before adding any outbound MCP client (`client/...` import) or bumping mcp-go. |
+| ID | Module | Affected symbol / package | Why accepted | Mitigation / review trigger |
+|----|--------|---------------------------|--------------|------------------------------|
+| GO-2025-3884 (CVE-2025-47909) | `github.com/gorilla/csrf` v1.7.3 | `TrustedOrigins` option | No fixed release. The flaw only downgrades a host listed in `TrustedOrigins` from HTTPS to HTTP; SEL never sets `TrustedOrigins` (`internal/api/middleware/csrf.go`), and no other code path calls the symbol. | Keep `TrustedOrigins` unset. If a trusted origin becomes necessary, migrate to `filippo.io/csrf/gorilla` or `net/http.CrossOriginProtection` instead of configuring hosts. |
+| GO-2026-6911 | `github.com/mark3labs/mcp-go` v0.43.2 | `client/transport`, symbol `NewStreamableHTTP` | No known fixed version. SEL's production code imports `mcp-go/mcp`, `mcp-go/server` and `mcp-go/util`; the only client-side use is the in-process test client (`client.NewInProcessClient`) in `tests/integration/mcp_server_test.go`, never `client/transport.NewStreamableHTTP`. The server-side `NewStreamableHTTPServer` helpers in `internal/mcp` are not the affected constructor. | Re-evaluate before adding any outbound MCP client (`client/...` import) or bumping mcp-go. |
 
 **Last reviewed:** 2026-11-08 (`govulncheck ./...`: 0 called vulnerabilities).
 
