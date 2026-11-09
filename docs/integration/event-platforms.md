@@ -955,7 +955,7 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
   lumped attribution — that history cannot be split, because `event_sources` records only
   the source id. Re-running a feed matches its existing events by event identity —
   `(feed URL, sourceEventId)`, i.e. `event_sources.source_url` plus `source_event_id`,
-  compared verbatim except that trailing slashes are ignored — and adds the per-feed
+  compared in its validated form (query stripped) with trailing slashes ignored — and adds the per-feed
   attribution to them, regardless of which `sources` row the run resolves to. That is how
   re-running each TPL feed after deploying backfills correct provenance for everything the
   feed still returns: the match does not depend on the source row.

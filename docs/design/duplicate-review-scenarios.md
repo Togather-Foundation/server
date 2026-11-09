@@ -97,9 +97,10 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 **Code path:** `create_event_core.go` (feed event identity block)
 
 Identity is `(feed URL, sourceEventId)` — `event_sources.source_url` plus
-`source_event_id` — compared verbatim except that trailing slashes are ignored on both
-sides. It is deliberately independent of the `sources` row: one feed can own two source
-rows and still resolve to the same event.
+`source_event_id`. The URL is stored in its validated form (query and fragment stripped)
+and compared with trailing slashes ignored on both sides, so configs that differ only by
+query are the same feed. Identity is deliberately independent of the `sources` row: a feed
+that acquired two rows historically still resolves to the same event.
 
 ### S3.1: Same feed, same external ID — duplicate detected with field merge
 

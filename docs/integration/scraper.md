@@ -600,39 +600,59 @@ no `event_sources`, `field_provenance`, `event_changes` or `api_keys` row points
 A row that owns events is never touched — merging two populated rows is a separate data
 operation because `event_sources.source_id` would have to be repointed.
 
-`audit` also reports feeds that are still split across several rows (for example a
-catch-all `Meetup` row that already holds events from the same feed URL as a configured
-`meetup-*` row). Those are historical: the fix prevents new twins, and a populated-row
-merge is tracked separately.
+`audit` reports feeds that are still served by more than one `sources` row, split into two
+very different classes:
+
+- **every row belongs to a configured source** — nothing to repair. Either several configs
+  filter one upstream feed (the five TPL BiblioCommons views, the two Lu.ma views), or a
+  config was retargeted to a different URL and its old attributions remain.
+- **with a row no config owns** — historical fragmentation, e.g. a catch-all `Meetup` row
+  that already holds events from the same feed URL as a configured `meetup-*` row. Report
+  these; the fix prevents new rows, and merging two populated rows is tracked separately
+  because `event_sources.source_id` would have to be repointed.
 
 ### Event Identity: `(feed URL, sourceEventId)`
 
 An ingested event is identified by **the feed URL plus the source's own id for the event**
 (`source.sourceEventId`, stored per attribution as `event_sources.source_event_id`).
 
-**URL comparison rule: feed URLs are compared verbatim, except that trailing slashes are
-ignored on both sides.** There is no other canonicalisation — no scheme/host lowercasing,
-no fragment stripping, no query rewriting. The comparison is done in SQL
-(`rtrim(es.source_url, '/') = rtrim($1, '/')`), so:
+**Feed URL form: the feed is `scheme://host/path`, and the compare ignores trailing
+slashes on both sides. Query strings and fragments are dropped before the URL is stored.**
+`source.url` goes through the same validation normalisation as every other URL
+(`internal/domain/events/normalize.go` strips query and fragment), so
+`event_sources.source_url` holds the canonical `scheme://host/path` form. The lookup is
+`rtrim(es.source_url, '/') = rtrim($1, '/')` in SQL (`Repository.FindByFeedEventID`).
+
+What follows from that:
 
 - `https://example.com/eventslist/` and `https://example.com/eventslist` are the same
   feed, in either direction. This matters: thousands of `event_sources` rows predate the
   rule and store a trailing slash, while the live configs may not (or vice versa). The
   tolerant comparison matches them **without a backfill**.
-- An uppercase host or a fragment only matches another URL spelled the same way.
-- The rest of the URL — path and query — is significant. Two different feed URLs on one
-  host are two feeds. (Note that ingest's generic URL normalisation strips a query from
-  `source.url` before it is stored, so in practice a query never reaches this comparison.)
+- **Two configs whose URLs differ only by query string or fragment are the same feed.**
+  `.../rss/events?types=A` and `.../rss/events?programs=B` both store `.../rss/events`,
+  so an event returned by both is one event with two attributions. This is deliberate:
+  the five TPL BiblioCommons configs are filtered views over one catalogue, and
+  **5,981 of 6,188 TPL events are currently seen by more than one TPL config** — treating
+  the views as separate feeds would duplicate every one of them. The accepted risk is an
+  upstream that reuses its event ids per query-scoped feed; no current source does, and
+  `TestSourceConfigs_FeedIdentityCollisions` fails when two configs collapse onto one feed
+  identity unless the pair is explicitly allowlisted.
+- The path is significant: two different paths on one host are two feeds.
+- An uppercase host only matches another URL spelled the same way (validation does not
+  lowercase the host on this field).
 
-Provenance is append-like and **the stored URL is never rewritten**: `event_sources.source_url`
-keeps exactly what the feed reported, so re-scraping a feed refreshes the existing
-`(event_id, source_id, source_url)` row through the unique index instead of adding a second
-one. Do not "clean up" stored feed URLs to match the lookup — that is what would break the
-upsert target.
+Provenance is append-like and **the stored URL is never rewritten after validation**:
+`event_sources.source_url` keeps the normalised form it was written with, so re-scraping
+a feed refreshes the existing `(event_id, source_id, source_url)` row through the unique
+index instead of adding a second one. Do not "clean up" stored feed URLs to match a new
+lookup rule — the write path and the upsert key have to agree.
 
 The `sources` row is **not** the identity scope. `sources` upserts on
-`(host-only base_url, name)`, so a single feed can acquire two source rows (ingested under
-two config names, or under one config and the catch-all `Google Calendar` row). Scoping
+`(host-only base_url, name)`, and a feed ingested under a second name used to acquire a
+second source row (ingest now reuses the row that already owns the feed, see
+[Per-Feed Provenance](#per-feed-provenance-and-source-identity), but historical rows still
+exist — e.g. a catch-all `Google Calendar` row beside the configured one). Scoping
 identity to the row made every event from that feed look new under the second row and
 created a duplicate event. The feed URL is what actually identifies the feed, and it is
 stored on every attribution.

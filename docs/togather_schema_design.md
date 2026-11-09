@@ -814,16 +814,17 @@ CREATE INDEX idx_event_sources_feed_identity ON event_sources (source_event_id, 
 ```
 
 **Event identity is `(source_url, source_event_id)`, not `source_id`.**
-`source_url` is the feed URL stored verbatim, and `source_event_id` is the source's own id
-for the event. Ingest looks up an already-ingested event with `FindByFeedEventID` on this
+`source_url` is the feed URL in its validated form — validation strips the query string
+and fragment — and `source_event_id` is the source's own id for the event. Ingest looks up an already-ingested event with `FindByFeedEventID` on this
 pair, because one feed can own more than one `sources` row — the `sources` upsert key is
 the host-only `base_url` plus the name. Scoping identity to `source_id` duplicated every
 event from a feed that was ingested under two names.
 
-URLs are compared verbatim except that trailing slashes are ignored on both sides
-(`rtrim(es.source_url, '/') = rtrim($1, '/')`). Provenance rows predate this rule and many
-store a trailing slash, so the tolerant comparison matches them and the live configs
-without a backfill; the stored value is never rewritten, which keeps re-scrapes hitting the
+URLs are compared in that validated form, except that trailing slashes are ignored on both
+sides (`rtrim(es.source_url, '/') = rtrim($1, '/')`). Two configs that differ only by query
+are therefore the same feed. Provenance rows predate this rule and many store a trailing
+slash, so the tolerant comparison matches them and the live configs without a backfill; the
+stored value is never rewritten after validation, which keeps re-scrapes hitting the
 `UNIQUE (event_id, source_id, source_url)` upsert target. Within one key the lookup prefers
 a live twin over a soft-deleted event, then a published event, then the oldest row (id
 breaks ties). That preference only applies when both rows match: the lookup does not

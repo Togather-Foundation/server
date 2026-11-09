@@ -37,11 +37,14 @@ source's own id for the event, scoped to the feed that published it
 (`Repository.FindByFeedEventID`). The feed URL is the `source_url` stored on each
 `event_sources` attribution row; `source.sourceEventId` is `event_sources.source_event_id`.
 
-URL comparison rule: **verbatim except that trailing slashes are ignored on both sides**
-(`rtrim(es.source_url, '/') = rtrim($1, '/')`). There is no other canonicalisation and the
-stored URL is never rewritten. Trailing-slash tolerance is load-bearing: rows written
-before this rule store whatever the feed reported (thousands carry a trailing slash) and
-must keep matching the live configs without a backfill. Because the stored value is
+URL comparison rule: **the validated form, except that trailing slashes are ignored on
+both sides** (`rtrim(es.source_url, '/') = rtrim($1, '/')`). Validation strips the query
+string and fragment from `source.url` before it is stored, so two configs that differ only
+by query are the **same** feed and the events they share dedupe together; the path remains
+significant. Nothing else is canonicalised, and the stored URL is never rewritten after
+validation. Trailing-slash tolerance is load-bearing: thousands of rows written before
+this rule carry a trailing slash and must keep matching the live configs without a
+backfill. Because the stored value is
 unchanged, a re-scrape still hits the `UNIQUE (event_id, source_id, source_url)` upsert
 target and refreshes the attribution in place.
 
