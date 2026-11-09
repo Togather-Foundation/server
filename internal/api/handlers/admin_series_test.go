@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -44,6 +45,9 @@ func TestGetSeriesCandidates_400Validation(t *testing.T) {
 		{"min_events too large", "?min_events=51"},
 		{"limit zero", "?limit=0"},
 		{"limit too large", "?limit=201"},
+		{"offset negative", "?offset=-1"},
+		{"offset too large", "?offset=10001"},
+		{"offset not a number", "?offset=all"},
 		{"venue invalid", "?venue_id=not-a-ulid"},
 	}
 
@@ -249,4 +253,142 @@ func TestGetSeriesCandidates_Truncated(t *testing.T) {
 	assert.Len(t, resp.Items, 1)
 	assert.Equal(t, 2, resp.TotalClusters)
 	assert.True(t, resp.Truncated)
+}
+
+func TestGetSeriesCandidates_Offset(t *testing.T) {
+	now := time.Now().UTC()
+	first := now.AddDate(0, 0, 2).Format(time.DateOnly)
+	second := now.AddDate(0, 0, 9).Format(time.DateOnly)
+
+	newVenueCluster := func(venueULID, venueName, canonical string) events.SeriesCandidatePair {
+		a := seriesMember(canonical, "Same Name", first)
+		b := seriesMember(canonical+"B", "Same Name", second)
+		a.VenueULID, a.VenueName = venueULID, venueName
+		b.VenueULID, b.VenueName = venueULID, venueName
+		return events.SeriesCandidatePair{A: a, B: b}
+	}
+
+	pairs := []events.SeriesCandidatePair{
+		newVenueCluster("01HPLACE00000000000000000A", "Alpha Branch", "01HEVENT000000000000000001"),
+		newVenueCluster("01HPLACE00000000000000000B", "Beta Branch", "01HEVENT000000000000000002"),
+		newVenueCluster("01HPLACE00000000000000000C", "Gamma Branch", "01HEVENT000000000000000003"),
+	}
+
+	cases := []struct {
+		name      string
+		query     string
+		wantItems int
+		wantTrunc bool
+	}{
+		{name: "offset zero", query: "?min_events=2&limit=10", wantItems: 3, wantTrunc: false},
+		{name: "middle slice", query: "?min_events=2&offset=1&limit=1", wantItems: 1, wantTrunc: true},
+		{name: "last page", query: "?min_events=2&offset=2&limit=1", wantItems: 1, wantTrunc: false},
+		{name: "past the end", query: "?min_events=2&offset=99&limit=10", wantItems: 0, wantTrunc: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := new(MockRepository)
+			repo.On("ListSeriesCandidatePairs", mock.Anything, mock.Anything).Return(pairs, nil)
+
+			h := newTestAdminHandler(repo)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/events/series-candidates"+tc.query, nil)
+			req = withAdminUser(req, "admin@example.com")
+			rec := httptest.NewRecorder()
+			h.GetSeriesCandidates(rec, req)
+
+			require.Equal(t, http.StatusOK, rec.Code)
+			var resp struct {
+				Items         []json.RawMessage `json:"items"`
+				TotalClusters int               `json:"total_clusters"`
+				Truncated     bool              `json:"truncated"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+			assert.Len(t, resp.Items, tc.wantItems)
+			assert.Equal(t, 3, resp.TotalClusters, "total_clusters is the full count")
+			assert.Equal(t, tc.wantTrunc, resp.Truncated)
+			if tc.wantItems == 0 {
+				assert.Contains(t, rec.Body.String(), `"items":[]`, "empty pages must serialize as [] not null")
+			}
+		})
+	}
+}
+
+func TestGetSeriesCandidates_SourceResolution(t *testing.T) {
+	const sourceID = "0f8c5b5e-9d1a-4c1e-8f1a-6f2b7c8d9e0f"
+
+	repo := new(MockRepository)
+	repo.On("ResolveSourceIdentifier", mock.Anything, "tpl-events").Return(sourceID, nil)
+	var captured events.SeriesCandidatesQuery
+	repo.On("ListSeriesCandidatePairs", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			captured = args.Get(1).(events.SeriesCandidatesQuery)
+		}).
+		Return(nil, nil)
+
+	h := newTestAdminHandler(repo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/events/series-candidates?source=tpl-events", nil)
+	req = withAdminUser(req, "admin@example.com")
+	rec := httptest.NewRecorder()
+	h.GetSeriesCandidates(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, sourceID, captured.SourceID, "resolved source UUID must reach the storage filter")
+	repo.AssertExpectations(t)
+}
+
+func TestGetSeriesCandidates_SourceErrors(t *testing.T) {
+	cases := []struct {
+		name    string
+		err     error
+		wantSub string
+	}{
+		{
+			name:    "unknown",
+			err:     fmt.Errorf("%w: %q looks like a ULID; expected a source name or UUID", events.ErrSourceNotFound, "01ARZ3NDEKTSV4RRFFQ69G5FAW"),
+			wantSub: "expected a source name or UUID",
+		},
+		{
+			name:    "ambiguous",
+			err:     fmt.Errorf("%w: %q matches 2 sources; use the sources UUID", events.ErrSourceAmbiguous, "duplicated"),
+			wantSub: "use the sources UUID",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := new(MockRepository)
+			repo.On("ResolveSourceIdentifier", mock.Anything, "tpl-events").Return("", tc.err)
+
+			h := newTestAdminHandler(repo)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/events/series-candidates?source=tpl-events", nil)
+			req = withAdminUser(req, "admin@example.com")
+			rec := httptest.NewRecorder()
+			h.GetSeriesCandidates(rec, req)
+
+			require.Equal(t, http.StatusBadRequest, rec.Code)
+			assert.Contains(t, rec.Header().Get("Content-Type"), "application/problem+json")
+			assert.Contains(t, rec.Body.String(), tc.wantSub)
+			repo.AssertNotCalled(t, "ListSeriesCandidatePairs", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+func TestGetSeriesCandidates_SourceULID400(t *testing.T) {
+	const ulidSource = "01ARZ3NDEKTSV4RRFFQ69G5FAW"
+
+	repo := new(MockRepository)
+	repo.On("ResolveSourceIdentifier", mock.Anything, ulidSource).
+		Return("", fmt.Errorf("%w: %q looks like a ULID; expected a source name or UUID", events.ErrSourceNotFound, ulidSource))
+
+	h := newTestAdminHandler(repo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/events/series-candidates?source="+ulidSource, nil)
+	req = withAdminUser(req, "admin@example.com")
+	rec := httptest.NewRecorder()
+	h.GetSeriesCandidates(rec, req)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "looks like a ULID")
+	assert.Contains(t, rec.Body.String(), "expected a source name or UUID")
+	repo.AssertNotCalled(t, "ListSeriesCandidatePairs", mock.Anything, mock.Anything)
 }

@@ -131,6 +131,69 @@ func TestBuildSeriesCandidatesOrdering(t *testing.T) {
 	assert.Equal(t, "Zeta", result.Items[2].Name)
 }
 
+func TestBuildSeriesCandidatesOffset(t *testing.T) {
+	// Three deterministic clusters, in sorted order: Alpha (3 events), Beta (2,
+	// earlier first date), Zeta (2).
+	bigA := seriesTestMember("01HEVENT000000000000000001", "Alpha", "2026-11-10")
+	bigB := seriesTestMember("01HEVENT000000000000000002", "Alpha", "2026-11-17")
+	bigC := seriesTestMember("01HEVENT000000000000000003", "Alpha", "2026-11-24")
+	zetaA := seriesTestMember("01HEVENT000000000000000004", "Zeta", "2026-11-12")
+	zetaB := seriesTestMember("01HEVENT000000000000000005", "Zeta", "2026-11-19")
+	earlyA := seriesTestMember("01HEVENT000000000000000006", "Beta", "2026-11-09")
+	earlyB := seriesTestMember("01HEVENT000000000000000007", "Beta", "2026-11-16")
+
+	pairs := []SeriesCandidatePair{
+		seriesTestPair(bigA, bigB),
+		seriesTestPair(bigB, bigC),
+		seriesTestPair(zetaA, zetaB),
+		seriesTestPair(earlyA, earlyB),
+	}
+
+	t.Run("offset zero unchanged", func(t *testing.T) {
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 3)
+		require.Equal(t, 3, result.TotalClusters)
+		require.False(t, result.Truncated)
+		assert.Equal(t, "Alpha", result.Items[0].Name)
+	})
+
+	t.Run("middle slice", func(t *testing.T) {
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Offset: 1, Limit: 1})
+		require.Len(t, result.Items, 1)
+		require.Equal(t, 3, result.TotalClusters)
+		assert.Equal(t, "Beta", result.Items[0].Name)
+		// offset (1) + returned (1) < total (3): more clusters remain.
+		assert.True(t, result.Truncated)
+	})
+
+	t.Run("last page is not truncated", func(t *testing.T) {
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Offset: 2, Limit: 1})
+		require.Len(t, result.Items, 1)
+		assert.Equal(t, "Zeta", result.Items[0].Name)
+		assert.False(t, result.Truncated)
+	})
+
+	t.Run("offset past the end", func(t *testing.T) {
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Offset: 5, Limit: 10})
+		require.Empty(t, result.Items)
+		require.Equal(t, 3, result.TotalClusters)
+		assert.False(t, result.Truncated, "nothing remains past the end")
+	})
+
+	t.Run("offset equal to total", func(t *testing.T) {
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Offset: 3, Limit: 10})
+		require.Empty(t, result.Items)
+		assert.False(t, result.Truncated)
+	})
+
+	t.Run("negative offset clamps to zero", func(t *testing.T) {
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Offset: -1, Limit: 1})
+		require.Len(t, result.Items, 1)
+		assert.Equal(t, "Alpha", result.Items[0].Name)
+		assert.True(t, result.Truncated)
+	})
+}
+
 func TestMostFrequentName(t *testing.T) {
 	t.Run("modal name wins", func(t *testing.T) {
 		component := []SeriesCandidateMember{

@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -34,6 +35,13 @@ type SeriesCandidatesParams struct {
 	MinEvents int
 	// VenueULID optionally restricts the scan to one place.
 	VenueULID string
+	// Source optionally restricts the scan to one provenance source. It accepts
+	// an exact source name or UUID and is resolved against the sources table.
+	// Empty means no source filter.
+	Source string
+	// Offset skips this many clusters after the deterministic sort and before
+	// Limit is applied.
+	Offset int
 	// Limit caps the number of returned clusters.
 	Limit int
 }
@@ -48,6 +56,9 @@ func (p SeriesCandidatesParams) WithDefaults() SeriesCandidatesParams {
 	}
 	if p.MinEvents == 0 {
 		p.MinEvents = DefaultSeriesCandidateMinEvents
+	}
+	if p.Offset < 0 {
+		p.Offset = 0
 	}
 	if p.Limit == 0 {
 		p.Limit = DefaultSeriesCandidateLimit
@@ -68,6 +79,10 @@ type SeriesCandidatesQuery struct {
 	Now time.Time
 	// VenueULID optionally restricts the scan to one place.
 	VenueULID string
+	// SourceID optionally restricts the scan to events attributed to this
+	// resolved provenance source UUID. Empty means no source filter. Events with
+	// no event_sources row are excluded while this is set.
+	SourceID string
 }
 
 // SeriesCandidateMember is one event that belongs to a detected series.
@@ -131,6 +146,14 @@ func (s *AdminService) FindSeriesCandidates(ctx context.Context, params SeriesCa
 		WindowEnd:   startOfDateUTC(now.AddDate(0, 0, params.Days)),
 		Now:         now,
 		VenueULID:   params.VenueULID,
+	}
+
+	if source := strings.TrimSpace(params.Source); source != "" {
+		sourceID, err := s.repo.ResolveSourceIdentifier(ctx, source)
+		if err != nil {
+			return SeriesCandidatesResult{}, fmt.Errorf("resolve series-candidate source %q: %w", source, err)
+		}
+		query.SourceID = sourceID
 	}
 
 	pairs, err := s.repo.ListSeriesCandidatePairs(ctx, query)
@@ -223,10 +246,19 @@ func BuildSeriesCandidates(pairs []SeriesCandidatePair, params SeriesCandidatesP
 	})
 
 	total := len(clusters)
-	truncated := total > params.Limit
-	if truncated {
+
+	// Offset applies after the deterministic sort and before Limit. An offset
+	// at or past the end yields no clusters and is not "truncated" — there is
+	// nothing more to show.
+	if params.Offset >= total {
+		clusters = nil
+	} else if params.Offset > 0 {
+		clusters = clusters[params.Offset:]
+	}
+	if len(clusters) > params.Limit {
 		clusters = clusters[:params.Limit]
 	}
+	truncated := params.Offset+len(clusters) < total
 
 	return SeriesCandidatesResult{Items: clusters, TotalClusters: total, Truncated: truncated}
 }

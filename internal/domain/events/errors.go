@@ -1,8 +1,20 @@
 package events
 
 import (
+	"errors"
 	"fmt"
 	"time"
+)
+
+// Source identifier resolution errors. The series-candidate source filter
+// accepts a provenance source name or UUID; callers map both sentinels to a 400
+// because they describe a bad request, not a server failure.
+var (
+	// ErrSourceNotFound means no row in sources matched the identifier.
+	ErrSourceNotFound = errors.New("source not found")
+	// ErrSourceAmbiguous means the identifier matched more than one sources row
+	// (source names are only unique per base_url).
+	ErrSourceAmbiguous = errors.New("source identifier is ambiguous")
 )
 
 // ErrPreviouslyRejected indicates that an event was previously reviewed and rejected.

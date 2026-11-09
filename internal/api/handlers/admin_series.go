@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -16,17 +17,20 @@ import (
 // Series-candidate query-parameter bounds. The detector defaults live in the
 // events domain package; these are the accepted request ranges.
 const (
-	seriesCandidatesMinDays      = 1
-	seriesCandidatesMaxDays      = 365
-	seriesCandidatesMinLookback  = 0
-	seriesCandidatesMaxLookback  = 90
-	seriesCandidatesMinEvents    = 2
-	seriesCandidatesMaxEvents    = 50
-	seriesCandidatesMinLimit     = 1
-	seriesCandidatesMaxLimit     = 200
-	seriesCandidatesDefaultLook  = events.DefaultSeriesCandidateLookbackDays
-	seriesCandidatesDefaultMinEv = events.DefaultSeriesCandidateMinEvents
-	seriesCandidatesDefaultLimit = events.DefaultSeriesCandidateLimit
+	seriesCandidatesMinDays       = 1
+	seriesCandidatesMaxDays       = 365
+	seriesCandidatesMinLookback   = 0
+	seriesCandidatesMaxLookback   = 90
+	seriesCandidatesMinEvents     = 2
+	seriesCandidatesMaxEvents     = 50
+	seriesCandidatesMinLimit      = 1
+	seriesCandidatesMaxLimit      = 200
+	seriesCandidatesMinOffset     = 0
+	seriesCandidatesMaxOffset     = 10000
+	seriesCandidatesDefaultLook   = events.DefaultSeriesCandidateLookbackDays
+	seriesCandidatesDefaultMinEv  = events.DefaultSeriesCandidateMinEvents
+	seriesCandidatesDefaultLimit  = events.DefaultSeriesCandidateLimit
+	seriesCandidatesDefaultOffset = 0
 )
 
 type seriesCandidateVenueResponse struct {
@@ -93,6 +97,11 @@ func (h *AdminHandler) GetSeriesCandidates(w http.ResponseWriter, r *http.Reques
 		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 		return
 	}
+	offset, err := parseSeriesCandidateInt(query, "offset", seriesCandidatesDefaultOffset, seriesCandidatesMinOffset, seriesCandidatesMaxOffset)
+	if err != nil {
+		problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
+		return
+	}
 
 	venueID := strings.TrimSpace(query.Get("venue_id"))
 	if venueID != "" {
@@ -105,15 +114,26 @@ func (h *AdminHandler) GetSeriesCandidates(w http.ResponseWriter, r *http.Reques
 		venueID = strings.ToUpper(venueID)
 	}
 
+	source := strings.TrimSpace(query.Get("source"))
+
 	result, err := h.AdminService.FindSeriesCandidates(r.Context(), events.SeriesCandidatesParams{
 		Now:          time.Now(),
 		Days:         days,
 		LookbackDays: lookbackDays,
 		MinEvents:    minEvents,
 		VenueULID:    venueID,
+		Source:       source,
+		Offset:       offset,
 		Limit:        limit,
 	})
 	if err != nil {
+		if errors.Is(err, events.ErrSourceNotFound) || errors.Is(err, events.ErrSourceAmbiguous) {
+			// Surface the resolver's message (accepted forms, ULID hint) instead
+			// of replacing it with a generic one.
+			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env,
+				problem.WithDetail(err.Error()))
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", fmt.Errorf("find series candidates: %w", err), h.Env)
 		return
 	}

@@ -309,6 +309,10 @@ func (s stubEventsRepo) ListSeriesCandidatePairs(_ context.Context, _ events.Ser
 	return nil, nil
 }
 
+func (s stubEventsRepo) ResolveSourceIdentifier(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func (s stubEventsRepo) Rollback(ctx context.Context) error {
 	return nil
 }

@@ -24,6 +24,8 @@ const (
 	seriesMaxEvents       = 50
 	seriesMinLimit        = 1
 	seriesMaxLimit        = 200
+	seriesMinOffset       = 0
+	seriesMaxOffset       = 10000
 )
 
 type SeriesCandidateVenue struct {
@@ -71,6 +73,8 @@ creating review rows, so they never appear in the queue. Use this command to
 discover them, then consolidate each cluster into one event with N occurrences:
 
   server review series --days 90
+  server review series --source tpl-events --limit 20
+  server review series --offset 20 --limit 20
   server review consolidate <canonical> <member-ulids...> --transfer-occurrences --dry-run
   server review consolidate <canonical> <member-ulids...> --transfer-occurrences
 
@@ -79,7 +83,10 @@ age groups, audiences, drop-in vs registered sessions, or different programmes
 apart. If names or audiences diverge, do not consolidate.
 
 The detector is deliberately conservative and covers all published events, not
-only suppressed sources. --json emits the same data for scripting.`,
+only suppressed sources. --source scopes the scan to one provenance source
+(a source name or UUID) and only sees events attributed to that source; a cluster
+that spans sources is narrowed to the requested source's events. --offset pages
+through the deterministic cluster order. --json emits the same data for scripting.`,
 		Args: cobra.NoArgs,
 		RunE: runReviewSeries,
 	}
@@ -88,6 +95,8 @@ only suppressed sources. --json emits the same data for scripting.`,
 	seriesLookbackDays int
 	seriesMinEventFlag int
 	seriesVenue        string
+	seriesSource       string
+	seriesOffset       int
 	seriesLimit        int
 )
 
@@ -99,11 +108,16 @@ func init() {
 	reviewSeriesCmd.Flags().IntVar(&seriesMinEventFlag, "min-events", domainevents.DefaultSeriesCandidateMinEvents,
 		fmt.Sprintf("Minimum distinct events per cluster (%d-%d)", seriesMinEvents, seriesMaxEvents))
 	reviewSeriesCmd.Flags().StringVar(&seriesVenue, "venue", "", "Restrict to a place ULID")
+	reviewSeriesCmd.Flags().StringVar(&seriesSource, "source", "", "Restrict to a provenance source name or UUID")
+	reviewSeriesCmd.Flags().IntVar(&seriesOffset, "offset", 0,
+		fmt.Sprintf("Skip this many clusters after sorting (%d-%d)", seriesMinOffset, seriesMaxOffset))
 	reviewSeriesCmd.Flags().IntVar(&seriesLimit, "limit", domainevents.DefaultSeriesCandidateLimit,
 		fmt.Sprintf("Maximum clusters returned (%d-%d)", seriesMinLimit, seriesMaxLimit))
 }
 
-func runReviewSeries(cmd *cobra.Command, args []string) error {
+// validateSeriesFlags mirrors the server-side range checks so an out-of-range
+// flag fails before any request is made.
+func validateSeriesFlags() error {
 	if seriesDays < seriesMinDays || seriesDays > seriesMaxDays {
 		return fmt.Errorf("--days must be between %d and %d", seriesMinDays, seriesMaxDays)
 	}
@@ -113,8 +127,18 @@ func runReviewSeries(cmd *cobra.Command, args []string) error {
 	if seriesMinEventFlag < seriesMinEvents || seriesMinEventFlag > seriesMaxEvents {
 		return fmt.Errorf("--min-events must be between %d and %d", seriesMinEvents, seriesMaxEvents)
 	}
+	if seriesOffset < seriesMinOffset || seriesOffset > seriesMaxOffset {
+		return fmt.Errorf("--offset must be between %d and %d", seriesMinOffset, seriesMaxOffset)
+	}
 	if seriesLimit < seriesMinLimit || seriesLimit > seriesMaxLimit {
 		return fmt.Errorf("--limit must be between %d and %d", seriesMinLimit, seriesMaxLimit)
+	}
+	return nil
+}
+
+func runReviewSeries(cmd *cobra.Command, args []string) error {
+	if err := validateSeriesFlags(); err != nil {
+		return err
 	}
 
 	jwt, err := getReviewJWT()
@@ -132,9 +156,13 @@ func runReviewSeries(cmd *cobra.Command, args []string) error {
 	params.Set("days", strconv.Itoa(seriesDays))
 	params.Set("lookback_days", strconv.Itoa(seriesLookbackDays))
 	params.Set("min_events", strconv.Itoa(seriesMinEventFlag))
+	params.Set("offset", strconv.Itoa(seriesOffset))
 	params.Set("limit", strconv.Itoa(seriesLimit))
 	if seriesVenue != "" {
 		params.Set("venue_id", seriesVenue)
+	}
+	if seriesSource != "" {
+		params.Set("source", seriesSource)
 	}
 
 	u := fmt.Sprintf("%s/api/v1/admin/events/series-candidates?%s", serverURL, params.Encode())
@@ -154,7 +182,7 @@ func runReviewSeries(cmd *cobra.Command, args []string) error {
 		return enc.Encode(resp)
 	}
 
-	printSeriesCandidates(out, resp)
+	printSeriesCandidates(out, resp, seriesOffset)
 	return nil
 }
 
@@ -195,8 +223,12 @@ func getWithProblemDetail(client *http.Client, requestURL, authKey string) ([]by
 	return body, nil
 }
 
-func printSeriesCandidates(out io.Writer, resp SeriesCandidatesResponse) {
+func printSeriesCandidates(out io.Writer, resp SeriesCandidatesResponse, offset int) {
 	if len(resp.Items) == 0 {
+		if offset > 0 && resp.TotalClusters > 0 {
+			_, _ = fmt.Fprintf(out, "%d series candidate(s) (offset %d is past the end)\n", resp.TotalClusters, offset)
+			return
+		}
 		_, _ = fmt.Fprintln(out, "No series candidates found.")
 		_, _ = fmt.Fprintln(out)
 		_, _ = fmt.Fprintln(out, "The detector covers all published events but is deliberately conservative")
@@ -206,15 +238,23 @@ func printSeriesCandidates(out io.Writer, resp SeriesCandidatesResponse) {
 		return
 	}
 
-	_, _ = fmt.Fprintf(out, "%d series candidate(s)", resp.TotalClusters)
-	if resp.Truncated {
-		_, _ = fmt.Fprintf(out, " (showing %d; raise --limit to see the rest)", len(resp.Items))
+	if offset > 0 || resp.Truncated {
+		start := offset + 1
+		end := offset + len(resp.Items)
+		_, _ = fmt.Fprintf(out, "%d series candidate(s) (showing %d-%d of %d", resp.TotalClusters, start, end, resp.TotalClusters)
+		// Never suggest an offset the client-side validator would reject.
+		if end < resp.TotalClusters && end <= seriesMaxOffset {
+			_, _ = fmt.Fprintf(out, "; next: --offset %d", end)
+		}
+		_, _ = fmt.Fprintln(out, ")")
+	} else {
+		_, _ = fmt.Fprintf(out, "%d series candidate(s)\n", resp.TotalClusters)
 	}
-	_, _ = fmt.Fprintln(out)
 
 	for i, item := range resp.Items {
+		// Number clusters globally so page 2 continues the header's numbering.
 		_, _ = fmt.Fprintf(out, "\n%d) %s — %s — %s — %d events — %s..%s\n",
-			i+1,
+			offset+i+1,
 			item.Name,
 			item.Venue.Name,
 			seriesWhen(item),

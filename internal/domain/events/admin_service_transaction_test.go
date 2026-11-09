@@ -479,6 +479,9 @@ func (m *mockTransactionalRepo) FindSeriesCompanion(ctx context.Context, params 
 func (m *mockTransactionalRepo) ListSeriesCandidatePairs(ctx context.Context, params SeriesCandidatesQuery) ([]SeriesCandidatePair, error) {
 	return nil, nil
 }
+func (m *mockTransactionalRepo) ResolveSourceIdentifier(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
 func (m *mockTransactionalRepo) Rollback(ctx context.Context) error {
 	return nil
 }

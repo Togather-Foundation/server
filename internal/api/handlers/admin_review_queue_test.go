@@ -492,6 +492,11 @@ func (m *MockRepository) ListSeriesCandidatePairs(ctx context.Context, params ev
 	return args.Get(0).([]events.SeriesCandidatePair), args.Error(1)
 }
 
+func (m *MockRepository) ResolveSourceIdentifier(ctx context.Context, identifier string) (string, error) {
+	args := m.Called(ctx, identifier)
+	return args.String(0), args.Error(1)
+}
+
 func (m *MockRepository) Rollback(ctx context.Context) error {
 	return nil
 }

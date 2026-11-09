@@ -399,6 +399,10 @@ func (m *IngestMockRepository) FindNearDuplicates(ctx context.Context, venueID s
 func (m *IngestMockRepository) ListSeriesCandidatePairs(ctx context.Context, params events.SeriesCandidatesQuery) ([]events.SeriesCandidatePair, error) {
 	return nil, nil
 }
+
+func (m *IngestMockRepository) ResolveSourceIdentifier(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
 func (m *IngestMockRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarPlaceCandidate, error) {
 	return nil, nil
 }

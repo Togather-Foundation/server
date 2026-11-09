@@ -324,6 +324,13 @@ type Repository interface {
 	// discovery surface. Connected components are built by the domain layer.
 	ListSeriesCandidatePairs(ctx context.Context, params SeriesCandidatesQuery) ([]SeriesCandidatePair, error)
 
+	// ResolveSourceIdentifier resolves an admin-supplied provenance source
+	// identifier to its sources.id. Accepted forms are an exact source name or
+	// a UUID (the actual sources.id; sources has no ULID column). Returns
+	// ErrSourceNotFound when nothing matches and ErrSourceAmbiguous when more
+	// than one sources row matches.
+	ResolveSourceIdentifier(ctx context.Context, identifier string) (string, error)
+
 	// Rollback aborts the current transaction. Idempotent — safe to call even if
 	// no transaction is active. Used by callers that run read-only queries inside a
 	// transaction and need to recover from query errors without corrupting the

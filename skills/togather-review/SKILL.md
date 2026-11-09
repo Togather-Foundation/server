@@ -92,10 +92,36 @@ not see them. Find them explicitly:
 source .env && ./server review series --days 90 --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
 ```
 
-The detector covers **all published events**, not only suppressed sources: it will
-also return series that Steps 2–3 just approved. A series that appeared in the
-queue may already be partly consolidated, so always inspect the member list before
-acting. `--json` emits the same cluster data for scripting.
+Work one source at a time when the list is long. `--source` accepts a provenance
+source name (`tpl-events`) or UUID, and a scoped run **only sees that
+source's events** — a cluster that spans sources is narrowed to the requested
+source's members, so never retire members that a scoped run did not show. Historical
+events may live on a differently-named provenance row after a feed rename, so if a
+source looks empty, try its previous name as well. An event attributed to two
+sources appears in **both** scopes, so a scoped consolidate can retire an event
+that also carries another source's provenance — verify the member list.
+
+To resolve a source UUID, fetch one event with `?include_provenance=true` to see
+its source name, then run `./server review queue --group-by source` (or `--json`,
+`sourceId`) to get the matching UUID.
+
+```bash
+source .env && ./server review series --source tpl-events --limit 20 \
+  --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
+```
+
+Page with `--offset`. When there are more clusters than fit in one page the header
+prints `showing X-Y of N; next: --offset <N>`, for example:
+
+```text
+526 series candidate(s) (showing 201-220 of 526; next: --offset 220)
+```
+
+The detector covers **all published events** (unless `--source` scopes the run),
+not only suppressed sources: it will also return series that Steps 2–3 just
+approved. A series that appeared in the queue may already be partly consolidated,
+so always inspect the member list before acting. `--json` emits the same cluster
+data for scripting.
 
 For each cluster, **read every member name and date**:
 

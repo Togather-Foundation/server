@@ -2,11 +2,14 @@ package postgres
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/rs/zerolog"
@@ -364,6 +367,197 @@ func TestListSeriesCandidatePairsWindowBoundary(t *testing.T) {
 	require.NotContains(t, allMembers, rightOutsideNext)
 }
 
+func TestResolveSourceIdentifier(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+
+	namedID := insertSeriesTestSource(t, ctx, pool, "tpl-events", nil)
+
+	// A source name that happens to be UUID-shaped must still resolve by name:
+	// the UUID lookup only matches when some source actually owns that id.
+	uuidShapedName := uuid.NewString()
+	uuidShapedID := insertSeriesTestSource(t, ctx, pool, uuidShapedName, nil)
+
+	// Same name on two different base URLs is legal (identity is base_url+name)
+	// and therefore ambiguous by name alone.
+	baseA := "https://a.example.com/feed"
+	baseB := "https://b.example.com/feed"
+	insertSeriesTestSource(t, ctx, pool, "duplicated", &baseA)
+	insertSeriesTestSource(t, ctx, pool, "duplicated", &baseB)
+
+	t.Run("name", func(t *testing.T) {
+		got, err := repo.ResolveSourceIdentifier(ctx, "tpl-events")
+		require.NoError(t, err)
+		require.Equal(t, namedID, got)
+	})
+
+	t.Run("uuid", func(t *testing.T) {
+		got, err := repo.ResolveSourceIdentifier(ctx, namedID)
+		require.NoError(t, err)
+		require.Equal(t, namedID, got)
+	})
+
+	t.Run("uuid is case-insensitive", func(t *testing.T) {
+		got, err := repo.ResolveSourceIdentifier(ctx, strings.ToUpper(namedID))
+		require.NoError(t, err)
+		require.Equal(t, namedID, got)
+	})
+
+	t.Run("uuid-shaped source name resolves by name", func(t *testing.T) {
+		// Safe behaviour: UUID parsing must not shadow an exact name match.
+		got, err := repo.ResolveSourceIdentifier(ctx, uuidShapedName)
+		require.NoError(t, err)
+		require.Equal(t, uuidShapedID, got)
+	})
+
+	t.Run("trims whitespace", func(t *testing.T) {
+		got, err := repo.ResolveSourceIdentifier(ctx, "  tpl-events  ")
+		require.NoError(t, err)
+		require.Equal(t, namedID, got)
+	})
+
+	t.Run("unknown", func(t *testing.T) {
+		_, err := repo.ResolveSourceIdentifier(ctx, "does-not-exist")
+		require.Error(t, err)
+		require.True(t, errors.Is(err, events.ErrSourceNotFound))
+		require.Contains(t, err.Error(), "expected a source name or UUID")
+	})
+
+	t.Run("ulid is rejected with guidance", func(t *testing.T) {
+		_, err := repo.ResolveSourceIdentifier(ctx, ulid.Make().String())
+		require.Error(t, err)
+		require.True(t, errors.Is(err, events.ErrSourceNotFound))
+		require.Contains(t, err.Error(), "looks like a ULID")
+		require.Contains(t, err.Error(), "expected a source name or UUID")
+	})
+
+	t.Run("ambiguous name", func(t *testing.T) {
+		_, err := repo.ResolveSourceIdentifier(ctx, "duplicated")
+		require.Error(t, err)
+		require.True(t, errors.Is(err, events.ErrSourceAmbiguous))
+	})
+}
+
+// TestListSeriesCandidatePairsSourceFilter proves strict source scoping: a
+// source-scoped run can only form clusters from that source's events, and an
+// event with no attribution never joins one.
+func TestListSeriesCandidatePairsSourceFilter(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+	venue := insertPlace(t, ctx, pool, "Mixed Source Hall", "Toronto", "ON")
+
+	sourceA := insertSeriesTestSource(t, ctx, pool, "source-a", nil)
+	sourceB := insertSeriesTestSource(t, ctx, pool, "source-b", nil)
+
+	a1 := insertSeriesTestEventWithSource(t, ctx, pool, "Mixed Storytime", venue, clock.FutureTimeAt(2, 18, 0), sourceA)
+	a2 := insertSeriesTestEventWithSource(t, ctx, pool, "Mixed Storytime", venue, clock.FutureTimeAt(9, 18, 0), sourceA)
+	a3 := insertSeriesTestEventWithSource(t, ctx, pool, "Mixed Storytime", venue, clock.FutureTimeAt(16, 18, 0), sourceA)
+
+	// Same venue/name/cadence but a different source: forms edges in an
+	// unscoped run, but cannot be its own cluster when scoped.
+	b := insertSeriesTestEventWithSource(t, ctx, pool, "Mixed Storytime", venue, clock.FutureTimeAt(9, 18, 0), sourceB)
+
+	// No event_sources attribution: excluded by any source-scoped run.
+	unattributed := insertSeriesTestEvent(t, ctx, pool, "Mixed Storytime", venue, clock.FutureTimeAt(9, 18, 0))
+
+	now := time.Now().UTC()
+	baseQuery := events.SeriesCandidatesQuery{
+		WindowStart: seriesTestWindowStart(now, 14),
+		WindowEnd:   seriesTestWindowEnd(now, 90),
+		Now:         now,
+	}
+
+	t.Run("unscoped reports both sources", func(t *testing.T) {
+		pairs, err := repo.ListSeriesCandidatePairs(ctx, baseQuery)
+		require.NoError(t, err)
+
+		result := events.BuildSeriesCandidates(pairs, events.SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		require.Equal(t, 5, result.Items[0].EventCount)
+		require.ElementsMatch(t, []string{a1, a2, a3, b, unattributed}, memberULIDs(result.Items[0]))
+	})
+
+	t.Run("scoped cluster is narrowed to the source", func(t *testing.T) {
+		query := baseQuery
+		query.SourceID = sourceA
+		pairs, err := repo.ListSeriesCandidatePairs(ctx, query)
+		require.NoError(t, err)
+
+		result := events.BuildSeriesCandidates(pairs, events.SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		require.Equal(t, 3, result.Items[0].EventCount)
+		require.ElementsMatch(t, []string{a1, a2, a3}, memberULIDs(result.Items[0]))
+	})
+
+	t.Run("single matching event is not reported", func(t *testing.T) {
+		query := baseQuery
+		query.SourceID = sourceB
+		pairs, err := repo.ListSeriesCandidatePairs(ctx, query)
+		require.NoError(t, err)
+		require.Empty(t, pairs)
+
+		result := events.BuildSeriesCandidates(pairs, events.SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Empty(t, result.Items, "a cluster of one must not be reported")
+	})
+}
+
+// TestListSeriesCandidatePairsSourceFilterDualAttribution documents that an
+// event attributed to two provenance sources appears in both scoped runs. A
+// scoped consolidate can therefore retire an event that also carries another
+// source's provenance, which is why the member list must be verified.
+func TestListSeriesCandidatePairsSourceFilterDualAttribution(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+	venue := insertPlace(t, ctx, pool, "Dual Attribution Hall", "Toronto", "ON")
+
+	sourceA := insertSeriesTestSource(t, ctx, pool, "dual-a", nil)
+	sourceB := insertSeriesTestSource(t, ctx, pool, "dual-b", nil)
+
+	a1 := insertSeriesTestEventWithSource(t, ctx, pool, "Dual Storytime", venue, clock.FutureTimeAt(2, 18, 0), sourceA)
+
+	dual := insertSeriesTestEventOnly(t, ctx, pool, "Dual Storytime", venue)
+	insertSeriesTestOccurrence(t, ctx, pool, dual.eventID, clock.FutureTimeAt(9, 18, 0), venue, nil)
+	insertSeriesTestEventSource(t, ctx, pool, dual.eventID, sourceA)
+	insertSeriesTestEventSource(t, ctx, pool, dual.eventID, sourceB)
+
+	a3 := insertSeriesTestEventWithSource(t, ctx, pool, "Dual Storytime", venue, clock.FutureTimeAt(16, 18, 0), sourceA)
+	b2 := insertSeriesTestEventWithSource(t, ctx, pool, "Dual Storytime", venue, clock.FutureTimeAt(16, 18, 0), sourceB)
+
+	now := time.Now().UTC()
+	baseQuery := events.SeriesCandidatesQuery{
+		WindowStart: seriesTestWindowStart(now, 14),
+		WindowEnd:   seriesTestWindowEnd(now, 90),
+		Now:         now,
+	}
+
+	for name, tc := range map[string]struct {
+		sourceID string
+		want     []string
+	}{
+		"source A": {sourceID: sourceA, want: []string{a1, dual.ulid, a3}},
+		"source B": {sourceID: sourceB, want: []string{dual.ulid, b2}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			query := baseQuery
+			query.SourceID = tc.sourceID
+			pairs, err := repo.ListSeriesCandidatePairs(ctx, query)
+			require.NoError(t, err)
+
+			result := events.BuildSeriesCandidates(pairs, events.SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+			require.Len(t, result.Items, 1)
+			require.ElementsMatch(t, tc.want, memberULIDs(result.Items[0]))
+			require.Contains(t, memberULIDs(result.Items[0]), dual.ulid,
+				"the dual-attributed event appears in both scopes")
+		})
+	}
+}
+
 type seriesTestEvent struct {
 	ulid    string
 	eventID string
@@ -387,6 +581,36 @@ func insertSeriesTestEventOnly(t *testing.T, ctx context.Context, pool *pgxpool.
 	).Scan(&eventID)
 	require.NoError(t, err)
 	return seriesTestEvent{ulid: ulidValue, eventID: eventID}
+}
+
+func insertSeriesTestEventWithSource(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string, place seededEntity, start time.Time, sourceID string) string {
+	t.Helper()
+	event := insertSeriesTestEventOnly(t, ctx, pool, name, place)
+	insertSeriesTestOccurrence(t, ctx, pool, event.eventID, start, place, nil)
+	insertSeriesTestEventSource(t, ctx, pool, event.eventID, sourceID)
+	return event.ulid
+}
+
+func insertSeriesTestEventSource(t *testing.T, ctx context.Context, pool *pgxpool.Pool, eventID, sourceID string) {
+	t.Helper()
+	_, err := pool.Exec(ctx,
+		`INSERT INTO event_sources (event_id, source_id, source_url, payload, payload_hash)
+		 VALUES ($1, $2, $3, '{}'::jsonb, $4)`,
+		eventID, sourceID, "https://example.com/events/"+eventID+"/"+sourceID, ulid.Make().String(),
+	)
+	require.NoError(t, err)
+}
+
+func insertSeriesTestSource(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string, baseURL *string) string {
+	t.Helper()
+	var id string
+	err := pool.QueryRow(ctx,
+		`INSERT INTO sources (name, source_type, base_url, license_url, license_type)
+		 VALUES ($1, 'scraper', $2, 'https://example.com/license', 'CC0') RETURNING id`,
+		name, baseURL,
+	).Scan(&id)
+	require.NoError(t, err)
+	return id
 }
 
 func insertSeriesTestOccurrence(t *testing.T, ctx context.Context, pool *pgxpool.Pool, eventID string, start time.Time, place seededEntity, statusOverride *string) {

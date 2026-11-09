@@ -627,7 +627,10 @@ calls `POST /api/v1/admin/events/consolidate` with `transfer_occurrences: true`
 to produce one event with N occurrences. Consolidate only for the same
 programme at the same branch, same weekday, same start time, and a 7-day
 cadence; different branches, audiences, or drop-in/registered variants must stay
-separate. The CLI exposes this as `server review series`.
+separate. The CLI exposes this as `server review series`. Results are paged with
+`offset`/`limit` over the deterministic cluster order, and `source` scopes the SQL
+scan to events attributed to one provenance source (a cluster spanning sources is
+narrowed to the requested source's members).
 
 ---
 

@@ -9,7 +9,9 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/api/pagination"
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	identityrank "github.com/Togather-Foundation/server/internal/identity/rank"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -1768,6 +1770,15 @@ func (r *EventRepository) ListSeriesCandidatePairs(ctx context.Context, params e
 	//     relax the weekday contract.
 	//   - TIME subtraction does not wrap across midnight: 23:50 and 00:10 are
 	//     22h40m apart, so they will not match. This matches FindSeriesCompanion.
+	var sourceUUID pgtype.UUID
+	if params.SourceID != "" {
+		parsed, err := uuid.Parse(params.SourceID)
+		if err != nil {
+			return nil, fmt.Errorf("parse series-candidate source id %q: %w", params.SourceID, err)
+		}
+		sourceUUID = pgtype.UUID{Bytes: parsed, Valid: true}
+	}
+
 	rows, err := queryer.Query(ctx, `
 WITH occ AS (
     SELECT DISTINCT o.event_id,
@@ -1785,6 +1796,15 @@ WITH occ AS (
        AND (o.status_override IS NULL OR o.status_override <> 'cancelled')
        AND (o.venue_id IS NULL OR o.venue_id = e.primary_venue_id)
        AND ($4::text = '' OR e.primary_venue_id = (SELECT id FROM places WHERE ulid = $4))
+       -- Source scoping is strict: only events explicitly attributed to the
+       -- requested provenance source can form clusters. Events with no
+       -- event_sources row are excluded while this filter is set.
+       AND ($5::uuid IS NULL OR EXISTS (
+           SELECT 1
+             FROM event_sources es
+            WHERE es.event_id = e.id
+              AND es.source_id = $5::uuid
+       ))
 ),
 paired AS (
     SELECT DISTINCT a.event_id AS a_event_id, b.event_id AS b_event_id
@@ -1840,7 +1860,7 @@ SELECT DISTINCT
   JOIN agg aa ON aa.event_id = p.a_event_id
   JOIN agg ab ON ab.event_id = p.b_event_id
  WHERE similarity(normalize_name(ea.name), normalize_name(eb.name)) >= 0.80
-`, params.WindowStart.Format("2006-01-02"), params.WindowEnd.Format("2006-01-02"), params.Now, params.VenueULID)
+`, params.WindowStart.Format("2006-01-02"), params.WindowEnd.Format("2006-01-02"), params.Now, params.VenueULID, sourceUUID)
 	if err != nil {
 		return nil, fmt.Errorf("list series candidate pairs: %w", err)
 	}
@@ -1867,6 +1887,65 @@ SELECT DISTINCT
 	}
 
 	return pairs, nil
+}
+
+// ResolveSourceIdentifier resolves an admin-supplied provenance source
+// identifier to its sources.id. Accepted forms are an exact source name or a
+// UUID (the actual sources.id). sources.id is gen_random_uuid(), and sources has
+// no ulid column, so a ULID cannot identify a row; ULID-shaped input is reported
+// as not found rather than being decoded into a UUID that can never match.
+//
+// Source names are only unique per base_url (non-NULL) or globally when
+// base_url is NULL, so a name can match more than one row. That is reported as
+// events.ErrSourceAmbiguous rather than silently picking one.
+func (r *EventRepository) ResolveSourceIdentifier(ctx context.Context, identifier string) (string, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return "", fmt.Errorf("%w: empty identifier; expected a source name or UUID", events.ErrSourceNotFound)
+	}
+
+	var uuidValue pgtype.UUID
+	uuidParsed := false
+	if parsed, err := uuid.Parse(identifier); err == nil {
+		uuidValue = pgtype.UUID{Bytes: parsed, Valid: true}
+		uuidParsed = true
+	}
+
+	rows, err := r.queryer().Query(ctx, `
+SELECT id::text
+  FROM sources
+ WHERE name = $1
+    OR ($2::uuid IS NOT NULL AND id = $2::uuid)
+ ORDER BY id
+`, identifier, uuidValue)
+	if err != nil {
+		return "", fmt.Errorf("resolve source identifier %q: %w", identifier, err)
+	}
+	defer rows.Close()
+
+	var matches []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", fmt.Errorf("scan source identifier match: %w", err)
+		}
+		matches = append(matches, id)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterate source identifier matches: %w", err)
+	}
+
+	switch len(matches) {
+	case 0:
+		if !uuidParsed && ids.IsULID(identifier) {
+			return "", fmt.Errorf("%w: %q looks like a ULID; expected a source name or UUID", events.ErrSourceNotFound, identifier)
+		}
+		return "", fmt.Errorf("%w: %q; expected a source name or UUID", events.ErrSourceNotFound, identifier)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("%w: %q matches %d sources; use the sources UUID", events.ErrSourceAmbiguous, identifier, len(matches))
+	}
 }
 
 // DismissPendingReviewsByEventULIDs batch-dismisses all pending review queue entries

@@ -849,6 +849,10 @@ func (m *MockRepository) ListSeriesCandidatePairs(ctx context.Context, params Se
 	return nil, nil
 }
 
+func (m *MockRepository) ResolveSourceIdentifier(ctx context.Context, identifier string) (string, error) {
+	return "", nil
+}
+
 func (m *MockRepository) Rollback(ctx context.Context) error {
 	return nil
 }

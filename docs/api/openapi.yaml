@@ -769,6 +769,22 @@ paths:
         `POST /api/v1/admin/events/consolidate` with `transfer_occurrences: true`
         to make it one event with N occurrences. This endpoint is read-only:
         it never writes events, occurrences, review entries, or suppression state.
+
+        Clusters are paged: `offset` skips clusters after the deterministic sort
+        (event count descending, then first date, name, venue, canonical ULID)
+        and before `limit` is applied. `total_clusters` is always the full count;
+        `truncated` is true when `offset + len(items) < total_clusters`.
+
+        `source` scopes the scan to events attributed to one provenance source in
+        the `sources` table (not `scraper_sources`). The filter is enforced in SQL
+        via `event_sources`, so an event with no source attribution is excluded
+        from a source-scoped run. A cluster that spans sources is narrowed to the
+        requested source's events: the other members are absent from the response
+        and must not be retired by a scoped consolidation. Source names are only
+        unique per `base_url`, so a name that matches more than one row is a 400;
+        use the source UUID in that case. Historical events may live on a
+        differently-named provenance row after a feed rename, in which case a
+        scoped run can look empty.
       tags: [Admin]
       x-internal: true
       security:
@@ -809,6 +825,36 @@ paths:
             type: string
             pattern: '^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$'
             description: Place ULID.
+        - name: source
+          in: query
+          required: false
+          description: |
+            Optional provenance source identifier, resolved against the `sources`
+            table (event attribution, not `scraper_sources`). Accepts an exact
+            source name (for example `tpl-events`) or a UUID (the actual
+            `sources.id`). `sources` has no ULID column, so a ULID is not a valid
+            source identifier. Unknown or ambiguous values return 400. The filter
+            is applied in SQL via `event_sources`, so only events attributed to
+            that source can form clusters and events without any attribution are
+            excluded. A cluster spanning sources is narrowed to the requested
+            source's events. An event attributed to two sources appears in both
+            scopes, so a scoped consolidation can retire an event that also
+            carries another source's provenance; verify the member list.
+          schema:
+            type: string
+        - name: offset
+          in: query
+          required: false
+          description: |
+            Number of clusters to skip after the deterministic sort and before
+            `limit` is applied (default 0). `total_clusters` remains the full
+            count and `truncated` is true when `offset + len(items) <
+            total_clusters`.
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 10000
+            default: 0
         - name: limit
           in: query
           required: false
@@ -826,7 +872,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SeriesCandidatesResponse'
         '400':
-          description: Invalid query parameter (out-of-range integer or malformed venue ULID)
+          description: Invalid query parameter (out-of-range integer, malformed venue ULID, or unknown/ambiguous source identifier)
           content:
             application/problem+json:
               schema:
@@ -6582,10 +6628,10 @@ components:
             $ref: '#/components/schemas/SeriesCandidate'
         total_clusters:
           type: integer
-          description: Number of clusters before `limit` is applied.
+          description: Number of clusters before `offset` and `limit` are applied.
         truncated:
           type: boolean
-          description: True when `total_clusters` exceeds the returned `items` length.
+          description: True when `offset + len(items) < total_clusters`.
 
     ProblemDetails:
       type: object
