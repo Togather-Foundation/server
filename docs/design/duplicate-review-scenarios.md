@@ -9,7 +9,7 @@
 
 1. [Ingestion Flow Overview](#1-ingestion-flow-overview)
 2. [Idempotency Key Scenarios](#2-idempotency-key-scenarios)
-3. [Source External ID Scenarios](#3-source-external-id-scenarios)
+3. [Feed Event Identity Scenarios](#3-feed-event-identity-scenarios)
 4. [Exact Dedup Hash Scenarios](#4-exact-dedup-hash-scenarios)
 5. [Review Queue Resubmission Scenarios](#5-review-queue-resubmission-scenarios)
 6. [Near-Duplicate Detection Scenarios](#6-near-duplicate-detection-scenarios)
@@ -34,7 +34,7 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 1. Idempotency key check
 2. Normalize → Validate → Quality warnings
 3. Source lookup (GetOrCreateSource, default trust 5)
-4. Source external ID check (FindBySourceExternalID)
+4. Feed event identity check (FindByFeedEventID on feed URL + source event id)
 5. Exact dedup hash check (FindByDedupHash) → auto-merge if found
 6. Review queue dedup check (FindReviewByDedup) — only if needsReview
 7. Event creation (in transaction):
@@ -46,7 +46,7 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 ```
 
 **Key ordering invariants:**
-- Source external ID check now calls `AutoMergeFields` with actual trust levels from both sources, persisting field updates via `UpdateEvent`. It also records the source contribution. Returns `IsMerged: true` if any fields changed.
+- The feed identity check calls `AutoMergeFields` with actual trust levels from both sources, persisting field updates via `UpdateEvent`. It also records the source contribution. Returns `IsMerged: true` if any fields changed. The feed owns the **name** (a rename is applied and, when the rest of the identity is unchanged, `dedup_hash` is rebuilt); every other field keeps the trust-based merge, and dates are never moved by ingest.
 - Dedup hash auto-merge (step 5) runs BEFORE review queue check (step 6) — an exact match never enters the review queue.
 - Place/org fuzzy dedup (step 7a, 7c) runs AFTER event creation begins — the place is created first, then checked for similarity. Auto-merge gap-fills primary place/org fields from duplicate before reassigning events.
 - Near-duplicate check (step 7b) runs AFTER place reconciliation — needs the venue ID. Known not-duplicate pairs are filtered out before creating warnings.
@@ -92,42 +92,47 @@ The `IngestWithIdempotency` function (`internal/domain/events/ingest.go`) proces
 
 ---
 
-## 3. Source External ID Scenarios
+## 3. Feed Event Identity Scenarios
 
-**Code path:** `ingest.go:125-145`
+**Code path:** `create_event_core.go` (feed event identity block)
 
-### S3.1: Same source, same external ID — duplicate detected with field merge
+Identity is `(feed URL, sourceEventId)` — `event_sources.source_url` plus
+`source_event_id` — compared verbatim except that trailing slashes are ignored on both
+sides. It is deliberately independent of the `sources` row: one feed can own two source
+rows and still resolve to the same event.
 
-- **Given:** Source "scraper-A" previously submitted event with externalID "evt-001", creating event E1.
-- **Action:** Source "scraper-A" submits again with externalID "evt-001".
-- **Expected:** `FindBySourceExternalID` returns E1. `AutoMergeFields` is called using actual trust levels from both the existing event's source and the submitting source (looked up via `GetSourceTrustLevel` and `GetSourceTrustLevelBySourceID`). If fields changed, `UpdateEvent` persists the updates. Source contribution is recorded via `recordSourceForExisting`.
+### S3.1: Same feed, same external ID — duplicate detected with field merge
+
+- **Given:** Feed "https://scraper-a.com/events" previously submitted event with externalID "evt-001", creating event E1.
+- **Action:** The same feed submits again with externalID "evt-001".
+- **Expected:** `FindByFeedEventID` returns E1. `AutoMergeFields` is called using actual trust levels from both the existing event's source and the submitting source (looked up via `GetSourceTrustLevel` and `GetSourceTrustLevelBySourceID`). If fields changed, `UpdateEvent` persists the updates. Source contribution is recorded via `recordSourceForExisting`.
 - **Result:** `IngestResult{Event: E1_updated, IsDuplicate: true, IsMerged: <true if fields changed>, Warnings: <current>}`
-- **Key detail:** This IS an auto-merge with real trust levels. Since both submissions share the same source, trust levels typically match, so the merge primarily gap-fills empty fields. Higher-trust resubmissions can also overwrite existing data.
+- **Key detail:** This IS an auto-merge with real trust levels. Since both submissions share the same feed, trust levels typically match, so the merge primarily gap-fills empty fields. Higher-trust resubmissions can also overwrite existing data — and a **rename** is always applied, because the feed owns the name (this currently overwrites an admin-edited name; see `specs/006-curator-protection/plan.md`).
 
-### S3.2: Same source, different external ID — no match
+### S3.2: Same feed, different external ID — no match
 
-- **Given:** Source "scraper-A" previously submitted event with externalID "evt-001".
-- **Action:** Source "scraper-A" submits with externalID "evt-002".
-- **Expected:** `FindBySourceExternalID` returns ErrNotFound. Proceeds to dedup hash check (step 5).
+- **Given:** The feed previously submitted event with externalID "evt-001".
+- **Action:** The same feed submits with externalID "evt-002".
+- **Expected:** `FindByFeedEventID` returns ErrNotFound. Proceeds to dedup hash check (step 5).
 
-### S3.3: Different source, same external ID — no match
+### S3.3: Different feed, same external ID — no match
 
-- **Given:** Source "scraper-A" submitted event with externalID "evt-001".
-- **Action:** Source "scraper-B" submits with externalID "evt-001".
-- **Expected:** `FindBySourceExternalID` searches by (sourceID="scraper-B", externalID="evt-001"), finds nothing. Proceeds to dedup hash check.
-- **Key detail:** Source external IDs are scoped per-source.
+- **Given:** Feed A submitted event with externalID "evt-001".
+- **Action:** Feed B (a different feed URL, possibly on the same host) submits with externalID "evt-001".
+- **Expected:** `FindByFeedEventID` searches by (feedURL="…feed-b…", externalID="evt-001"), finds nothing. Proceeds to dedup hash check.
+- **Key detail:** Feed event ids are scoped per **feed URL**, not per source row. Two `sources` rows for the same feed still resolve to the same event; two different feeds never do.
 
 ### S3.4: No source provided — skip check
 
 - **Given:** Any state.
 - **Action:** Event submitted without `Source` field.
-- **Expected:** Source lookup and external ID check are both skipped. `sourceID` remains empty.
+- **Expected:** Source lookup and the feed identity check are both skipped. `sourceID` remains empty.
 
 ### S3.5: Source provided but no external ID — skip check
 
 - **Given:** Source "scraper-A" exists but event has no `Source.EventID`.
 - **Action:** Event submitted with source URL but no event ID.
-- **Expected:** `FindBySourceExternalID` called with empty externalID. Behavior depends on DB query (likely returns nothing). Source is still created via `GetOrCreateSource`.
+- **Expected:** Validation rejects it (`source.eventId: required`). The repository lookup is defensive: `FindByFeedEventID` returns ErrNotFound for an empty URL or external id, so the pipeline would fall through to the dedup hash check.
 
 ---
 

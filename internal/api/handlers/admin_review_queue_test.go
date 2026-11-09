@@ -77,8 +77,8 @@ func (m *MockRepository) CreateSource(ctx context.Context, params events.EventSo
 	return args.Error(0)
 }
 
-func (m *MockRepository) FindBySourceExternalID(ctx context.Context, sourceID string, sourceEventID string) (*events.Event, error) {
-	args := m.Called(ctx, sourceID, sourceEventID)
+func (m *MockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*events.Event, error) {
+	args := m.Called(ctx, feedURL, sourceEventID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}

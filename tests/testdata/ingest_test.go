@@ -30,7 +30,7 @@ type IngestMockRepository struct {
 	events            map[string]*events.Event
 	idempotencyKeys   map[string]*events.IdempotencyKey
 	sources           map[string]string                          // sourceKey -> sourceID
-	eventsBySources   map[string]map[string]*events.Event        // sourceID -> sourceEventID -> Event
+	eventsByFeedEvent map[string]map[string]*events.Event        // feed URL (trailing slashes trimmed) -> sourceEventID -> Event
 	eventsByDedupHash map[string]*events.Event                   // dedupHash -> Event
 	places            map[string]*events.PlaceRecord             // key -> place
 	organizations     map[string]*events.OrganizationRecord      // key -> org
@@ -43,7 +43,7 @@ func NewIngestMockRepository() *IngestMockRepository {
 		events:            make(map[string]*events.Event),
 		idempotencyKeys:   make(map[string]*events.IdempotencyKey),
 		sources:           make(map[string]string),
-		eventsBySources:   make(map[string]map[string]*events.Event),
+		eventsByFeedEvent: make(map[string]map[string]*events.Event),
 		eventsByDedupHash: make(map[string]*events.Event),
 		places:            make(map[string]*events.PlaceRecord),
 		organizations:     make(map[string]*events.OrganizationRecord),
@@ -133,15 +133,18 @@ func (m *IngestMockRepository) CreateSource(ctx context.Context, params events.E
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Record the event for source-based duplicate detection
-	if params.SourceID != "" && params.SourceEventID != "" {
-		if _, ok := m.eventsBySources[params.SourceID]; !ok {
-			m.eventsBySources[params.SourceID] = make(map[string]*events.Event)
+	// Record the event for feed-scoped duplicate detection. Identity is
+	// (feed URL, source event id), not the source row. The URL is compared
+	// verbatim except that trailing slashes are ignored on both sides.
+	if params.SourceURL != "" && params.SourceEventID != "" {
+		feedURL := feedIdentityKey(params.SourceURL)
+		if _, ok := m.eventsByFeedEvent[feedURL]; !ok {
+			m.eventsByFeedEvent[feedURL] = make(map[string]*events.Event)
 		}
 		// Find the event by ID and record it
 		for _, event := range m.events {
 			if event.ID == params.EventID {
-				m.eventsBySources[params.SourceID][params.SourceEventID] = event
+				m.eventsByFeedEvent[feedURL][params.SourceEventID] = event
 				break
 			}
 		}
@@ -149,12 +152,22 @@ func (m *IngestMockRepository) CreateSource(ctx context.Context, params events.E
 	return nil
 }
 
-func (m *IngestMockRepository) FindBySourceExternalID(ctx context.Context, sourceID string, sourceEventID string) (*events.Event, error) {
+// feedIdentityKey mirrors the repository's URL comparison rule: verbatim,
+// except that trailing slashes are ignored.
+func feedIdentityKey(feedURL string) string {
+	return strings.TrimRight(feedURL, "/")
+}
+
+func (m *IngestMockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*events.Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if sources, ok := m.eventsBySources[sourceID]; ok {
-		if event, ok := sources[sourceEventID]; ok {
+	if feedURL == "" || sourceEventID == "" {
+		return nil, events.ErrNotFound
+	}
+
+	if eventsForFeed, ok := m.eventsByFeedEvent[feedIdentityKey(feedURL)]; ok {
+		if event, ok := eventsForFeed[sourceEventID]; ok {
 			return event, nil
 		}
 	}
@@ -183,7 +196,6 @@ func (m *IngestMockRepository) GetOrCreateSource(ctx context.Context, params eve
 
 	sourceID := fmt.Sprintf("source-%d", len(m.sources)+1)
 	m.sources[key] = sourceID
-	m.eventsBySources[sourceID] = make(map[string]*events.Event)
 	return sourceID, nil
 }
 
@@ -288,6 +300,9 @@ func (m *IngestMockRepository) UpdateEvent(ctx context.Context, ulid string, par
 	if params.LifecycleState != nil {
 		event.LifecycleState = *params.LifecycleState
 	}
+	if params.DedupHash != nil {
+		event.DedupHash = *params.DedupHash
+	}
 	event.UpdatedAt = time.Now()
 
 	return event, nil
@@ -342,6 +357,95 @@ func (m *IngestMockRepository) GetPublicTombstoneByEventULID(ctx context.Context
 
 func (m *IngestMockRepository) BeginTx(ctx context.Context) (events.Repository, events.TxCommitter, error) {
 	return m, &noOpTxCommitter{}, nil
+}
+
+// AnchorAllDayOccurrence is a passthrough: these fixtures are not all-day, so
+// anchoring is the identity mapping.
+func (m *IngestMockRepository) AnchorAllDayOccurrence(_ context.Context, start time.Time, end *time.Time, _ string) (time.Time, *time.Time, error) {
+	return start, end, nil
+}
+
+// Occurrence-level operations (stub implementations).
+
+func (m *IngestMockRepository) InsertOccurrence(ctx context.Context, params events.OccurrenceCreateParams) (*events.Occurrence, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.Occurrences[params.EventID] = append(m.Occurrences[params.EventID], params)
+	return &events.Occurrence{
+		ID:        fmt.Sprintf("occ-%d", len(m.Occurrences[params.EventID])),
+		StartTime: params.StartTime,
+		EndTime:   params.EndTime,
+	}, nil
+}
+
+func (m *IngestMockRepository) CountOccurrences(ctx context.Context, eventID string) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return int64(len(m.Occurrences[eventID])), nil
+}
+
+func (m *IngestMockRepository) GetOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) (*events.Occurrence, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) UpdateOccurrence(ctx context.Context, eventID string, occurrenceID string, params events.OccurrenceUpdateParams) (*events.Occurrence, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) DeleteOccurrenceByID(ctx context.Context, eventID string, occurrenceID string) error {
+	return events.ErrNotFound
+}
+
+func (m *IngestMockRepository) CheckOccurrenceOverlapExcluding(ctx context.Context, eventID string, startTime time.Time, endTime *time.Time, excludeOccurrenceID string) (bool, error) {
+	return false, nil
+}
+
+// Remaining interface methods (stub implementations).
+
+func (m *IngestMockRepository) Rollback(ctx context.Context) error {
+	return nil
+}
+
+func (m *IngestMockRepository) GetPlaceByULID(ctx context.Context, ulid string) (*events.PlaceRecord, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) GetPlaceByID(ctx context.Context, id string) (*events.PlaceRecord, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) GetOrganizationByID(ctx context.Context, id string) (*events.OrganizationRecord, error) {
+	return nil, events.ErrNotFound
+}
+
+func (m *IngestMockRepository) CreatePlaceTombstone(ctx context.Context, params events.PlaceTombstoneCreateParams) error {
+	return nil
+}
+
+func (m *IngestMockRepository) CreateOrganizationTombstone(ctx context.Context, params events.OrganizationTombstoneCreateParams) error {
+	return nil
+}
+
+func (m *IngestMockRepository) UpsertEventSeries(ctx context.Context, params events.UpsertEventSeriesParams) (*events.UpsertEventSeriesResult, error) {
+	return &events.UpsertEventSeriesResult{SeriesID: fmt.Sprintf("series-%s", params.ExternalKey)}, nil
+}
+
+func (m *IngestMockRepository) FindSeriesCompanion(ctx context.Context, params events.SeriesCompanionQuery) (*events.CrossWeekCompanion, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) GetReviewByEventUlid(ctx context.Context, eventULID string) (*events.ReviewQueueEntry, error) {
+	return nil, nil
+}
+
+func (m *IngestMockRepository) DismissAllCompanionWarnings(ctx context.Context, reviewID int, eventULID string) (bool, error) {
+	return false, nil
+}
+
+func (m *IngestMockRepository) StripRetiredDupWarnings(ctx context.Context, reviewID int, retireULIDs []string) (bool, error) {
+	return false, nil
 }
 
 // Review Queue methods (stub implementations)
@@ -462,15 +566,17 @@ type noOpTxCommitter struct{}
 func (n *noOpTxCommitter) Commit(ctx context.Context) error   { return nil }
 func (n *noOpTxCommitter) Rollback(ctx context.Context) error { return nil }
 
-// AddExistingEvent adds an event for duplicate testing.
-func (m *IngestMockRepository) AddExistingEvent(sourceID, sourceEventID string, event *events.Event) {
+// AddExistingEvent registers an event as previously ingested from feedURL under
+// sourceEventID.
+func (m *IngestMockRepository) AddExistingEvent(feedURL, sourceEventID string, event *events.Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.eventsBySources[sourceID]; !ok {
-		m.eventsBySources[sourceID] = make(map[string]*events.Event)
+	key := feedIdentityKey(feedURL)
+	if _, ok := m.eventsByFeedEvent[key]; !ok {
+		m.eventsByFeedEvent[key] = make(map[string]*events.Event)
 	}
-	m.eventsBySources[sourceID][sourceEventID] = event
+	m.eventsByFeedEvent[key][sourceEventID] = event
 	m.events[event.ULID] = event
 }
 
@@ -562,7 +668,7 @@ func TestIngestService_WithSyntheticFixtures(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		assert.True(t, result.NeedsReview, "Sparse event should need review")
-		assert.Equal(t, "draft", result.Event.LifecycleState, "Should be draft state")
+		assert.Equal(t, "pending_review", result.Event.LifecycleState, "Should be pending review state")
 	})
 
 	t.Run("ingest far future event", func(t *testing.T) {

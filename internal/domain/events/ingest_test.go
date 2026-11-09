@@ -23,7 +23,8 @@ type MockRepository struct {
 	events            map[string]*Event
 	idempotencyKeys   map[string]*IdempotencyKey
 	sources           map[string]string            // sourceKey -> sourceID
-	eventsBySources   map[string]map[string]*Event // sourceID -> sourceEventID -> Event
+	eventsByFeedEvent map[string]map[string]*Event // feed URL (trailing slashes trimmed) -> sourceEventID -> Event
+	eventsBySources   map[string]map[string]*Event // sourceID -> sourceEventID -> Event (trust linkage)
 	eventsByDedupHash map[string]*Event
 	places            map[string]*PlaceRecord
 	organizations     map[string]*OrganizationRecord
@@ -57,25 +58,25 @@ type MockRepository struct {
 	orgTombstoneParams         OrganizationTombstoneCreateParams
 
 	// Behavior controls
-	shouldFailCreate                 bool
-	shouldFailGetIdempotencyKey      bool
-	shouldFailInsertIdempotencyKey   bool
-	shouldFailUpdateIdempotencyKey   bool
-	shouldFailFindBySourceExternalID bool
-	shouldFailFindByDedupHash        bool
-	shouldFailGetOrCreateSource      bool
-	shouldFailUpsertPlace            bool
-	shouldFailGetPlaceByULID         bool
-	shouldFailUpsertOrganization     bool
-	shouldFailCreateOccurrence       bool
-	shouldFailCreateSource           bool
-	shouldFailFindNearDuplicates     bool
-	shouldFailFindSimilarPlaces      bool
-	shouldFailFindSimilarOrgs        bool
-	shouldFailUpdateEvent            bool
-	shouldFailApproveReview          bool
-	shouldFailFindSeriesCompanion    bool
-	seriesCompanion                  *CrossWeekCompanion
+	shouldFailCreate               bool
+	shouldFailGetIdempotencyKey    bool
+	shouldFailInsertIdempotencyKey bool
+	shouldFailUpdateIdempotencyKey bool
+	shouldFailFindByFeedEventID    bool
+	shouldFailFindByDedupHash      bool
+	shouldFailGetOrCreateSource    bool
+	shouldFailUpsertPlace          bool
+	shouldFailGetPlaceByULID       bool
+	shouldFailUpsertOrganization   bool
+	shouldFailCreateOccurrence     bool
+	shouldFailCreateSource         bool
+	shouldFailFindNearDuplicates   bool
+	shouldFailFindSimilarPlaces    bool
+	shouldFailFindSimilarOrgs      bool
+	shouldFailUpdateEvent          bool
+	shouldFailApproveReview        bool
+	shouldFailFindSeriesCompanion  bool
+	seriesCompanion                *CrossWeekCompanion
 }
 
 // occurrenceDateUpdate stores occurrence date updates for verification
@@ -96,6 +97,7 @@ func NewMockRepository() *MockRepository {
 		events:             make(map[string]*Event),
 		idempotencyKeys:    make(map[string]*IdempotencyKey),
 		sources:            make(map[string]string),
+		eventsByFeedEvent:  make(map[string]map[string]*Event),
 		eventsBySources:    make(map[string]map[string]*Event),
 		eventsByDedupHash:  make(map[string]*Event),
 		places:             make(map[string]*PlaceRecord),
@@ -212,19 +214,62 @@ func (m *MockRepository) CreateSource(ctx context.Context, params EventSourceCre
 	}
 
 	m.createdSources = append(m.createdSources, params)
+
+	// Mirror the real repository: attribution rows are what identity lookups read.
+	// Index by (feed URL, source event id) so a later observation of the same feed
+	// event finds this event, and keep the source-id index for trust lookups.
+	if params.SourceEventID != "" {
+		for _, event := range m.events {
+			if event.ID != params.EventID {
+				continue
+			}
+			m.indexFeedEventLocked(params.SourceURL, params.SourceEventID, event)
+			if params.SourceID != "" {
+				if _, ok := m.eventsBySources[params.SourceID]; !ok {
+					m.eventsBySources[params.SourceID] = make(map[string]*Event)
+				}
+				m.eventsBySources[params.SourceID][params.SourceEventID] = event
+			}
+			break
+		}
+	}
 	return nil
 }
 
-func (m *MockRepository) FindBySourceExternalID(ctx context.Context, sourceID string, sourceEventID string) (*Event, error) {
+// indexFeedEventLocked records event under the (feed URL, source event id)
+// identity key. Callers must hold m.mu.
+//
+// feedIdentityKey mirrors the repository: the URL is compared verbatim except
+// that trailing slashes are ignored on both sides.
+func (m *MockRepository) indexFeedEventLocked(feedURL, sourceEventID string, event *Event) {
+	feedURL = feedIdentityKey(feedURL)
+	if feedURL == "" || sourceEventID == "" {
+		return
+	}
+	if _, ok := m.eventsByFeedEvent[feedURL]; !ok {
+		m.eventsByFeedEvent[feedURL] = make(map[string]*Event)
+	}
+	m.eventsByFeedEvent[feedURL][sourceEventID] = event
+}
+
+func feedIdentityKey(feedURL string) string {
+	return strings.TrimRight(feedURL, "/")
+}
+
+func (m *MockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.shouldFailFindBySourceExternalID {
-		return nil, errors.New("mock find by source external ID error")
+	if m.shouldFailFindByFeedEventID {
+		return nil, errors.New("mock find by feed event ID error")
 	}
 
-	if sources, ok := m.eventsBySources[sourceID]; ok {
-		if event, ok := sources[sourceEventID]; ok {
+	if feedURL == "" || sourceEventID == "" {
+		return nil, ErrNotFound
+	}
+
+	if eventsForFeed, ok := m.eventsByFeedEvent[feedIdentityKey(feedURL)]; ok {
+		if event, ok := eventsForFeed[sourceEventID]; ok {
 			return event, nil
 		}
 	}
@@ -469,6 +514,15 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params Up
 	}
 	if len(params.Keywords) > 0 {
 		event.Keywords = params.Keywords
+	}
+	if params.DedupHash != nil {
+		if event.DedupHash != "" && event.DedupHash != *params.DedupHash {
+			delete(m.eventsByDedupHash, event.DedupHash)
+		}
+		event.DedupHash = *params.DedupHash
+		if *params.DedupHash != "" {
+			m.eventsByDedupHash[*params.DedupHash] = event
+		}
 	}
 	event.UpdatedAt = time.Now()
 
@@ -1002,14 +1056,19 @@ func (n *noOpTxCommitter) Rollback(ctx context.Context) error {
 }
 
 // Helper methods for testing
-func (m *MockRepository) AddExistingEvent(sourceID, sourceEventID string, event *Event) {
+// AddExistingEvent registers an event as previously ingested from feedURL under
+// sourceEventID, attributed to sourceID (used for trust-level lookups).
+func (m *MockRepository) AddExistingEvent(feedURL, sourceEventID, sourceID string, event *Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.eventsBySources[sourceID]; !ok {
-		m.eventsBySources[sourceID] = make(map[string]*Event)
+	m.indexFeedEventLocked(feedURL, sourceEventID, event)
+	if sourceID != "" {
+		if _, ok := m.eventsBySources[sourceID]; !ok {
+			m.eventsBySources[sourceID] = make(map[string]*Event)
+		}
+		m.eventsBySources[sourceID][sourceEventID] = event
 	}
-	m.eventsBySources[sourceID][sourceEventID] = event
 	m.events[event.ULID] = event
 }
 
@@ -1173,7 +1232,7 @@ func TestIngestService_Ingest(t *testing.T) {
 					ULID: ulid,
 					Name: "Existing Event",
 				}
-				m.AddExistingEvent("source-1", "ext-123", existingEvent)
+				m.AddExistingEvent("https://example.com/events/123", "ext-123", "source-1", existingEvent)
 				// Pre-create the source so it matches
 				m.sources["Example Source|https://example.com"] = "source-1"
 			},
@@ -1731,7 +1790,7 @@ func TestIngestService_WarningsInDuplicateDetection(t *testing.T) {
 					ULID: ulid,
 					Name: "Existing Event",
 				}
-				m.AddExistingEvent("source-1", "ext-123", existingEvent)
+				m.AddExistingEvent("https://example.com/events/123", "ext-123", "source-1", existingEvent)
 				m.sources["Example Source|https://example.com"] = "source-1"
 			},
 			wantDuplicate: true,

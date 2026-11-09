@@ -439,10 +439,12 @@ name stable.
 replaced the `base_url`-only index from `000023`, but existing `sources` rows keep their
 names and existing `event_sources` rows keep their `source_id`. A lumped row cannot be
 split retroactively because `event_sources` stores only the source id, not the feed name.
-Re-running a feed attaches the new per-feed row to the events it still returns. The first
-post-deploy re-run has no source-external-id history under the new row, so it matches by
-dedup hash; later re-runs match by source external id within the feed, then dedup hash. The
-matched path records the new source attribution.
+Re-running a feed attaches the new per-feed row to the events it still returns. Event
+identity is `(feed URL, sourceEventId)` — `event_sources.source_url` plus
+`source_event_id`, compared verbatim except that trailing slashes are ignored on both
+sides — so a re-run matches its events regardless of which `sources` row it resolves to,
+and the matched path records the new source attribution. The source row still decides
+trust level and per-source metadata, not event identity.
 
 **Creating a Source**
 

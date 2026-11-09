@@ -321,7 +321,7 @@ func (m *mockTransactionalRepo) CreateOccurrence(ctx context.Context, params Occ
 func (m *mockTransactionalRepo) CreateSource(ctx context.Context, params EventSourceCreateParams) error {
 	return errors.New("not implemented")
 }
-func (m *mockTransactionalRepo) FindBySourceExternalID(ctx context.Context, sourceID, sourceEventID string) (*Event, error) {
+func (m *mockTransactionalRepo) FindByFeedEventID(ctx context.Context, feedURL, sourceEventID string) (*Event, error) {
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) FindByDedupHash(ctx context.Context, dedupHash string) (*Event, error) {

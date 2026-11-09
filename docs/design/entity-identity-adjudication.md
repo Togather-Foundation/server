@@ -54,8 +54,9 @@ Grounded facts (from code inventory, 2026-09-10):
   (`000030:36`) permits **multiple canonical rows per authority** — observed on staging:
   172 `is_canonical=true` artsdata rows across only 144 places (~28 places with >1).
 - Event dedup identity is name+venue+startDate (`internal/domain/events/dedup.go`);
-  external IDs are **not** part of the hash. `source_event_id` is per-source and does
-  not federate.
+  external IDs are **not** part of the hash. `source_event_id` is meaningful only together
+  with the feed URL that published it (`event_sources.source_url` — ingest identity is
+  `(feed URL, sourceEventId)`), and it does not federate.
 
 ### Confirmed gaps (inventory)
 

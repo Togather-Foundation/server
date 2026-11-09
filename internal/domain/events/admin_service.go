@@ -78,6 +78,9 @@ type UpdateEventParams struct {
 	PublicURL      *string
 	EventDomain    *string
 	Keywords       []string
+	// DedupHash rewrites the Layer-1 identity hash. Set when a feed rename
+	// changes the name (and therefore the hash) of an event it owns.
+	DedupHash *string
 }
 
 // MergeEventsParams contains IDs for merging duplicate events

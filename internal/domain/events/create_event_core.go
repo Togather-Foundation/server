@@ -154,30 +154,76 @@ func (s *IngestService) createEventCore(
 		}
 		sourceID = resolvedID
 
-		existing, err := s.repo.FindBySourceExternalID(ctx, sourceID, validated.Source.EventID)
+		existing, err := s.repo.FindByFeedEventID(ctx, validated.Source.URL, validated.Source.EventID)
 		if err == nil && existing != nil {
 			if opts.SkipDedupAutoMerge {
 				// Warn instead of auto-merging
 				warnings = append(warnings, ValidationWarning{
 					Code:    "exact_duplicate",
-					Message: fmt.Sprintf("source external-ID match with existing event %s — review recommended", existing.ULID),
+					Message: fmt.Sprintf("feed event-ID match with existing event %s — review recommended", existing.ULID),
 				})
 				needsReview = needsReview || warningRequiresReview("exact_duplicate", suppressedWarnings)
 			} else {
-				// Standard ingest: auto-merge
+				// Standard ingest: auto-merge.
+				//
+				// Identity is (feed URL, sourceEventID) — trailing slashes
+				// ignored — so the feed owns this event: a rename in the feed
+				// renames the event instead of creating a second one. Trust level
+				// only decides gap-filling for fields the feed leaves empty
+				// (AutoMergeFields below).
 				existingTrust, err := s.repo.GetSourceTrustLevel(ctx, existing.ID)
 				if err != nil {
-					return nil, fmt.Errorf("get existing source trust for source-external-id match: %w", err)
+					return nil, fmt.Errorf("get existing source trust for feed event-ID match: %w", err)
 				}
 				newTrust, err := s.repo.GetSourceTrustLevelBySourceID(ctx, sourceID)
 				if err != nil {
-					return nil, fmt.Errorf("get new source trust for source-external-id match: %w", err)
+					return nil, fmt.Errorf("get new source trust for feed event-ID match: %w", err)
 				}
 				updates, changed := AutoMergeFields(existing, validated, existingTrust, newTrust)
+
+				// AutoMergeFields deliberately never merges Name (the dedup hash
+				// was built from it). For a feed-owned event the feed is
+				// authoritative for the name, so apply the rename and keep the
+				// Layer-1 hash consistent with the stored name — but only when the
+				// rest of the incoming identity proves the event did not move.
+				if name := strings.TrimSpace(validated.Name); name != "" && name != existing.Name {
+					updates.Name = &name
+					changed = true
+
+					incomingVenue := NormalizeVenueKey(validated)
+					oldHashFromIncoming := BuildDedupHash(DedupCandidate{
+						Name:      existing.Name,
+						VenueID:   incomingVenue,
+						StartDate: validated.StartDate,
+					})
+					newHash := BuildDedupHash(DedupCandidate{
+						Name:      name,
+						VenueID:   incomingVenue,
+						StartDate: validated.StartDate,
+					})
+					// Only rewrite the hash when the incoming payload's non-name
+					// identity still reproduces the stored hash, i.e. the feed
+					// renamed the event in place. Ingest never updates the venue or
+					// the occurrence dates on this path, so a hash built from an
+					// incoming venue/date we do not store would drift away from the
+					// event's actual identity.
+					if existing.DedupHash != "" && oldHashFromIncoming == existing.DedupHash {
+						if newHash != "" && newHash != existing.DedupHash {
+							updates.DedupHash = &newHash
+						}
+					} else if existing.DedupHash != "" {
+						s.logger.Info().
+							Str("event_ulid", existing.ULID).
+							Str("previous_name", existing.Name).
+							Str("incoming_name", name).
+							Msg("feed rename left dedup hash unchanged: incoming venue or start date differs from the stored event")
+					}
+				}
+
 				if changed {
 					existing, err = s.repo.UpdateEvent(ctx, existing.ULID, updates)
 					if err != nil {
-						return nil, fmt.Errorf("source-external-id auto-merge update: %w", err)
+						return nil, fmt.Errorf("feed event-ID auto-merge update: %w", err)
 					}
 				}
 				if err := s.recordSourceForExisting(ctx, existing, validated, sourceID); err != nil {

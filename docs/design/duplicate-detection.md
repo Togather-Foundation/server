@@ -12,7 +12,9 @@
 
 ```
 Event arrives →
-  1. Source external ID check → update existing (not a duplicate)
+  1. Feed event identity check → (feed URL, sourceEventId) match, trailing slashes
+     ignored: update the existing event in place (the feed is authoritative for the
+     name; other fields go through trust-based auto-merge, and dates are not moved)
   2. Exact dedup hash match →
      a. Auto-merge: fill gaps, overwrite if new source has higher trust
      b. Record provenance (new event_source)
@@ -27,6 +29,57 @@ Event arrives →
   6. If ANY warnings → review queue
   7. If clean → publish
 ```
+
+## Feed Event Identity
+
+Step 1 identifies an already-ingested event by **`(feed URL, sourceEventId)`** — the
+source's own id for the event, scoped to the feed that published it
+(`Repository.FindByFeedEventID`). The feed URL is the `source_url` stored on each
+`event_sources` attribution row; `source.sourceEventId` is `event_sources.source_event_id`.
+
+URL comparison rule: **verbatim except that trailing slashes are ignored on both sides**
+(`rtrim(es.source_url, '/') = rtrim($1, '/')`). There is no other canonicalisation and the
+stored URL is never rewritten. Trailing-slash tolerance is load-bearing: rows written
+before this rule store whatever the feed reported (thousands carry a trailing slash) and
+must keep matching the live configs without a backfill. Because the stored value is
+unchanged, a re-scrape still hits the `UNIQUE (event_id, source_id, source_url)` upsert
+target and refreshes the attribution in place.
+
+Why not the `sources` row: `sources` upserts on `(host-only base_url, name)`, so one feed
+can own two source rows (ingested under two names, e.g. a per-feed config and the
+catch-all `Google Calendar` row). Row-scoped identity made the same feed event look new
+under the second row and inserted a duplicate. The feed URL identifies the feed; the row
+identifies provenance metadata.
+
+Conflict rule: **the feed that owns the id is authoritative for the name.** Every other
+field keeps the existing trust-based auto-merge (`description`, `image_url`, `public_url`,
+`event_domain`, `keywords`), and ingest does not move dates at all — the occurrence rows
+are untouched on this path. A rename in the feed therefore renames our event (and
+recomputes its `dedup_hash` when the rest of the identity is unchanged); it does not create
+a second event. Conversely the same `sourceEventId` from a different feed URL is a different
+event — two feeds may reuse one id namespace on the same host.
+
+A rename overwrites an admin-edited name. That is a known, temporary conflict with
+[curator protection](../../specs/006-curator-protection/plan.md), which routes source
+updates to review for curated events; until it lands, the feed name wins.
+
+When several events already carry the same key (historical duplicate pairs), the lookup
+prefers a live twin over a soft-deleted one and a published event over any other lifecycle
+state, then the oldest row (id breaks ties). That only helps when both rows match: the
+lookup does not resolve `merged_into_id`, so after a consolidation the tombstone can be the
+only match and the next scrape updates a deleted event. Tombstone resolution is the open
+gap tracked by [specs/006-curator-protection/plan.md](../../specs/006-curator-protection/plan.md);
+filtering deleted events here is not the fix, because the retired event still owns the
+attributions and skipping it would re-create the occurrences consolidation retired.
+
+`AutoMergeFields` still never merges `Name` on its own (the dedup hash was built from it);
+the feed-identity path applies the rename explicitly and rebuilds the hash. Without a
+`sourceEventId` there is no feed identity, so ingest falls through to the dedup-hash path.
+
+**Follow-up (not implemented):** `sources` still upserts on `(host-only base_url, name)`.
+Identity no longer depends on it, but per-source metadata (license, trust,
+`suppress_review_warnings`) can still fragment across two rows for one feed.
+
 
 ## Auto-Merge Strategy (exact dedup hash match)
 

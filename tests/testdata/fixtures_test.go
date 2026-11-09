@@ -375,7 +375,7 @@ func TestBatchReviewEventInputs_RS01BaseSeriesHas4Occurrences(t *testing.T) {
 	require.Len(t, rs01.Events, 2, "RS-01 must have 2 events (base series + new occurrence)")
 
 	baseSeries := rs01.Events[0]
-	assert.Contains(t, baseSeries.Name, "Base Series", "first RS-01 event should be the base series")
+	assert.Equal(t, "RS-01 Weekly Yoga at The Tranzac", baseSeries.Name, "first RS-01 event should be the base series")
 	require.Len(t, baseSeries.Occurrences, 4, "RS-01 base series must have 4 occurrences")
 }
 

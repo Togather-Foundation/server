@@ -953,11 +953,12 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
   `(base_url, name)`; each feed gets its own `sources` row and events ingested by a feed
   are attributed to it. Events ingested before this rule (migration 000056) keep their old
   lumped attribution — that history cannot be split, because `event_sources` records only
-  the source id. Re-running a feed matches existing events by event identity and adds the
-  per-feed attribution to them, so re-running each TPL feed after deploying backfills
-  correct provenance for everything the feed still returns. The first post-deploy run
-  matches by dedup hash (the new per-feed row has no external-id history yet); later runs
-  match by source external id within the feed, then dedup hash.
+  the source id. Re-running a feed matches its existing events by event identity —
+  `(feed URL, sourceEventId)`, i.e. `event_sources.source_url` plus `source_event_id`,
+  compared verbatim except that trailing slashes are ignored — and adds the per-feed
+  attribution to them, regardless of which `sources` row the run resolves to. That is how
+  re-running each TPL feed after deploying backfills correct provenance for everything the
+  feed still returns: the match does not depend on the source row.
 - **Prerequisite 1 — `max_batch_size`:** the scrape job copies `scraper_config.max_batch_size`
   into `ScrapeOptions.Limit`, and the `bibliocommons_rss` extractor truncates its output to
   that limit. It must therefore be **at least the inventory size (~6,500)**; a smaller value

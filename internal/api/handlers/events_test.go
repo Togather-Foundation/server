@@ -83,7 +83,7 @@ func (s stubEventsRepo) CreateSource(_ context.Context, _ events.EventSourceCrea
 	return errors.New("not implemented")
 }
 
-func (s stubEventsRepo) FindBySourceExternalID(_ context.Context, _ string, _ string) (*events.Event, error) {
+func (s stubEventsRepo) FindByFeedEventID(_ context.Context, _ string, _ string) (*events.Event, error) {
 	return nil, events.ErrNotFound
 }
 

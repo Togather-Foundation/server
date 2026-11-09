@@ -702,9 +702,10 @@ UPDATE events
        public_url = COALESCE($6, public_url),
        event_domain = COALESCE($7, event_domain),
        keywords = COALESCE($8, keywords),
+       dedup_hash = COALESCE($9, dedup_hash),
        updated_at = now()
  WHERE ulid = $1
-RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, created_at, updated_at
+RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, dedup_hash, created_at, updated_at
 `
 
 type UpdateEventParams struct {
@@ -716,6 +717,7 @@ type UpdateEventParams struct {
 	PublicUrl      pgtype.Text `json:"public_url"`
 	EventDomain    pgtype.Text `json:"event_domain"`
 	Keywords       []string    `json:"keywords"`
+	DedupHash      pgtype.Text `json:"dedup_hash"`
 }
 
 type UpdateEventRow struct {
@@ -728,6 +730,7 @@ type UpdateEventRow struct {
 	ImageUrl       pgtype.Text        `json:"image_url"`
 	PublicUrl      pgtype.Text        `json:"public_url"`
 	Keywords       []string           `json:"keywords"`
+	DedupHash      pgtype.Text        `json:"dedup_hash"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 }
@@ -742,6 +745,7 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Updat
 		arg.PublicUrl,
 		arg.EventDomain,
 		arg.Keywords,
+		arg.DedupHash,
 	)
 	var i UpdateEventRow
 	err := row.Scan(
@@ -754,6 +758,7 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Updat
 		&i.ImageUrl,
 		&i.PublicUrl,
 		&i.Keywords,
+		&i.DedupHash,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

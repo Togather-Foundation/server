@@ -809,6 +809,32 @@ CREATE INDEX idx_event_sources_hash ON event_sources (payload_hash);
 CREATE INDEX idx_event_sources_external_id ON event_sources (source_id, source_event_id);
 ```
 
+**Event identity is `(source_url, source_event_id)`, not `source_id`.**
+`source_url` is the feed URL stored verbatim, and `source_event_id` is the source's own id
+for the event. Ingest looks up an already-ingested event with `FindByFeedEventID` on this
+pair, because one feed can own more than one `sources` row — the `sources` upsert key is
+the host-only `base_url` plus the name. Scoping identity to `source_id` duplicated every
+event from a feed that was ingested under two names.
+
+URLs are compared verbatim except that trailing slashes are ignored on both sides
+(`rtrim(es.source_url, '/') = rtrim($1, '/')`). Provenance rows predate this rule and many
+store a trailing slash, so the tolerant comparison matches them and the live configs
+without a backfill; the stored value is never rewritten, which keeps re-scrapes hitting the
+`UNIQUE (event_id, source_id, source_url)` upsert target. Within one key the lookup prefers
+a live twin over a soft-deleted event, then a published event, then the oldest row (id
+breaks ties). That preference only applies when both rows match: the lookup does not
+resolve `merged_into_id` yet, so after a consolidation the tombstone can be the only match —
+the open gap tracked by `specs/006-curator-protection/plan.md`; filtering deleted events is
+not the fix, because it would re-create the retired occurrences.
+
+The feed that owns the id is authoritative for the **name**; every other field keeps the
+existing trust-based auto-merge and ingest never moves dates, so a rename in the feed
+renames the event (rebuilding `dedup_hash` when the other identity fields are unchanged)
+rather than inserting a new one. A rename therefore overwrites an admin-edited name — a
+known temporary conflict with `specs/006-curator-protection/plan.md`. See
+[docs/integration/scraper.md § Event Identity](integration/scraper.md#event-identity-feed-url-sourceeventid).
+
+
 ### 3.3 Field Provenance (Field-Level Attribution)
 
 Tracks which source provided each critical field value.

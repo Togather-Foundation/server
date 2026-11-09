@@ -564,14 +564,15 @@ Consequences when re-running or adding a feed:
 
 - Re-running a feed resolves to its own `(base_url, name)` row every time; the row is not
   recreated or renamed.
-- **Renaming a config's `name:` creates a new provenance row.** Identity includes the name,
-  so subsequent runs resolve to a new `sources` row. Events already attributed to the old
-  row keep that attribution — there is no retroactive merge — and the old row is left
-  orphaned. Keep feed names stable; do not rename casually.
-- Events already ingested from another feed are matched by event identity, not by source
-  row. The first post-deploy re-run has no source-external-id history under its new
-  per-feed row, so it matches by dedup hash; later re-runs match by external id within the
-  feed, then dedup hash. Auto-merge then records the current feed's source attribution
+- **Renaming a config's `name:` creates a new provenance row.** Source-row identity
+  includes the name, so subsequent runs resolve to a new `sources` row. Events already
+  attributed to the old row keep that attribution — there is no retroactive merge — and
+  the old row is left orphaned. Keep feed names stable; do not rename casually. Event
+  identity does **not** depend on it (see below), so the rename no longer duplicates
+  events; it only splits per-source metadata (license, review-warning suppression) across
+  two rows.
+- Events already ingested from another feed are matched by feed event identity, not by
+  source row (see below). Auto-merge then records the current feed's source attribution
   against the existing event, so a re-run backfills per-feed provenance going forward.
 - Events ingested **before** the per-feed identity change keep their original attribution.
   A row that lumped several feeds cannot be split retroactively: `event_sources` stores
@@ -580,6 +581,81 @@ Consequences when re-running or adding a feed:
 - A source config with an empty/absent `name` is labelled `unknown` and groups per host;
   always set `name:` so provenance stays per-feed. (Ingest deliberately does not fall back
   to the event id or title, which would create a new `sources` row per event.)
+
+### Event Identity: `(feed URL, sourceEventId)`
+
+An ingested event is identified by **the feed URL plus the source's own id for the event**
+(`source.sourceEventId`, stored per attribution as `event_sources.source_event_id`).
+
+**URL comparison rule: feed URLs are compared verbatim, except that trailing slashes are
+ignored on both sides.** There is no other canonicalisation — no scheme/host lowercasing,
+no fragment stripping, no query rewriting. The comparison is done in SQL
+(`rtrim(es.source_url, '/') = rtrim($1, '/')`), so:
+
+- `https://example.com/eventslist/` and `https://example.com/eventslist` are the same
+  feed, in either direction. This matters: thousands of `event_sources` rows predate the
+  rule and store a trailing slash, while the live configs may not (or vice versa). The
+  tolerant comparison matches them **without a backfill**.
+- An uppercase host or a fragment only matches another URL spelled the same way.
+- The rest of the URL — path and query — is significant. Two different feed URLs on one
+  host are two feeds. (Note that ingest's generic URL normalisation strips a query from
+  `source.url` before it is stored, so in practice a query never reaches this comparison.)
+
+Provenance is append-like and **the stored URL is never rewritten**: `event_sources.source_url`
+keeps exactly what the feed reported, so re-scraping a feed refreshes the existing
+`(event_id, source_id, source_url)` row through the unique index instead of adding a second
+one. Do not "clean up" stored feed URLs to match the lookup — that is what would break the
+upsert target.
+
+The `sources` row is **not** the identity scope. `sources` upserts on
+`(host-only base_url, name)`, so a single feed can acquire two source rows (ingested under
+two config names, or under one config and the catch-all `Google Calendar` row). Scoping
+identity to the row made every event from that feed look new under the second row and
+created a duplicate event. The feed URL is what actually identifies the feed, and it is
+stored on every attribution.
+
+Consequences:
+
+- **A rename in the feed renames our event.** The next observation of the same
+  `(feed URL, sourceEventId)` updates the existing event's name (and recomputes its
+  dedup hash) instead of inserting a second event. The event keeps its ULID, URL and
+  review history.
+- **Conflict rule:** the feed that owns the id is authoritative for the **name**. Every
+  other field keeps the existing trust-based auto-merge (`description`, `image_url`,
+  `public_url`, `event_domain`, `keywords`), and ingest does not move dates at all — the
+  occurrence rows are untouched on this path. A lower-trust feed that owns the id still
+  renames the event.
+- **A rename therefore overwrites an admin-edited name.** That is a known, temporary
+  conflict with curator protection: [specs/006-curator-protection/plan.md](../../specs/006-curator-protection/plan.md)
+  makes curated events route source updates to review; until it lands, the feed name wins.
+- **A duplicate key prefers a live twin when one exists.** If a consolidation left the
+  tombstone as the only match (see below), the lookup returns it.
+- **The same `sourceEventId` from a genuinely different feed is a different event.** Two
+  feeds may reuse one id namespace (every Google Calendar event id carries its calendar's
+  domain), so the feed URL half of the key is load-bearing. Two feeds on the same host are
+  still two feeds.
+- **Two source rows for one feed still fragment provenance metadata.** License, trust and
+  `suppress_review_warnings` are per `sources` row, so a feed that owns two rows can carry
+  two different policies. Event identity no longer depends on it, but the split is not
+  repaired by this rule.
+- **Empty `sourceEventId`** has no feed identity to match, so ingest falls through to the
+  dedup-hash path; ingest validation rejects a `source.url` without `source.eventId`
+  anyway.
+
+**Tombstone gap (open).** The lookup prefers a live twin when both rows match the key, but
+it does not resolve `merged_into_id`. `MergeEvents` soft-deletes the duplicate without
+moving its `event_sources` rows, so after a consolidation the tombstone can be the **only**
+match and the next scrape updates a deleted event. Tombstone resolution is tracked by
+[specs/006-curator-protection/plan.md](../../specs/006-curator-protection/plan.md).
+Filtering deleted events in this lookup is not the fix: the retired event still owns the
+attributions, so skipping it would re-create the occurrences that consolidation
+deliberately retired. The fix is to follow `merged_into_id` to the canonical event (or move
+the attributions), not to hide tombstones.
+
+**Follow-up (not implemented):** `sources` still upserts on `(host-only base_url, name)`,
+so one feed can still acquire two source rows. Ingest identity no longer depends on it, but
+per-source metadata (license, trust, review-warning suppression) can still fragment across
+the rows. Changing source-row uniqueness is a separate change with its own data migration.
 
 ### Minimal Tier 0 Config
 

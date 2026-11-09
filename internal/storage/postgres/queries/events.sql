@@ -47,9 +47,10 @@ UPDATE events
        public_url = COALESCE(sqlc.narg('public_url'), public_url),
        event_domain = COALESCE(sqlc.narg('event_domain'), event_domain),
        keywords = COALESCE(sqlc.narg('keywords'), keywords),
+       dedup_hash = COALESCE(sqlc.narg('dedup_hash'), dedup_hash),
        updated_at = now()
  WHERE ulid = $1
-RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, created_at, updated_at;
+RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, dedup_hash, created_at, updated_at;
 
 -- name: UpdateOccurrenceDatesByEventULID :exec
 -- Update the start_time, end_time, and is_all_day of all occurrences for an event

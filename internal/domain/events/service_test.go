@@ -580,7 +580,7 @@ func TestService_GetByULID(t *testing.T) {
 		ULID: "01ARZ3NDEKTSV4RRFFQ69G5FAV",
 		Name: "Test Event",
 	}
-	repo.AddExistingEvent("test-source", "test-event-1", testEvent)
+	repo.AddExistingEvent("https://test.example.com/feed", "test-event-1", "test-source", testEvent)
 
 	event, err := svc.GetByULID(ctx, testEvent.ULID)
 	require.NoError(t, err)

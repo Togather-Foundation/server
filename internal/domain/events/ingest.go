@@ -487,6 +487,10 @@ func fallbackOrUnknown(value string) string {
 	return trimmed
 }
 
+// sourceBaseURL reduces a feed URL to scheme://host for the `sources` row
+// identity. It is host-only by design (sources upserts on (base_url, name)), so
+// it must never be used as an event identity key — event identity is the feed
+// URL itself, see Repository.FindByFeedEventID.
 func sourceBaseURL(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {

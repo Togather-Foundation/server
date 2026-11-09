@@ -933,8 +933,33 @@ SET retrieved_at = now(),
 	return nil
 }
 
-func (r *EventRepository) FindBySourceExternalID(ctx context.Context, sourceID string, sourceEventID string) (*events.Event, error) {
-	if strings.TrimSpace(sourceID) == "" || strings.TrimSpace(sourceEventID) == "" {
+// FindByFeedEventID returns the event previously ingested from the feed at
+// feedURL carrying the source's own id sourceEventID.
+//
+// Identity is scoped to the feed URL — stored per attribution in
+// event_sources.source_url — rather than to a `sources` row. One feed can be
+// resolved into more than one source row (the sources upsert key is the
+// host-only base_url plus the config name), so row-scoped identity split a
+// single feed event into two events whenever a feed was ingested under two
+// names.
+//
+// URLs are compared verbatim except that trailing slashes are ignored on both
+// sides. Event sources are append-like provenance: the stored URL is whatever
+// the feed reported and is never rewritten, and thousands of rows written before
+// this rule carry a trailing slash. Comparing with rtrim on both sides matches
+// them (and the currently-configured feed URLs) without a backfill, and without
+// a transform that only one side applies.
+//
+// When several events match (historical duplicate pairs), prefer a live twin
+// over a soft-deleted one and a published event over any other lifecycle state,
+// then the oldest row (id breaks ties deterministically). Note that this only
+// helps when both rows match: MergeEvents soft-deletes the duplicate without
+// moving its event_sources rows, so after a consolidation the tombstone can be
+// the only match. Tombstone resolution (merged_into_id) is the open gap tracked
+// by specs/006-curator-protection/plan.md; filtering deleted events here is not
+// the fix — it would re-create occurrences that were deliberately retired.
+func (r *EventRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*events.Event, error) {
+	if strings.TrimSpace(feedURL) == "" || strings.TrimSpace(sourceEventID) == "" {
 		return nil, events.ErrNotFound
 	}
 	queryer := r.queryer()
@@ -944,9 +969,13 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	   e.virtual_url, e.image_url, e.public_url, e.keywords, e.created_at, e.updated_at
   FROM events e
   JOIN event_sources es ON es.event_id = e.id
- WHERE es.source_id = $1 AND es.source_event_id = $2
+ WHERE rtrim(es.source_url, '/') = rtrim($1, '/') AND es.source_event_id = $2
+ ORDER BY (e.deleted_at IS NULL) DESC,
+          (e.lifecycle_state = 'published') DESC,
+          e.created_at ASC,
+          e.id ASC
  LIMIT 1
-`, sourceID, sourceEventID)
+`, feedURL, sourceEventID)
 
 	var data eventRow
 	if err := row.Scan(
@@ -971,7 +1000,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 		if err == pgx.ErrNoRows {
 			return nil, events.ErrNotFound
 		}
-		return nil, fmt.Errorf("find event by source: %w", err)
+		return nil, fmt.Errorf("find event by feed event id: %w", err)
 	}
 
 	event := &events.Event{
@@ -2861,6 +2890,9 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params e
 	if len(params.Keywords) > 0 {
 		updateParams.Keywords = params.Keywords
 	}
+	if params.DedupHash != nil {
+		updateParams.DedupHash = pgtype.Text{String: *params.DedupHash, Valid: true}
+	}
 
 	row, err := queries.UpdateEvent(ctx, updateParams)
 	if err != nil {
@@ -2884,6 +2916,7 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params e
 		ImageURL:       row.ImageUrl.String,
 		PublicURL:      row.PublicUrl.String,
 		Keywords:       row.Keywords,
+		DedupHash:      row.DedupHash.String,
 		CreatedAt:      row.CreatedAt.Time,
 		UpdatedAt:      row.UpdatedAt.Time,
 	}

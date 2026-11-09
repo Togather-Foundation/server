@@ -79,7 +79,7 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 			ImageURL:       "", // gap
 			LifecycleState: "published",
 		}
-		repo.AddExistingEvent("source-A", "evt-001", existingEvent)
+		repo.AddExistingEvent("https://example.com/events/evt-001", "evt-001", "source-A", existingEvent)
 		repo.sources["Scraper A|https://example.com"] = "source-A"
 		repo.SetSourceTrust("source-A", 5)
 
@@ -123,7 +123,7 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 			Description:    "Old description",
 			LifecycleState: "published",
 		}
-		repo.AddExistingEvent("source-A", "evt-001", existingEvent)
+		repo.AddExistingEvent("https://example.com/events/evt-001", "evt-001", "source-A", existingEvent)
 		repo.sources["Scraper A|https://example.com"] = "source-A"
 		repo.SetSourceTrust("source-A", 7) // higher trust for new submission
 
@@ -145,8 +145,8 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 			Description:    "Old description",
 			LifecycleState: "published",
 		}
-		// Link existing event to source-A for FindBySourceExternalID lookup
-		repo2.AddExistingEvent("source-A", "evt-001", existingEvent2)
+		// Link existing event to source-A for FindByFeedEventID lookup
+		repo2.AddExistingEvent("https://example.com/events/evt-001", "evt-001", "source-A", existingEvent2)
 		repo2.sources["Scraper A|https://example.com"] = "source-A"
 		repo2.SetSourceTrust("source-A", 7) // new source trust is 7
 		// Override the existing event's trust to 3 (as if originally from a lower-trust source)
@@ -176,7 +176,8 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 	t.Run("S3.3_different_source_no_match", func(t *testing.T) {
 		// Given: Source "scraper-A" submitted evt-001.
 		// Action: Source "scraper-B" submits with same externalID "evt-001".
-		// Expected: No match (source external IDs are scoped per-source).
+		// Expected: No match (feed event ids are scoped per feed URL, and the feed
+		// URLs differ), so a genuinely different feed keeps its own event.
 		repo := NewMockRepository()
 		existingULID, _ := ids.NewULID()
 		existingEvent := &Event{
@@ -186,7 +187,7 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 			Description:    "Existing desc",
 			LifecycleState: "published",
 		}
-		repo.AddExistingEvent("source-A", "evt-001", existingEvent)
+		repo.AddExistingEvent("https://scraper-a.com/events/evt-001", "evt-001", "source-A", existingEvent)
 		repo.sources["Scraper A|https://scraper-a.com"] = "source-A"
 
 		service := newTestService(repo)
@@ -199,9 +200,9 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Ingest() unexpected error = %v", err)
 		}
-		// Should NOT be detected as duplicate by source external ID
+		// Should NOT be detected as duplicate by feed event identity
 		// (may or may not be detected by dedup hash depending on venue normalization)
-		// The key assertion: it creates source-B, and FindBySourceExternalID with source-B/evt-001 returns nothing.
+		// The key assertion: it creates source-B, and FindByFeedEventID with scraper-b's feed URL/evt-001 returns nothing.
 		if result.Event == nil {
 			t.Fatal("Expected non-nil event")
 		}
@@ -236,8 +237,8 @@ func TestScenario_S4_DedupHash(t *testing.T) {
 		}
 		repo.AddEventByDedupHash(dedupHash, existingEvent)
 
-		// Link existing event to a source with trust 5
-		repo.AddExistingEvent("source-old", "old-ext-id", existingEvent)
+		// Link existing event to an older feed with trust 5
+		repo.AddExistingEvent("https://oldfeed.example.com/events", "old-ext-id", "source-old", existingEvent)
 		repo.SetSourceTrust("source-old", 5)
 
 		service := newTestService(repo)
@@ -306,7 +307,7 @@ func TestScenario_S4_DedupHash(t *testing.T) {
 			DedupHash:      dedupHash,
 		}
 		repo.AddEventByDedupHash(dedupHash, existingEvent)
-		repo.AddExistingEvent("source-high", "high-ext", existingEvent)
+		repo.AddExistingEvent("https://highquality-feed.example.com/events", "high-ext", "source-high", existingEvent)
 		repo.SetSourceTrust("source-high", 8)
 
 		service := newTestService(repo)
@@ -368,7 +369,7 @@ func TestScenario_S4_DedupHash(t *testing.T) {
 			DedupHash:      dedupHash,
 		}
 		repo.AddEventByDedupHash(dedupHash, existingEvent)
-		repo.AddExistingEvent("source-high", "high-ext", existingEvent)
+		repo.AddExistingEvent("https://highquality-feed.example.com/events", "high-ext", "source-high", existingEvent)
 		repo.SetSourceTrust("source-high", 8)
 
 		service := newTestService(repo)
@@ -3031,7 +3032,7 @@ func TestScenario_PerFeedProvenance(t *testing.T) {
 			DedupHash:      dedupHash,
 		}
 		repo.AddEventByDedupHash(dedupHash, existingEvent)
-		repo.AddExistingEvent("source-tpl-events", "tpl-events-1", existingEvent)
+		repo.AddExistingEvent("https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events", "tpl-events-1", "source-tpl-events", existingEvent)
 		repo.SetSourceTrust("source-tpl-events", 5)
 
 		// The subset feed is a distinct source row on the same base_url.

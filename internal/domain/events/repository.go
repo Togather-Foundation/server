@@ -280,7 +280,12 @@ type Repository interface {
 	Create(ctx context.Context, params EventCreateParams) (*Event, error)
 	CreateOccurrence(ctx context.Context, params OccurrenceCreateParams) error
 	CreateSource(ctx context.Context, params EventSourceCreateParams) error
-	FindBySourceExternalID(ctx context.Context, sourceID string, sourceEventID string) (*Event, error)
+	// FindByFeedEventID looks up an event previously ingested from a feed,
+	// identified by the pair (feedURL, sourceEventID). Identity is scoped to the
+	// feed URL, not to a `sources` row: one feed can own several source rows
+	// without its events becoming duplicates. URLs are compared verbatim except
+	// that trailing slashes are ignored on both sides (see feed_identity.go).
+	FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*Event, error)
 	FindByDedupHash(ctx context.Context, dedupHash string) (*Event, error)
 	GetOrCreateSource(ctx context.Context, params SourceLookupParams) (string, error)
 	GetIdempotencyKey(ctx context.Context, key string) (*IdempotencyKey, error)
