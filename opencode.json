@@ -1,6 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "deepseek/deepseek-v4-pro",
+  "model": "deepseek/deepseek-flash",
   "agent": {
     "general": {
       "description": "General-purpose agent implementing code and executing multi-step tasks",
