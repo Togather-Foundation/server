@@ -414,6 +414,39 @@ DATABASE_URL=postgres://user:pass@localhost:5432/sel?sslmode=require
 
 ---
 
+## Dependency Vulnerability Tracking
+
+CI runs `govulncheck ./...` in the **Vulnerability Scan** job
+(`.github/workflows/ci.yml`) on every push and pull request. The gate is **zero
+called vulnerabilities**: govulncheck fails the build when the code reaches a
+vulnerable symbol. Findings in imported packages or required modules that the
+code does not call are reported but do not fail the build; they are triaged
+here so a future call-path change cannot silently turn one into a called
+vulnerability.
+
+Triage rule: bump to the first release that fixes the finding. If no fixed
+release exists, record the accepted risk below with the reason it is not
+reachable and the change that would make it reachable.
+
+### OpenPGP removed from `golang.org/x/crypto`
+
+GO-2026-5932 marks `golang.org/x/crypto/openpgp` unsafe and unmaintained. The
+package was removed upstream in `v0.58.1-0.20261009181718-2f1f834330b2`; SEL
+imports only `x/crypto/bcrypt` and `x/crypto/hkdf`. `go.mod` pins that
+pseudo-version (the only release without the package) and should move to the
+next tagged `v0.59.0` or later once published.
+
+### Accepted risks (no upstream fix)
+
+| ID | Module | Affected package | Why accepted | Mitigation / review trigger |
+|----|--------|------------------|--------------|------------------------------|
+| GO-2025-3884 (CVE-2025-47909) | `github.com/gorilla/csrf` v1.7.3 | `TrustedOrigins` | No fixed release. The flaw only downgrades a host listed in `TrustedOrigins` from HTTPS to HTTP; SEL never sets `TrustedOrigins` (`internal/api/middleware/csrf.go`), and no other code path calls the symbol. | Keep `TrustedOrigins` unset. If a trusted origin becomes necessary, migrate to `filippo.io/csrf/gorilla` or `net/http.CrossOriginProtection` instead of configuring hosts. |
+| GO-2026-6911 | `github.com/mark3labs/mcp-go` v0.43.2 | `client/transport` | No known fixed version. The flaw is in the outbound MCP client transport (`NewStreamableHTTP`), which SEL does not use — `internal/mcp` imports only `mcp-go/mcp` to serve the MCP endpoint. | Re-evaluate before adding any outbound MCP client (`client/...` import) or bumping mcp-go. |
+
+**Last reviewed:** 2026-11-08 (`govulncheck ./...`: 0 called vulnerabilities).
+
+---
+
 ## Security Audit History
 
 ### v0.1.3 (2026-01-26) - Admin Interface Security Hardening
