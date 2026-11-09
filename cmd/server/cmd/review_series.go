@@ -91,15 +91,17 @@ age groups, audiences, drop-in vs registered sessions, or different programmes
 apart. Decide each cluster — consolidate it, or keep it separate and state the
 reason.
 
-Description differences are evidence, not a veto. Consolidate when the only
-difference is logistics or boilerplate: capacity notices ("N spots remaining",
-"this event is full"), room or location suffixes, registration phrasing,
-restated dates, punctuation, casing, or whitespace. Keep separate when the text
-carries per-occurrence content — a named activity, film, guest, or topic per
-date — or when the titles form a progression (Part 1/2, Session 1/3/4, I/II/III,
-Beginners/Advanced), because consolidation keeps only the canonical description
-and occurrences cannot carry per-date text. When the printed evidence is thin,
-fetch each member event for its description and URL before deciding.
+Description differences are evidence, not a veto. Typically the cluster is one
+series when the only difference is logistics or boilerplate: capacity notices
+("N spots remaining", "this event is full"), room or location suffixes,
+registration phrasing, restated dates, punctuation, casing, or whitespace. It is
+usually separate programmes when the text carries per-occurrence content — a
+named activity, film, guest, or topic per date — or when the titles form a
+progression (Part 1/2, Session 1/3/4, I/II/III, Beginners/Advanced), because
+consolidation keeps only the canonical description and occurrences cannot carry
+per-date text. These are typical cases, not rules: decide from the evidence. When
+the printed evidence is thin, fetch each member event for its description and URL
+before deciding.
 
 The detector is deliberately conservative and covers all published events, not
 only suppressed sources. --source scopes the scan to one provenance source

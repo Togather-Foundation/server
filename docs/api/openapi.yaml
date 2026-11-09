@@ -796,14 +796,16 @@ paths:
         identical while remaining distinct entries); it is admin display
         evidence and must never be logged or persisted. `content_varies` is true
         when there are multiple distinct descriptions or only some members are
-        described. It means **investigate and decide**, never skip: logistics and
-        boilerplate differences (capacity notices such as "N spots remaining" or
-        "this event is full", room or location suffixes, registration phrasing,
-        restated dates, punctuation, casing, whitespace) are safe to consolidate,
-        while per-occurrence content (a named activity, film, guest, or topic per
-        date) or titles that form a progression (Part N, Session N, I/II/III,
-        Beginners/Advanced) must stay separate because consolidation keeps only
-        the canonical description and occurrences cannot carry per-date text.
+        described. It means **investigate and decide**, never skip. Typically,
+        logistics and boilerplate differences (capacity notices such as "N spots
+        remaining" or "this event is full", room or location suffixes,
+        registration phrasing, restated dates, punctuation, casing, whitespace)
+        are safe to consolidate, while per-occurrence content (a named activity,
+        film, guest, or topic per date) or titles that form a progression (Part N,
+        Session N, I/II/III, Beginners/Advanced) are normally kept separate,
+        because consolidation keeps only the canonical description and
+        occurrences cannot carry per-date text. These are typical cases, not a
+        veto: decide from the evidence and state the reason.
       tags: [Admin]
       x-internal: true
       security:

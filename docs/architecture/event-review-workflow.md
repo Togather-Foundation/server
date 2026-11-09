@@ -644,22 +644,26 @@ and is never used for grouping.
 The response proposes a canonical member (earliest upcoming occurrence, or the
 earliest overall) and lists the members. The agent inspects the cluster and
 decides whether to call `POST /api/v1/admin/events/consolidate` with
-`transfer_occurrences: true` to produce one event with N occurrences. Consolidate
-only for the same programme at the same branch, same weekday, same start time,
-and a 7-day cadence; different branches, audiences, or drop-in/registered
-variants must stay separate. Each cluster also reports description evidence:
+`transfer_occurrences: true` to produce one event with N occurrences. The
+detector only proposes clusters that meet these mechanical preconditions (one
+venue, one weekday, a 7-day step between linked members within 30 minutes of each
+other, similar names); because clusters are built from pairwise links, a long
+chain can drift past 30 minutes end to end. The decision left to the agent is
+whether the members are the same programme for the same audience. Each cluster
+also reports description evidence:
 `distinct_description_count`, `distinct_descriptions` (deduped by fingerprint,
 capped at 600 characters per entry), `described_member_count`,
 `descriptions_truncated`, and `content_varies`. Descriptions are compared as
 fingerprints after trimming leading/trailing whitespace, so spacing-only
 differences collapse. `content_varies` means investigate and decide, never skip:
-logistics/boilerplate differences (capacity notices, room or location suffixes,
-registration phrasing, restated dates, punctuation, casing, whitespace) are safe
-to consolidate, while per-occurrence content (a named activity, film, guest, or
-topic per date) or titles that form a progression (Part N, Session N, I/II/III,
-Beginners/Advanced) must stay separate because consolidation keeps only the
-canonical event's text and occurrences cannot carry per-date text. The
-description text is admin-only display evidence; it must never be logged or
+typically, logistics/boilerplate differences (capacity notices, room or location
+suffixes, registration phrasing, restated dates, punctuation, casing, whitespace)
+are safe to consolidate, while per-occurrence content (a named activity, film,
+guest, or topic per date) or titles that form a progression (Part N, Session N,
+I/II/III, Beginners/Advanced) are normally kept separate, because consolidation
+keeps only the canonical event's text and occurrences cannot carry per-date text.
+These are typical cases, not a veto; the agent may decide otherwise and says why.
+The description text is admin-only display evidence; it must never be logged or
 persisted. The CLI exposes this as `server review series`. Results are paged with
 `offset`/`limit` over the deterministic cluster order, and `source` scopes the SQL
 scan to events attributed to one provenance source (a cluster spanning sources is

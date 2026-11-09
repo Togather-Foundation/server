@@ -5,7 +5,7 @@ license: MIT
 compatibility: Requires a Togather server binary built from source (make build). Requires admin API access (admin-role API key for token exchange).
 metadata:
   author: togather-foundation
-  version: "3.1"
+  version: "3.2"
   hermes:
     tags: [togather, review, data-quality, scraping, operations]
     category: devops
@@ -26,7 +26,11 @@ name, wrong language).
 
 ## Workflow
 
-Run these steps in order. Do not deviate. Do not process items individually.
+The steps below are the routine path, not a checklist. You have the same
+information an operator would; when the evidence disagrees with the guidance,
+decide with your judgement and say what you saw. What matters is that every item
+ends in a defensible decision — not that the commands ran in a fixed order.
+Queue items are still handled in batches; see Hard Constraints.
 
 Every terminal command must be prefixed with `source .env &&`:
 
@@ -82,9 +86,10 @@ source .env && ./server review batch --name "substring" --action approve \
 
 ### Step 4: Consolidate weekly series (including suppressed sources)
 
-**A weekly programme scraped as N separate events is ONE event with N occurrences.**
-Consolidating it is the correct end state: the public API renders the occurrences
-as `subEvent`s. Sources that set `suppress_review_warnings: [cross_week_series_companion]`
+**A weekly programme scraped as N separate events is usually ONE event with N
+occurrences.** The public API renders the occurrences as `subEvent`s. Whether a
+cluster should become one event is a judgement call, and you have the evidence
+to make it. Sources that set `suppress_review_warnings: [cross_week_series_companion]`
 publish these events directly, so they never enter the queue and Steps 2–3 will
 not see them. Find them explicitly:
 
@@ -123,6 +128,17 @@ approved. A series that appeared in the queue may already be partly consolidated
 so always inspect the member list before acting. `--json` emits the same cluster
 data for scripting.
 
+#### Gather the evidence
+
+The detector only proposes clusters that meet these mechanical preconditions: one
+primary venue, the same weekday, a 7-day step between linked members whose local
+start times are within 30 minutes, and similar member names. Clusters are built
+from pairwise links, so a long chain can drift more than 30 minutes end to end —
+the header prints the first member's time, not a shared one. Different branches
+cannot appear at all, and `--transfer-occurrences` keeps every occurrence. So the
+only question left is the one a machine cannot answer: **are these events the
+same programme, for the same audience, published once per week?**
+
 For each cluster, **read every member name, date, and the description evidence**:
 
 ```text
@@ -132,6 +148,7 @@ For each cluster, **read every member name, date, and the description evidence**
      - Looking for something to do after school? Join us for stories, songs...
      - Family storytime with crafts and a snack. This event is full.
    undescribed: 1 of 3 members have no description; fetch their events before deciding
+   [descriptions shortened to 200 chars for display; full text on the event]
    canonical: 01ABC...
    members:
      * 01ABC...  2026-11-11  Family Storytime
@@ -139,25 +156,25 @@ For each cluster, **read every member name, date, and the description evidence**
        01ABE...  2026-11-25  Family Storytime (Toddler)
 ```
 
-**`content_varies` / `descriptions differ (N distinct, ...)` means investigate and
-decide — it is never a reason to skip.** `N` is the number of distinct non-empty
-descriptions, not the number of differing members. Decide each cluster:
+The evidence usually settles it. Typical cases:
 
-- **Consolidate** when the differences are logistics or boilerplate: capacity
-  (`N spots remaining`, `this event is full`), room or location suffixes,
-  registration phrasing, restated dates, punctuation, casing, or whitespace.
-- **Keep separate** when the text carries per-occurrence content — a named
-  activity, film, guest, or topic per date — or when the titles form a
-  progression (`Part 1/2`, `Session 1/3/4`, `I/II/III`, Beginners/Advanced).
-  Consolidation keeps only the canonical description and occurrences cannot
-  carry per-date text, so merging would erase the schedule.
-- If the payload is thin or the difference is unclear, fetch each member event
-  (`GET /api/v1/events/{ulid}` returns `description` and `url`) and, if still
-  unclear, the source page.
-
-Every cluster must end as **consolidated** or **kept separate with a stated
-reason**. Escalating an undecidable cluster is the only third outcome, and it
-must name the exact missing evidence.
+- **One series** — same title, same audience, descriptions that differ only in
+  logistics or wording: capacity notices (`N spots remaining`, `this event is
+  full`), room or location suffixes, registration phrasing, restated dates,
+  punctuation, casing, trimming. A recurring club, class, or storytime whose
+  week-to-week variation is incidental belongs here.
+- **Separate programmes** — titles that name different things (`Part 1`/`Part 2`,
+  `Session 1`/`Session 3`, `I`/`II`/`III`, Beginners/Advanced); a different
+  audience or participation mode (baby vs toddler vs teen, drop-in vs
+  registered); or a description on each date that carries that date's content —
+  a named film, guest, activity, or topic. Occurrences cannot carry per-date
+  text, so merging those erases the detail a reader would use to choose a week.
+- **Neither is automatic.** `descriptions differ (N distinct, ...)` is a reason to
+  look, never a reason to skip: most of the time the difference is a capacity
+  line. If the printed evidence is thin, truncated, or unclear, fetch each member
+  event (`GET /api/v1/events/{ulid}` returns the full `description`, `url`,
+  venue, and organizer) and open the source page when the payload still leaves
+  you guessing.
 
 Then preview and apply the merge:
 
@@ -168,24 +185,18 @@ source .env && ./server review consolidate <canonical> <member-ulids...> \
   --transfer-occurrences --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
 ```
 
-**Consolidate ONLY when all of these are true:** same programme, same branch
-(venue), same weekday, same start time, exact 7-day cadence, and every member name
-describes the same audience.
+Every cluster ends in a decision: **consolidated**, or **kept separate with a
+one-line reason**. Both are resolutions. Escalate only when the details genuinely
+cannot separate two programmes, and name the missing detail — that is a
+data-quality report, not a third kind of resolution.
 
-**Do NOT consolidate:** different branches of the same library/system, different
-age groups or audiences (baby vs toddler vs teen), drop-in vs registered sessions,
-different weekday or start time, or titles that imply different programmes even
-when the names are similar. Also keep separate when descriptions carry
-per-occurrence content or the titles form a progression; logistical wording alone
-is not a reason to keep separate.
+**Work budget:** at most 20 consolidations per pass. That bounds the work, not
+the decisions: carry the remainder to the next batch and report it as
+outstanding.
 
-**Cap the work, not the decisions:** consolidate at most 20 clusters per pass.
-The cap bounds work per pass; carry the remainder to the next batch and report it
-as outstanding — do not treat it as skipped or undecidable.
-
-This step is the deliberate exception to the "do not process items individually"
-rule: consolidation is per-cluster and must be chosen cluster by cluster. Queue
-items themselves still follow the batch rules in Steps 2–3.
+This step is the deliberate exception to the batch rule in Hard Constraints:
+consolidation is per-cluster and must be chosen cluster by cluster. Queue items
+themselves still follow the batch rules in Steps 2–3.
 
 ### Step 5: Verify and report
 
@@ -194,8 +205,9 @@ source .env && ./server review stats --key "$TOGATHER_ADMIN_API_KEY" --server "$
 source .env && ./server review queue --group-by source --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
 ```
 
-Report the final stats. If items remain, list their names and sources for
-human review — do not process them individually.
+Report the final stats. If items remain, report them with their decision state
+(undecided, kept separate with its reason, or blocked by missing evidence) and
+their source. A non-zero queue is not by itself a reason to hand work to a human.
 
 ## Hard Constraints
 
@@ -255,4 +267,4 @@ you to batch per group. Its path is relative to the skill directory.
 After a review pass:
 1. `./server review stats` — queue size should be 0 or near-zero
 2. No items older than a week remain (on production)
-3. Report any remaining items with names and sources
+3. Report any remaining items with names, sources, and their decision state
