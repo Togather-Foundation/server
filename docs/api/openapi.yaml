@@ -786,19 +786,24 @@ paths:
         differently-named provenance row after a feed rename, in which case a
         scoped run can look empty.
 
-        Each cluster reports `distinct_description_count` and `content_varies`.
-        `content_varies` is true when more than one distinct non-empty
-        description is present, or when only some members are described.
-        Consolidation keeps only the canonical event's description, so in both
-        cases per-week content is silently discarded; occurrences cannot carry a
-        description, and for seminar, tour, or rotating-topic series each week's
-        description is often the only place that week's topic lives. Do not
-        consolidate a `content_varies` cluster until you have verified the
-        difference is cosmetic. Leading/trailing whitespace is trimmed before
-        comparison, so spacing-only differences collapse; differences in
-        wording, punctuation, or case still count. Boilerplate descriptions that
-        embed dates (e.g. "Join us on November 11") will trip the flag for many
-        real series; that is intentional and conservative.
+        Each cluster reports description evidence: `distinct_description_count`,
+        `distinct_descriptions`, `described_member_count`,
+        `descriptions_truncated`, and `content_varies`. Descriptions are compared
+        by fingerprint after trimming leading/trailing whitespace, so
+        spacing-only differences collapse; wording, punctuation, and case still
+        count. `distinct_descriptions` is deduped by fingerprint and carries at
+        most 600 characters per entry (independently capped prefixes can look
+        identical while remaining distinct entries); it is admin display
+        evidence and must never be logged or persisted. `content_varies` is true
+        when there are multiple distinct descriptions or only some members are
+        described. It means **investigate and decide**, never skip: logistics and
+        boilerplate differences (capacity notices such as "N spots remaining" or
+        "this event is full", room or location suffixes, registration phrasing,
+        restated dates, punctuation, casing, whitespace) are safe to consolidate,
+        while per-occurrence content (a named activity, film, guest, or topic per
+        date) or titles that form a progression (Part N, Session N, I/II/III,
+        Beginners/Advanced) must stay separate because consolidation keeps only
+        the canonical description and occurrences cannot carry per-date text.
       tags: [Admin]
       x-internal: true
       security:
@@ -6588,6 +6593,9 @@ components:
         - first_date
         - last_date
         - members
+        - distinct_descriptions
+        - described_member_count
+        - descriptions_truncated
         - distinct_description_count
         - content_varies
       properties:
@@ -6629,30 +6637,50 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SeriesCandidateMember'
+        distinct_descriptions:
+          type: array
+          description: >
+            Deduped description evidence for admins, one entry per distinct
+            non-empty fingerprint in first-occurrence order (members sorted by
+            start date). Each entry is trimmed and capped at 600 characters.
+            Dedupe uses the fingerprint, so two members whose 600-character
+            prefixes are identical but whose full text differs remain two
+            entries. Admin display evidence only: never log or persist this
+            text. Always `[]` when no member has a description.
+          items:
+            type: string
+        described_member_count:
+          type: integer
+          minimum: 0
+          description: Number of members with a non-empty description fingerprint.
+        descriptions_truncated:
+          type: boolean
+          description: >
+            True when any distinct description entry was capped at 600
+            characters. The full text is available on each member event.
         distinct_description_count:
           type: integer
           minimum: 0
           description: >
             Number of distinct non-empty member descriptions, compared after
-            trimming leading/trailing whitespace (fingerprints only; raw text is
-            never returned). 0 when every member has no description. This is a
-            display count of distinct descriptions, not the number of members
-            whose descriptions differ.
+            trimming leading/trailing whitespace (fingerprints only; the count
+            and `distinct_descriptions` come from the same pass). 0 when every
+            member has no description. This is a count of distinct
+            descriptions, not the number of members whose descriptions differ.
         content_varies:
           type: boolean
           description: >
-            True when consolidation would lose description content: more than
-            one distinct non-empty description, or some members have a
-            description and others do not. Consolidation keeps only the
-            canonical event's description, so a mix can silently drop the
-            cluster's only description, and occurrences cannot carry per-week
-            content (seminar, tour, or rotating-topic series often keep the
-            topic only in that week's description). Leading/trailing whitespace
-            is trimmed before comparison, so spacing-only differences collapse;
-            differences in wording, punctuation, or case still count.
-            Boilerplate descriptions that embed dates (e.g. "Join us on
-            November 11") will therefore trip the flag; that is intentional and
-            conservative.
+            True when description evidence needs investigation: more than one
+            distinct non-empty description, or some members have a description
+            and others do not. This is not a reason to skip. Consolidate when
+            differences are logistics or boilerplate (capacity notices, room or
+            location suffixes, registration phrasing, restated dates,
+            punctuation, casing, whitespace). Keep separate when the text
+            carries per-occurrence content (a named activity, film, guest, or
+            topic per date) or titles form a progression (Part N, Session N,
+            I/II/III, Beginners/Advanced), because consolidation keeps only the
+            canonical event's description and occurrences cannot carry per-date
+            text.
 
     SeriesCandidatesResponse:
       type: object

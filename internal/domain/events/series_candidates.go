@@ -21,6 +21,11 @@ const (
 	DefaultSeriesCandidateMinEvents = 3
 	// DefaultSeriesCandidateLimit caps the number of returned clusters.
 	DefaultSeriesCandidateLimit = 50
+	// seriesCandidateDescriptionLimit is the maximum number of runes of a
+	// member description carried as admin display evidence. Storage truncates
+	// with Postgres left() (character-based) and the domain re-applies the cap
+	// so direct callers cannot exceed it.
+	seriesCandidateDescriptionLimit = 600
 )
 
 // SeriesCandidatesParams controls a series-candidate scan.
@@ -101,10 +106,19 @@ type SeriesCandidateMember struct {
 	VenueULID           string
 	VenueName           string
 	// DescriptionFingerprint is an opaque per-member fingerprint of the
-	// trimmed description (empty when there is no description). It exists only
-	// so the cluster builder can count distinct descriptions; the text itself
-	// never leaves storage. json:"-" keeps the no-leak property structural.
+	// trimmed description (empty when there is no description). It is the
+	// dedupe/count key so the cluster builder can count distinct descriptions
+	// without comparing text.
 	DescriptionFingerprint string `json:"-"`
+	// Description is trimmed display evidence for admins: the leading/trailing
+	// whitespace is removed and the text is capped at
+	// seriesCandidateDescriptionLimit runes. It is admin-only display input; it
+	// must never be logged or persisted. The cluster-level DistinctDescriptions
+	// field is the surface that exposes it.
+	Description string `json:"-"`
+	// DescriptionTruncated is true when the full trimmed description exceeded
+	// the display cap.
+	DescriptionTruncated bool `json:"-"`
 }
 
 // SeriesCandidatePair is one qualifying 7-day edge between two distinct events.
@@ -127,6 +141,19 @@ type SeriesCandidate struct {
 	FirstDate              string
 	LastDate               string
 	Members                []SeriesCandidateMember
+	// DistinctDescriptions is the deduped description evidence for admins: one
+	// entry per distinct non-empty fingerprint, in first-occurrence order
+	// within the component, each entry trimmed and capped at
+	// seriesCandidateDescriptionLimit runes. Two members whose capped prefixes
+	// are identical but whose full text differs keep two entries because
+	// dedupe is by fingerprint. Admin-only display evidence: never log or
+	// persist this text.
+	DistinctDescriptions []string
+	// DescribedMemberCount counts members with a non-empty description
+	// fingerprint.
+	DescribedMemberCount int
+	// DescriptionsTruncated is true when any distinct description was capped.
+	DescriptionsTruncated bool
 	// DistinctDescriptionCount counts distinct non-empty member description
 	// fingerprints. Empty descriptions do not count, so a cluster whose
 	// descriptions are all empty reports 0.
@@ -286,6 +313,9 @@ func buildSeriesCluster(component []SeriesCandidateMember) SeriesCandidate {
 		}
 		return component[i].ULID < component[j].ULID
 	})
+	for i := range component {
+		component[i] = normalizeSeriesDescription(component[i])
+	}
 
 	name := mostFrequentName(component)
 	canonical := chooseCanonicalMember(component)
@@ -308,7 +338,7 @@ func buildSeriesCluster(component []SeriesCandidateMember) SeriesCandidate {
 		venueID, venueName = component[0].VenueULID, component[0].VenueName
 	}
 
-	distinctDescriptions, describedMembers := descriptionDivergence(component)
+	distinctDescriptions, describedMembers, descriptionsTruncated := descriptionDivergence(component)
 
 	return SeriesCandidate{
 		SuggestedCanonicalULID:   canonical.ULID,
@@ -322,25 +352,59 @@ func buildSeriesCluster(component []SeriesCandidateMember) SeriesCandidate {
 		FirstDate:                firstDate,
 		LastDate:                 lastDate,
 		Members:                  component,
-		DistinctDescriptionCount: distinctDescriptions,
-		ContentVaries:            distinctDescriptions > 1 || (describedMembers > 0 && describedMembers < len(component)),
+		DistinctDescriptions:     distinctDescriptions,
+		DescribedMemberCount:     describedMembers,
+		DescriptionsTruncated:    descriptionsTruncated,
+		DistinctDescriptionCount: len(distinctDescriptions),
+		ContentVaries:            len(distinctDescriptions) > 1 || (describedMembers > 0 && describedMembers < len(component)),
 	}
 }
 
-// descriptionDivergence counts distinct non-empty description fingerprints and
-// how many members have a description at all. Fingerprints are opaque; only
-// equality matters. A cluster where every member has no description reports
-// (0, 0).
-func descriptionDivergence(component []SeriesCandidateMember) (distinct, described int) {
+// normalizeSeriesDescription trims a member description to display text and
+// caps it at seriesCandidateDescriptionLimit runes. Storage already applies
+// btrim/left, so this is a defensive boundary for direct callers and keeps the
+// rune cap explicit in the domain.
+func normalizeSeriesDescription(member SeriesCandidateMember) SeriesCandidateMember {
+	trimmed := strings.TrimSpace(member.Description)
+	if trimmed == "" {
+		member.Description = ""
+		return member
+	}
+	runes := []rune(trimmed)
+	if len(runes) > seriesCandidateDescriptionLimit {
+		member.Description = string(runes[:seriesCandidateDescriptionLimit])
+		member.DescriptionTruncated = true
+		return member
+	}
+	member.Description = trimmed
+	return member
+}
+
+// descriptionDivergence returns the distinct description evidence, the count of
+// described members, and whether any distinct description was truncated. It
+// dedupes by fingerprint (not text), so two members whose capped 600-rune
+// prefixes are identical but whose full text differs stay two distinct entries.
+// Order is first occurrence in the (date-sorted) component. All three values
+// come from one pass so the count and the slice cannot disagree. A cluster where
+// every member has no description reports ([]string{}, 0, false).
+func descriptionDivergence(component []SeriesCandidateMember) (distinct []string, described int, truncated bool) {
 	seen := make(map[string]struct{}, len(component))
+	distinct = make([]string, 0, len(component))
 	for _, member := range component {
 		if member.DescriptionFingerprint == "" {
 			continue
 		}
 		described++
+		if _, ok := seen[member.DescriptionFingerprint]; ok {
+			continue
+		}
 		seen[member.DescriptionFingerprint] = struct{}{}
+		distinct = append(distinct, member.Description)
+		if member.DescriptionTruncated {
+			truncated = true
+		}
 	}
-	return len(seen), described
+	return distinct, described, truncated
 }
 
 // mostFrequentName picks the modal member name. Ties resolve to the name with

@@ -57,6 +57,9 @@ type seriesCandidateResponse struct {
 	FirstDate                string                          `json:"first_date"`
 	LastDate                 string                          `json:"last_date"`
 	Members                  []seriesCandidateMemberResponse `json:"members"`
+	DistinctDescriptions     []string                        `json:"distinct_descriptions"`
+	DescribedMemberCount     int                             `json:"described_member_count"`
+	DescriptionsTruncated    bool                            `json:"descriptions_truncated"`
 	DistinctDescriptionCount int                             `json:"distinct_description_count"`
 	ContentVaries            bool                            `json:"content_varies"`
 }
@@ -152,6 +155,10 @@ func (h *AdminHandler) GetSeriesCandidates(w http.ResponseWriter, r *http.Reques
 				LifecycleState:  member.LifecycleState,
 			})
 		}
+		descriptions := cluster.DistinctDescriptions
+		if descriptions == nil {
+			descriptions = []string{}
+		}
 		items = append(items, seriesCandidateResponse{
 			SuggestedCanonicalULID:   cluster.SuggestedCanonicalULID,
 			Name:                     cluster.Name,
@@ -163,6 +170,9 @@ func (h *AdminHandler) GetSeriesCandidates(w http.ResponseWriter, r *http.Reques
 			FirstDate:                cluster.FirstDate,
 			LastDate:                 cluster.LastDate,
 			Members:                  members,
+			DistinctDescriptions:     descriptions,
+			DescribedMemberCount:     cluster.DescribedMemberCount,
+			DescriptionsTruncated:    cluster.DescriptionsTruncated,
 			DistinctDescriptionCount: cluster.DistinctDescriptionCount,
 			ContentVaries:            cluster.ContentVaries,
 		})

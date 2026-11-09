@@ -26,6 +26,9 @@ const (
 	seriesMaxLimit        = 200
 	seriesMinOffset       = 0
 	seriesMaxOffset       = 10000
+	// seriesDescriptionDisplayLimit caps each printed description line; the API
+	// carries up to 600 runes and the full text lives on the event.
+	seriesDescriptionDisplayLimit = 200
 )
 
 type SeriesCandidateVenue struct {
@@ -52,6 +55,9 @@ type SeriesCandidateItem struct {
 	FirstDate                string                  `json:"first_date"`
 	LastDate                 string                  `json:"last_date"`
 	Members                  []SeriesCandidateMember `json:"members"`
+	DistinctDescriptions     []string                `json:"distinct_descriptions"`
+	DescribedMemberCount     int                     `json:"described_member_count"`
+	DescriptionsTruncated    bool                    `json:"descriptions_truncated"`
 	DistinctDescriptionCount int                     `json:"distinct_description_count"`
 	ContentVaries            bool                    `json:"content_varies"`
 }
@@ -82,13 +88,18 @@ discover them, then consolidate each cluster into one event with N occurrences:
 
 Inspect the member list for every cluster: the detector cannot tell different
 age groups, audiences, drop-in vs registered sessions, or different programmes
-apart. If names, descriptions, or audiences diverge, do not consolidate.
+apart. Decide each cluster — consolidate it, or keep it separate and state the
+reason.
 
-Leading/trailing whitespace is trimmed before descriptions are compared, so
-spacing-only differences collapse; differences in wording, punctuation, or case
-still count. The descriptions-differ flag also fires when only some members have
-a description. Occurrences cannot carry a description, so consolidating such a
-cluster keeps only the canonical event's text and discards per-week content.
+Description differences are evidence, not a veto. Consolidate when the only
+difference is logistics or boilerplate: capacity notices ("N spots remaining",
+"this event is full"), room or location suffixes, registration phrasing,
+restated dates, punctuation, casing, or whitespace. Keep separate when the text
+carries per-occurrence content — a named activity, film, guest, or topic per
+date — or when the titles form a progression (Part 1/2, Session 1/3/4, I/II/III,
+Beginners/Advanced), because consolidation keeps only the canonical description
+and occurrences cannot carry per-date text. When the printed evidence is thin,
+fetch each member event for its description and URL before deciding.
 
 The detector is deliberately conservative and covers all published events, not
 only suppressed sources. --source scopes the scan to one provenance source
@@ -274,7 +285,7 @@ func printSeriesCandidates(out io.Writer, resp SeriesCandidatesResponse, offset 
 			_, _ = fmt.Fprintln(out, "   names differ: inspect carefully")
 		}
 		if item.ContentVaries {
-			_, _ = fmt.Fprintf(out, "   descriptions differ (%d distinct): inspect each member before consolidating\n", item.DistinctDescriptionCount)
+			printSeriesDescriptions(out, item)
 		}
 		_, _ = fmt.Fprintf(out, "   canonical: %s\n", item.SuggestedCanonicalULID)
 		_, _ = fmt.Fprintln(out, "   members:")
@@ -291,7 +302,43 @@ func printSeriesCandidates(out io.Writer, resp SeriesCandidatesResponse, offset 
 		)
 	}
 	_, _ = fmt.Fprintln(out)
-	_, _ = fmt.Fprintln(out, "* = suggested canonical. Inspect names and audiences before consolidating.")
+	_, _ = fmt.Fprintln(out, "* = suggested canonical. Decide every cluster: consolidate, or keep separate with a stated reason.")
+}
+
+// printSeriesDescriptions renders the content_varies evidence block. The
+// descriptions are display evidence only; the full text lives on each event.
+func printSeriesDescriptions(out io.Writer, item SeriesCandidateItem) {
+	distinct := len(item.DistinctDescriptions)
+	if distinct == 0 {
+		distinct = item.DistinctDescriptionCount
+	}
+	_, _ = fmt.Fprintf(out, "   descriptions differ (%d distinct, %d/%d members described): decide, do not skip\n",
+		distinct, item.DescribedMemberCount, item.EventCount)
+	shortened := false
+	for _, description := range item.DistinctDescriptions {
+		line, truncated := formatSeriesDescription(description)
+		shortened = shortened || truncated
+		_, _ = fmt.Fprintf(out, "     - %s\n", line)
+	}
+	if item.DescribedMemberCount < item.EventCount {
+		_, _ = fmt.Fprintf(out, "   undescribed: %d of %d members have no description; fetch their events before deciding\n",
+			item.EventCount-item.DescribedMemberCount, item.EventCount)
+	}
+	if item.DescriptionsTruncated || shortened {
+		_, _ = fmt.Fprintf(out, "   [descriptions shortened to %d chars for display; full text on the event]\n", seriesDescriptionDisplayLimit)
+	}
+}
+
+// formatSeriesDescription flattens whitespace to one line and shortens the text
+// to a terminal-friendly length, appending an ellipsis when it is cut. The
+// boolean reports whether the display text was shortened.
+func formatSeriesDescription(description string) (string, bool) {
+	flat := strings.Join(strings.Fields(description), " ")
+	runes := []rune(flat)
+	if len(runes) > seriesDescriptionDisplayLimit {
+		return string(runes[:seriesDescriptionDisplayLimit]) + "…", true
+	}
+	return flat, false
 }
 
 func seriesNamesDiffer(item SeriesCandidateItem) bool {

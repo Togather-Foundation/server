@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -212,7 +213,9 @@ func TestPrintSeriesCandidatesDescriptionDivergence(t *testing.T) {
 			Name:                     "Family Storytime",
 			Venue:                    SeriesCandidateVenue{Name: "Main Branch"},
 			EventCount:               2,
-			DistinctDescriptionCount: 6,
+			DistinctDescriptions:     []string{"Weekly storytime for toddlers", "Weekly storytime for babies"},
+			DescribedMemberCount:     2,
+			DistinctDescriptionCount: 2,
 			ContentVaries:            true,
 			Members: []SeriesCandidateMember{
 				{ULID: "01HEVENT000000000000000001", Name: "Family Storytime", StartDate: "2026-11-10"},
@@ -223,9 +226,17 @@ func TestPrintSeriesCandidatesDescriptionDivergence(t *testing.T) {
 	var out bytes.Buffer
 	printSeriesCandidates(&out, resp, 0)
 
-	want := "descriptions differ (6 distinct): inspect each member before consolidating"
-	if !strings.Contains(out.String(), want) {
-		t.Errorf("output missing %q\n---\n%s", want, out.String())
+	for _, want := range []string{
+		"descriptions differ (2 distinct, 2/2 members described): decide, do not skip",
+		"     - Weekly storytime for toddlers",
+		"     - Weekly storytime for babies",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q\n---\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "undescribed:") {
+		t.Errorf("fully described cluster must not print the undescribed note:\n%s", out.String())
 	}
 	if strings.Contains(out.String(), "names differ") {
 		t.Errorf("identical names must not trigger the name warning:\n%s", out.String())
@@ -265,6 +276,9 @@ func TestPrintSeriesCandidatesDescriptionsPartialCoverage(t *testing.T) {
 			Name:                     "Family Storytime",
 			Venue:                    SeriesCandidateVenue{Name: "Main Branch"},
 			EventCount:               3,
+			DistinctDescriptions:     []string{"Weekly storytime for toddlers"},
+			DescribedMemberCount:     2,
+			DescriptionsTruncated:    true,
 			DistinctDescriptionCount: 1,
 			ContentVaries:            true,
 			Members: []SeriesCandidateMember{
@@ -277,23 +291,86 @@ func TestPrintSeriesCandidatesDescriptionsPartialCoverage(t *testing.T) {
 	var out bytes.Buffer
 	printSeriesCandidates(&out, resp, 0)
 
-	want := "descriptions differ (1 distinct): inspect each member before consolidating"
-	if !strings.Contains(out.String(), want) {
-		t.Errorf("output missing %q\n---\n%s", want, out.String())
+	for _, want := range []string{
+		"descriptions differ (1 distinct, 2/3 members described): decide, do not skip",
+		"undescribed: 1 of 3 members have no description; fetch their events before deciding",
+		fmt.Sprintf("[descriptions shortened to %d chars for display; full text on the event]", seriesDescriptionDisplayLimit),
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q\n---\n%s", want, out.String())
+		}
+	}
+}
+
+func TestFormatSeriesDescription(t *testing.T) {
+	got, truncated := formatSeriesDescription("  line one\nline two  ")
+	if got != "line one line two" || truncated {
+		t.Errorf("formatSeriesDescription must flatten whitespace without truncating, got %q truncated=%v", got, truncated)
+	}
+	long := strings.Repeat("a", seriesDescriptionDisplayLimit+5)
+	got, truncated = formatSeriesDescription(long)
+	if !truncated {
+		t.Fatal("expected long description to be truncated")
+	}
+	runes := []rune(got)
+	if len(runes) != seriesDescriptionDisplayLimit+1 {
+		t.Fatalf("formatted length = %d runes, want %d", len(runes), seriesDescriptionDisplayLimit+1)
+	}
+	if runes[len(runes)-1] != '…' {
+		t.Errorf("shortened description must end with an ellipsis, got %q", got)
 	}
 }
 
 func TestSeriesCandidatesResponseJSONIncludesDescriptionFields(t *testing.T) {
 	raw, err := json.Marshal(SeriesCandidateItem{
+		DistinctDescriptions:     []string{"one", "two"},
+		DescribedMemberCount:     6,
+		DescriptionsTruncated:    true,
 		DistinctDescriptionCount: 6,
 		ContentVaries:            true,
 	})
 	if err != nil {
 		t.Fatalf("marshal series candidate: %v", err)
 	}
-	for _, want := range []string{`"distinct_description_count":6`, `"content_varies":true`} {
+	for _, want := range []string{
+		`"distinct_descriptions":["one","two"]`,
+		`"described_member_count":6`,
+		`"descriptions_truncated":true`,
+		`"distinct_description_count":6`,
+		`"content_varies":true`,
+	} {
 		if !strings.Contains(string(raw), want) {
 			t.Errorf("--json payload missing %s: %s", want, raw)
+		}
+	}
+}
+
+func TestPrintSeriesCandidatesLongDescriptionFooter(t *testing.T) {
+	resp := SeriesCandidatesResponse{
+		TotalClusters: 1,
+		Items: []SeriesCandidateItem{{
+			SuggestedCanonicalULID:   "01HEVENT000000000000000001",
+			Name:                     "Family Storytime",
+			Venue:                    SeriesCandidateVenue{Name: "Main Branch"},
+			EventCount:               1,
+			DistinctDescriptions:     []string{strings.Repeat("a", seriesDescriptionDisplayLimit+1)},
+			DescribedMemberCount:     1,
+			DistinctDescriptionCount: 1,
+			ContentVaries:            true,
+			Members: []SeriesCandidateMember{
+				{ULID: "01HEVENT000000000000000001", Name: "Family Storytime", StartDate: "2026-11-10"},
+			},
+		}},
+	}
+	var out bytes.Buffer
+	printSeriesCandidates(&out, resp, 0)
+
+	for _, want := range []string{
+		"…",
+		fmt.Sprintf("[descriptions shortened to %d chars for display; full text on the event]", seriesDescriptionDisplayLimit),
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q\n---\n%s", want, out.String())
 		}
 	}
 }

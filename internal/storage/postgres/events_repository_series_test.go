@@ -559,8 +559,10 @@ func TestListSeriesCandidatePairsSourceFilterDualAttribution(t *testing.T) {
 }
 
 // TestListSeriesCandidatePairsDescriptionFingerprints proves the pair rows
-// carry only an opaque description fingerprint and that it collapses trimmed
-// whitespace but not punctuation. The description text never reaches the pairs.
+// carry an opaque description fingerprint plus a 600-character display preview,
+// that fingerprints collapse trimmed whitespace but not punctuation, and that
+// long descriptions are capped and flagged. Fingerprints stay hashes, never the
+// raw text.
 func TestListSeriesCandidatePairsDescriptionFingerprints(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
@@ -589,6 +591,14 @@ func TestListSeriesCandidatePairsDescriptionFingerprints(t *testing.T) {
 	insertSeriesTestEventWithDescription(t, ctx, pool, "Whitespace Storytime", "   ", whitespaceVenue, clock.FutureTimeAt(2, 18, 0))
 	insertSeriesTestEventWithDescription(t, ctx, pool, "Whitespace Storytime", "\t\n", whitespaceVenue, clock.FutureTimeAt(9, 18, 0))
 
+	// Long descriptions: the preview cap is 600 characters (not bytes), so a
+	// pair whose first 600 characters match but tails differ keeps both
+	// fingerprints and both capped previews flag truncation.
+	longVenue := insertPlace(t, ctx, pool, "Long Hall", "Toronto", "ON")
+	longPrefix := strings.Repeat("x", 600)
+	insertSeriesTestEventWithDescription(t, ctx, pool, "Long Storytime", longPrefix+" tail one", longVenue, clock.FutureTimeAt(2, 18, 0))
+	insertSeriesTestEventWithDescription(t, ctx, pool, "Long Storytime", longPrefix+" tail two", longVenue, clock.FutureTimeAt(9, 18, 0))
+
 	now := time.Now().UTC()
 	pairs, err := repo.ListSeriesCandidatePairs(ctx, events.SeriesCandidatesQuery{
 		WindowStart: seriesTestWindowStart(now, 14),
@@ -598,21 +608,32 @@ func TestListSeriesCandidatePairsDescriptionFingerprints(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, pairs)
 
-	// Pair rows carry fingerprints, never the description text.
+	// Pair rows carry an opaque fingerprint plus capped preview text. The
+	// fingerprint must never be the description text itself.
 	for _, pair := range pairs {
 		for _, member := range []events.SeriesCandidateMember{pair.A, pair.B} {
 			require.NotContains(t, member.DescriptionFingerprint, "Weekly storytime",
-				"storage must not carry description text into pair rows")
+				"the fingerprint is an md5 hash, not the description text")
 			if member.VenueULID == emptyVenue.ULID || member.VenueULID == whitespaceVenue.ULID {
 				require.Empty(t, member.DescriptionFingerprint, "blank description yields an empty fingerprint")
+				require.Empty(t, member.Description, "blank description yields an empty preview")
+				require.False(t, member.DescriptionTruncated)
 				continue
 			}
 			require.Len(t, member.DescriptionFingerprint, 32, "non-empty descriptions are md5 fingerprints")
+			if member.VenueULID == longVenue.ULID {
+				require.Len(t, []rune(member.Description), 600, "preview is capped at 600 characters")
+				require.True(t, member.DescriptionTruncated)
+				continue
+			}
+			require.False(t, member.DescriptionTruncated)
+			require.Equal(t, strings.TrimSpace(member.Description), member.Description,
+				"preview text is trimmed")
 		}
 	}
 
 	result := events.BuildSeriesCandidates(pairs, events.SeriesCandidatesParams{MinEvents: 2, Limit: 50})
-	require.Len(t, result.Items, 4)
+	require.Len(t, result.Items, 5)
 
 	byVenue := make(map[string]events.SeriesCandidate, len(result.Items))
 	for _, cluster := range result.Items {
@@ -638,6 +659,19 @@ func TestListSeriesCandidatePairsDescriptionFingerprints(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, 0, whitespaceOnly.DistinctDescriptionCount, "whitespace-only descriptions fingerprint as empty")
 	require.False(t, whitespaceOnly.ContentVaries, "blank descriptions are not content divergence")
+
+	long, ok := byVenue[longVenue.ULID]
+	require.True(t, ok)
+	require.Equal(t, 2, long.DistinctDescriptionCount,
+		"same 600-character prefix with different tails stays two distinct descriptions")
+	require.Len(t, long.DistinctDescriptions, 2)
+	for _, description := range long.DistinctDescriptions {
+		require.Len(t, []rune(description), 600)
+		require.Equal(t, longPrefix, description)
+	}
+	require.True(t, long.DescriptionsTruncated)
+	require.Equal(t, 2, long.DescribedMemberCount)
+	require.True(t, long.ContentVaries)
 }
 
 type seriesTestEvent struct {

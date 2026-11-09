@@ -2,6 +2,7 @@ package events
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -353,7 +354,92 @@ func TestBuildSeriesCandidatesDescriptionDivergence(t *testing.T) {
 		require.Len(t, result.Items, 1)
 		assert.Equal(t, 1, result.Items[0].DistinctDescriptionCount,
 			"the count is distinct non-empty descriptions, not described members")
+		assert.Equal(t, 1, result.Items[0].DescribedMemberCount)
 		assert.True(t, result.Items[0].ContentVaries,
 			"a mix of described and undescribed members loses content on consolidation")
+	})
+}
+
+func TestBuildSeriesCandidatesDescriptionEvidence(t *testing.T) {
+	const (
+		fingerprintA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		fingerprintB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		fingerprintC = "cccccccccccccccccccccccccccccccc"
+	)
+
+	t.Run("dedupes by fingerprint after cap and keeps deterministic order", func(t *testing.T) {
+		prefix := strings.Repeat("a", 600)
+		// Same 600-rune prefix, different tails: distinct fingerprints stay
+		// distinct even though the capped display text is identical.
+		first := seriesTestMemberWithDescription("01HEVENT000000000000000001", "2026-11-10", fingerprintA)
+		first.Description = prefix + " first tail"
+		second := seriesTestMemberWithDescription("01HEVENT000000000000000002", "2026-11-17", fingerprintB)
+		second.Description = prefix + " second tail"
+		third := seriesTestMemberWithDescription("01HEVENT000000000000000003", "2026-11-24", fingerprintA)
+		third.Description = prefix + " first tail"
+
+		result := BuildSeriesCandidates([]SeriesCandidatePair{
+			seriesTestPair(second, third),
+			seriesTestPair(first, second),
+		}, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		cluster := result.Items[0]
+
+		assert.Equal(t, 2, cluster.DistinctDescriptionCount)
+		assert.Equal(t, 2, len(cluster.DistinctDescriptions))
+		assert.Equal(t, 3, cluster.DescribedMemberCount)
+		assert.True(t, cluster.DescriptionsTruncated)
+		for _, description := range cluster.DistinctDescriptions {
+			assert.Len(t, []rune(description), 600)
+			assert.Equal(t, prefix, description,
+				"the capped prefix is identical; dedupe must still use the fingerprint")
+		}
+		// Order follows member order (StartDate), not fingerprint or pair order.
+		assert.True(t, cluster.Members[0].DescriptionTruncated)
+		assert.True(t, cluster.Members[1].DescriptionTruncated)
+	})
+
+	t.Run("caps at 600 runes and flags truncation", func(t *testing.T) {
+		long := strings.Repeat("é", 601)
+		member := seriesTestMemberWithDescription("01HEVENT000000000000000001", "2026-11-10", fingerprintC)
+		member.Description = long
+		other := seriesTestMemberWithDescription("01HEVENT000000000000000002", "2026-11-17", fingerprintC)
+		other.Description = "short"
+
+		result := BuildSeriesCandidates([]SeriesCandidatePair{seriesTestPair(member, other)}, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		cluster := result.Items[0]
+		require.Len(t, cluster.DistinctDescriptions, 1)
+		assert.Len(t, []rune(cluster.DistinctDescriptions[0]), 600,
+			"cap must count runes, not bytes")
+		assert.True(t, cluster.DescriptionsTruncated)
+	})
+
+	t.Run("short descriptions are not truncated", func(t *testing.T) {
+		a := seriesTestMemberWithDescription("01HEVENT000000000000000001", "2026-11-10", fingerprintA)
+		a.Description = "  Weekly storytime  "
+		b := seriesTestMemberWithDescription("01HEVENT000000000000000002", "2026-11-17", fingerprintB)
+		b.Description = "Weekly storytime with songs"
+
+		result := BuildSeriesCandidates([]SeriesCandidatePair{seriesTestPair(a, b)}, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		cluster := result.Items[0]
+		assert.Equal(t, []string{"Weekly storytime", "Weekly storytime with songs"}, cluster.DistinctDescriptions,
+			"display text is trimmed and ordered by member date")
+		assert.Equal(t, 2, cluster.DescribedMemberCount)
+		assert.False(t, cluster.DescriptionsTruncated)
+	})
+
+	t.Run("empty descriptions produce an empty non-nil evidence slice", func(t *testing.T) {
+		a := seriesTestMemberWithDescription("01HEVENT000000000000000001", "2026-11-10", "")
+		b := seriesTestMemberWithDescription("01HEVENT000000000000000002", "2026-11-17", "")
+
+		result := BuildSeriesCandidates([]SeriesCandidatePair{seriesTestPair(a, b)}, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		cluster := result.Items[0]
+		require.NotNil(t, cluster.DistinctDescriptions)
+		assert.Empty(t, cluster.DistinctDescriptions)
+		assert.Equal(t, 0, cluster.DescribedMemberCount)
+		assert.False(t, cluster.DescriptionsTruncated)
 	})
 }

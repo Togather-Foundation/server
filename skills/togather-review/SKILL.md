@@ -123,12 +123,15 @@ approved. A series that appeared in the queue may already be partly consolidated
 so always inspect the member list before acting. `--json` emits the same cluster
 data for scripting.
 
-For each cluster, **read every member name and date**:
+For each cluster, **read every member name, date, and the description evidence**:
 
 ```text
 1) Family Storytime — Main Branch — Wed 18:00 — 3 events — 2026-11-11..2026-11-25
    names differ: inspect carefully
-   descriptions differ (3 distinct): inspect each member before consolidating
+   descriptions differ (2 distinct, 2/3 members described): decide, do not skip
+     - Looking for something to do after school? Join us for stories, songs...
+     - Family storytime with crafts and a snack. This event is full.
+   undescribed: 1 of 3 members have no description; fetch their events before deciding
    canonical: 01ABC...
    members:
      * 01ABC...  2026-11-11  Family Storytime
@@ -136,24 +139,25 @@ For each cluster, **read every member name and date**:
        01ABE...  2026-11-25  Family Storytime (Toddler)
 ```
 
-**If member names or audiences diverge, do not consolidate.** The detector cannot
-distinguish different age groups, drop-in vs registered sessions, or different
-programmes that share a venue, weekday, and time. Only the member list can.
+**`content_varies` / `descriptions differ (N distinct, ...)` means investigate and
+decide — it is never a reason to skip.** `N` is the number of distinct non-empty
+descriptions, not the number of differing members. Decide each cluster:
 
-**If `descriptions differ (N distinct)` appears, do not consolidate** unless you
-have verified the difference is cosmetic. `N` is the number of distinct
-non-empty descriptions, not the number of differing members. The detector trims
-leading/trailing whitespace before comparing, so spacing-only differences
-collapse; differences in wording, punctuation, or case still count.
+- **Consolidate** when the differences are logistics or boilerplate: capacity
+  (`N spots remaining`, `this event is full`), room or location suffixes,
+  registration phrasing, restated dates, punctuation, casing, or whitespace.
+- **Keep separate** when the text carries per-occurrence content — a named
+  activity, film, guest, or topic per date — or when the titles form a
+  progression (`Part 1/2`, `Session 1/3/4`, `I/II/III`, Beginners/Advanced).
+  Consolidation keeps only the canonical description and occurrences cannot
+  carry per-date text, so merging would erase the schedule.
+- If the payload is thin or the difference is unclear, fetch each member event
+  (`GET /api/v1/events/{ulid}` returns `description` and `url`) and, if still
+  unclear, the source page.
 
-The flag also fires when **only some members have a description**: consolidation
-keeps only the canonical event's text, so if the canonical is one of the
-undescribed members the cluster's only description is silently dropped. For
-seminar, tour, or rotating-topic series each week's description is the only place
-the per-week topic lives, and occurrences cannot carry it. Boilerplate
-descriptions that embed dates ("Join us on November 11") will trip the flag for
-many real series; that is intentional and conservative — verify before
-consolidating rather than assuming the flag is noise.
+Every cluster must end as **consolidated** or **kept separate with a stated
+reason**. Escalating an undecidable cluster is the only third outcome, and it
+must name the exact missing evidence.
 
 Then preview and apply the merge:
 
@@ -170,13 +174,14 @@ describes the same audience.
 
 **Do NOT consolidate:** different branches of the same library/system, different
 age groups or audiences (baby vs toddler vs teen), drop-in vs registered sessions,
-different weekday or start time, titles that imply different programmes even when
-the names are similar, a cluster that prints `descriptions differ (N distinct)`
-unless the difference is verified cosmetic, or a cluster where only some members
-are described (each week's topic may live only in its description).
+different weekday or start time, or titles that imply different programmes even
+when the names are similar. Also keep separate when descriptions carry
+per-occurrence content or the titles form a progression; logistical wording alone
+is not a reason to keep separate.
 
-**Cap the work:** consolidate at most 20 clusters per pass. Report the remainder
-with their names and venues instead of forcing ambiguous clusters.
+**Cap the work, not the decisions:** consolidate at most 20 clusters per pass.
+The cap bounds work per pass; carry the remainder to the next batch and report it
+as outstanding — do not treat it as skipped or undecidable.
 
 This step is the deliberate exception to the "do not process items individually"
 rule: consolidation is per-cluster and must be chosen cluster by cluster. Queue

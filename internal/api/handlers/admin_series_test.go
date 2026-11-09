@@ -121,8 +121,11 @@ func TestGetSeriesCandidates_200Shape(t *testing.T) {
 				OccurrenceCount int    `json:"occurrence_count"`
 				LifecycleState  string `json:"lifecycle_state"`
 			} `json:"members"`
-			DistinctDescriptionCount int  `json:"distinct_description_count"`
-			ContentVaries            bool `json:"content_varies"`
+			DistinctDescriptions     []string `json:"distinct_descriptions"`
+			DescribedMemberCount     int      `json:"described_member_count"`
+			DescriptionsTruncated    bool     `json:"descriptions_truncated"`
+			DistinctDescriptionCount int      `json:"distinct_description_count"`
+			ContentVaries            bool     `json:"content_varies"`
 		} `json:"items"`
 		TotalClusters int  `json:"total_clusters"`
 		Truncated     bool `json:"truncated"`
@@ -144,6 +147,11 @@ func TestGetSeriesCandidates_200Shape(t *testing.T) {
 	assert.Len(t, item.Members, 3)
 	assert.Equal(t, 0, item.DistinctDescriptionCount, "no description fingerprints yields 0")
 	assert.False(t, item.ContentVaries)
+	require.NotNil(t, item.DistinctDescriptions, "distinct_descriptions must be [] not null")
+	assert.Empty(t, item.DistinctDescriptions)
+	assert.Equal(t, 0, item.DescribedMemberCount)
+	assert.False(t, item.DescriptionsTruncated)
+	assert.Contains(t, rec.Body.String(), `"distinct_descriptions":[]`, "empty evidence must serialize as [] not null")
 	assert.Equal(t, 1, resp.TotalClusters)
 	assert.False(t, resp.Truncated)
 
@@ -158,10 +166,13 @@ func TestGetSeriesCandidates_DescriptionDivergence(t *testing.T) {
 
 	a := seriesMember("01HEVENT000000000000000001", "Family Storytime", first)
 	a.DescriptionFingerprint = "fingerprint-secret-a"
+	a.Description = "Weekly storytime for toddlers"
 	b := seriesMember("01HEVENT000000000000000002", "Family Storytime", second)
 	b.DescriptionFingerprint = "fingerprint-secret-b"
+	b.Description = "Weekly storytime for toddlers (full)"
 	c := seriesMember("01HEVENT000000000000000003", "Family Storytime", third)
 	c.DescriptionFingerprint = "fingerprint-secret-b"
+	c.Description = "Weekly storytime for toddlers (full)"
 
 	repo := new(MockRepository)
 	repo.On("ListSeriesCandidatePairs", mock.Anything, mock.Anything).Return([]events.SeriesCandidatePair{
@@ -179,13 +190,22 @@ func TestGetSeriesCandidates_DescriptionDivergence(t *testing.T) {
 
 	var resp struct {
 		Items []struct {
-			DistinctDescriptionCount int  `json:"distinct_description_count"`
-			ContentVaries            bool `json:"content_varies"`
+			DistinctDescriptions     []string `json:"distinct_descriptions"`
+			DescribedMemberCount     int      `json:"described_member_count"`
+			DescriptionsTruncated    bool     `json:"descriptions_truncated"`
+			DistinctDescriptionCount int      `json:"distinct_description_count"`
+			ContentVaries            bool     `json:"content_varies"`
 		} `json:"items"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp.Items, 1)
 	assert.Equal(t, 2, resp.Items[0].DistinctDescriptionCount)
+	assert.Equal(t, 3, resp.Items[0].DescribedMemberCount)
+	assert.False(t, resp.Items[0].DescriptionsTruncated)
+	assert.Equal(t, []string{
+		"Weekly storytime for toddlers",
+		"Weekly storytime for toddlers (full)",
+	}, resp.Items[0].DistinctDescriptions)
 	assert.True(t, resp.Items[0].ContentVaries)
 
 	body := rec.Body.String()
