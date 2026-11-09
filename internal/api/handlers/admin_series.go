@@ -47,16 +47,18 @@ type seriesCandidateMemberResponse struct {
 }
 
 type seriesCandidateResponse struct {
-	SuggestedCanonicalULID string                          `json:"suggested_canonical_ulid"`
-	Name                   string                          `json:"name"`
-	Venue                  seriesCandidateVenueResponse    `json:"venue"`
-	DayOfWeek              int                             `json:"day_of_week"`
-	LocalStartTime         string                          `json:"local_start_time"`
-	EventCount             int                             `json:"event_count"`
-	OccurrenceCount        int                             `json:"occurrence_count"`
-	FirstDate              string                          `json:"first_date"`
-	LastDate               string                          `json:"last_date"`
-	Members                []seriesCandidateMemberResponse `json:"members"`
+	SuggestedCanonicalULID   string                          `json:"suggested_canonical_ulid"`
+	Name                     string                          `json:"name"`
+	Venue                    seriesCandidateVenueResponse    `json:"venue"`
+	DayOfWeek                int                             `json:"day_of_week"`
+	LocalStartTime           string                          `json:"local_start_time"`
+	EventCount               int                             `json:"event_count"`
+	OccurrenceCount          int                             `json:"occurrence_count"`
+	FirstDate                string                          `json:"first_date"`
+	LastDate                 string                          `json:"last_date"`
+	Members                  []seriesCandidateMemberResponse `json:"members"`
+	DistinctDescriptionCount int                             `json:"distinct_description_count"`
+	ContentVaries            bool                            `json:"content_varies"`
 }
 
 type seriesCandidatesResponse struct {
@@ -151,16 +153,18 @@ func (h *AdminHandler) GetSeriesCandidates(w http.ResponseWriter, r *http.Reques
 			})
 		}
 		items = append(items, seriesCandidateResponse{
-			SuggestedCanonicalULID: cluster.SuggestedCanonicalULID,
-			Name:                   cluster.Name,
-			Venue:                  seriesCandidateVenueResponse{ID: cluster.VenueID, Name: cluster.VenueName},
-			DayOfWeek:              cluster.DayOfWeek,
-			LocalStartTime:         cluster.LocalStartTime,
-			EventCount:             cluster.EventCount,
-			OccurrenceCount:        cluster.OccurrenceCount,
-			FirstDate:              cluster.FirstDate,
-			LastDate:               cluster.LastDate,
-			Members:                members,
+			SuggestedCanonicalULID:   cluster.SuggestedCanonicalULID,
+			Name:                     cluster.Name,
+			Venue:                    seriesCandidateVenueResponse{ID: cluster.VenueID, Name: cluster.VenueName},
+			DayOfWeek:                cluster.DayOfWeek,
+			LocalStartTime:           cluster.LocalStartTime,
+			EventCount:               cluster.EventCount,
+			OccurrenceCount:          cluster.OccurrenceCount,
+			FirstDate:                cluster.FirstDate,
+			LastDate:                 cluster.LastDate,
+			Members:                  members,
+			DistinctDescriptionCount: cluster.DistinctDescriptionCount,
+			ContentVaries:            cluster.ContentVaries,
 		})
 	}
 

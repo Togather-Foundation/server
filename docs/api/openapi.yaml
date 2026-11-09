@@ -785,6 +785,20 @@ paths:
         use the source UUID in that case. Historical events may live on a
         differently-named provenance row after a feed rename, in which case a
         scoped run can look empty.
+
+        Each cluster reports `distinct_description_count` and `content_varies`.
+        `content_varies` is true when more than one distinct non-empty
+        description is present, or when only some members are described.
+        Consolidation keeps only the canonical event's description, so in both
+        cases per-week content is silently discarded; occurrences cannot carry a
+        description, and for seminar, tour, or rotating-topic series each week's
+        description is often the only place that week's topic lives. Do not
+        consolidate a `content_varies` cluster until you have verified the
+        difference is cosmetic. Leading/trailing whitespace is trimmed before
+        comparison, so spacing-only differences collapse; differences in
+        wording, punctuation, or case still count. Boilerplate descriptions that
+        embed dates (e.g. "Join us on November 11") will trip the flag for many
+        real series; that is intentional and conservative.
       tags: [Admin]
       x-internal: true
       security:
@@ -6574,6 +6588,8 @@ components:
         - first_date
         - last_date
         - members
+        - distinct_description_count
+        - content_varies
       properties:
         suggested_canonical_ulid:
           type: string
@@ -6613,6 +6629,30 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SeriesCandidateMember'
+        distinct_description_count:
+          type: integer
+          minimum: 0
+          description: >
+            Number of distinct non-empty member descriptions, compared after
+            trimming leading/trailing whitespace (fingerprints only; raw text is
+            never returned). 0 when every member has no description. This is a
+            display count of distinct descriptions, not the number of members
+            whose descriptions differ.
+        content_varies:
+          type: boolean
+          description: >
+            True when consolidation would lose description content: more than
+            one distinct non-empty description, or some members have a
+            description and others do not. Consolidation keeps only the
+            canonical event's description, so a mix can silently drop the
+            cluster's only description, and occurrences cannot carry per-week
+            content (seminar, tour, or rotating-topic series often keep the
+            topic only in that week's description). Leading/trailing whitespace
+            is trimmed before comparison, so spacing-only differences collapse;
+            differences in wording, punctuation, or case still count.
+            Boilerplate descriptions that embed dates (e.g. "Join us on
+            November 11") will therefore trip the flag; that is intentional and
+            conservative.
 
     SeriesCandidatesResponse:
       type: object

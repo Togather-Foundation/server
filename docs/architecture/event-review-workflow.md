@@ -428,8 +428,12 @@ even when A and C fail the name-similarity gate directly. This is intentional
 (it lets a slightly renamed week bridge a series) but unguarded: a chain of
 marginally similar names can pull unrelated programmes together. Agents must
 inspect the member list before consolidating; the CLI flags clusters whose
-member names differ. If this proves noisy, the fix is to cap the number of
-transitive hops or require the component to be pairwise connected.
+member names differ. It also prints `descriptions differ (N distinct)` when the
+cluster would lose description content on consolidation — more than one distinct
+non-empty description, or only some members described — because occurrences
+cannot carry a description and consolidation keeps only the canonical event's
+text. If this proves noisy, the fix is to cap the number of transitive hops or
+require the component to be pairwise connected.
 
 ---
 
@@ -627,7 +631,13 @@ calls `POST /api/v1/admin/events/consolidate` with `transfer_occurrences: true`
 to produce one event with N occurrences. Consolidate only for the same
 programme at the same branch, same weekday, same start time, and a 7-day
 cadence; different branches, audiences, or drop-in/registered variants must stay
-separate. The CLI exposes this as `server review series`. Results are paged with
+separate. Each cluster also reports `distinct_description_count` and
+`content_varies` (distinct non-empty descriptions compared as fingerprints after
+trimming leading/trailing whitespace). `content_varies` is true when there are
+multiple distinct descriptions or only some members are described; occurrences
+cannot carry a description, so consolidation keeps only the canonical event's
+text and loses each week's topic. The CLI exposes this as `server review series`.
+Results are paged with
 `offset`/`limit` over the deterministic cluster order, and `source` scopes the SQL
 scan to events attributed to one provenance source (a cluster spanning sources is
 narrowed to the requested source's members).

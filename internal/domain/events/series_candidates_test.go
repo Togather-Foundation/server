@@ -289,3 +289,71 @@ func seriesTestMemberULIDs(cluster SeriesCandidate) []string {
 	}
 	return ulids
 }
+
+// seriesTestMemberWithDescription builds a member carrying an opaque
+// description fingerprint (the empty string means "no description").
+func seriesTestMemberWithDescription(ulid, start, fingerprint string) SeriesCandidateMember {
+	member := seriesTestMember(ulid, "Family Storytime", start)
+	member.DescriptionFingerprint = fingerprint
+	return member
+}
+
+func TestBuildSeriesCandidatesDescriptionDivergence(t *testing.T) {
+	const (
+		fingerprintA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		fingerprintB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+
+	t.Run("one distinct description", func(t *testing.T) {
+		pairs := []SeriesCandidatePair{seriesTestPair(
+			seriesTestMemberWithDescription("01HEVENT000000000000000001", "2026-11-10", fingerprintA),
+			seriesTestMemberWithDescription("01HEVENT000000000000000002", "2026-11-17", fingerprintA),
+		)}
+
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		assert.Equal(t, 1, result.Items[0].DistinctDescriptionCount)
+		assert.False(t, result.Items[0].ContentVaries)
+	})
+
+	t.Run("two distinct descriptions", func(t *testing.T) {
+		pairs := []SeriesCandidatePair{seriesTestPair(
+			seriesTestMemberWithDescription("01HEVENT000000000000000001", "2026-11-10", fingerprintA),
+			seriesTestMemberWithDescription("01HEVENT000000000000000002", "2026-11-17", fingerprintB),
+		)}
+
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		assert.Equal(t, 2, result.Items[0].DistinctDescriptionCount)
+		assert.True(t, result.Items[0].ContentVaries)
+	})
+
+	t.Run("all descriptions empty", func(t *testing.T) {
+		pairs := []SeriesCandidatePair{seriesTestPair(
+			seriesTestMemberWithDescription("01HEVENT000000000000000001", "2026-11-10", ""),
+			seriesTestMemberWithDescription("01HEVENT000000000000000002", "2026-11-17", ""),
+		)}
+
+		result := BuildSeriesCandidates(pairs, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		assert.Equal(t, 0, result.Items[0].DistinctDescriptionCount,
+			"empty descriptions must not count as a distinct value")
+		assert.False(t, result.Items[0].ContentVaries)
+	})
+
+	t.Run("one non-empty plus several empty", func(t *testing.T) {
+		a := seriesTestMemberWithDescription("01HEVENT000000000000000001", "2026-11-10", fingerprintA)
+		b := seriesTestMemberWithDescription("01HEVENT000000000000000002", "2026-11-17", "")
+		c := seriesTestMemberWithDescription("01HEVENT000000000000000003", "2026-11-24", "")
+
+		result := BuildSeriesCandidates([]SeriesCandidatePair{
+			seriesTestPair(a, b),
+			seriesTestPair(b, c),
+		}, SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+		require.Len(t, result.Items, 1)
+		assert.Equal(t, 1, result.Items[0].DistinctDescriptionCount,
+			"the count is distinct non-empty descriptions, not described members")
+		assert.True(t, result.Items[0].ContentVaries,
+			"a mix of described and undescribed members loses content on consolidation")
+	})
+}

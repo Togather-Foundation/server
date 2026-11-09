@@ -1841,6 +1841,14 @@ SELECT DISTINCT
        aa.first_local_start_time             AS a_first_local_start_time,
        aa.first_day_of_week                  AS a_first_day_of_week,
        to_char(aa.next_date, 'YYYY-MM-DD')   AS a_next_date,
+       -- Description fingerprint only: never carry the text into pair rows.
+       -- btrim with an explicit character set strips spaces, tabs, CR, and LF;
+       -- the one-argument form strips spaces only, which would fingerprint a
+       -- tab/newline-only description as a real value. Empty/whitespace-only
+       -- descriptions fingerprint as '' so they count as "no description".
+       CASE WHEN btrim(COALESCE(ea.description, ''), E' \t\r\n') = '' THEN ''
+            ELSE md5(btrim(ea.description, E' \t\r\n'))
+       END AS a_description_fingerprint,
        eb.ulid,
        eb.name,
        eb.lifecycle_state,
@@ -1851,7 +1859,10 @@ SELECT DISTINCT
        ab.occurrence_count                   AS b_occurrence_count,
        ab.first_local_start_time             AS b_first_local_start_time,
        ab.first_day_of_week                  AS b_first_day_of_week,
-       to_char(ab.next_date, 'YYYY-MM-DD')   AS b_next_date
+       to_char(ab.next_date, 'YYYY-MM-DD')   AS b_next_date,
+       CASE WHEN btrim(COALESCE(eb.description, ''), E' \t\r\n') = '' THEN ''
+            ELSE md5(btrim(eb.description, E' \t\r\n'))
+       END AS b_description_fingerprint
   FROM paired p
   JOIN events ea ON ea.id = p.a_event_id
   JOIN places pa ON pa.id = ea.primary_venue_id
@@ -1873,8 +1884,10 @@ SELECT DISTINCT
 		if err := rows.Scan(
 			&a.ULID, &a.Name, &a.LifecycleState, &a.VenueULID, &a.VenueName,
 			&a.StartDate, &a.LastDate, &a.OccurrenceCount, &a.FirstLocalStartTime, &a.FirstDayOfWeek, &aNextDate,
+			&a.DescriptionFingerprint,
 			&b.ULID, &b.Name, &b.LifecycleState, &b.VenueULID, &b.VenueName,
 			&b.StartDate, &b.LastDate, &b.OccurrenceCount, &b.FirstLocalStartTime, &b.FirstDayOfWeek, &bNextDate,
+			&b.DescriptionFingerprint,
 		); err != nil {
 			return nil, fmt.Errorf("scan series candidate pair: %w", err)
 		}

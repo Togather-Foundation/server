@@ -128,6 +128,7 @@ For each cluster, **read every member name and date**:
 ```text
 1) Family Storytime — Main Branch — Wed 18:00 — 3 events — 2026-11-11..2026-11-25
    names differ: inspect carefully
+   descriptions differ (3 distinct): inspect each member before consolidating
    canonical: 01ABC...
    members:
      * 01ABC...  2026-11-11  Family Storytime
@@ -138,6 +139,21 @@ For each cluster, **read every member name and date**:
 **If member names or audiences diverge, do not consolidate.** The detector cannot
 distinguish different age groups, drop-in vs registered sessions, or different
 programmes that share a venue, weekday, and time. Only the member list can.
+
+**If `descriptions differ (N distinct)` appears, do not consolidate** unless you
+have verified the difference is cosmetic. `N` is the number of distinct
+non-empty descriptions, not the number of differing members. The detector trims
+leading/trailing whitespace before comparing, so spacing-only differences
+collapse; differences in wording, punctuation, or case still count.
+
+The flag also fires when **only some members have a description**: consolidation
+keeps only the canonical event's text, so if the canonical is one of the
+undescribed members the cluster's only description is silently dropped. For
+seminar, tour, or rotating-topic series each week's description is the only place
+the per-week topic lives, and occurrences cannot carry it. Boilerplate
+descriptions that embed dates ("Join us on November 11") will trip the flag for
+many real series; that is intentional and conservative — verify before
+consolidating rather than assuming the flag is noise.
 
 Then preview and apply the merge:
 
@@ -154,8 +170,10 @@ describes the same audience.
 
 **Do NOT consolidate:** different branches of the same library/system, different
 age groups or audiences (baby vs toddler vs teen), drop-in vs registered sessions,
-different weekday or start time, or titles that imply different programmes even when
-the names are similar.
+different weekday or start time, titles that imply different programmes even when
+the names are similar, a cluster that prints `descriptions differ (N distinct)`
+unless the difference is verified cosmetic, or a cluster where only some members
+are described (each week's topic may live only in its description).
 
 **Cap the work:** consolidate at most 20 clusters per pass. Report the remainder
 with their names and venues instead of forcing ambiguous clusters.

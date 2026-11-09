@@ -558,6 +558,88 @@ func TestListSeriesCandidatePairsSourceFilterDualAttribution(t *testing.T) {
 	}
 }
 
+// TestListSeriesCandidatePairsDescriptionFingerprints proves the pair rows
+// carry only an opaque description fingerprint and that it collapses trimmed
+// whitespace but not punctuation. The description text never reaches the pairs.
+func TestListSeriesCandidatePairsDescriptionFingerprints(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+
+	// Same text, one with surrounding whitespace: collapses to one fingerprint.
+	trimmedVenue := insertPlace(t, ctx, pool, "Trimmed Hall", "Toronto", "ON")
+	insertSeriesTestEventWithDescription(t, ctx, pool, "Trimmed Storytime", "Weekly storytime", trimmedVenue, clock.FutureTimeAt(2, 18, 0))
+	insertSeriesTestEventWithDescription(t, ctx, pool, "Trimmed Storytime", "  Weekly storytime  ", trimmedVenue, clock.FutureTimeAt(9, 18, 0))
+
+	// Punctuation differs: must remain two distinct fingerprints.
+	punctVenue := insertPlace(t, ctx, pool, "Punctuation Hall", "Toronto", "ON")
+	insertSeriesTestEventWithDescription(t, ctx, pool, "Punctuation Storytime", "Weekly storytime.", punctVenue, clock.FutureTimeAt(2, 18, 0))
+	insertSeriesTestEventWithDescription(t, ctx, pool, "Punctuation Storytime", "Weekly storytime", punctVenue, clock.FutureTimeAt(9, 18, 0))
+
+	// No descriptions at all: empty fingerprints that never count.
+	emptyVenue := insertPlace(t, ctx, pool, "Empty Hall", "Toronto", "ON")
+	insertSeriesTestEvent(t, ctx, pool, "Empty Storytime", emptyVenue, clock.FutureTimeAt(2, 18, 0))
+	insertSeriesTestEvent(t, ctx, pool, "Empty Storytime", emptyVenue, clock.FutureTimeAt(9, 18, 0))
+
+	// Whitespace-only descriptions (spaces, tabs, newline) must fingerprint as
+	// empty: one-argument btrim strips spaces only, so this pins the full
+	// character set used by the query.
+	whitespaceVenue := insertPlace(t, ctx, pool, "Whitespace Hall", "Toronto", "ON")
+	insertSeriesTestEventWithDescription(t, ctx, pool, "Whitespace Storytime", "   ", whitespaceVenue, clock.FutureTimeAt(2, 18, 0))
+	insertSeriesTestEventWithDescription(t, ctx, pool, "Whitespace Storytime", "\t\n", whitespaceVenue, clock.FutureTimeAt(9, 18, 0))
+
+	now := time.Now().UTC()
+	pairs, err := repo.ListSeriesCandidatePairs(ctx, events.SeriesCandidatesQuery{
+		WindowStart: seriesTestWindowStart(now, 14),
+		WindowEnd:   seriesTestWindowEnd(now, 90),
+		Now:         now,
+	})
+	require.NoError(t, err)
+	require.NotEmpty(t, pairs)
+
+	// Pair rows carry fingerprints, never the description text.
+	for _, pair := range pairs {
+		for _, member := range []events.SeriesCandidateMember{pair.A, pair.B} {
+			require.NotContains(t, member.DescriptionFingerprint, "Weekly storytime",
+				"storage must not carry description text into pair rows")
+			if member.VenueULID == emptyVenue.ULID || member.VenueULID == whitespaceVenue.ULID {
+				require.Empty(t, member.DescriptionFingerprint, "blank description yields an empty fingerprint")
+				continue
+			}
+			require.Len(t, member.DescriptionFingerprint, 32, "non-empty descriptions are md5 fingerprints")
+		}
+	}
+
+	result := events.BuildSeriesCandidates(pairs, events.SeriesCandidatesParams{MinEvents: 2, Limit: 50})
+	require.Len(t, result.Items, 4)
+
+	byVenue := make(map[string]events.SeriesCandidate, len(result.Items))
+	for _, cluster := range result.Items {
+		byVenue[cluster.VenueID] = cluster
+	}
+
+	trimmed, ok := byVenue[trimmedVenue.ULID]
+	require.True(t, ok)
+	require.Equal(t, 1, trimmed.DistinctDescriptionCount, "trimmed-identical descriptions collapse")
+	require.False(t, trimmed.ContentVaries)
+
+	punct, ok := byVenue[punctVenue.ULID]
+	require.True(t, ok)
+	require.Equal(t, 2, punct.DistinctDescriptionCount, "punctuation changes are distinct")
+	require.True(t, punct.ContentVaries)
+
+	empty, ok := byVenue[emptyVenue.ULID]
+	require.True(t, ok)
+	require.Equal(t, 0, empty.DistinctDescriptionCount)
+	require.False(t, empty.ContentVaries)
+
+	whitespaceOnly, ok := byVenue[whitespaceVenue.ULID]
+	require.True(t, ok)
+	require.Equal(t, 0, whitespaceOnly.DistinctDescriptionCount, "whitespace-only descriptions fingerprint as empty")
+	require.False(t, whitespaceOnly.ContentVaries, "blank descriptions are not content divergence")
+}
+
 type seriesTestEvent struct {
 	ulid    string
 	eventID string
@@ -581,6 +663,20 @@ func insertSeriesTestEventOnly(t *testing.T, ctx context.Context, pool *pgxpool.
 	).Scan(&eventID)
 	require.NoError(t, err)
 	return seriesTestEvent{ulid: ulidValue, eventID: eventID}
+}
+
+func insertSeriesTestEventWithDescription(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name, description string, place seededEntity, start time.Time) string {
+	t.Helper()
+	ulidValue := ulid.Make().String()
+	var eventID string
+	err := pool.QueryRow(ctx,
+		`INSERT INTO events (ulid, name, description, event_domain, lifecycle_state, primary_venue_id)
+		 VALUES ($1, $2, $3, 'arts', 'published', $4) RETURNING id`,
+		ulidValue, name, description, place.ID,
+	).Scan(&eventID)
+	require.NoError(t, err)
+	insertSeriesTestOccurrence(t, ctx, pool, eventID, start, place, nil)
+	return ulidValue
 }
 
 func insertSeriesTestEventWithSource(t *testing.T, ctx context.Context, pool *pgxpool.Pool, name string, place seededEntity, start time.Time, sourceID string) string {

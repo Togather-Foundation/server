@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -200,6 +201,100 @@ func TestPrintSeriesCandidatesUniformNames(t *testing.T) {
 	printSeriesCandidates(&out, resp, 0)
 	if strings.Contains(out.String(), "names differ") {
 		t.Errorf("trimmed/case-insensitive names must not trigger the divergence warning:\n%s", out.String())
+	}
+}
+
+func TestPrintSeriesCandidatesDescriptionDivergence(t *testing.T) {
+	resp := SeriesCandidatesResponse{
+		TotalClusters: 1,
+		Items: []SeriesCandidateItem{{
+			SuggestedCanonicalULID:   "01HEVENT000000000000000001",
+			Name:                     "Family Storytime",
+			Venue:                    SeriesCandidateVenue{Name: "Main Branch"},
+			EventCount:               2,
+			DistinctDescriptionCount: 6,
+			ContentVaries:            true,
+			Members: []SeriesCandidateMember{
+				{ULID: "01HEVENT000000000000000001", Name: "Family Storytime", StartDate: "2026-11-10"},
+				{ULID: "01HEVENT000000000000000002", Name: "Family Storytime", StartDate: "2026-11-17"},
+			},
+		}},
+	}
+	var out bytes.Buffer
+	printSeriesCandidates(&out, resp, 0)
+
+	want := "descriptions differ (6 distinct): inspect each member before consolidating"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("output missing %q\n---\n%s", want, out.String())
+	}
+	if strings.Contains(out.String(), "names differ") {
+		t.Errorf("identical names must not trigger the name warning:\n%s", out.String())
+	}
+}
+
+func TestPrintSeriesCandidatesDescriptionsUniform(t *testing.T) {
+	resp := SeriesCandidatesResponse{
+		TotalClusters: 1,
+		Items: []SeriesCandidateItem{{
+			SuggestedCanonicalULID:   "01HEVENT000000000000000001",
+			Name:                     "Family Storytime",
+			Venue:                    SeriesCandidateVenue{Name: "Main Branch"},
+			EventCount:               2,
+			DistinctDescriptionCount: 1,
+			ContentVaries:            false,
+			Members: []SeriesCandidateMember{
+				{ULID: "01HEVENT000000000000000001", Name: "Family Storytime", StartDate: "2026-11-10"},
+				{ULID: "01HEVENT000000000000000002", Name: "Family Storytime", StartDate: "2026-11-17"},
+			},
+		}},
+	}
+	var out bytes.Buffer
+	printSeriesCandidates(&out, resp, 0)
+	if strings.Contains(out.String(), "descriptions differ") {
+		t.Errorf("uniform descriptions must not trigger the divergence warning:\n%s", out.String())
+	}
+}
+
+func TestPrintSeriesCandidatesDescriptionsPartialCoverage(t *testing.T) {
+	// Only some members described: one distinct description but the flag still
+	// fires because consolidation keeps only the canonical event's text.
+	resp := SeriesCandidatesResponse{
+		TotalClusters: 1,
+		Items: []SeriesCandidateItem{{
+			SuggestedCanonicalULID:   "01HEVENT000000000000000001",
+			Name:                     "Family Storytime",
+			Venue:                    SeriesCandidateVenue{Name: "Main Branch"},
+			EventCount:               3,
+			DistinctDescriptionCount: 1,
+			ContentVaries:            true,
+			Members: []SeriesCandidateMember{
+				{ULID: "01HEVENT000000000000000001", Name: "Family Storytime", StartDate: "2026-11-10"},
+				{ULID: "01HEVENT000000000000000002", Name: "Family Storytime", StartDate: "2026-11-17"},
+				{ULID: "01HEVENT000000000000000003", Name: "Family Storytime", StartDate: "2026-11-24"},
+			},
+		}},
+	}
+	var out bytes.Buffer
+	printSeriesCandidates(&out, resp, 0)
+
+	want := "descriptions differ (1 distinct): inspect each member before consolidating"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("output missing %q\n---\n%s", want, out.String())
+	}
+}
+
+func TestSeriesCandidatesResponseJSONIncludesDescriptionFields(t *testing.T) {
+	raw, err := json.Marshal(SeriesCandidateItem{
+		DistinctDescriptionCount: 6,
+		ContentVaries:            true,
+	})
+	if err != nil {
+		t.Fatalf("marshal series candidate: %v", err)
+	}
+	for _, want := range []string{`"distinct_description_count":6`, `"content_varies":true`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("--json payload missing %s: %s", want, raw)
+		}
 	}
 }
 

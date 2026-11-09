@@ -42,16 +42,18 @@ type SeriesCandidateMember struct {
 }
 
 type SeriesCandidateItem struct {
-	SuggestedCanonicalULID string                  `json:"suggested_canonical_ulid"`
-	Name                   string                  `json:"name"`
-	Venue                  SeriesCandidateVenue    `json:"venue"`
-	DayOfWeek              int                     `json:"day_of_week"`
-	LocalStartTime         string                  `json:"local_start_time"`
-	EventCount             int                     `json:"event_count"`
-	OccurrenceCount        int                     `json:"occurrence_count"`
-	FirstDate              string                  `json:"first_date"`
-	LastDate               string                  `json:"last_date"`
-	Members                []SeriesCandidateMember `json:"members"`
+	SuggestedCanonicalULID   string                  `json:"suggested_canonical_ulid"`
+	Name                     string                  `json:"name"`
+	Venue                    SeriesCandidateVenue    `json:"venue"`
+	DayOfWeek                int                     `json:"day_of_week"`
+	LocalStartTime           string                  `json:"local_start_time"`
+	EventCount               int                     `json:"event_count"`
+	OccurrenceCount          int                     `json:"occurrence_count"`
+	FirstDate                string                  `json:"first_date"`
+	LastDate                 string                  `json:"last_date"`
+	Members                  []SeriesCandidateMember `json:"members"`
+	DistinctDescriptionCount int                     `json:"distinct_description_count"`
+	ContentVaries            bool                    `json:"content_varies"`
 }
 
 type SeriesCandidatesResponse struct {
@@ -80,7 +82,13 @@ discover them, then consolidate each cluster into one event with N occurrences:
 
 Inspect the member list for every cluster: the detector cannot tell different
 age groups, audiences, drop-in vs registered sessions, or different programmes
-apart. If names or audiences diverge, do not consolidate.
+apart. If names, descriptions, or audiences diverge, do not consolidate.
+
+Leading/trailing whitespace is trimmed before descriptions are compared, so
+spacing-only differences collapse; differences in wording, punctuation, or case
+still count. The descriptions-differ flag also fires when only some members have
+a description. Occurrences cannot carry a description, so consolidating such a
+cluster keeps only the canonical event's text and discards per-week content.
 
 The detector is deliberately conservative and covers all published events, not
 only suppressed sources. --source scopes the scan to one provenance source
@@ -264,6 +272,9 @@ func printSeriesCandidates(out io.Writer, resp SeriesCandidatesResponse, offset 
 		)
 		if seriesNamesDiffer(item) {
 			_, _ = fmt.Fprintln(out, "   names differ: inspect carefully")
+		}
+		if item.ContentVaries {
+			_, _ = fmt.Fprintf(out, "   descriptions differ (%d distinct): inspect each member before consolidating\n", item.DistinctDescriptionCount)
 		}
 		_, _ = fmt.Fprintf(out, "   canonical: %s\n", item.SuggestedCanonicalULID)
 		_, _ = fmt.Fprintln(out, "   members:")

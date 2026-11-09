@@ -121,6 +121,8 @@ func TestGetSeriesCandidates_200Shape(t *testing.T) {
 				OccurrenceCount int    `json:"occurrence_count"`
 				LifecycleState  string `json:"lifecycle_state"`
 			} `json:"members"`
+			DistinctDescriptionCount int  `json:"distinct_description_count"`
+			ContentVaries            bool `json:"content_varies"`
 		} `json:"items"`
 		TotalClusters int  `json:"total_clusters"`
 		Truncated     bool `json:"truncated"`
@@ -140,10 +142,55 @@ func TestGetSeriesCandidates_200Shape(t *testing.T) {
 	assert.Equal(t, first, item.FirstDate)
 	assert.Equal(t, third, item.LastDate)
 	assert.Len(t, item.Members, 3)
+	assert.Equal(t, 0, item.DistinctDescriptionCount, "no description fingerprints yields 0")
+	assert.False(t, item.ContentVaries)
 	assert.Equal(t, 1, resp.TotalClusters)
 	assert.False(t, resp.Truncated)
 
 	repo.AssertExpectations(t)
+}
+
+func TestGetSeriesCandidates_DescriptionDivergence(t *testing.T) {
+	now := time.Now().UTC()
+	first := now.AddDate(0, 0, 2).Format(time.DateOnly)
+	second := now.AddDate(0, 0, 9).Format(time.DateOnly)
+	third := now.AddDate(0, 0, 16).Format(time.DateOnly)
+
+	a := seriesMember("01HEVENT000000000000000001", "Family Storytime", first)
+	a.DescriptionFingerprint = "fingerprint-secret-a"
+	b := seriesMember("01HEVENT000000000000000002", "Family Storytime", second)
+	b.DescriptionFingerprint = "fingerprint-secret-b"
+	c := seriesMember("01HEVENT000000000000000003", "Family Storytime", third)
+	c.DescriptionFingerprint = "fingerprint-secret-b"
+
+	repo := new(MockRepository)
+	repo.On("ListSeriesCandidatePairs", mock.Anything, mock.Anything).Return([]events.SeriesCandidatePair{
+		{A: a, B: b},
+		{A: b, B: c},
+	}, nil)
+
+	h := newTestAdminHandler(repo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/events/series-candidates?days=30&min_events=2", nil)
+	req = withAdminUser(req, "admin@example.com")
+	rec := httptest.NewRecorder()
+	h.GetSeriesCandidates(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp struct {
+		Items []struct {
+			DistinctDescriptionCount int  `json:"distinct_description_count"`
+			ContentVaries            bool `json:"content_varies"`
+		} `json:"items"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Items, 1)
+	assert.Equal(t, 2, resp.Items[0].DistinctDescriptionCount)
+	assert.True(t, resp.Items[0].ContentVaries)
+
+	body := rec.Body.String()
+	assert.NotContains(t, body, "description_fingerprint", "fingerprints must not be serialized")
+	assert.NotContains(t, body, "fingerprint-secret", "description fingerprints must not leak")
 }
 
 func TestGetSeriesCandidates_RepositoryParams(t *testing.T) {

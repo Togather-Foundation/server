@@ -100,6 +100,11 @@ type SeriesCandidateMember struct {
 	FirstDayOfWeek      int
 	VenueULID           string
 	VenueName           string
+	// DescriptionFingerprint is an opaque per-member fingerprint of the
+	// trimmed description (empty when there is no description). It exists only
+	// so the cluster builder can count distinct descriptions; the text itself
+	// never leaves storage. json:"-" keeps the no-leak property structural.
+	DescriptionFingerprint string `json:"-"`
 }
 
 // SeriesCandidatePair is one qualifying 7-day edge between two distinct events.
@@ -122,6 +127,17 @@ type SeriesCandidate struct {
 	FirstDate              string
 	LastDate               string
 	Members                []SeriesCandidateMember
+	// DistinctDescriptionCount counts distinct non-empty member description
+	// fingerprints. Empty descriptions do not count, so a cluster whose
+	// descriptions are all empty reports 0.
+	DistinctDescriptionCount int
+	// ContentVaries is true when consolidation would lose description content:
+	// there is more than one distinct non-empty description, or some members
+	// have a description and others do not. Consolidation keeps only the
+	// canonical event's description, so occurrences cannot carry per-week
+	// content and an undescribed canonical can silently drop the cluster's only
+	// description.
+	ContentVaries bool
 }
 
 // SeriesCandidatesResult is the complete discovery result before/after limit.
@@ -292,19 +308,39 @@ func buildSeriesCluster(component []SeriesCandidateMember) SeriesCandidate {
 		venueID, venueName = component[0].VenueULID, component[0].VenueName
 	}
 
+	distinctDescriptions, describedMembers := descriptionDivergence(component)
+
 	return SeriesCandidate{
-		SuggestedCanonicalULID: canonical.ULID,
-		Name:                   name,
-		VenueID:                venueID,
-		VenueName:              venueName,
-		DayOfWeek:              canonical.FirstDayOfWeek,
-		LocalStartTime:         canonical.FirstLocalStartTime,
-		EventCount:             len(component),
-		OccurrenceCount:        occurrenceCount,
-		FirstDate:              firstDate,
-		LastDate:               lastDate,
-		Members:                component,
+		SuggestedCanonicalULID:   canonical.ULID,
+		Name:                     name,
+		VenueID:                  venueID,
+		VenueName:                venueName,
+		DayOfWeek:                canonical.FirstDayOfWeek,
+		LocalStartTime:           canonical.FirstLocalStartTime,
+		EventCount:               len(component),
+		OccurrenceCount:          occurrenceCount,
+		FirstDate:                firstDate,
+		LastDate:                 lastDate,
+		Members:                  component,
+		DistinctDescriptionCount: distinctDescriptions,
+		ContentVaries:            distinctDescriptions > 1 || (describedMembers > 0 && describedMembers < len(component)),
 	}
+}
+
+// descriptionDivergence counts distinct non-empty description fingerprints and
+// how many members have a description at all. Fingerprints are opaque; only
+// equality matters. A cluster where every member has no description reports
+// (0, 0).
+func descriptionDivergence(component []SeriesCandidateMember) (distinct, described int) {
+	seen := make(map[string]struct{}, len(component))
+	for _, member := range component {
+		if member.DescriptionFingerprint == "" {
+			continue
+		}
+		described++
+		seen[member.DescriptionFingerprint] = struct{}{}
+	}
+	return len(seen), described
 }
 
 // mostFrequentName picks the modal member name. Ties resolve to the name with
