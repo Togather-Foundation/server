@@ -1083,6 +1083,11 @@ propagated to every event submitted over the batch ingest API on
 `EventInput.suppress_review_warnings`. `GET /api/v1/admin/scraper/sources` returns it on
 each source summary. To change it: edit the YAML and run `server scrape sync`.
 
+Suppressing `cross_week_series_companion` means weekly programmes publish without a review
+row. To find them, run `server review series` (or call
+`GET /api/v1/admin/events/series-candidates`); inspect each cluster and consolidate with
+`server review consolidate ... --transfer-occurrences` as described in the review skill.
+
 When a suppression actually changes the outcome (a listed code was present and ignored for
 gating), the server writes an INFO log with the event name, event ULID and the suppressed
 codes.

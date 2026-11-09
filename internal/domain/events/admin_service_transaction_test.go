@@ -476,6 +476,9 @@ func (m *mockTransactionalRepo) FindSeriesCompanion(ctx context.Context, params 
 	}
 	return nil, nil
 }
+func (m *mockTransactionalRepo) ListSeriesCandidatePairs(ctx context.Context, params SeriesCandidatesQuery) ([]SeriesCandidatePair, error) {
+	return nil, nil
+}
 func (m *mockTransactionalRepo) Rollback(ctx context.Context) error {
 	return nil
 }

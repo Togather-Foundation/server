@@ -51,8 +51,12 @@ event, updating them with the canonical's data. The canonical ULID propagates
 through the chain automatically.
 
 If `merge <companion-ulid> <new-event-ulid> --transfer-occurrences` fails with
-422 "Event has been deleted" (pre-fix orphaned items), fall back to batch
-approval by name.
+422 "Event has been deleted" (pre-fix orphaned companion row), that is unrelated
+to weekly-series detection: skip that item and report it, or batch-approve it by
+name if the event is otherwise fine. For a published weekly series from a
+suppressed source, use `server review series` to find the cluster and
+`server review consolidate ... --transfer-occurrences` to make it one event with
+N occurrences. Batch approval only applies to entries already in the queue.
 
 ## `place_possible_duplicate`
 

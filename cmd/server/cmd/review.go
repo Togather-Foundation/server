@@ -118,6 +118,7 @@ Examples:
   server review fix 42 --notes "corrected" # fix and approve review entry 42
   server review batch --name "Astro" --action approve --dry-run
   server review stats                      # aggregate queue statistics
+  server review series --days 90           # find suppressed weekly series
   server review merge evt_001 evt_002      # merge evt_002 into evt_001
   server review consolidate evt_001 evt_002 evt_003
 
@@ -292,6 +293,7 @@ func init() {
 	reviewCmd.AddCommand(reviewFixCmd)
 	reviewCmd.AddCommand(reviewBatchCmd)
 	reviewCmd.AddCommand(reviewStatsCmd)
+	reviewCmd.AddCommand(reviewSeriesCmd)
 	reviewCmd.AddCommand(reviewMergeCmd)
 	reviewCmd.AddCommand(reviewConsolidateCmd)
 }

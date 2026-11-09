@@ -419,6 +419,18 @@ Each copy follows the same pattern: `GetPendingReviewByEventUlidAndDuplicateUlid
 
 `RejectEventWithReview` (`admin_service.go:1429`) does not look up or dismiss companion reviews. The handler's `recordNotDuplicatesFromWarnings` (`admin_review_queue.go:468`) records not-duplicate pairs but does not dismiss the companion review rows. If a rejected event had a companion cross-linked via `duplicate_of_event_id`, that companion persists with a stale reference.
 
+### G9: Series-Candidate Clusters Use Unguarded Transitive Closure
+
+The series-candidate detector builds edges pairwise (same venue, name similarity
+`>= 0.80`, 7-day cadence, same weekday, start time within 30 minutes) and then
+takes connected components. So A~B and B~C collapse A, B, and C into one cluster
+even when A and C fail the name-similarity gate directly. This is intentional
+(it lets a slightly renamed week bridge a series) but unguarded: a chain of
+marginally similar names can pull unrelated programmes together. Agents must
+inspect the member list before consolidating; the CLI flags clusters whose
+member names differ. If this proves noisy, the fix is to cap the number of
+transitive hops or require the component to be pairwise connected.
+
 ---
 
 ## 7. Lifecycle State Transitions
@@ -585,6 +597,37 @@ Manually correct occurrence dates. Applies corrections, publishes event, sets re
 
 ### POST /api/v1/admin/events/consolidate
 Atomically resolve N duplicate events into a single canonical event. See Consolidation Decision Table (Section 3).
+
+### GET /api/v1/admin/events/series-candidates
+
+Read-only discovery for weekly series that were published as N separate events
+rather than one event with N occurrences. Suppressed sources
+(`suppress_review_warnings: [cross_week_series_companion]`, e.g. the TPL feeds)
+never create review rows, so agent review has no queue item to act on. This
+endpoint closes that gap.
+
+Detection is deliberately conservative. Candidates are published, non-deleted
+events with a non-null `events.primary_venue_id` and at least one occurrence in
+`[now - lookback_days, now + days]`. The window is approximate at its boundary:
+request dates are UTC while `local_date` is venue-local, so the storage query
+widens each side by one day. Dates, member `occurrence_count`, cluster
+`occurrence_count`, and canonical `next_date` selection are therefore scoped to
+the requested window (plus that one-day allowance), not each event's full
+lifetime. Two distinct events form an edge only when
+they share the primary venue, their normalized names have pg_trgm similarity
+`>= 0.80`, their occurrence local dates differ by exactly 7 days, they share the
+same ISO weekday, and their local start times are within 30 minutes. Connected
+components are built with union-find in the domain layer; clusters smaller than
+`min_events` (default 3) are dropped. `event_occurrences.venue_id` is nullable
+and is never used for grouping.
+
+The response proposes a canonical member (earliest upcoming occurrence, or the
+earliest overall) and lists the members. The agent inspects the cluster, then
+calls `POST /api/v1/admin/events/consolidate` with `transfer_occurrences: true`
+to produce one event with N occurrences. Consolidate only for the same
+programme at the same branch, same weekday, same start time, and a 7-day
+cadence; different branches, audiences, or drop-in/registered variants must stay
+separate. The CLI exposes this as `server review series`.
 
 ---
 

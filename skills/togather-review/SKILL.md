@@ -80,7 +80,65 @@ source .env && ./server review batch --name "substring" --action approve \
   --server "$TOGATHER_BASE_URL"
 ```
 
-### Step 4: Verify and report
+### Step 4: Consolidate weekly series (including suppressed sources)
+
+**A weekly programme scraped as N separate events is ONE event with N occurrences.**
+Consolidating it is the correct end state: the public API renders the occurrences
+as `subEvent`s. Sources that set `suppress_review_warnings: [cross_week_series_companion]`
+publish these events directly, so they never enter the queue and Steps 2–3 will
+not see them. Find them explicitly:
+
+```bash
+source .env && ./server review series --days 90 --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
+```
+
+The detector covers **all published events**, not only suppressed sources: it will
+also return series that Steps 2–3 just approved. A series that appeared in the
+queue may already be partly consolidated, so always inspect the member list before
+acting. `--json` emits the same cluster data for scripting.
+
+For each cluster, **read every member name and date**:
+
+```text
+1) Family Storytime — Main Branch — Wed 18:00 — 3 events — 2026-11-11..2026-11-25
+   names differ: inspect carefully
+   canonical: 01ABC...
+   members:
+     * 01ABC...  2026-11-11  Family Storytime
+       01ABD...  2026-11-18  Family Storytime
+       01ABE...  2026-11-25  Family Storytime (Toddler)
+```
+
+**If member names or audiences diverge, do not consolidate.** The detector cannot
+distinguish different age groups, drop-in vs registered sessions, or different
+programmes that share a venue, weekday, and time. Only the member list can.
+
+Then preview and apply the merge:
+
+```bash
+source .env && ./server review consolidate <canonical> <member-ulids...> \
+  --transfer-occurrences --dry-run --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
+source .env && ./server review consolidate <canonical> <member-ulids...> \
+  --transfer-occurrences --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"
+```
+
+**Consolidate ONLY when all of these are true:** same programme, same branch
+(venue), same weekday, same start time, exact 7-day cadence, and every member name
+describes the same audience.
+
+**Do NOT consolidate:** different branches of the same library/system, different
+age groups or audiences (baby vs toddler vs teen), drop-in vs registered sessions,
+different weekday or start time, or titles that imply different programmes even when
+the names are similar.
+
+**Cap the work:** consolidate at most 20 clusters per pass. Report the remainder
+with their names and venues instead of forcing ambiguous clusters.
+
+This step is the deliberate exception to the "do not process items individually"
+rule: consolidation is per-cluster and must be chosen cluster by cluster. Queue
+items themselves still follow the batch rules in Steps 2–3.
+
+### Step 5: Verify and report
 
 ```bash
 source .env && ./server review stats --key "$TOGATHER_ADMIN_API_KEY" --server "$TOGATHER_BASE_URL"

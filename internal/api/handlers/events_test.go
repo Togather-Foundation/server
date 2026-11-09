@@ -305,6 +305,10 @@ func (s stubEventsRepo) FindSeriesCompanion(_ context.Context, _ events.SeriesCo
 	return nil, nil
 }
 
+func (s stubEventsRepo) ListSeriesCandidatePairs(_ context.Context, _ events.SeriesCandidatesQuery) ([]events.SeriesCandidatePair, error) {
+	return nil, nil
+}
+
 func (s stubEventsRepo) Rollback(ctx context.Context) error {
 	return nil
 }

@@ -395,6 +395,10 @@ func (m *IngestMockRepository) GetSourceTrustLevelBySourceID(ctx context.Context
 func (m *IngestMockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
 	return nil, nil
 }
+
+func (m *IngestMockRepository) ListSeriesCandidatePairs(ctx context.Context, params events.SeriesCandidatesQuery) ([]events.SeriesCandidatePair, error) {
+	return nil, nil
+}
 func (m *IngestMockRepository) FindSimilarPlaces(ctx context.Context, name string, locality string, region string, threshold float64) ([]events.SimilarPlaceCandidate, error) {
 	return nil, nil
 }

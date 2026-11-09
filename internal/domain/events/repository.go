@@ -318,6 +318,12 @@ type Repository interface {
 	// away and the same time-of-day (±30 min).
 	FindSeriesCompanion(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
 
+	// ListSeriesCandidatePairs returns qualifying 7-day edges between distinct
+	// published events at the same venue with similar normalized names and the
+	// same weekday/start time (±30 min). Read-only; used by the series-candidate
+	// discovery surface. Connected components are built by the domain layer.
+	ListSeriesCandidatePairs(ctx context.Context, params SeriesCandidatesQuery) ([]SeriesCandidatePair, error)
+
 	// Rollback aborts the current transaction. Idempotent — safe to call even if
 	// no transaction is active. Used by callers that run read-only queries inside a
 	// transaction and need to recover from query errors without corrupting the

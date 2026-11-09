@@ -738,6 +738,110 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /api/v1/admin/events/series-candidates:
+    get:
+      operationId: listSeriesCandidates
+      summary: Discover weekly programmes published as separate events
+      description: |
+        Read-only discovery surface for weekly programmes that a source published
+        as N separate events instead of one event with N occurrences.
+
+        A cluster is conservative by construction: every member is a published
+        event with a primary venue, at least one occurrence falls inside the
+        requested window (plus the one-day boundary allowance), and an edge
+        requires the same `events.primary_venue_id`, normalized names with
+        pg_trgm similarity `>= 0.80`, the same ISO weekday, occurrence dates
+        exactly 7 days apart, and local start times within 30 minutes. Edges are
+        transitive (connected components), so a cluster must contain at least
+        `min_events` distinct events. The detector never groups on
+        `event_occurrences.venue_id` (nullable).
+
+        Window boundaries are approximate by design: request dates are UTC while
+        occurrence dates are venue-local, so the storage query widens each side by
+        one day. Consequently `first_date`, `last_date`, member
+        `occurrence_count`/`start_date`, `occurrence_count`, and the canonical
+        `next_date` signal are all scoped to the requested window (plus that
+        one-day boundary allowance), not the event's full lifetime. Canonical
+        selection prefers the earliest upcoming in-window occurrence.
+
+        Typical use is for sources that suppress `cross_week_series_companion`
+        and therefore never create review rows. Inspect each cluster, then call
+        `POST /api/v1/admin/events/consolidate` with `transfer_occurrences: true`
+        to make it one event with N occurrences. This endpoint is read-only:
+        it never writes events, occurrences, review entries, or suppression state.
+      tags: [Admin]
+      x-internal: true
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: days
+          in: query
+          required: false
+          description: Look-ahead window in days (default 90).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 90
+        - name: lookback_days
+          in: query
+          required: false
+          description: Include this many days of recent past occurrences (default 14).
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 90
+            default: 14
+        - name: min_events
+          in: query
+          required: false
+          description: Minimum distinct events per reported cluster (default 3).
+          schema:
+            type: integer
+            minimum: 2
+            maximum: 50
+            default: 3
+        - name: venue_id
+          in: query
+          required: false
+          description: Optional place ULID to restrict the scan to one venue.
+          schema:
+            type: string
+            pattern: '^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$'
+            description: Place ULID.
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of clusters returned (default 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Series-candidate clusters, ordered by event count, first date, then name
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeriesCandidatesResponse'
+        '400':
+          description: Invalid query parameter (out-of-range integer or malformed venue ULID)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          description: Series-candidate scan failed
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
   /api/v1/admin/events/{id}:
     put:
       operationId: updateEvent
@@ -6377,6 +6481,111 @@ components:
           type: [string, "null"]
           format: date-time
           description: When the user last logged in, or null if never
+
+    SeriesCandidateVenue:
+      type: object
+      description: Venue shared by every member of a series candidate.
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          description: Place ULID (from `events.primary_venue_id`).
+        name:
+          type: string
+
+    SeriesCandidateMember:
+      type: object
+      description: One event in a series-candidate cluster.
+      required: [ulid, name, start_date, occurrence_count, lifecycle_state]
+      properties:
+        ulid:
+          type: string
+          description: Event ULID.
+        name:
+          type: string
+        start_date:
+          type: string
+          format: date
+          description: Earliest in-window occurrence local date for this member.
+        occurrence_count:
+          type: integer
+          description: Number of in-window occurrences on this member (requested window plus one-day boundary allowance).
+        lifecycle_state:
+          type: string
+          description: Event lifecycle state (always `published` for candidates).
+
+    SeriesCandidate:
+      type: object
+      description: A conservative cluster of events that look like one weekly programme.
+      required:
+        - suggested_canonical_ulid
+        - name
+        - venue
+        - day_of_week
+        - local_start_time
+        - event_count
+        - occurrence_count
+        - first_date
+        - last_date
+        - members
+      properties:
+        suggested_canonical_ulid:
+          type: string
+          description: >
+            Member with the earliest upcoming in-window occurrence (>= now), or
+            the earliest in-window occurrence overall when none is upcoming.
+            Ties break on most in-window occurrences, then ULID.
+        name:
+          type: string
+          description: Most frequent member name; ties break on earliest occurrence, then lexicographically.
+        venue:
+          $ref: '#/components/schemas/SeriesCandidateVenue'
+        day_of_week:
+          type: integer
+          minimum: 1
+          maximum: 7
+          description: ISO weekday (1 = Monday, 7 = Sunday) of the canonical member's first occurrence.
+        local_start_time:
+          type: string
+          description: Local start time (`HH:MM`) of the canonical member's first occurrence.
+          example: "18:00"
+        event_count:
+          type: integer
+          description: Number of distinct events in the cluster.
+        occurrence_count:
+          type: integer
+          description: Sum of in-window occurrences across cluster members (requested window plus one-day boundary allowance).
+        first_date:
+          type: string
+          format: date
+          description: Earliest in-window occurrence date across the cluster.
+        last_date:
+          type: string
+          format: date
+          description: Latest in-window occurrence date across the cluster.
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeriesCandidateMember'
+
+    SeriesCandidatesResponse:
+      type: object
+      description: >
+        Read-only series-candidate discovery result. Counts, dates, and canonical
+        selection are scoped to the requested window (plus the documented one-day
+        boundary allowance), not each event's full lifetime.
+      required: [items, total_clusters, truncated]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SeriesCandidate'
+        total_clusters:
+          type: integer
+          description: Number of clusters before `limit` is applied.
+        truncated:
+          type: boolean
+          description: True when `total_clusters` exceeds the returned `items` length.
 
     ProblemDetails:
       type: object

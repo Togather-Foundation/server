@@ -845,6 +845,10 @@ func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params SeriesC
 	return m.seriesCompanion, nil
 }
 
+func (m *MockRepository) ListSeriesCandidatePairs(ctx context.Context, params SeriesCandidatesQuery) ([]SeriesCandidatePair, error) {
+	return nil, nil
+}
+
 func (m *MockRepository) Rollback(ctx context.Context) error {
 	return nil
 }

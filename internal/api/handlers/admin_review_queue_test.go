@@ -484,6 +484,14 @@ func (m *MockRepository) FindSeriesCompanion(ctx context.Context, params events.
 	return args.Get(0).(*events.CrossWeekCompanion), args.Error(1)
 }
 
+func (m *MockRepository) ListSeriesCandidatePairs(ctx context.Context, params events.SeriesCandidatesQuery) ([]events.SeriesCandidatePair, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]events.SeriesCandidatePair), args.Error(1)
+}
+
 func (m *MockRepository) Rollback(ctx context.Context) error {
 	return nil
 }

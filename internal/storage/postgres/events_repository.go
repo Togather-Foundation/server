@@ -1751,6 +1751,124 @@ func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events
 	}, nil
 }
 
+// ListSeriesCandidatePairs returns conservative 7-day edges between events that
+// look like the same weekly programme scraped as separate events. The query is
+// read-only and bounded by the supplied local-date window. Connected components
+// are built in the domain layer with union-find.
+//
+// Window boundary is approximate by design: WindowStart/WindowEnd are UTC dates
+// while occurrence local_date is venue-local, so the SQL widens each side by one
+// day. The domain layer still applies MinEvents/Limit to the resulting pairs.
+func (r *EventRepository) ListSeriesCandidatePairs(ctx context.Context, params events.SeriesCandidatesQuery) ([]events.SeriesCandidatePair, error) {
+	queryer := r.queryer()
+
+	// Notes on the edge predicate:
+	//   - b.local_day_of_week = a.local_day_of_week is implied by the +7-day
+	//     date rule, but kept explicit so an index-only change cannot silently
+	//     relax the weekday contract.
+	//   - TIME subtraction does not wrap across midnight: 23:50 and 00:10 are
+	//     22h40m apart, so they will not match. This matches FindSeriesCompanion.
+	rows, err := queryer.Query(ctx, `
+WITH occ AS (
+    SELECT DISTINCT o.event_id,
+           o.local_date,
+           o.local_start_time,
+           o.local_day_of_week,
+           o.start_time
+      FROM event_occurrences o
+      JOIN events e ON e.id = o.event_id
+     WHERE e.deleted_at IS NULL
+       AND e.lifecycle_state = 'published'
+       AND e.primary_venue_id IS NOT NULL
+       -- Approximate boundary: UTC request dates vs venue-local occurrence dates.
+       AND o.local_date BETWEEN $1::date - 1 AND $2::date + 1
+       AND (o.status_override IS NULL OR o.status_override <> 'cancelled')
+       AND (o.venue_id IS NULL OR o.venue_id = e.primary_venue_id)
+       AND ($4::text = '' OR e.primary_venue_id = (SELECT id FROM places WHERE ulid = $4))
+),
+paired AS (
+    SELECT DISTINCT a.event_id AS a_event_id, b.event_id AS b_event_id
+      FROM occ a
+      JOIN occ b
+        ON a.event_id <> b.event_id
+       AND b.local_date = a.local_date + 7
+       AND b.local_day_of_week = a.local_day_of_week
+       AND abs(extract(epoch FROM (a.local_start_time - b.local_start_time))) <= 1800
+      JOIN events ea ON ea.id = a.event_id
+      JOIN events eb ON eb.id = b.event_id
+     WHERE ea.primary_venue_id = eb.primary_venue_id
+),
+agg AS (
+    SELECT event_id,
+           min(local_date) AS first_date,
+           max(local_date) AS last_date,
+           count(*)         AS occurrence_count,
+           to_char((array_agg(local_start_time ORDER BY local_date, local_start_time))[1], 'HH24:MI') AS first_local_start_time,
+           (array_agg(local_day_of_week ORDER BY local_date, local_start_time))[1] AS first_day_of_week,
+           min(local_date) FILTER (WHERE start_time >= $3::timestamptz) AS next_date
+      FROM occ
+     GROUP BY event_id
+)
+SELECT DISTINCT
+       ea.ulid,
+       ea.name,
+       ea.lifecycle_state,
+       pa.ulid AS venue_ulid,
+       pa.name AS venue_name,
+       to_char(aa.first_date, 'YYYY-MM-DD') AS a_first_date,
+       to_char(aa.last_date, 'YYYY-MM-DD')  AS a_last_date,
+       aa.occurrence_count                   AS a_occurrence_count,
+       aa.first_local_start_time             AS a_first_local_start_time,
+       aa.first_day_of_week                  AS a_first_day_of_week,
+       to_char(aa.next_date, 'YYYY-MM-DD')   AS a_next_date,
+       eb.ulid,
+       eb.name,
+       eb.lifecycle_state,
+       pb.ulid AS b_venue_ulid,
+       pb.name AS b_venue_name,
+       to_char(ab.first_date, 'YYYY-MM-DD') AS b_first_date,
+       to_char(ab.last_date, 'YYYY-MM-DD')  AS b_last_date,
+       ab.occurrence_count                   AS b_occurrence_count,
+       ab.first_local_start_time             AS b_first_local_start_time,
+       ab.first_day_of_week                  AS b_first_day_of_week,
+       to_char(ab.next_date, 'YYYY-MM-DD')   AS b_next_date
+  FROM paired p
+  JOIN events ea ON ea.id = p.a_event_id
+  JOIN places pa ON pa.id = ea.primary_venue_id
+  JOIN events eb ON eb.id = p.b_event_id
+  JOIN places pb ON pb.id = eb.primary_venue_id
+  JOIN agg aa ON aa.event_id = p.a_event_id
+  JOIN agg ab ON ab.event_id = p.b_event_id
+ WHERE similarity(normalize_name(ea.name), normalize_name(eb.name)) >= 0.80
+`, params.WindowStart.Format("2006-01-02"), params.WindowEnd.Format("2006-01-02"), params.Now, params.VenueULID)
+	if err != nil {
+		return nil, fmt.Errorf("list series candidate pairs: %w", err)
+	}
+	defer rows.Close()
+
+	var pairs []events.SeriesCandidatePair
+	for rows.Next() {
+		var a, b events.SeriesCandidateMember
+		var aNextDate, bNextDate *string
+		if err := rows.Scan(
+			&a.ULID, &a.Name, &a.LifecycleState, &a.VenueULID, &a.VenueName,
+			&a.StartDate, &a.LastDate, &a.OccurrenceCount, &a.FirstLocalStartTime, &a.FirstDayOfWeek, &aNextDate,
+			&b.ULID, &b.Name, &b.LifecycleState, &b.VenueULID, &b.VenueName,
+			&b.StartDate, &b.LastDate, &b.OccurrenceCount, &b.FirstLocalStartTime, &b.FirstDayOfWeek, &bNextDate,
+		); err != nil {
+			return nil, fmt.Errorf("scan series candidate pair: %w", err)
+		}
+		a.NextOccurrenceDate = aNextDate
+		b.NextOccurrenceDate = bNextDate
+		pairs = append(pairs, events.SeriesCandidatePair{A: a, B: b})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate series candidate pairs: %w", err)
+	}
+
+	return pairs, nil
+}
+
 // DismissPendingReviewsByEventULIDs batch-dismisses all pending review queue entries
 // for the given event ULIDs, setting their status to 'dismissed' and reviewer to reviewedBy.
 // Returns the IDs of dismissed entries (may be empty if none were pending).
