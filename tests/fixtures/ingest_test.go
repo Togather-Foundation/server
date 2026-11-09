@@ -463,6 +463,20 @@ func (m *IngestMockRepository) UpdateReviewQueueEntry(ctx context.Context, id in
 	return nil, nil
 }
 
+func (m *IngestMockRepository) UpsertReviewRow(ctx context.Context, params events.ReviewQueueUpsertParams) (*events.ReviewQueueUpsertResult, error) {
+	return &events.ReviewQueueUpsertResult{
+		Entry: &events.ReviewQueueEntry{
+			ID:          1,
+			EventID:     params.EventULID,
+			EventULID:   params.EventULID,
+			Warnings:    params.Warnings,
+			EventAllDay: params.EventAllDay,
+			Status:      "pending",
+		},
+		Inserted: true,
+	}, nil
+}
+
 func (m *IngestMockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*events.ReviewQueueEntry, error) {
 	return nil, events.ErrNotFound
 }

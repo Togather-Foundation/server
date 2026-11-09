@@ -248,6 +248,9 @@ func (s stubEventsRepo) GetPendingReviewByEventUlidAndDuplicateUlid(_ context.Co
 func (s stubEventsRepo) UpdateReviewWarnings(_ context.Context, _ int, _ []byte) error {
 	return nil
 }
+func (s stubEventsRepo) UpsertReviewRow(_ context.Context, _ events.ReviewQueueUpsertParams) (*events.ReviewQueueUpsertResult, error) {
+	return nil, nil
+}
 func (s stubEventsRepo) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
 	return nil
 }

@@ -450,6 +450,24 @@ type Querier interface {
 	UpsertObservation(ctx context.Context, arg UpsertObservationParams) (EntityIdentifier, error)
 	// Insert or update a cache entry
 	UpsertReconciliationCache(ctx context.Context, arg UpsertReconciliationCacheParams) (ReconciliationCache, error)
+	// Atomic create-or-merge of an event's review row. The caller MUST hold the
+	// events row lock (SELECT ... FOR UPDATE by ULID) and be inside a transaction;
+	// see EventRepository.UpsertReviewRow. event_review_queue.event_id is UNIQUE,
+	// so ON CONFLICT is the conflict point and concurrent writers cannot lose a
+	// warning update.
+	//
+	// warnings_mode:
+	//   replace      - overwrite the array (consolidation's canonical refresh)
+	//   replace_code - drop existing warnings whose code appears in the incoming
+	//                  set, then append the incoming array (cross-week companion
+	//                  re-sync; mirrors upsertCrossWeekSeriesWarning)
+	//   merge        - append incoming warnings whose (field, code, message) is
+	//                  not already present (mirrors appendWarnings)
+	//
+	// refresh_payload rewrites the review snapshot (payloads + all-day marker) on
+	// conflict. Times, provenance (source_id/source_external_id/dedup_hash),
+	// status, review metadata and created_at are never touched on conflict.
+	UpsertReviewQueueEntry(ctx context.Context, arg UpsertReviewQueueEntryParams) (UpsertReviewQueueEntryRow, error)
 	// SQLc queries for scraper_sources and linkage tables.
 	// Insert or update a scraper source by name (used by 'server scrape sync').
 	UpsertScraperSource(ctx context.Context, arg UpsertScraperSourceParams) (UpsertScraperSourceRow, error)

@@ -711,6 +711,133 @@ func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*Revi
 	return entry, nil
 }
 
+// mergeReviewWarnings is the in-memory reference for the SQL warning modes.
+// Production code merges in SQL; the mock mirrors it so domain tests keep
+// asserting observable behaviour.
+func mergeReviewWarnings(existing, incoming []byte, mode ReviewWarningMergeMode) ([]byte, error) {
+	switch mode {
+	case ReviewWarningReplace:
+		if len(incoming) == 0 {
+			return []byte("[]"), nil
+		}
+		return incoming, nil
+	case ReviewWarningReplaceCode:
+		var existingList []ValidationWarning
+		if len(existing) > 0 {
+			if err := json.Unmarshal(existing, &existingList); err != nil {
+				return nil, err
+			}
+		}
+		var incomingList []ValidationWarning
+		if len(incoming) > 0 {
+			if err := json.Unmarshal(incoming, &incomingList); err != nil {
+				return nil, err
+			}
+		}
+		codes := make(map[string]struct{}, len(incomingList))
+		for _, w := range incomingList {
+			codes[w.Code] = struct{}{}
+		}
+		filtered := make([]ValidationWarning, 0, len(existingList)+len(incomingList))
+		for _, w := range existingList {
+			if _, replaced := codes[w.Code]; !replaced {
+				filtered = append(filtered, w)
+			}
+		}
+		filtered = append(filtered, incomingList...)
+		return json.Marshal(filtered)
+	default:
+		return appendWarnings(existing, incoming)
+	}
+}
+
+// UpsertReviewRow is the in-memory equivalent of the repository's atomic
+// create-or-merge. The real implementation locks the events row and merges in
+// SQL; tests only need the observable result.
+func (m *MockRepository) UpsertReviewRow(_ context.Context, params ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	event := m.events[params.EventULID]
+	eventID := params.EventULID
+	if event != nil {
+		eventID = event.ID
+	}
+
+	var existing *ReviewQueueEntry
+	for _, entry := range m.reviewQueue {
+		if entry.EventID == eventID || entry.EventULID == params.EventULID {
+			existing = entry
+			break
+		}
+	}
+
+	if existing == nil {
+		entry := &ReviewQueueEntry{
+			ID:                 m.nextReviewID,
+			EventID:            eventID,
+			EventULID:          params.EventULID,
+			OriginalPayload:    params.OriginalPayload,
+			NormalizedPayload:  params.NormalizedPayload,
+			Warnings:           params.Warnings,
+			SourceID:           params.SourceID,
+			SourceExternalID:   params.SourceExternalID,
+			DedupHash:          params.DedupHash,
+			EventStartTime:     params.EventStartTime,
+			EventEndTime:       params.EventEndTime,
+			EventAllDay:        params.EventAllDay,
+			DuplicateOfEventID: params.DuplicateOfEventID,
+			Status:             "pending",
+			CreatedAt:          time.Now(),
+			UpdatedAt:          time.Now(),
+		}
+		m.reviewQueue[m.nextReviewID] = entry
+		m.nextReviewID++
+
+		promoted := false
+		if params.Promotion == ReviewPromotionInserted || params.Promotion == ReviewPromotionPending {
+			if event != nil && event.LifecycleState == "published" {
+				pending := "pending_review"
+				m.updateEventCalls = append(m.updateEventCalls, updateEventCall{
+					ULID:   params.EventULID,
+					Params: UpdateEventParams{LifecycleState: &pending},
+				})
+				event.LifecycleState = pending
+				promoted = true
+			}
+		}
+		return &ReviewQueueUpsertResult{Entry: entry, Inserted: true, Promoted: promoted}, nil
+	}
+
+	merged, err := mergeReviewWarnings(existing.Warnings, params.Warnings, params.WarningMode)
+	if err != nil {
+		return nil, err
+	}
+	existing.Warnings = merged
+	if params.RefreshPayload {
+		existing.OriginalPayload = params.OriginalPayload
+		existing.NormalizedPayload = params.NormalizedPayload
+		existing.EventAllDay = params.EventAllDay
+	}
+	if params.DuplicateOfEventID != nil {
+		existing.DuplicateOfEventID = params.DuplicateOfEventID
+	}
+	existing.UpdatedAt = time.Now()
+
+	promoted := false
+	if existing.Status == "pending" && params.Promotion == ReviewPromotionPending && event != nil && event.LifecycleState != "deleted" {
+		pending := "pending_review"
+		m.updateEventCalls = append(m.updateEventCalls, updateEventCall{
+			ULID:   params.EventULID,
+			Params: UpdateEventParams{LifecycleState: &pending},
+		})
+		event.LifecycleState = pending
+		promoted = true
+	}
+
+	return &ReviewQueueUpsertResult{Entry: existing, Inserted: false, Promoted: promoted}, nil
+}
+
 func (m *MockRepository) LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*ReviewQueueEntry, error) {
 	// In tests, locking is a no-op — delegate to GetReviewQueueEntry.
 	return m.GetReviewQueueEntry(ctx, id)

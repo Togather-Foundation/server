@@ -1147,3 +1147,136 @@ func (q *Queries) UpdateReviewWarnings(ctx context.Context, arg UpdateReviewWarn
 	_, err := q.db.Exec(ctx, updateReviewWarnings, arg.Warnings, arg.ID)
 	return err
 }
+
+const upsertReviewQueueEntry = `-- name: UpsertReviewQueueEntry :one
+INSERT INTO event_review_queue (
+  event_id,
+  original_payload,
+  normalized_payload,
+  warnings,
+  source_id,
+  source_external_id,
+  dedup_hash,
+  event_start_time,
+  event_end_time,
+  event_all_day,
+  duplicate_of_event_id
+) VALUES (
+  $1,
+  $2,
+  $3,
+  $4,
+  $5,
+  $6,
+  $7,
+  $8,
+  $9,
+  $10,
+  $11
+)
+ON CONFLICT (event_id) DO UPDATE
+SET
+  original_payload = CASE WHEN $12::boolean
+    THEN EXCLUDED.original_payload ELSE event_review_queue.original_payload END,
+  normalized_payload = CASE WHEN $12::boolean
+    THEN EXCLUDED.normalized_payload ELSE event_review_queue.normalized_payload END,
+  event_all_day = CASE WHEN $12::boolean
+    THEN EXCLUDED.event_all_day ELSE event_review_queue.event_all_day END,
+  warnings = CASE $13::text
+    WHEN 'replace' THEN EXCLUDED.warnings
+    WHEN 'replace_code' THEN (
+      COALESCE((
+        SELECT jsonb_agg(existing.w ORDER BY existing.ord)
+        FROM jsonb_array_elements(COALESCE(event_review_queue.warnings, '[]'::jsonb))
+             WITH ORDINALITY AS existing(w, ord)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(EXCLUDED.warnings, '[]'::jsonb)) AS incoming
+          WHERE COALESCE(incoming->>'code', '') = COALESCE(existing.w->>'code', '')
+        )
+      ), '[]'::jsonb)
+      ||
+      COALESCE(EXCLUDED.warnings, '[]'::jsonb)
+    )
+    ELSE (
+      COALESCE(event_review_queue.warnings, '[]'::jsonb)
+      ||
+      COALESCE((
+        SELECT jsonb_agg(incoming.w ORDER BY incoming.ord)
+        FROM jsonb_array_elements(COALESCE(EXCLUDED.warnings, '[]'::jsonb))
+             WITH ORDINALITY AS incoming(w, ord)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(event_review_queue.warnings, '[]'::jsonb)) AS existing
+          WHERE COALESCE(existing->>'field', '') = COALESCE(incoming.w->>'field', '')
+            AND COALESCE(existing->>'code', '') = COALESCE(incoming.w->>'code', '')
+            AND COALESCE(existing->>'message', '') = COALESCE(incoming.w->>'message', '')
+        )
+      ), '[]'::jsonb)
+    )
+  END,
+  duplicate_of_event_id = COALESCE(EXCLUDED.duplicate_of_event_id, event_review_queue.duplicate_of_event_id),
+  updated_at = NOW()
+RETURNING id, status, (xmax = 0) AS inserted
+`
+
+type UpsertReviewQueueEntryParams struct {
+	EventID            pgtype.UUID        `json:"event_id"`
+	OriginalPayload    []byte             `json:"original_payload"`
+	NormalizedPayload  []byte             `json:"normalized_payload"`
+	Warnings           []byte             `json:"warnings"`
+	SourceID           pgtype.Text        `json:"source_id"`
+	SourceExternalID   pgtype.Text        `json:"source_external_id"`
+	DedupHash          pgtype.Text        `json:"dedup_hash"`
+	EventStartTime     pgtype.Timestamptz `json:"event_start_time"`
+	EventEndTime       pgtype.Timestamptz `json:"event_end_time"`
+	EventAllDay        bool               `json:"event_all_day"`
+	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
+	RefreshPayload     bool               `json:"refresh_payload"`
+	WarningsMode       string             `json:"warnings_mode"`
+}
+
+type UpsertReviewQueueEntryRow struct {
+	ID       int32  `json:"id"`
+	Status   string `json:"status"`
+	Inserted bool   `json:"inserted"`
+}
+
+// Atomic create-or-merge of an event's review row. The caller MUST hold the
+// events row lock (SELECT ... FOR UPDATE by ULID) and be inside a transaction;
+// see EventRepository.UpsertReviewRow. event_review_queue.event_id is UNIQUE,
+// so ON CONFLICT is the conflict point and concurrent writers cannot lose a
+// warning update.
+//
+// warnings_mode:
+//
+//	replace      - overwrite the array (consolidation's canonical refresh)
+//	replace_code - drop existing warnings whose code appears in the incoming
+//	               set, then append the incoming array (cross-week companion
+//	               re-sync; mirrors upsertCrossWeekSeriesWarning)
+//	merge        - append incoming warnings whose (field, code, message) is
+//	               not already present (mirrors appendWarnings)
+//
+// refresh_payload rewrites the review snapshot (payloads + all-day marker) on
+// conflict. Times, provenance (source_id/source_external_id/dedup_hash),
+// status, review metadata and created_at are never touched on conflict.
+func (q *Queries) UpsertReviewQueueEntry(ctx context.Context, arg UpsertReviewQueueEntryParams) (UpsertReviewQueueEntryRow, error) {
+	row := q.db.QueryRow(ctx, upsertReviewQueueEntry,
+		arg.EventID,
+		arg.OriginalPayload,
+		arg.NormalizedPayload,
+		arg.Warnings,
+		arg.SourceID,
+		arg.SourceExternalID,
+		arg.DedupHash,
+		arg.EventStartTime,
+		arg.EventEndTime,
+		arg.EventAllDay,
+		arg.DuplicateOfEventID,
+		arg.RefreshPayload,
+		arg.WarningsMode,
+	)
+	var i UpsertReviewQueueEntryRow
+	err := row.Scan(&i.ID, &i.Status, &i.Inserted)
+	return i, err
+}

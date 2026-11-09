@@ -10,6 +10,12 @@ var ErrNotFound = errors.New("event not found")
 
 var ErrConflict = errors.New("event conflict")
 
+// ErrRetryable indicates a transient database contention failure — a lock
+// timeout, deadlock detection or serialisation failure — where the caller
+// should retry the whole operation. The failed attempt rolls back, so no
+// partial write is kept.
+var ErrRetryable = errors.New("retryable database contention")
+
 // ErrDuplicateSourceAttribution indicates the event_sources row for this
 // (event, source, source_url) already exists. Repositories translate the
 // underlying unique-violation into this sentinel so domain code can treat a
@@ -441,6 +447,15 @@ type Repository interface {
 	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error)
 	CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
 	UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
+	// UpsertReviewRow atomically creates or merges the event's review row and
+	// applies the promotion policy. It must be called inside a transaction and
+	// takes a row lock on the events row first (the serialisation point for
+	// every review-row writer for that event), then upserts the UNIQUE review
+	// row. Warnings are merged in SQL, never as a Go read-modify-write, so
+	// concurrent writers cannot lose a warning. A decided row keeps its status
+	// and the event keeps its lifecycle. Lock timeout, deadlock detection and
+	// serialisation failures are returned wrapped with ErrRetryable.
+	UpsertReviewRow(ctx context.Context, params ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error)
 	GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error)
 	// LockReviewQueueEntryForUpdate acquires a row-level lock on the review queue
 	// row identified by id using SELECT ... FOR UPDATE.  Must be called inside a
@@ -626,6 +641,71 @@ type ReviewQueueUpdateParams struct {
 	EventAllDay        *bool   // nil = leave unchanged
 	DuplicateOfEventID *string // UUID of the event this is a duplicate of (nil = no change)
 	ClearDuplicateOf   bool    // if true, set duplicate_of_event_id = NULL (takes precedence over DuplicateOfEventID)
+}
+
+// ReviewWarningMergeMode selects how UpsertReviewRow combines the incoming
+// warnings with the warnings already on the row.
+type ReviewWarningMergeMode string
+
+const (
+	// ReviewWarningMerge appends incoming warnings whose (field, code, message)
+	// is not already present, preserving array order and duplicates within the
+	// incoming array. It mirrors appendWarnings.
+	ReviewWarningMerge ReviewWarningMergeMode = "merge"
+	// ReviewWarningReplaceCode drops existing warnings whose code appears in
+	// the incoming set, then appends the incoming array. It mirrors
+	// upsertCrossWeekSeriesWarning.
+	ReviewWarningReplaceCode ReviewWarningMergeMode = "replace_code"
+	// ReviewWarningReplace overwrites the warnings array.
+	ReviewWarningReplace ReviewWarningMergeMode = "replace"
+)
+
+// ReviewPromotion selects when UpsertReviewRow flips events.lifecycle_state to
+// pending_review.
+type ReviewPromotion string
+
+const (
+	// ReviewPromotionNone never changes the event lifecycle.
+	ReviewPromotionNone ReviewPromotion = "none"
+	// ReviewPromotionInserted flips a published event to pending_review only
+	// when the review row was newly inserted. An existing row (pending or
+	// decided) leaves the lifecycle untouched, matching the documented
+	// "any row -> lifecycle untouched" rule.
+	ReviewPromotionInserted ReviewPromotion = "inserted"
+	// ReviewPromotionPending flips the event to pending_review whenever the
+	// resulting row is pending (inserted or merged), unless the event is
+	// deleted. A decided row leaves the lifecycle untouched.
+	ReviewPromotionPending ReviewPromotion = "pending"
+)
+
+// ReviewQueueUpsertParams contains the create-or-merge input for
+// Repository.UpsertReviewRow.
+type ReviewQueueUpsertParams struct {
+	EventULID          string
+	OriginalPayload    []byte
+	NormalizedPayload  []byte
+	Warnings           []byte
+	SourceID           *string
+	SourceExternalID   *string
+	DedupHash          *string
+	EventStartTime     time.Time
+	EventEndTime       *time.Time
+	EventAllDay        bool
+	DuplicateOfEventID *string
+	// WarningMode defaults to ReviewWarningMerge when empty.
+	WarningMode ReviewWarningMergeMode
+	// RefreshPayload rewrites the review snapshot (payloads and all-day
+	// marker) when the row already exists. Times and provenance are never
+	// rewritten on conflict.
+	RefreshPayload bool
+	Promotion      ReviewPromotion
+}
+
+// ReviewQueueUpsertResult is the outcome of Repository.UpsertReviewRow.
+type ReviewQueueUpsertResult struct {
+	Entry    *ReviewQueueEntry
+	Inserted bool
+	Promoted bool
 }
 
 // ReviewQueueFilters contains filters for listing review queue entries

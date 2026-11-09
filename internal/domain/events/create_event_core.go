@@ -866,8 +866,8 @@ func (s *IngestService) createEventCore(
 		if err != nil {
 			return nil, fmt.Errorf("review queue dates: %w", err)
 		}
-		reviewEntry, err := dbRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-			EventID:            event.ID,
+		reviewEntry, err := dbRepo.UpsertReviewRow(ctx, ReviewQueueUpsertParams{
+			EventULID:          event.ULID,
 			OriginalPayload:    originalJSON,
 			NormalizedPayload:  normalizedJSON,
 			Warnings:           warningsJSON,
@@ -878,6 +878,8 @@ func (s *IngestService) createEventCore(
 			EventEndTime:       endTime,
 			EventAllDay:        validated.AllDay,
 			DuplicateOfEventID: nearDuplicateOfID,
+			WarningMode:        ReviewWarningReplace,
+			Promotion:          ReviewPromotionNone,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("create review queue entry: %w", err)
@@ -885,7 +887,7 @@ func (s *IngestService) createEventCore(
 
 		s.logger.Debug().
 			Str("event_ulid", event.ULID).
-			Int("review_entry_id", reviewEntry.ID).
+			Int("review_entry_id", reviewEntry.Entry.ID).
 			Msg("createEventCore: created review queue entry")
 	}
 
@@ -1113,37 +1115,6 @@ func (s *IngestService) crossLinkSeriesCompanions(
 		return
 	}
 
-	// event_review_queue.event_id is UNIQUE, so look up the companion's review row
-	// regardless of status: inserting a second row for an already-reviewed companion
-	// fails with 23505 (event_review_queue_event_id_key). Merging only rewrites
-	// warnings, so an already-reviewed row keeps its status and the lifecycle is
-	// untouched.
-	existingReview, lookupErr := s.repo.GetReviewByEventUlid(ctx, companion.ULID)
-	if lookupErr != nil {
-		s.logger.Warn().Err(lookupErr).Str("companion_ulid", companion.ULID).
-			Msg("Series companion cross-link: failed to look up existing review entry, skipping")
-		return
-	}
-
-	if existingReview != nil {
-		// Merge into the existing review entry (pending or already reviewed).
-		mergedWarnings, mergeErr := appendWarnings(existingReview.Warnings, companionWarningJSON)
-		if mergeErr != nil {
-			s.logger.Warn().Err(mergeErr).Str("companion_ulid", companion.ULID).
-				Msg("Series companion cross-link: failed to merge warnings, skipping")
-			return
-		}
-		if _, updateErr := s.repo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
-			Warnings: &mergedWarnings,
-		}); updateErr != nil {
-			s.logger.Warn().Err(updateErr).Str("companion_ulid", companion.ULID).
-				Msg("Series companion cross-link: failed to update existing review entry, skipping")
-		}
-		return
-	}
-
-	// No existing pending entry — the companion may still be published. Fetch
-	// it to reconstruct a minimal review queue payload, then create an entry.
 	companionEvent, fetchErr := s.repo.GetByULID(ctx, companion.ULID)
 	if fetchErr != nil {
 		s.logger.Warn().Err(fetchErr).Str("companion_ulid", companion.ULID).
@@ -1159,17 +1130,37 @@ func (s *IngestService) crossLinkSeriesCompanions(
 		reconstructedPayload = []byte("{}")
 	}
 
-	if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-		EventID:           companionEvent.ID,
+	// The companion may already have a review row (pending or decided). The
+	// atomic upsert merges the cross-week warning into it without touching its
+	// status or the companion's lifecycle; when no row exists it inserts one.
+	// The events row lock inside UpsertReviewRow is the serialisation point, so
+	// a concurrent writer cannot make this fail with 23505 after a flip.
+	txRepo, tx, beginErr := s.repo.BeginTx(ctx)
+	if beginErr != nil {
+		s.logger.Warn().Err(beginErr).Str("companion_ulid", companion.ULID).
+			Msg("Series companion cross-link: failed to begin transaction, skipping")
+		return
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, upsertErr := txRepo.UpsertReviewRow(ctx, ReviewQueueUpsertParams{
+		EventULID:         companion.ULID,
 		OriginalPayload:   reconstructedPayload,
 		NormalizedPayload: reconstructedPayload,
 		EventStartTime:    companionStart,
 		EventEndTime:      companionEnd,
 		EventAllDay:       eventAllDayFromEvent(companionEvent),
 		Warnings:          companionWarningJSON,
-	}); createErr != nil {
-		s.logger.Warn().Err(createErr).Str("companion_ulid", companion.ULID).
-			Msg("Series companion cross-link: failed to create review queue entry, skipping")
+		WarningMode:       ReviewWarningMerge,
+		Promotion:         ReviewPromotionNone,
+	}); upsertErr != nil {
+		s.logger.Warn().Err(upsertErr).Str("companion_ulid", companion.ULID).
+			Msg("Series companion cross-link: failed to upsert review queue entry, skipping")
+		return
+	}
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		s.logger.Warn().Err(commitErr).Str("companion_ulid", companion.ULID).
+			Msg("Series companion cross-link: failed to commit review queue entry, skipping")
 	}
 }
 
@@ -1187,7 +1178,6 @@ func (s *IngestService) crossLinkNearDuplicates(
 	if len(candidates) == 0 {
 		return
 	}
-	pendingState := "pending_review"
 	for _, c := range candidates {
 		existingEvent, fetchErr := s.repo.GetByULID(ctx, c.ULID)
 		if fetchErr != nil {
@@ -1225,54 +1215,21 @@ func (s *IngestService) crossLinkNearDuplicates(
 			existingWarnings = []byte("[]")
 		}
 
-		// event_review_queue.event_id is UNIQUE, so look up the candidate's review
-		// row regardless of status before doing anything that assumes an insert is
-		// possible: inserting over a decided (approved/rejected/dismissed/
-		// superseded) row raises 23505, and the lifecycle flip must not happen in
-		// that case or the event is left pending_review with no queue entry.
-		existingReview, lookupErr := s.repo.GetReviewByEventUlid(ctx, c.ULID)
-		if lookupErr != nil {
-			s.logger.Warn().Err(lookupErr).
+		// One transaction per candidate: the atomic create-or-merge locks the
+		// candidate's events row (the serialisation point), merges the warning
+		// into any existing row without touching its status, and only flips a
+		// published candidate to pending_review when it actually inserts a new
+		// row. No pre-check, so a concurrent writer cannot turn this into a
+		// 23505 after the lifecycle flip.
+		txRepo, tx, beginErr := s.repo.BeginTx(ctx)
+		if beginErr != nil {
+			s.logger.Warn().Err(beginErr).
 				Str("candidate_ulid", c.ULID).
-				Msg("Near-duplicate: failed to look up existing review entry, skipping")
+				Msg("Near-duplicate: failed to begin transaction, skipping")
 			continue
 		}
-
-		if existingReview != nil {
-			// Merge into the existing review entry (pending or already decided).
-			// The row keeps its status and the event keeps its lifecycle.
-			mergedWarnings, mergeErr := appendWarnings(existingReview.Warnings, existingWarnings)
-			if mergeErr != nil {
-				s.logger.Warn().Err(mergeErr).
-					Str("candidate_ulid", c.ULID).
-					Msg("Near-duplicate: failed to merge warnings into existing review entry, skipping")
-				continue
-			}
-			if _, updateErr := s.repo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
-				Warnings:           &mergedWarnings,
-				DuplicateOfEventID: &newEventID,
-			}); updateErr != nil {
-				s.logger.Warn().Err(updateErr).
-					Str("candidate_ulid", c.ULID).
-					Msg("Near-duplicate: failed to update existing review entry with near-duplicate warning, skipping")
-			}
-			continue
-		}
-
-		// No review row at all: the event is now going to review, so flip a
-		// published candidate to pending_review before creating the entry.
-		if existingEvent.LifecycleState == "published" {
-			if _, updateErr := s.repo.UpdateEvent(ctx, c.ULID, UpdateEventParams{
-				LifecycleState: &pendingState,
-			}); updateErr != nil {
-				s.logger.Warn().Err(updateErr).
-					Str("candidate_ulid", c.ULID).
-					Msg("Near-duplicate: failed to update existing event lifecycle state, skipping")
-			}
-		}
-
-		if _, createErr := s.repo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-			EventID:            existingEvent.ID,
+		_, upsertErr := txRepo.UpsertReviewRow(ctx, ReviewQueueUpsertParams{
+			EventULID:          c.ULID,
 			OriginalPayload:    reconstructedPayload,
 			NormalizedPayload:  reconstructedPayload,
 			EventStartTime:     existingStart,
@@ -1280,10 +1237,20 @@ func (s *IngestService) crossLinkNearDuplicates(
 			EventAllDay:        eventAllDayFromEvent(existingEvent),
 			Warnings:           existingWarnings,
 			DuplicateOfEventID: &newEventID,
-		}); createErr != nil {
-			s.logger.Warn().Err(createErr).
+			WarningMode:        ReviewWarningMerge,
+			Promotion:          ReviewPromotionInserted,
+		})
+		if upsertErr != nil {
+			_ = tx.Rollback(ctx)
+			s.logger.Warn().Err(upsertErr).
 				Str("candidate_ulid", c.ULID).
-				Msg("Near-duplicate: failed to create review queue entry for existing event, skipping")
+				Msg("Near-duplicate: failed to upsert review queue entry for existing event, skipping")
+			continue
+		}
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			s.logger.Warn().Err(commitErr).
+				Str("candidate_ulid", c.ULID).
+				Msg("Near-duplicate: failed to commit review queue entry for existing event, skipping")
 		}
 	}
 }

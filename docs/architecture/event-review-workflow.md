@@ -256,11 +256,36 @@ The `Consolidate` method (`AdminService.Consolidate`) is the atomic resolution p
 
 ### Pending Resolution (step 7)
 
-`consolidateResolvePending` looks up the canonical's review row with `GetReviewByEventUlid` — unlike `GetPendingReviewByEventUlid`, this returns a decided row too. `event_review_queue.event_id` is `UNIQUE`, so a blind INSERT for an already-reviewed canonical raises 23505 and aborts the whole consolidation.
+`consolidateResolvePending` delegates to `Repository.UpsertReviewRow`, the single atomic create-or-merge operation. It runs inside the consolidation transaction, takes the canonical's `events` row lock (`SELECT ... FOR UPDATE` by ULID), then upserts the review row with `ON CONFLICT (event_id) DO UPDATE` and `warnings_mode='replace'`. The payload snapshot and all-day marker are refreshed on conflict; the review row's status, review metadata, provenance and the event times are never rewritten.
 
-- **No row**: set the canonical's lifecycle to `pending_review`, then create the review entry (`CreateReviewQueueEntry`)
-- **Pending row**: same lifecycle flip; the existing row's payload, warnings and `event_all_day` are refreshed with `UpdateReviewQueueEntry`
-- **Decided row** (`approved`/`rejected`/`dismissed`/`superseded`): refresh the payload/warnings in place and leave the lifecycle **untouched** — never resurrect a decided review, and never hide a live event by flipping it to `pending_review`
+- **No row**: insert the review entry, then flip a non-deleted canonical to `pending_review`.
+- **Pending row**: refresh the snapshot and warnings, then flip (or keep) the canonical at `pending_review`.
+- **Decided row** (`approved`/`rejected`/`dismissed`/`superseded`): refresh the snapshot and warnings in place and leave the status and the lifecycle **untouched** — never resurrect a decided review, and never hide a live event by flipping it to `pending_review`.
+
+The flip is a separate `UPDATE events` inside the same transaction, after the row exists or merges. It can no longer survive a failed insert.
+
+### Review-row atomicity and lock order
+
+`Repository.UpsertReviewRow` is the only create-or-merge path for review rows. It must be called inside a transaction and its lock order is:
+
+1. `events` row, `SELECT id, lifecycle_state ... WHERE ulid = $1 FOR UPDATE` — the serialisation point for every review-row writer for that event.
+2. `event_review_queue` row, acquired by the `ON CONFLICT (event_id)` upsert on the UNIQUE `event_id`.
+
+`lock_timeout` is set to 3s for the operation and restored before the caller continues. A lock wait, deadlock detection or serialisation failure is mapped to `events.ErrRetryable`; the caller's transaction rolls back whole, so a timeout writes nothing.
+
+Warning merge modes:
+
+- `merge` — append incoming warnings whose `(field, code, message)` is not already present. Mirrors the old Go `appendWarnings`; distinct warnings with the same code for different events are both kept.
+- `replace_code` — drop existing warnings whose code appears in the incoming set, then append the incoming array. Used to replace a stale `cross_week_series_companion` warning. Mirrors the old Go `upsertCrossWeekSeriesWarning`.
+- `replace` — overwrite the array. Used by consolidation's canonical refresh.
+
+Promotion is explicit per caller:
+
+- `none` — never change the lifecycle (ingest's series companion cross-link, the primary event-creation insert).
+- `inserted` — flip `published` → `pending_review` only when the op **inserted** the row. An existing row (pending or decided) leaves the lifecycle untouched.
+- `pending` — flip the event to `pending_review` whenever the resulting row is pending, unless the event is deleted. Used by consolidation's canonical resolution, which historically promoted any non-deleted state.
+
+Two callers for the same event can only wait on each other's `events` lock. Two callers for different events never touch the same review row. Admin review actions retain their existing review-row-first order, so a cross-order cycle with this operation is possible; PostgreSQL detects it and the failure surfaces as `ErrRetryable` with a full rollback. `Consolidate` still locks its retire set (sorted by ULID) and then the canonical, and discovers the series companion only after retirement; it cannot pre-lock every event in ascending `events.id` order yet, so the global multi-event lock-order work is tracked separately.
 
 ### When consolidateStripRetiredDupWarnings Triggers
 
@@ -275,14 +300,13 @@ The `Consolidate` method (`AdminService.Consolidate`) is the atomic resolution p
 
 `consolidateSyncSeriesCompanion` re-runs cross-week companion detection against the post-retirement event graph:
 - Finds a surviving companion (not in the retire list) via `FindSeriesCompanion`
-- Creates a `cross_week_series_companion` warning on the companion event's review entry
-- If the companion already has a review entry, merges the warning into it via `GetReviewByEventUlid` (any status: `pending`, `approved`, `rejected`, `dismissed`, `superseded`). Merging only rewrites `warnings`, so the row keeps its status and the event's lifecycle is left untouched
-- Only when the companion has **no** review row at all does it create one — `event_review_queue.event_id` is `UNIQUE`, so inserting for an already-reviewed companion fails with 23505 and would abort the whole consolidation
-- On the create path a `published` companion is first flipped to `pending_review`
+- Calls `UpsertReviewRow` with `warnings_mode='replace_code'` and `promotion='inserted'` for the companion. Under the companion's `events` row lock the upsert replaces any stale `cross_week_series_companion` warning, keeps every other warning, and preserves a decided row's status
+- An existing row (pending or decided) leaves the companion's lifecycle untouched
+- Only when the companion has **no** review row at all does the op insert one; a `published` companion is flipped to `pending_review` in the same transaction. There is no pre-check and no 23505-after-flip window
 
-The same any-status guard applies to `IngestService.crossLinkSeriesCompanions` (post-commit ingest cross-link): an already-reviewed companion gets the warning merged into its existing row instead of a second row being attempted (there the failure is only logged).
+The same rule applies to `IngestService.crossLinkSeriesCompanions` (post-commit ingest cross-link): each companion gets one short transaction and the same create-or-merge; there the failure is logged and skipped because the cross-link is best-effort. Ingest uses `promotion='none'` because a series companion is a legitimate live event, not a duplicate.
 
-The ingest-side near-duplicate cross-link follows the same rule (`IngestService.crossLinkNearDuplicates`): it looks up the candidate's row with `GetReviewByEventUlid` **before** touching the lifecycle. Any row → merge `near_duplicate_of_new_event` and `duplicate_of_event_id` into it, lifecycle untouched. No row → flip a `published` candidate to `pending_review` and insert. (Previously the flip happened first, so a decided row left the event `pending_review` with no queue entry — hidden and unpublished.)
+The ingest-side near-duplicate cross-link (`IngestService.crossLinkNearDuplicates`) also calls `UpsertReviewRow`, with `warnings_mode='merge'` and `promotion='inserted'`: any existing row (pending or decided) gets the `near_duplicate_of_new_event` warning and `duplicate_of_event_id` merged in with the lifecycle untouched, while a published candidate with no row is flipped to `pending_review` and inserted atomically. Previously the look-up and writes were separate, so a concurrent loser could 23505 after its flip and leave the event `pending_review` with no queue entry — hidden and unpublished.
 
 ---
 
@@ -469,8 +493,8 @@ component to be pairwise connected.
 | `pending_review` | `deleted` | cleanup job (unreviewed past event) | `cleanup_review_queue.go:142-148` |
 | `pending_review` | `pending_review` | fix (with remaining review issues — not applicable; fix always publishes) | — |
 | `pending_review` | `pending_review` | consolidate with needsReview=true | `admin_service.go:1970` |
-| `published` | `pending_review` | new review created (near-dup companion back-link) | `ingest.go` (via near-dup cross-linking) |
-| `published` | `pending_review` | consolidate companion re-sync (cross-week series) | `admin_service.go:2100-2106` |
+| `published` | `pending_review` | new review created (near-dup companion back-link, insert only) | `UpsertReviewRow` (`promotion='inserted'`) |
+| `published` | `pending_review` | consolidate companion re-sync (cross-week series, insert only) | `UpsertReviewRow` (`promotion='inserted'`) |
 | `published` | `deleted` | delete (admin) | `admin_service.go:2411-2456` |
 | `any` | `deleted` | consolidate retire list | `admin_service.go:1833` |
 
@@ -564,9 +588,9 @@ ALTER TABLE events ADD CONSTRAINT events_lifecycle_state_check
 When Layer 2 (pg_trgm) near-duplicate detection matches a new event against one or more existing published events, both sides of the match enter the review queue:
 
 1. **New event** — stored with `lifecycle_state = 'pending_review'`. Its review queue entry has `duplicate_of_event_id` pointing to the first matched existing event.
-2. **Each matched existing event** — if currently `published`, its `lifecycle_state` is set to `'pending_review'` and a new review queue entry is created, with `duplicate_of_event_id` pointing to the new event.
+2. **Each matched existing event** — `UpsertReviewRow` runs in its own short transaction. If the candidate is `published` and has no review row, the op inserts the row and flips the lifecycle to `pending_review` atomically, with `duplicate_of_event_id` pointing to the new event. If a row already exists (pending or decided), the warning is merged into it and the lifecycle is left untouched.
 
-**Timing:** The existing-event updates happen after the transaction commits (for FK safety). Failures are non-critical — logged and skipped.
+**Timing:** The existing-event updates happen after the ingest transaction commits (for FK safety). Failures are non-critical — logged and skipped. The events row lock inside `UpsertReviewRow` means a concurrent writer merges instead of losing the warning to a 23505.
 
 **Scope:** Only Layer 2 (near-duplicate) matches trigger this behaviour. Layer 1 exact dedup-hash matches still auto-merge as before.
 

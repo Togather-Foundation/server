@@ -38,6 +38,9 @@ type EventRepository struct {
 	pool   *pgxpool.Pool
 	tx     pgx.Tx
 	logger zerolog.Logger
+	// reviewRowLockTimeout bounds UpsertReviewRow's wait for the events row
+	// lock. Empty means the package default (3s); tests set it shorter.
+	reviewRowLockTimeout string
 }
 
 func NewEventRepository(pool *pgxpool.Pool, logger zerolog.Logger) *EventRepository {
@@ -1632,9 +1635,10 @@ func (r *EventRepository) BeginTx(ctx context.Context) (events.Repository, event
 	}
 
 	txRepo := &EventRepository{
-		pool:   r.pool,
-		tx:     tx,
-		logger: r.logger,
+		pool:                 r.pool,
+		tx:                   tx,
+		logger:               r.logger,
+		reviewRowLockTimeout: r.reviewRowLockTimeout,
 	}
 
 	return txRepo, &txCommitter{tx: tx}, nil
@@ -3582,6 +3586,202 @@ func (r *EventRepository) UpdateReviewQueueEntry(ctx context.Context, id int, pa
 	}
 
 	return convertReviewQueueRowGeneric(row), nil
+}
+
+// reviewRowLockTimeout is the default bound on UpsertReviewRow's wait for the
+// events row lock. A contended writer fails retryable instead of hanging the
+// ingest batch or a consolidation.
+const reviewRowLockTimeout = "3s"
+
+// UpsertReviewRow atomically creates or merges the event's review row and
+// applies the promotion policy.
+//
+// Lock order (must be called inside a transaction):
+//  1. events row, SELECT ... FOR UPDATE by ULID — the single serialisation
+//     point for every review-row writer for that event.
+//  2. event_review_queue row, acquired by the ON CONFLICT upsert on the UNIQUE
+//     event_id.
+//
+// The op never holds more than one events lock, so two callers for the same
+// event can only wait on each other's event lock, and two callers for different
+// events never touch the same review row. It must not be called from a path
+// that already holds a review-row lock and then waits for an events lock:
+// admin review actions use review-row-first ordering, so PostgreSQL may detect
+// that cross-order cycle; 40P01/55P03/40001 are mapped to ErrRetryable and the
+// caller's transaction rolls back whole.
+func (r *EventRepository) UpsertReviewRow(ctx context.Context, params events.ReviewQueueUpsertParams) (*events.ReviewQueueUpsertResult, error) {
+	if r.tx == nil {
+		return nil, fmt.Errorf("upsert review row: requires an active transaction")
+	}
+	if params.EventULID == "" {
+		return nil, fmt.Errorf("upsert review row: event ULID is required")
+	}
+
+	warningsMode := params.WarningMode
+	switch warningsMode {
+	case "", events.ReviewWarningMerge:
+		warningsMode = events.ReviewWarningMerge
+	case events.ReviewWarningReplace, events.ReviewWarningReplaceCode:
+	default:
+		return nil, fmt.Errorf("upsert review row: unknown warning mode %q", params.WarningMode)
+	}
+
+	promotion := params.Promotion
+	switch promotion {
+	case "", events.ReviewPromotionNone:
+		promotion = events.ReviewPromotionNone
+	case events.ReviewPromotionInserted, events.ReviewPromotionPending:
+	default:
+		return nil, fmt.Errorf("upsert review row: unknown promotion %q", params.Promotion)
+	}
+
+	queryer := r.queryer()
+
+	// Preserve the caller's lock_timeout for the remainder of its transaction:
+	// SET LOCAL lives until COMMIT/ROLLBACK, and consolidation keeps working
+	// after this call.
+	var previousLockTimeout string
+	if err := queryer.QueryRow(ctx, `SHOW lock_timeout`).Scan(&previousLockTimeout); err != nil {
+		return nil, fmt.Errorf("upsert review row: read lock_timeout: %w", err)
+	}
+	if _, err := queryer.Exec(ctx, `SELECT set_config('lock_timeout', $1, true)`, r.effectiveReviewRowLockTimeout()); err != nil {
+		return nil, fmt.Errorf("upsert review row: set lock_timeout: %w", err)
+	}
+	succeeded := false
+	defer func() {
+		if succeeded {
+			_, _ = queryer.Exec(ctx, `SELECT set_config('lock_timeout', $1, true)`, previousLockTimeout)
+		}
+	}()
+
+	var eventID pgtype.UUID
+	var lifecycleState string
+	err := queryer.QueryRow(ctx,
+		`SELECT id, lifecycle_state FROM events WHERE ulid = $1 FOR UPDATE`,
+		params.EventULID,
+	).Scan(&eventID, &lifecycleState)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("upsert review row: lock event %s: %w", params.EventULID, events.ErrNotFound)
+		}
+		return nil, mapReviewRowContention(fmt.Errorf("upsert review row: lock event %s: %w", params.EventULID, err))
+	}
+
+	originalPayload := params.OriginalPayload
+	if len(originalPayload) == 0 {
+		originalPayload = []byte("{}")
+	}
+	normalizedPayload := params.NormalizedPayload
+	if len(normalizedPayload) == 0 {
+		normalizedPayload = []byte("{}")
+	}
+	warningsJSON := params.Warnings
+	if len(warningsJSON) == 0 {
+		warningsJSON = []byte("[]")
+	}
+
+	upsertParams := UpsertReviewQueueEntryParams{
+		EventID:           eventID,
+		OriginalPayload:   originalPayload,
+		NormalizedPayload: normalizedPayload,
+		Warnings:          warningsJSON,
+		EventStartTime:    pgtype.Timestamptz{Time: params.EventStartTime, Valid: true},
+		EventAllDay:       params.EventAllDay,
+		RefreshPayload:    params.RefreshPayload,
+		WarningsMode:      string(warningsMode),
+	}
+	if params.EventEndTime != nil {
+		upsertParams.EventEndTime = pgtype.Timestamptz{Time: *params.EventEndTime, Valid: true}
+	}
+	if params.SourceID != nil {
+		upsertParams.SourceID = pgtype.Text{String: *params.SourceID, Valid: true}
+	}
+	if params.SourceExternalID != nil {
+		upsertParams.SourceExternalID = pgtype.Text{String: *params.SourceExternalID, Valid: true}
+	}
+	if params.DedupHash != nil {
+		upsertParams.DedupHash = pgtype.Text{String: *params.DedupHash, Valid: true}
+	}
+	if params.DuplicateOfEventID != nil {
+		var duplicateUUID pgtype.UUID
+		if err := duplicateUUID.Scan(*params.DuplicateOfEventID); err != nil {
+			return nil, fmt.Errorf("upsert review row: invalid duplicate_of_event_id: %w", err)
+		}
+		upsertParams.DuplicateOfEventID = duplicateUUID
+	}
+
+	queries := Queries{db: queryer}
+	row, err := queries.UpsertReviewQueueEntry(ctx, upsertParams)
+	if err != nil {
+		return nil, mapReviewRowContention(fmt.Errorf("upsert review row for event %s: %w", params.EventULID, err))
+	}
+
+	entryRow, err := queries.GetReviewQueueEntry(ctx, row.ID)
+	if err != nil {
+		return nil, fmt.Errorf("upsert review row: re-read review row %d: %w", row.ID, err)
+	}
+	entry := convertGetReviewQueueEntryRow(entryRow)
+
+	promoted := false
+	if row.Status == "pending" {
+		switch promotion {
+		case events.ReviewPromotionInserted:
+			if row.Inserted && lifecycleState == "published" {
+				result, err := queryer.Exec(ctx, `
+UPDATE events
+   SET lifecycle_state = 'pending_review',
+       updated_at = NOW()
+ WHERE id = $1
+   AND lifecycle_state = 'published'`, eventID)
+				if err != nil {
+					return nil, mapReviewRowContention(fmt.Errorf("upsert review row: promote event %s: %w", params.EventULID, err))
+				}
+				promoted = result.RowsAffected() > 0
+			}
+		case events.ReviewPromotionPending:
+			result, err := queryer.Exec(ctx, `
+UPDATE events
+   SET lifecycle_state = 'pending_review',
+       updated_at = NOW()
+ WHERE id = $1
+   AND lifecycle_state <> 'deleted'`, eventID)
+			if err != nil {
+				return nil, mapReviewRowContention(fmt.Errorf("upsert review row: promote event %s: %w", params.EventULID, err))
+			}
+			promoted = result.RowsAffected() > 0
+		}
+	}
+
+	succeeded = true
+	return &events.ReviewQueueUpsertResult{
+		Entry:    entry,
+		Inserted: row.Inserted,
+		Promoted: promoted,
+	}, nil
+}
+
+func (r *EventRepository) effectiveReviewRowLockTimeout() string {
+	if r.reviewRowLockTimeout != "" {
+		return r.reviewRowLockTimeout
+	}
+	return reviewRowLockTimeout
+}
+
+// mapReviewRowContention translates transient lock contention into
+// events.ErrRetryable and the other unique indexes on event_review_queue into
+// events.ErrConflict, so callers can retry or surface a 409 instead of a 500.
+func mapReviewRowContention(err error) error {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return err
+	}
+	switch pgErr.Code {
+	case "55P03", "40P01", "40001": // lock_not_available, deadlock_detected, serialization_failure
+		return fmt.Errorf("%w: %w", events.ErrRetryable, err)
+	case "23505": // unique_violation on another event_review_queue index
+		return fmt.Errorf("%w: %w", events.ErrConflict, err)
+	}
+	return err
 }
 
 // GetReviewQueueEntry retrieves a single review queue entry by ID

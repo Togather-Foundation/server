@@ -258,6 +258,14 @@ func (m *MockRepository) UpdateReviewQueueEntry(ctx context.Context, id int, par
 	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
 }
 
+func (m *MockRepository) UpsertReviewRow(ctx context.Context, params events.ReviewQueueUpsertParams) (*events.ReviewQueueUpsertResult, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.ReviewQueueUpsertResult), args.Error(1)
+}
+
 func (m *MockRepository) GetReviewQueueEntry(ctx context.Context, id int) (*events.ReviewQueueEntry, error) {
 	args := m.Called(ctx, id)
 	if args.Get(0) == nil {

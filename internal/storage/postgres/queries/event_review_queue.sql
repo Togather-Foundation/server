@@ -69,6 +69,94 @@ INSERT INTO event_review_queue (
 )
 RETURNING *;
 
+-- name: UpsertReviewQueueEntry :one
+-- Atomic create-or-merge of an event's review row. The caller MUST hold the
+-- events row lock (SELECT ... FOR UPDATE by ULID) and be inside a transaction;
+-- see EventRepository.UpsertReviewRow. event_review_queue.event_id is UNIQUE,
+-- so ON CONFLICT is the conflict point and concurrent writers cannot lose a
+-- warning update.
+--
+-- warnings_mode:
+--   replace      - overwrite the array (consolidation's canonical refresh)
+--   replace_code - drop existing warnings whose code appears in the incoming
+--                  set, then append the incoming array (cross-week companion
+--                  re-sync; mirrors upsertCrossWeekSeriesWarning)
+--   merge        - append incoming warnings whose (field, code, message) is
+--                  not already present (mirrors appendWarnings)
+--
+-- refresh_payload rewrites the review snapshot (payloads + all-day marker) on
+-- conflict. Times, provenance (source_id/source_external_id/dedup_hash),
+-- status, review metadata and created_at are never touched on conflict.
+INSERT INTO event_review_queue (
+  event_id,
+  original_payload,
+  normalized_payload,
+  warnings,
+  source_id,
+  source_external_id,
+  dedup_hash,
+  event_start_time,
+  event_end_time,
+  event_all_day,
+  duplicate_of_event_id
+) VALUES (
+  sqlc.arg('event_id'),
+  sqlc.arg('original_payload'),
+  sqlc.arg('normalized_payload'),
+  sqlc.arg('warnings'),
+  sqlc.narg('source_id'),
+  sqlc.narg('source_external_id'),
+  sqlc.narg('dedup_hash'),
+  sqlc.arg('event_start_time'),
+  sqlc.narg('event_end_time'),
+  sqlc.arg('event_all_day'),
+  sqlc.narg('duplicate_of_event_id')
+)
+ON CONFLICT (event_id) DO UPDATE
+SET
+  original_payload = CASE WHEN sqlc.arg('refresh_payload')::boolean
+    THEN EXCLUDED.original_payload ELSE event_review_queue.original_payload END,
+  normalized_payload = CASE WHEN sqlc.arg('refresh_payload')::boolean
+    THEN EXCLUDED.normalized_payload ELSE event_review_queue.normalized_payload END,
+  event_all_day = CASE WHEN sqlc.arg('refresh_payload')::boolean
+    THEN EXCLUDED.event_all_day ELSE event_review_queue.event_all_day END,
+  warnings = CASE sqlc.arg('warnings_mode')::text
+    WHEN 'replace' THEN EXCLUDED.warnings
+    WHEN 'replace_code' THEN (
+      COALESCE((
+        SELECT jsonb_agg(existing.w ORDER BY existing.ord)
+        FROM jsonb_array_elements(COALESCE(event_review_queue.warnings, '[]'::jsonb))
+             WITH ORDINALITY AS existing(w, ord)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(EXCLUDED.warnings, '[]'::jsonb)) AS incoming
+          WHERE COALESCE(incoming->>'code', '') = COALESCE(existing.w->>'code', '')
+        )
+      ), '[]'::jsonb)
+      ||
+      COALESCE(EXCLUDED.warnings, '[]'::jsonb)
+    )
+    ELSE (
+      COALESCE(event_review_queue.warnings, '[]'::jsonb)
+      ||
+      COALESCE((
+        SELECT jsonb_agg(incoming.w ORDER BY incoming.ord)
+        FROM jsonb_array_elements(COALESCE(EXCLUDED.warnings, '[]'::jsonb))
+             WITH ORDINALITY AS incoming(w, ord)
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(COALESCE(event_review_queue.warnings, '[]'::jsonb)) AS existing
+          WHERE COALESCE(existing->>'field', '') = COALESCE(incoming.w->>'field', '')
+            AND COALESCE(existing->>'code', '') = COALESCE(incoming.w->>'code', '')
+            AND COALESCE(existing->>'message', '') = COALESCE(incoming.w->>'message', '')
+        )
+      ), '[]'::jsonb)
+    )
+  END,
+  duplicate_of_event_id = COALESCE(EXCLUDED.duplicate_of_event_id, event_review_queue.duplicate_of_event_id),
+  updated_at = NOW()
+RETURNING id, status, (xmax = 0) AS inserted;
+
 -- name: UpdateReviewQueueEntry :one
 -- Update existing review entry (for resubmissions with same issues).
 -- Pass clear_duplicate_of=TRUE to set duplicate_of_event_id to NULL;

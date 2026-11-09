@@ -243,6 +243,7 @@ type mockTransactionalRepo struct {
 	dismissPendingReviewsByEventULIDsFunc           func(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error)
 	createReviewQueueEntryFunc                      func(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
 	updateReviewQueueEntryFunc                      func(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
+	upsertReviewRowFunc                             func(ctx context.Context, params ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error)
 	dismissAllCompanionWarningsFunc                 func(ctx context.Context, reviewID int, eventULID string) (bool, error)
 	stripRetiredDupWarningsFunc                     func(ctx context.Context, reviewID int, retireULIDs []string) (bool, error)
 	findCrossWeekCompanionTargetsFunc               func(ctx context.Context, retireULIDs []string) ([]CrossWeekCompanionTarget, error)
@@ -412,6 +413,102 @@ func (m *mockTransactionalRepo) UpdateReviewQueueEntry(ctx context.Context, id i
 		return m.updateReviewQueueEntryFunc(ctx, id, params)
 	}
 	return nil, errors.New("not implemented")
+}
+
+// UpsertReviewRow mirrors the repository's create-or-merge using the function
+// fields these tests already observe, so consolidation tests keep asserting
+// the same calls.
+func (m *mockTransactionalRepo) UpsertReviewRow(ctx context.Context, params ReviewQueueUpsertParams) (*ReviewQueueUpsertResult, error) {
+	if m.upsertReviewRowFunc != nil {
+		return m.upsertReviewRowFunc(ctx, params)
+	}
+
+	existing, err := m.GetReviewByEventUlid(ctx, params.EventULID)
+	if err != nil {
+		return nil, err
+	}
+
+	if existing == nil {
+		eventID := params.EventULID
+		event, eventErr := m.GetByULID(ctx, params.EventULID)
+		if eventErr == nil && event != nil && event.ID != "" {
+			eventID = event.ID
+		}
+		entry, err := m.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
+			EventID:            eventID,
+			OriginalPayload:    params.OriginalPayload,
+			NormalizedPayload:  params.NormalizedPayload,
+			Warnings:           params.Warnings,
+			SourceID:           params.SourceID,
+			SourceExternalID:   params.SourceExternalID,
+			DedupHash:          params.DedupHash,
+			EventStartTime:     params.EventStartTime,
+			EventEndTime:       params.EventEndTime,
+			EventAllDay:        params.EventAllDay,
+			DuplicateOfEventID: params.DuplicateOfEventID,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if entry == nil {
+			entry = &ReviewQueueEntry{Status: "pending"}
+		}
+		if entry.EventULID == "" {
+			entry.EventULID = params.EventULID
+		}
+		promoted := false
+		if params.Promotion == ReviewPromotionInserted || params.Promotion == ReviewPromotionPending {
+			event, getErr := m.GetByULID(ctx, params.EventULID)
+			if getErr == nil && event != nil && event.LifecycleState == "published" {
+				pending := "pending_review"
+				if _, err := m.UpdateEvent(ctx, params.EventULID, UpdateEventParams{LifecycleState: &pending}); err != nil {
+					return nil, err
+				}
+				promoted = true
+			}
+		}
+		return &ReviewQueueUpsertResult{Entry: entry, Inserted: true, Promoted: promoted}, nil
+	}
+
+	merged, mergeErr := mergeReviewWarnings(existing.Warnings, params.Warnings, params.WarningMode)
+	if mergeErr != nil {
+		return nil, mergeErr
+	}
+	update := ReviewQueueUpdateParams{Warnings: &merged}
+	if params.RefreshPayload {
+		update.OriginalPayload = &params.OriginalPayload
+		update.NormalizedPayload = &params.NormalizedPayload
+		update.EventAllDay = &params.EventAllDay
+	}
+	if params.DuplicateOfEventID != nil {
+		update.DuplicateOfEventID = params.DuplicateOfEventID
+	}
+	entry, err := m.UpdateReviewQueueEntry(ctx, existing.ID, update)
+	if err != nil {
+		return nil, err
+	}
+	if entry == nil {
+		entry = existing
+	}
+	if entry.Status == "" {
+		entry.Status = existing.Status
+	}
+	if entry.Warnings == nil {
+		entry.Warnings = merged
+	}
+
+	promoted := false
+	if existing.Status == "pending" && params.Promotion == ReviewPromotionPending {
+		event, getErr := m.GetByULID(ctx, params.EventULID)
+		if getErr == nil && event != nil && event.LifecycleState != "deleted" {
+			pending := "pending_review"
+			if _, err := m.UpdateEvent(ctx, params.EventULID, UpdateEventParams{LifecycleState: &pending}); err != nil {
+				return nil, err
+			}
+			promoted = true
+		}
+	}
+	return &ReviewQueueUpsertResult{Entry: entry, Inserted: false, Promoted: promoted}, nil
 }
 func (m *mockTransactionalRepo) GetReviewQueueEntry(ctx context.Context, id int) (*ReviewQueueEntry, error) {
 	if m.getReviewQueueEntryFunc != nil {

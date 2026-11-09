@@ -2150,64 +2150,32 @@ func (s *AdminService) consolidateResolvePending(
 		eventStartTime = canonical.Occurrences[0].StartTime
 	}
 
-	// event_review_queue.event_id is UNIQUE, so a canonical may already carry a
-	// decided review row (approved/rejected/dismissed/superseded) from an earlier
-	// cycle. Look it up regardless of status before flipping the lifecycle or
-	// inserting, otherwise the INSERT raises 23505 and rolls back the whole
-	// consolidation.
-	existingReview, err := txRepo.GetReviewByEventUlid(ctx, canonical.ULID)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return fmt.Errorf("check existing review for canonical event: %w", err)
-	}
-
+	// event_review_queue.event_id is UNIQUE and a canonical may already carry a
+	// review row (pending or decided) from an earlier cycle. The atomic upsert
+	// under the events row lock keeps the status of a decided row, refreshes the
+	// snapshot, and flips the canonical to pending_review only when the row is
+	// still pending — never hiding a live event behind a decided review and
+	// never leaving a flip behind when the write fails.
+	//
 	// EventAllDay is refreshed alongside the payload so the review snapshot's
-	// all-day marker does not go stale (mirrors the create path below and the
-	// resubmission path in create_event_core.go).
-	allDay := eventAllDayFromEvent(canonical)
-	updateParams := ReviewQueueUpdateParams{
-		OriginalPayload:   &payloadJSON,
-		NormalizedPayload: &payloadJSON,
-		Warnings:          &warningsJSON,
-		EventAllDay:       &allDay,
+	// all-day marker does not go stale (mirrors the resubmission path in
+	// create_event_core.go).
+	result, err := txRepo.UpsertReviewRow(ctx, ReviewQueueUpsertParams{
+		EventULID:         canonical.ULID,
+		OriginalPayload:   payloadJSON,
+		NormalizedPayload: payloadJSON,
+		Warnings:          warningsJSON,
+		EventStartTime:    eventStartTime,
+		EventAllDay:       eventAllDayFromEvent(canonical),
+		WarningMode:       ReviewWarningReplace,
+		RefreshPayload:    true,
+		Promotion:         ReviewPromotionPending,
+	})
+	if err != nil {
+		return fmt.Errorf("upsert review queue entry for canonical event: %w", err)
 	}
-
-	if existingReview != nil && existingReview.Status != "pending" {
-		// Never resurrect a decided review, and never hide a live event by
-		// flipping it to pending_review: merge the fresh snapshot into the
-		// existing row in place and leave the event's lifecycle untouched.
-		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, updateParams); err != nil {
-			return fmt.Errorf("update review queue entry for canonical event: %w", err)
-		}
-		return nil
-	}
-
-	// A pending row (or none at all) means the canonical is going to review:
-	// flip the lifecycle first, as before.
-	pendingReview := "pending_review"
-	if _, err := txRepo.UpdateEvent(ctx, canonical.ULID, UpdateEventParams{
-		LifecycleState: &pendingReview,
-	}); err != nil {
-		return fmt.Errorf("set canonical event to pending_review: %w", err)
-	}
-	canonical.LifecycleState = "pending_review"
-
-	if existingReview != nil {
-		// Update existing pending review entry with new warnings.
-		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, updateParams); err != nil {
-			return fmt.Errorf("update review queue entry for canonical event: %w", err)
-		}
-	} else {
-		// Create new review entry
-		if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-			EventID:           canonical.ID,
-			OriginalPayload:   payloadJSON,
-			NormalizedPayload: payloadJSON,
-			Warnings:          warningsJSON,
-			EventStartTime:    eventStartTime,
-			EventAllDay:       eventAllDayFromEvent(canonical),
-		}); err != nil {
-			return fmt.Errorf("create review queue entry for canonical event: %w", err)
-		}
+	if result.Promoted {
+		canonical.LifecycleState = "pending_review"
 	}
 	return nil
 }
@@ -2256,41 +2224,15 @@ func (s *AdminService) consolidateSyncSeriesCompanion(
 		return nil, fmt.Errorf("marshal companion cross-week warning for canonical %s: %w", canonical.ULID, err)
 	}
 
-	// event_review_queue.event_id is UNIQUE, so look up the companion's review row
-	// regardless of status. Inserting a second row for an already-reviewed companion
-	// raises 23505 (event_review_queue_event_id_key) and rolls back the whole
-	// consolidation. Merging the warning is safe for any status: the update below
-	// only rewrites warnings, so a pending row stays pending and an approved/
-	// rejected/dismissed/superseded row keeps its status; the companion's lifecycle
-	// is left untouched on this path.
-	existingReview, err := txRepo.GetReviewByEventUlid(ctx, companion.ULID)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return nil, fmt.Errorf("look up companion review for event %s: %w", companion.ULID, err)
-	}
-	if existingReview != nil {
-		updatedWarnings, err := upsertCrossWeekSeriesWarning(existingReview.Warnings, warningJSON)
-		if err != nil {
-			return nil, fmt.Errorf("merge cross-week warning into companion review %d: %w", existingReview.ID, err)
-		}
-		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
-			Warnings: &updatedWarnings,
-		}); err != nil {
-			return nil, fmt.Errorf("update companion review %d with cross-week warning: %w", existingReview.ID, err)
-		}
-		return companion, nil
-	}
-
+	// The companion may already have a review row (pending or decided). The
+	// atomic upsert replaces any stale cross-week warning with this one, leaves
+	// a decided row's status and the companion's lifecycle untouched, and only
+	// flips a published companion to pending_review when it inserts a new row.
+	// The events row lock inside UpsertReviewRow is the serialisation point, so
+	// a concurrent writer cannot abort the whole consolidation with 23505.
 	companionEvent, err := txRepo.GetByULID(ctx, companion.ULID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch companion event %s: %w", companion.ULID, err)
-	}
-	if companionEvent.LifecycleState == "published" {
-		pendingReview := "pending_review"
-		if _, err := txRepo.UpdateEvent(ctx, companion.ULID, UpdateEventParams{
-			LifecycleState: &pendingReview,
-		}); err != nil {
-			return nil, fmt.Errorf("set companion event %s to pending_review: %w", companion.ULID, err)
-		}
 	}
 
 	companionStart, companionEnd := parseEventTimesFromEvent(companionEvent)
@@ -2298,16 +2240,18 @@ func (s *AdminService) consolidateSyncSeriesCompanion(
 	if err != nil {
 		return nil, fmt.Errorf("reconstruct payload for companion event %s: %w", companion.ULID, err)
 	}
-	if _, err := txRepo.CreateReviewQueueEntry(ctx, ReviewQueueCreateParams{
-		EventID:           companionEvent.ID,
+	if _, err := txRepo.UpsertReviewRow(ctx, ReviewQueueUpsertParams{
+		EventULID:         companionEvent.ULID,
 		OriginalPayload:   reconstructedPayload,
 		NormalizedPayload: reconstructedPayload,
 		EventStartTime:    companionStart,
 		EventEndTime:      companionEnd,
 		EventAllDay:       eventAllDayFromEvent(companionEvent),
 		Warnings:          warningJSON,
+		WarningMode:       ReviewWarningReplaceCode,
+		Promotion:         ReviewPromotionInserted,
 	}); err != nil {
-		return nil, fmt.Errorf("create companion review entry for event %s: %w", companion.ULID, err)
+		return nil, fmt.Errorf("upsert companion review entry for event %s: %w", companion.ULID, err)
 	}
 
 	return companion, nil
@@ -2371,30 +2315,6 @@ func crossWeekSeriesWarningForEvent(event *Event, venueName string) (ValidationW
 			"venue_name":     venueName,
 		},
 	}, nil
-}
-
-func upsertCrossWeekSeriesWarning(existing []byte, replacement []byte) ([]byte, error) {
-	var existingList []ValidationWarning
-	if len(existing) > 0 {
-		if err := json.Unmarshal(existing, &existingList); err != nil {
-			return nil, fmt.Errorf("unmarshal existing warnings: %w", err)
-		}
-	}
-	var replacementList []ValidationWarning
-	if len(replacement) > 0 {
-		if err := json.Unmarshal(replacement, &replacementList); err != nil {
-			return nil, fmt.Errorf("unmarshal replacement warnings: %w", err)
-		}
-	}
-	filtered := make([]ValidationWarning, 0, len(existingList)+len(replacementList))
-	for _, w := range existingList {
-		if w.Code == "cross_week_series_companion" {
-			continue
-		}
-		filtered = append(filtered, w)
-	}
-	filtered = append(filtered, replacementList...)
-	return json.Marshal(filtered)
 }
 
 // consolidateRefreshReviewPayload refreshes the normalized_payload and original_payload
