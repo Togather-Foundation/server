@@ -239,6 +239,38 @@ SELECT r.id,
    AND r.status = 'pending'
  LIMIT 1;
 
+-- name: GetReviewByEventUlid :one
+-- Get the review queue entry for an event by its ULID, regardless of status.
+-- event_review_queue.event_id is UNIQUE, so at most one row can match. Used to
+-- avoid inserting a duplicate row (23505 on event_review_queue_event_id_key) when
+-- the event already has an approved/rejected/dismissed/superseded review.
+SELECT r.id,
+       r.event_id,
+       e.ulid AS event_ulid,
+       r.original_payload,
+       r.normalized_payload,
+       r.warnings,
+       r.source_id,
+       r.source_external_id,
+       r.dedup_hash,
+       r.event_start_time,
+       r.event_end_time,
+       r.event_all_day,
+       r.status,
+       r.reviewed_by,
+       r.reviewed_at,
+       r.review_notes,
+       r.rejection_reason,
+       r.created_at,
+       r.updated_at,
+       r.duplicate_of_event_id,
+       dup.ulid AS duplicate_of_event_ulid
+  FROM event_review_queue r
+  JOIN events e ON e.id = r.event_id
+  LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
+ WHERE e.ulid = sqlc.arg('event_ulid')
+ LIMIT 1;
+
 -- name: GetPendingReviewByEventUlidAndDuplicateUlid :one
 -- Get the pending review queue entry for an event by its ULID, narrowed to the
 -- specific companion whose duplicate_of_event_id points to the counterpart event.

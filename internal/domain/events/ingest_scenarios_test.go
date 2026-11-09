@@ -1266,6 +1266,168 @@ func TestScenario_S6_NearDuplicate(t *testing.T) {
 			t.Errorf("S6.12: Expected exactly 1 occurrence of SOME-ULID warning, got %d (dedup by (field,code,message) must not drop distinct warnings)", someULIDCount)
 		}
 	})
+
+	t.Run("S6.13_near_duplicate_merges_into_approved_entry_without_lifecycle_flip", func(t *testing.T) {
+		// Regression: event_review_queue.event_id is UNIQUE. A candidate with an
+		// approved review row used to miss the pending-only lookup, get flipped to
+		// pending_review, then fail the INSERT (logged, non-fatal) — leaving a
+		// published event hidden with no queue entry. The warning must merge into
+		// the approved row and the lifecycle must stay published.
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+		existingEventID := "existing-event-uuid-approved-test"
+
+		existingEvent := &Event{
+			ID:             existingEventID,
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "published",
+		}
+		repo.AddEvent(existingEvent)
+
+		approvedEntry := &ReviewQueueEntry{
+			ID:        101,
+			EventID:   existingEventID,
+			EventULID: candidateULID,
+			Warnings:  []byte(`[{"field":"name","code":"potential_duplicate","message":"old dup"}]`),
+			Status:    "approved",
+		}
+		repo.AddReviewEntry(approvedEntry)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.6},
+		})
+
+		service := newTestService(repo)
+		result, err := service.Ingest(context.Background(), completeEventInput("Rex Jazz Night"))
+		if err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		entries := repo.GetReviewQueueByEventID(existingEventID)
+		if len(entries) != 1 {
+			t.Fatalf("S6.13: candidate has %d review entries, want 1 (must merge, not insert)", len(entries))
+		}
+		if entries[0].Status != "approved" {
+			t.Errorf("S6.13: review status = %q, want approved (merge must not change status)", entries[0].Status)
+		}
+		if existingEvent.LifecycleState != "published" {
+			t.Errorf("S6.13: candidate lifecycle = %q, want published (must not flip when row exists)", existingEvent.LifecycleState)
+		}
+		for _, call := range repo.GetUpdateEventCalls() {
+			if call.ULID == candidateULID {
+				t.Error("S6.13: UpdateEvent must not be called for a candidate with an approved review row")
+			}
+		}
+
+		var warnings []ValidationWarning
+		if err := json.Unmarshal(entries[0].Warnings, &warnings); err != nil {
+			t.Fatalf("S6.13: Failed to unmarshal merged warnings: %v", err)
+		}
+		hasNearDup, hasOld := false, false
+		for _, w := range warnings {
+			switch w.Code {
+			case "near_duplicate_of_new_event":
+				hasNearDup = true
+			case "potential_duplicate":
+				hasOld = true
+			}
+		}
+		if !hasNearDup {
+			t.Error("S6.13: Expected near_duplicate_of_new_event to be merged into the approved row")
+		}
+		if !hasOld {
+			t.Error("S6.13: Expected existing warnings on the approved row to be preserved")
+		}
+		if entries[0].DuplicateOfEventID == nil || *entries[0].DuplicateOfEventID != result.Event.ID {
+			t.Errorf("S6.13: DuplicateOfEventID = %v, want %q", entries[0].DuplicateOfEventID, result.Event.ID)
+		}
+	})
+
+	t.Run("S6.14_near_duplicate_no_row_flips_lifecycle_and_creates", func(t *testing.T) {
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+		existingEventID := "existing-event-uuid-norow-test"
+
+		existingEvent := &Event{
+			ID:             existingEventID,
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "published",
+		}
+		repo.AddEvent(existingEvent)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.6},
+		})
+
+		service := newTestService(repo)
+		if _, err := service.Ingest(context.Background(), completeEventInput("Rex Jazz Night")); err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		entries := repo.GetReviewQueueByEventID(existingEventID)
+		if len(entries) != 1 {
+			t.Fatalf("S6.14: candidate has %d review entries, want 1 (create path)", len(entries))
+		}
+		if existingEvent.LifecycleState != "pending_review" {
+			t.Errorf("S6.14: candidate lifecycle = %q, want pending_review on the create path", existingEvent.LifecycleState)
+		}
+		var flipped bool
+		for _, call := range repo.GetUpdateEventCalls() {
+			if call.ULID == candidateULID && call.Params.LifecycleState != nil && *call.Params.LifecycleState == "pending_review" {
+				flipped = true
+			}
+		}
+		if !flipped {
+			t.Error("S6.14: expected UpdateEvent to flip the candidate to pending_review before creating the review row")
+		}
+	})
+
+	t.Run("S6.15_near_duplicate_merges_into_pending_entry_and_stays_pending", func(t *testing.T) {
+		repo := NewMockRepository()
+		candidateULID, _ := ids.NewULID()
+		existingEventID := "existing-event-uuid-pending-test"
+
+		existingEvent := &Event{
+			ID:             existingEventID,
+			ULID:           candidateULID,
+			Name:           "Jazz at the Rex",
+			LifecycleState: "pending_review",
+		}
+		repo.AddEvent(existingEvent)
+
+		pendingEntry := &ReviewQueueEntry{
+			ID:        102,
+			EventID:   existingEventID,
+			EventULID: candidateULID,
+			Warnings:  []byte(`[{"field":"multi_session","code":"multi_session_likely","message":"recurs"}]`),
+			Status:    "pending",
+		}
+		repo.AddReviewEntry(pendingEntry)
+
+		repo.SetNearDuplicates([]NearDuplicateCandidate{
+			{ULID: candidateULID, Name: "Jazz at the Rex", Similarity: 0.6},
+		})
+
+		service := newTestService(repo)
+		if _, err := service.Ingest(context.Background(), completeEventInput("Rex Jazz Night")); err != nil {
+			t.Fatalf("Ingest() unexpected error = %v", err)
+		}
+
+		entries := repo.GetReviewQueueByEventID(existingEventID)
+		if len(entries) != 1 {
+			t.Fatalf("S6.15: candidate has %d review entries, want 1 (merge path)", len(entries))
+		}
+		if entries[0].Status != "pending" {
+			t.Errorf("S6.15: review status = %q, want pending (merge must not change status)", entries[0].Status)
+		}
+		for _, call := range repo.GetUpdateEventCalls() {
+			if call.ULID == candidateULID {
+				t.Error("S6.15: UpdateEvent must not be called when merging into a pending review row")
+			}
+		}
+	})
 }
 
 func TestScenario_S6_NearDuplicateDetails(t *testing.T) {

@@ -237,6 +237,7 @@ type mockTransactionalRepo struct {
 	getOccurrenceByIDFunc                           func(ctx context.Context, eventID string, occurrenceID string) (*Occurrence, error)
 	updateOccurrenceFunc                            func(ctx context.Context, eventID string, occurrenceID string, params OccurrenceUpdateParams) (*Occurrence, error)
 	getPendingReviewByEventUlidFunc                 func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
+	getReviewByEventUlidFunc                        func(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
 	getPendingReviewByEventUlidAndDuplicateUlidFunc func(ctx context.Context, eventULID string, duplicateULID string) (*ReviewQueueEntry, error)
 	deleteOccurrencesByEventULIDFunc                func(ctx context.Context, eventULID string) error
 	dismissPendingReviewsByEventULIDsFunc           func(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error)
@@ -500,6 +501,12 @@ func (m *mockTransactionalRepo) IsNotDuplicate(ctx context.Context, eventIDa str
 func (m *mockTransactionalRepo) GetPendingReviewByEventUlid(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
 	if m.getPendingReviewByEventUlidFunc != nil {
 		return m.getPendingReviewByEventUlidFunc(context.Background(), ulid)
+	}
+	return nil, nil
+}
+func (m *mockTransactionalRepo) GetReviewByEventUlid(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+	if m.getReviewByEventUlidFunc != nil {
+		return m.getReviewByEventUlidFunc(context.Background(), ulid)
 	}
 	return nil, nil
 }

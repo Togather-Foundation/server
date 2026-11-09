@@ -210,6 +210,11 @@ type Querier interface {
 	GetRecentSubmissionByURLNorm(ctx context.Context, arg GetRecentSubmissionByURLNormParams) (ScraperSubmission, error)
 	// Check cache for a previous reconciliation result
 	GetReconciliationCache(ctx context.Context, arg GetReconciliationCacheParams) (ReconciliationCache, error)
+	// Get the review queue entry for an event by its ULID, regardless of status.
+	// event_review_queue.event_id is UNIQUE, so at most one row can match. Used to
+	// avoid inserting a duplicate row (23505 on event_review_queue_event_id_key) when
+	// the event already has an approved/rejected/dismissed/superseded review.
+	GetReviewByEventUlid(ctx context.Context, eventUlid string) (GetReviewByEventUlidRow, error)
 	// Get single review by ID
 	GetReviewQueueEntry(ctx context.Context, id int32) (GetReviewQueueEntryRow, error)
 	GetScraperConfig(ctx context.Context) (ScraperConfig, error)

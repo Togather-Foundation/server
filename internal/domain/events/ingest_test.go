@@ -897,7 +897,21 @@ func (m *MockRepository) GetPendingReviewByEventUlid(_ context.Context, eventULI
 	defer m.mu.Unlock()
 
 	for _, entry := range m.reviewQueue {
-		if entry.EventULID == eventULID && entry.Status == "pending_review" {
+		// "pending" is the real DB status; older fixtures seed "pending_review".
+		if entry.EventULID == eventULID && (entry.Status == "pending" || entry.Status == "pending_review") {
+			return entry, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MockRepository) GetReviewByEventUlid(_ context.Context, eventULID string) (*ReviewQueueEntry, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// event_review_queue.event_id is UNIQUE: at most one row per event, any status.
+	for _, entry := range m.reviewQueue {
+		if entry.EventULID == eventULID {
 			return entry, nil
 		}
 	}
@@ -2861,6 +2875,106 @@ func TestCrossWeekSeriesCompanion(t *testing.T) {
 		}
 		if !found {
 			t.Error("cross_week_series_companion warning not merged into Week 1 review entry")
+		}
+	})
+
+	t.Run("forward_cross_link_merges_into_approved_companion_without_insert", func(t *testing.T) {
+		// Regression: event_review_queue.event_id is UNIQUE. If the companion
+		// already has an approved row, the cross-link must merge the warning into
+		// it rather than attempting an INSERT (23505 in production).
+		repo := NewMockRepository()
+		const placeULID = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+		const placeUUID = "a7b8c9d0-e1f2-3456-0123-567890123456"
+		const week1ULID = "01ARZ3NDEKTSV4RRFFQ69G5FCA"
+		repo.SeedPlaceByULIDWithName(placeULID, placeUUID, "Pottery Studio")
+
+		venueID := placeUUID
+		week1Event := &Event{
+			ID:             "id-week1-approved",
+			ULID:           week1ULID,
+			Name:           "Weekly Pottery",
+			LifecycleState: "published",
+			PrimaryVenueID: &venueID,
+		}
+		approvedReview := &ReviewQueueEntry{
+			ID:        55,
+			EventID:   week1Event.ID,
+			EventULID: week1ULID,
+			Status:    "approved",
+			Warnings:  []byte(`[{"field":"name","code":"potential_duplicate","message":"dup"}]`),
+		}
+		repo.mu.Lock()
+		repo.events[week1ULID] = week1Event
+		repo.reviewQueue[approvedReview.ID] = approvedReview
+		repo.mu.Unlock()
+
+		repo.seriesCompanion = &CrossWeekCompanion{
+			ULID:      week1ULID,
+			Name:      "Weekly Pottery",
+			StartDate: "2026-03-08",
+			StartTime: "19:00:00",
+			VenueName: "Pottery Studio",
+		}
+
+		svc := NewIngestService(repo, "https://test.togather.ca", "America/Toronto",
+			config.ValidationConfig{AllowTestDomains: true}, zerolog.Nop()).
+			WithDedupConfig(config.DedupConfig{NearDuplicateThreshold: 0.4})
+
+		input := EventInput{
+			Name:        "Weekly Pottery",
+			Description: "Test event",
+			License:     "CC0-1.0",
+			StartDate:   "2026-03-15T19:00:00Z",
+			Location: &PlaceInput{
+				ID: "https://test.togather.ca/places/" + placeULID,
+			},
+			Occurrences: []OccurrenceInput{
+				{StartDate: "2026-03-15T19:00:00Z"},
+			},
+		}
+
+		if _, err := svc.Ingest(context.Background(), input); err != nil {
+			t.Fatalf("Ingest() error = %v", err)
+		}
+
+		repo.mu.Lock()
+		var companionRows []*ReviewQueueEntry
+		for _, entry := range repo.reviewQueue {
+			if entry.EventID == week1Event.ID {
+				companionRows = append(companionRows, entry)
+			}
+		}
+		repo.mu.Unlock()
+
+		if len(companionRows) != 1 {
+			t.Fatalf("companion has %d review rows, want 1 (cross-link must merge, not insert)", len(companionRows))
+		}
+		row := companionRows[0]
+		if row.Status != "approved" {
+			t.Errorf("companion review status = %q, want approved (merge must not change status)", row.Status)
+		}
+		if week1Event.LifecycleState != "published" {
+			t.Errorf("companion lifecycle = %q, want published (cross-link must not flip an approved event)", week1Event.LifecycleState)
+		}
+
+		var merged []ValidationWarning
+		if err := json.Unmarshal(row.Warnings, &merged); err != nil {
+			t.Fatalf("unmarshal companion warnings: %v", err)
+		}
+		var foundCrossWeek, keptOld bool
+		for _, w := range merged {
+			switch w.Code {
+			case "cross_week_series_companion":
+				foundCrossWeek = true
+			case "potential_duplicate":
+				keptOld = true
+			}
+		}
+		if !foundCrossWeek {
+			t.Error("cross_week_series_companion warning not merged into approved companion review")
+		}
+		if !keptOld {
+			t.Error("merge must preserve existing warnings on the approved companion review")
 		}
 	})
 }

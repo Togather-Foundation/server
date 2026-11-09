@@ -375,6 +375,14 @@ func (m *MockRepository) GetPendingReviewByEventUlid(ctx context.Context, eventU
 	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
 }
 
+func (m *MockRepository) GetReviewByEventUlid(ctx context.Context, eventULID string) (*events.ReviewQueueEntry, error) {
+	args := m.Called(ctx, eventULID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*events.ReviewQueueEntry), args.Error(1)
+}
+
 func (m *MockRepository) GetPendingReviewByEventUlidAndDuplicateUlid(ctx context.Context, eventULID string, duplicateULID string) (*events.ReviewQueueEntry, error) {
 	args := m.Called(ctx, eventULID, duplicateULID)
 	if args.Get(0) == nil {

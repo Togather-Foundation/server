@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/rs/zerolog"
+	"slices"
 	"testing"
 	"time"
 
@@ -1466,6 +1467,12 @@ func TestConsolidate_PostRetirementSeriesCheck_UpsertsCompanionReview(t *testing
 			return nil, nil
 		}
 	}
+	repo.getReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == week1ULID {
+			return week1Review, nil
+		}
+		return nil, nil
+	}
 	var stripReviewID int
 	var stripRetireULIDs []string
 	repo.stripRetiredDupWarningsFunc = func(_ context.Context, reviewID int, retireULIDs []string) (bool, error) {
@@ -1513,6 +1520,305 @@ func TestConsolidate_PostRetirementSeriesCheck_UpsertsCompanionReview(t *testing
 	}
 	if !found {
 		t.Fatal("expected week1 review entry to contain cross_week_series_companion")
+	}
+}
+
+// ── Companion review idempotency (event_review_queue.event_id UNIQUE) ─────────
+
+// consolidateCompanionReviewedULID is the ULID of a companion event that already
+// has a non-pending review row in the tests below.
+const consolidateCompanionReviewedULID = "01KM1B4HXH4WEEK1APPROVED01"
+
+// TestConsolidate_PostRetirementSeriesCheck_MergesIntoApprovedCompanionReview
+// verifies that a companion whose review row is already approved does not get a
+// second row inserted (which would violate the UNIQUE constraint on
+// event_review_queue.event_id and fail the whole consolidation with 23505).
+// The cross-week warning must be merged into the existing row, its status must
+// stay approved, and the companion's lifecycle must not be flipped to
+// pending_review.
+func TestConsolidate_PostRetirementSeriesCheck_MergesIntoApprovedCompanionReview(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 4, 7, 6, 0, 0, 0, time.UTC)
+	companionULID := consolidateCompanionReviewedULID
+	retiredULID := consolidateRetireULID
+	venueID := "venue-uuid-1"
+	venueName := "Pottery Studio"
+
+	canon := &Event{
+		ID:               "uuid-canon",
+		ULID:             consolidateCanonULID,
+		Name:             "RS-11 Pottery Studio",
+		Description:      "Week 2 morning",
+		PublicURL:        "https://example.com/week2",
+		LifecycleState:   "published",
+		PrimaryVenueID:   &venueID,
+		PrimaryVenueName: &venueName,
+		Occurrences:      []Occurrence{{StartTime: now}},
+	}
+	companion := &Event{
+		ID:             "uuid-companion",
+		ULID:           companionULID,
+		Name:           "RS-11 Pottery Studio",
+		Description:    "Week 1 morning",
+		LifecycleState: "published",
+		PrimaryVenueID: &venueID,
+		Occurrences:    []Occurrence{{StartTime: now.Add(-7 * 24 * time.Hour)}},
+	}
+
+	approvedReview := &ReviewQueueEntry{
+		ID:        61,
+		Status:    "approved",
+		EventID:   companion.ID,
+		EventULID: companionULID,
+		Warnings:  []byte(`[{"field":"name","code":"potential_duplicate","message":"old dup"}]`),
+	}
+
+	repo := makeConsolidateRepo(map[string]*Event{
+		consolidateCanonULID: canon,
+		retiredULID:          makePublishedEvent("uuid-retire", retiredULID, "Week 2 afternoon"),
+		companionULID:        companion,
+	})
+	repo.findSeriesCompanionFunc = func(_ context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+		if params.ExcludeULID != consolidateCanonULID {
+			return nil, nil
+		}
+		return &CrossWeekCompanion{
+			ULID:      companionULID,
+			Name:      companion.Name,
+			StartDate: "2026-03-31",
+			StartTime: "06:00:00",
+			VenueName: venueName,
+		}, nil
+	}
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+		return nil, nil
+	}
+	repo.getReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == companionULID {
+			return approvedReview, nil
+		}
+		return nil, nil
+	}
+
+	repo.createReviewQueueEntryFunc = func(_ context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
+		if params.EventID == companion.ID {
+			t.Errorf("CreateReviewQueueEntry must NOT be called for an already-reviewed companion (event_id=%s); got unique-constraint violation in production", params.EventID)
+		}
+		return &ReviewQueueEntry{}, nil
+	}
+	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
+		if ulid == companionULID && params.LifecycleState != nil {
+			t.Errorf("companion lifecycle must not change when merging into an already-reviewed row; got %q", *params.LifecycleState)
+		}
+		return &Event{ULID: ulid}, nil
+	}
+
+	var updatedReviewID int
+	var updatedWarnings []byte
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id == approvedReview.ID {
+			updatedReviewID = id
+			if params.Warnings != nil {
+				updatedWarnings = *params.Warnings
+			}
+		}
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{retiredULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success merging into approved companion review, got: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if updatedReviewID != approvedReview.ID {
+		t.Fatalf("UpdateReviewQueueEntry called with id=%d, want approved row id=%d", updatedReviewID, approvedReview.ID)
+	}
+	if updatedWarnings == nil {
+		t.Fatal("expected cross-week warning to be merged into the approved review row")
+	}
+	var merged []ValidationWarning
+	if err := json.Unmarshal(updatedWarnings, &merged); err != nil {
+		t.Fatalf("unmarshal merged warnings: %v", err)
+	}
+	var foundCrossWeek, keptOld bool
+	for _, w := range merged {
+		switch w.Code {
+		case "cross_week_series_companion":
+			foundCrossWeek = true
+			if got := w.Details["companion_ulid"]; got != consolidateCanonULID {
+				t.Errorf("companion_ulid = %v, want %s", got, consolidateCanonULID)
+			}
+		case "potential_duplicate":
+			keptOld = true
+		}
+	}
+	if !foundCrossWeek {
+		t.Error("merged warnings missing cross_week_series_companion")
+	}
+	if !keptOld {
+		t.Error("merge must preserve the existing non-cross-week warnings on the approved row")
+	}
+}
+
+// TestConsolidate_PostRetirementSeriesCheck_MergesIntoPendingCompanionReview
+// verifies the pending-row path still merges the cross-week warning rather than
+// inserting a second row.
+func TestConsolidate_PostRetirementSeriesCheck_MergesIntoPendingCompanionReview(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 4, 7, 6, 0, 0, 0, time.UTC)
+	companionULID := consolidateCompanionULID
+	retiredULID := consolidateRetireULID
+	venueID := "venue-uuid-1"
+	venueName := "Pottery Studio"
+
+	canon := &Event{
+		ID:               "uuid-canon",
+		ULID:             consolidateCanonULID,
+		Name:             "RS-11 Pottery Studio",
+		Description:      "Week 2 morning",
+		LifecycleState:   "published",
+		PrimaryVenueID:   &venueID,
+		PrimaryVenueName: &venueName,
+		Occurrences:      []Occurrence{{StartTime: now}},
+	}
+	pendingReview := &ReviewQueueEntry{
+		ID:        62,
+		Status:    "pending",
+		EventULID: companionULID,
+		Warnings:  []byte(`[]`),
+	}
+
+	repo := makeConsolidateRepo(map[string]*Event{
+		consolidateCanonULID: canon,
+		retiredULID:          makePublishedEvent("uuid-retire", retiredULID, "Week 2 afternoon"),
+		companionULID:        makePublishedEvent("uuid-companion", companionULID, "RS-11 Pottery Studio"),
+	})
+	repo.findSeriesCompanionFunc = func(_ context.Context, _ SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+		return &CrossWeekCompanion{
+			ULID:      companionULID,
+			Name:      "RS-11 Pottery Studio",
+			StartDate: "2026-03-31",
+			StartTime: "06:00:00",
+			VenueName: venueName,
+		}, nil
+	}
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		// Real behaviour: a pending row is returned by both lookups.
+		if ulid == companionULID {
+			return pendingReview, nil
+		}
+		return nil, nil
+	}
+	repo.getReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == companionULID {
+			return pendingReview, nil
+		}
+		return nil, nil
+	}
+	repo.createReviewQueueEntryFunc = func(_ context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
+		if params.EventID == "uuid-companion" {
+			t.Errorf("CreateReviewQueueEntry must NOT be called when a pending companion review exists (event_id=%s)", params.EventID)
+		}
+		return &ReviewQueueEntry{}, nil
+	}
+
+	var updatedReviewID int
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id == pendingReview.ID {
+			updatedReviewID = id
+			if params.Warnings == nil {
+				t.Error("expected warnings to be updated on the pending companion review")
+			}
+		}
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+	if _, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{retiredULID},
+	}); err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if updatedReviewID != pendingReview.ID {
+		t.Errorf("UpdateReviewQueueEntry called with id=%d, want pending row id=%d", updatedReviewID, pendingReview.ID)
+	}
+}
+
+// TestConsolidate_PostRetirementSeriesCheck_CreatesCompanionReviewWhenNone
+// verifies the no-row path still creates a review entry and flips a published
+// companion to pending_review.
+func TestConsolidate_PostRetirementSeriesCheck_CreatesCompanionReviewWhenNone(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 4, 7, 6, 0, 0, 0, time.UTC)
+	companionULID := consolidateCompanionULID
+	retiredULID := consolidateRetireULID
+	venueID := "venue-uuid-1"
+	venueName := "Pottery Studio"
+
+	canon := &Event{
+		ID:               "uuid-canon",
+		ULID:             consolidateCanonULID,
+		Name:             "RS-11 Pottery Studio",
+		Description:      "Week 2 morning",
+		LifecycleState:   "published",
+		PrimaryVenueID:   &venueID,
+		PrimaryVenueName: &venueName,
+		Occurrences:      []Occurrence{{StartTime: now}},
+	}
+
+	repo := makeConsolidateRepo(map[string]*Event{
+		consolidateCanonULID: canon,
+		retiredULID:          makePublishedEvent("uuid-retire", retiredULID, "Week 2 afternoon"),
+		companionULID:        makePublishedEvent("uuid-companion", companionULID, "RS-11 Pottery Studio"),
+	})
+	repo.findSeriesCompanionFunc = func(_ context.Context, _ SeriesCompanionQuery) (*CrossWeekCompanion, error) {
+		return &CrossWeekCompanion{
+			ULID:      companionULID,
+			Name:      "RS-11 Pottery Studio",
+			StartDate: "2026-03-31",
+			StartTime: "06:00:00",
+			VenueName: venueName,
+		}, nil
+	}
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+		return nil, nil
+	}
+	repo.getReviewByEventUlidFunc = func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+		return nil, nil
+	}
+
+	var createdEventIDs []string
+	repo.createReviewQueueEntryFunc = func(_ context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
+		createdEventIDs = append(createdEventIDs, params.EventID)
+		return &ReviewQueueEntry{ID: 70, Status: "pending"}, nil
+	}
+	var lifecycleState string
+	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
+		if ulid == companionULID && params.LifecycleState != nil {
+			lifecycleState = *params.LifecycleState
+		}
+		return &Event{ULID: ulid}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.4)
+	if _, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{retiredULID},
+	}); err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if !slices.Contains(createdEventIDs, "uuid-companion") {
+		t.Errorf("CreateReviewQueueEntry calls %v missing the companion event uuid-companion", createdEventIDs)
+	}
+	if lifecycleState != "pending_review" {
+		t.Errorf("companion lifecycle = %q, want pending_review", lifecycleState)
 	}
 }
 
@@ -1932,7 +2238,13 @@ func TestConsolidate_ResolvePending_RefreshesEventAllDay(t *testing.T) {
 	existingReviewID := 77
 	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
 		if ulid == consolidateCanonULID {
-			return &ReviewQueueEntry{ID: existingReviewID, EventULID: consolidateCanonULID}, nil
+			return &ReviewQueueEntry{ID: existingReviewID, Status: "pending", EventULID: consolidateCanonULID}, nil
+		}
+		return nil, ErrNotFound
+	}
+	repo.getReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == consolidateCanonULID {
+			return &ReviewQueueEntry{ID: existingReviewID, Status: "pending", EventULID: consolidateCanonULID}, nil
 		}
 		return nil, ErrNotFound
 	}
@@ -1959,6 +2271,112 @@ func TestConsolidate_ResolvePending_RefreshesEventAllDay(t *testing.T) {
 	}
 	if !allDayRefreshed {
 		t.Error("expected UpdateReviewQueueEntry to be called with EventAllDay, but it was not")
+	}
+}
+
+// TestConsolidate_ResolvePending_ApprovedCanonicalRowKeepsStatusAndLifecycle
+// verifies that a canonical which already carries an approved review row does not
+// hit the UNIQUE(event_id) INSERT. The consolidation must succeed, refresh the
+// approved row's snapshot in place, keep its status, and leave the event
+// published rather than resurrecting the decided review.
+func TestConsolidate_ResolvePending_ApprovedCanonicalRowKeepsStatusAndLifecycle(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Second)
+
+	canon := makeVenueCanonEvent("uuid-canon", consolidateCanonULID, "Canon Event Near Dup", now)
+	canon.Description = "A canonical event description."
+
+	repo := makeConsolidateRepo(map[string]*Event{
+		consolidateCanonULID:  canon,
+		consolidateRetireULID: makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"),
+	})
+	repo.findNearDuplicatesFunc = func(_ context.Context, _ string, _ time.Time, _ string, _ float64) ([]NearDuplicateCandidate, error) {
+		return []NearDuplicateCandidate{
+			{ULID: consolidateNearDupULID, Name: "Canon Event Near Dup Copy", Similarity: 0.95},
+		}, nil
+	}
+
+	approvedReview := &ReviewQueueEntry{
+		ID:        78,
+		Status:    "approved",
+		EventID:   canon.ID,
+		EventULID: consolidateCanonULID,
+		Warnings:  []byte(`[{"field":"name","code":"potential_duplicate","message":"old dup"}]`),
+	}
+	// Real DB: a pending-only lookup misses the approved row.
+	repo.getPendingReviewByEventUlidFunc = func(_ context.Context, _ string) (*ReviewQueueEntry, error) {
+		return nil, nil
+	}
+	repo.getReviewByEventUlidFunc = func(_ context.Context, ulid string) (*ReviewQueueEntry, error) {
+		if ulid == consolidateCanonULID {
+			return approvedReview, nil
+		}
+		return nil, nil
+	}
+
+	var createdEventIDs []string
+	repo.createReviewQueueEntryFunc = func(_ context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
+		createdEventIDs = append(createdEventIDs, params.EventID)
+		return &ReviewQueueEntry{ID: 1}, nil
+	}
+	var lifecycleUpdates []string
+	repo.updateEventFunc = func(_ context.Context, ulid string, params UpdateEventParams) (*Event, error) {
+		if ulid == consolidateCanonULID && params.LifecycleState != nil {
+			lifecycleUpdates = append(lifecycleUpdates, *params.LifecycleState)
+		}
+		return &Event{ULID: ulid}, nil
+	}
+
+	var updatedReviewID int
+	var updatedWarnings []byte
+	repo.updateReviewQueueEntryFunc = func(_ context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error) {
+		if id == approvedReview.ID && params.Warnings != nil {
+			updatedReviewID = id
+			updatedWarnings = *params.Warnings
+		}
+		return &ReviewQueueEntry{ID: id}, nil
+	}
+
+	svc := newConsolidateSvc(repo, 0.8)
+	result, err := svc.Consolidate(ctx, ConsolidateParams{
+		EventULID: consolidateCanonULID,
+		Retire:    []string{consolidateRetireULID},
+	})
+	if err != nil {
+		t.Fatalf("expected success with an approved canonical review row, got: %v", err)
+	}
+	if result == nil || !result.NeedsReview {
+		t.Fatalf("expected NeedsReview=true, got: %+v", result)
+	}
+	if slices.Contains(createdEventIDs, canon.ID) {
+		t.Errorf("CreateReviewQueueEntry called for the canonical event %s; the approved row must be updated instead (23505 in production)", canon.ID)
+	}
+	if updatedReviewID != approvedReview.ID {
+		t.Errorf("UpdateReviewQueueEntry called with id=%d, want approved row id=%d", updatedReviewID, approvedReview.ID)
+	}
+	if updatedWarnings == nil {
+		t.Fatal("expected the approved row's warnings to be refreshed")
+	}
+	var merged []ValidationWarning
+	if err := json.Unmarshal(updatedWarnings, &merged); err != nil {
+		t.Fatalf("unmarshal refreshed warnings: %v", err)
+	}
+	var foundDup bool
+	for _, w := range merged {
+		// The promote path recomputes potential_duplicate for the near-dup match;
+		// the row's old placeholder warning must have been replaced by the fresh one.
+		if w.Code == "potential_duplicate" && w.Details["matches"] != nil {
+			foundDup = true
+		}
+	}
+	if !foundDup {
+		t.Error("expected the refreshed approved row warnings to contain the recomputed potential_duplicate warning with matches")
+	}
+	if len(lifecycleUpdates) != 0 {
+		t.Errorf("canonical lifecycle updated to %v; must stay published when the row is already decided", lifecycleUpdates)
+	}
+	if canon.LifecycleState != "published" {
+		t.Errorf("canonical lifecycle = %q, want published", canon.LifecycleState)
 	}
 }
 

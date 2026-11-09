@@ -439,6 +439,10 @@ type Repository interface {
 	// that only the first request proceeds and the second sees the updated status.
 	LockReviewQueueEntryForUpdate(ctx context.Context, id int) (*ReviewQueueEntry, error)
 	GetPendingReviewByEventUlid(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
+	// GetReviewByEventUlid returns the review queue entry for eventULID regardless
+	// of status. event_review_queue.event_id is UNIQUE, so at most one row exists.
+	// Returns nil (not ErrNotFound) when the event has no review row at all.
+	GetReviewByEventUlid(ctx context.Context, eventULID string) (*ReviewQueueEntry, error)
 	// GetPendingReviewByEventUlidAndDuplicateUlid looks up the pending review for
 	// eventULID that is specifically linked to duplicateULID via duplicate_of_event_id.
 	// This is the precise companion-review lookup needed during add-occurrence

@@ -3265,6 +3265,35 @@ func (r GetPendingReviewByEventUlidRow) GetDuplicateOfEventUlid() pgtype.Text {
 	return r.DuplicateOfEventUlid
 }
 
+// Implement reviewQueueRowFields for GetReviewByEventUlidRow
+func (r GetReviewByEventUlidRow) GetID() int32                     { return r.ID }
+func (r GetReviewByEventUlidRow) GetEventID() pgtype.UUID          { return r.EventID }
+func (r GetReviewByEventUlidRow) GetEventUlid() string             { return r.EventUlid }
+func (r GetReviewByEventUlidRow) GetOriginalPayload() []byte       { return r.OriginalPayload }
+func (r GetReviewByEventUlidRow) GetNormalizedPayload() []byte     { return r.NormalizedPayload }
+func (r GetReviewByEventUlidRow) GetWarnings() []byte              { return r.Warnings }
+func (r GetReviewByEventUlidRow) GetSourceID() pgtype.Text         { return r.SourceID }
+func (r GetReviewByEventUlidRow) GetSourceExternalID() pgtype.Text { return r.SourceExternalID }
+func (r GetReviewByEventUlidRow) GetDedupHash() pgtype.Text        { return r.DedupHash }
+func (r GetReviewByEventUlidRow) GetEventStartTime() pgtype.Timestamptz {
+	return r.EventStartTime
+}
+func (r GetReviewByEventUlidRow) GetEventEndTime() pgtype.Timestamptz { return r.EventEndTime }
+func (r GetReviewByEventUlidRow) GetEventAllDay() bool                { return r.EventAllDay }
+func (r GetReviewByEventUlidRow) GetStatus() string                   { return r.Status }
+func (r GetReviewByEventUlidRow) GetReviewedBy() pgtype.Text          { return r.ReviewedBy }
+func (r GetReviewByEventUlidRow) GetReviewedAt() pgtype.Timestamptz   { return r.ReviewedAt }
+func (r GetReviewByEventUlidRow) GetReviewNotes() pgtype.Text         { return r.ReviewNotes }
+func (r GetReviewByEventUlidRow) GetRejectionReason() pgtype.Text     { return r.RejectionReason }
+func (r GetReviewByEventUlidRow) GetCreatedAt() pgtype.Timestamptz    { return r.CreatedAt }
+func (r GetReviewByEventUlidRow) GetUpdatedAt() pgtype.Timestamptz    { return r.UpdatedAt }
+func (r GetReviewByEventUlidRow) GetDuplicateOfEventID() pgtype.UUID {
+	return r.DuplicateOfEventID
+}
+func (r GetReviewByEventUlidRow) GetDuplicateOfEventUlid() pgtype.Text {
+	return r.DuplicateOfEventUlid
+}
+
 // Implement reviewQueueRowFields for GetPendingReviewByEventUlidAndDuplicateUlidRow
 func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetID() int32            { return r.ID }
 func (r GetPendingReviewByEventUlidAndDuplicateUlidRow) GetEventID() pgtype.UUID { return r.EventID }
@@ -3520,6 +3549,25 @@ func (r *EventRepository) GetPendingReviewByEventUlid(ctx context.Context, event
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get pending review by event ulid %s: %w", eventULID, err)
+	}
+
+	return convertReviewQueueRowGeneric(row), nil
+}
+
+// GetReviewByEventUlid returns the review queue entry for the given event ULID
+// regardless of status, or (nil, nil) if no review exists. Because
+// event_review_queue.event_id is UNIQUE at most one row can match. Callers use
+// this to avoid inserting a second row (23505 on
+// event_review_queue_event_id_key) for an already-reviewed event.
+func (r *EventRepository) GetReviewByEventUlid(ctx context.Context, eventULID string) (*events.ReviewQueueEntry, error) {
+	queries := Queries{db: r.queryer()}
+
+	row, err := queries.GetReviewByEventUlid(ctx, eventULID)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get review by event ulid %s: %w", eventULID, err)
 	}
 
 	return convertReviewQueueRowGeneric(row), nil

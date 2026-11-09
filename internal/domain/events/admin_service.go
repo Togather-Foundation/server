@@ -2119,22 +2119,15 @@ func buildReviewPayload(event *Event) map[string]any {
 }
 
 // consolidateResolvePending encapsulates step 7 of the Consolidate algorithm:
-// if the canonical event needs review, update its lifecycle to pending_review and
-// create a review queue entry with the supplied warnings.
+// if the canonical event needs review, make sure a review queue entry carries the
+// supplied warnings and, when the canonical is actually going to review, set its
+// lifecycle to pending_review.
 func (s *AdminService) consolidateResolvePending(
 	ctx context.Context,
 	txRepo Repository,
 	canonical *Event,
 	warnings []ValidationWarning,
 ) error {
-	pendingReview := "pending_review"
-	if _, err := txRepo.UpdateEvent(ctx, canonical.ULID, UpdateEventParams{
-		LifecycleState: &pendingReview,
-	}); err != nil {
-		return fmt.Errorf("set canonical event to pending_review: %w", err)
-	}
-	canonical.LifecycleState = "pending_review"
-
 	// Create review queue entry for canonical event.
 	warningsJSON, err := json.Marshal(warnings)
 	if err != nil {
@@ -2154,26 +2147,50 @@ func (s *AdminService) consolidateResolvePending(
 		eventStartTime = canonical.Occurrences[0].StartTime
 	}
 
-	// Check if a pending review already exists for this canonical event
-	// (e.g., from promote path where the event was already in pending_review).
-	// If exists, update it; if not, create a new one.
-	existingReview, err := txRepo.GetPendingReviewByEventUlid(ctx, canonical.ULID)
-	if err != nil && err != ErrNotFound {
+	// event_review_queue.event_id is UNIQUE, so a canonical may already carry a
+	// decided review row (approved/rejected/dismissed/superseded) from an earlier
+	// cycle. Look it up regardless of status before flipping the lifecycle or
+	// inserting, otherwise the INSERT raises 23505 and rolls back the whole
+	// consolidation.
+	existingReview, err := txRepo.GetReviewByEventUlid(ctx, canonical.ULID)
+	if err != nil && !errors.Is(err, ErrNotFound) {
 		return fmt.Errorf("check existing review for canonical event: %w", err)
 	}
 
+	// EventAllDay is refreshed alongside the payload so the review snapshot's
+	// all-day marker does not go stale (mirrors the create path below and the
+	// resubmission path in create_event_core.go).
+	allDay := eventAllDayFromEvent(canonical)
+	updateParams := ReviewQueueUpdateParams{
+		OriginalPayload:   &payloadJSON,
+		NormalizedPayload: &payloadJSON,
+		Warnings:          &warningsJSON,
+		EventAllDay:       &allDay,
+	}
+
+	if existingReview != nil && existingReview.Status != "pending" {
+		// Never resurrect a decided review, and never hide a live event by
+		// flipping it to pending_review: merge the fresh snapshot into the
+		// existing row in place and leave the event's lifecycle untouched.
+		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, updateParams); err != nil {
+			return fmt.Errorf("update review queue entry for canonical event: %w", err)
+		}
+		return nil
+	}
+
+	// A pending row (or none at all) means the canonical is going to review:
+	// flip the lifecycle first, as before.
+	pendingReview := "pending_review"
+	if _, err := txRepo.UpdateEvent(ctx, canonical.ULID, UpdateEventParams{
+		LifecycleState: &pendingReview,
+	}); err != nil {
+		return fmt.Errorf("set canonical event to pending_review: %w", err)
+	}
+	canonical.LifecycleState = "pending_review"
+
 	if existingReview != nil {
-		// Update existing review entry with new warnings. EventAllDay is
-		// refreshed alongside the payload so the review snapshot's all-day
-		// marker does not go stale (mirrors the create path below and the
-		// resubmission path in create_event_core.go).
-		allDay := eventAllDayFromEvent(canonical)
-		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, ReviewQueueUpdateParams{
-			OriginalPayload:   &payloadJSON,
-			NormalizedPayload: &payloadJSON,
-			Warnings:          &warningsJSON,
-			EventAllDay:       &allDay,
-		}); err != nil {
+		// Update existing pending review entry with new warnings.
+		if _, err := txRepo.UpdateReviewQueueEntry(ctx, existingReview.ID, updateParams); err != nil {
 			return fmt.Errorf("update review queue entry for canonical event: %w", err)
 		}
 	} else {
@@ -2236,7 +2253,14 @@ func (s *AdminService) consolidateSyncSeriesCompanion(
 		return nil, fmt.Errorf("marshal companion cross-week warning for canonical %s: %w", canonical.ULID, err)
 	}
 
-	existingReview, err := txRepo.GetPendingReviewByEventUlid(ctx, companion.ULID)
+	// event_review_queue.event_id is UNIQUE, so look up the companion's review row
+	// regardless of status. Inserting a second row for an already-reviewed companion
+	// raises 23505 (event_review_queue_event_id_key) and rolls back the whole
+	// consolidation. Merging the warning is safe for any status: the update below
+	// only rewrites warnings, so a pending row stays pending and an approved/
+	// rejected/dismissed/superseded row keeps its status; the companion's lifecycle
+	// is left untouched on this path.
+	existingReview, err := txRepo.GetReviewByEventUlid(ctx, companion.ULID)
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return nil, fmt.Errorf("look up companion review for event %s: %w", companion.ULID, err)
 	}
