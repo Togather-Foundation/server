@@ -445,12 +445,16 @@ type Repository interface {
 
 	// Review Queue operations
 	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error)
+	// CreateReviewQueueEntry is the non-atomic insert primitive. Deprecated for
+	// production callers: use UpsertReviewRow, which serialises on the events
+	// row and merges into an existing UNIQUE row instead of returning 23505.
 	CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error)
 	UpdateReviewQueueEntry(ctx context.Context, id int, params ReviewQueueUpdateParams) (*ReviewQueueEntry, error)
 	// UpsertReviewRow atomically creates or merges the event's review row and
 	// applies the promotion policy. It must be called inside a transaction and
 	// takes a row lock on the events row first (the serialisation point for
-	// every review-row writer for that event), then upserts the UNIQUE review
+	// every UpsertReviewRow caller for that event; targeted warning/payload
+	// updates use the review-row lock instead), then upserts the UNIQUE review
 	// row. Warnings are merged in SQL, never as a Go read-modify-write, so
 	// concurrent writers cannot lose a warning. A decided row keeps its status
 	// and the event keeps its lifecycle. Lock timeout, deadlock detection and
@@ -650,7 +654,7 @@ type ReviewWarningMergeMode string
 const (
 	// ReviewWarningMerge appends incoming warnings whose (field, code, message)
 	// is not already present, preserving array order and duplicates within the
-	// incoming array. It mirrors appendWarnings.
+	// incoming array. It mirrors the legacy appendWarnings semantics.
 	ReviewWarningMerge ReviewWarningMergeMode = "merge"
 	// ReviewWarningReplaceCode drops existing warnings whose code appears in
 	// the incoming set, then appends the incoming array. It mirrors

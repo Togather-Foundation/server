@@ -249,7 +249,7 @@ func (s stubEventsRepo) UpdateReviewWarnings(_ context.Context, _ int, _ []byte)
 	return nil
 }
 func (s stubEventsRepo) UpsertReviewRow(_ context.Context, _ events.ReviewQueueUpsertParams) (*events.ReviewQueueUpsertResult, error) {
-	return nil, nil
+	return &events.ReviewQueueUpsertResult{Entry: &events.ReviewQueueEntry{}}, nil
 }
 func (s stubEventsRepo) DismissCompanionWarningMatch(_ context.Context, _ string, _ string) error {
 	return nil

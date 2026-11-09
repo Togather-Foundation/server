@@ -460,9 +460,9 @@ type Querier interface {
 	//   replace      - overwrite the array (consolidation's canonical refresh)
 	//   replace_code - drop existing warnings whose code appears in the incoming
 	//                  set, then append the incoming array (cross-week companion
-	//                  re-sync; mirrors upsertCrossWeekSeriesWarning)
+	//                  re-sync; mirrors the legacy upsertCrossWeekSeriesWarning semantics)
 	//   merge        - append incoming warnings whose (field, code, message) is
-	//                  not already present (mirrors appendWarnings)
+	//                  not already present (mirrors the legacy appendWarnings semantics)
 	//
 	// refresh_payload rewrites the review snapshot (payloads + all-day marker) on
 	// conflict. Times, provenance (source_id/source_external_id/dedup_hash),

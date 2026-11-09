@@ -268,7 +268,7 @@ The flip is a separate `UPDATE events` inside the same transaction, after the ro
 
 `Repository.UpsertReviewRow` is the only create-or-merge path for review rows. It must be called inside a transaction and its lock order is:
 
-1. `events` row, `SELECT id, lifecycle_state ... WHERE ulid = $1 FOR UPDATE` — the serialisation point for every review-row writer for that event.
+1. `events` row, `SELECT id, lifecycle_state ... WHERE ulid = $1 FOR UPDATE` — the serialisation point for every `UpsertReviewRow` caller for that event. Targeted warning/payload updates on an existing row use the review-row lock instead.
 2. `event_review_queue` row, acquired by the `ON CONFLICT (event_id)` upsert on the UNIQUE `event_id`.
 
 `lock_timeout` is set to 3s for the operation and restored before the caller continues. A lock wait, deadlock detection or serialisation failure is mapped to `events.ErrRetryable`; the caller's transaction rolls back whole, so a timeout writes nothing.

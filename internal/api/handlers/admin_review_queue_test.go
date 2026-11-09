@@ -593,6 +593,11 @@ func TestApproveReview_SentinelErrors(t *testing.T) {
 			expectedStatus: http.StatusConflict,
 		},
 		{
+			name:           "ErrRetryable → 503",
+			serviceErr:     events.ErrRetryable,
+			expectedStatus: http.StatusServiceUnavailable,
+		},
+		{
 			name:           "ErrEventDeleted → 410",
 			serviceErr:     events.ErrEventDeleted,
 			expectedStatus: http.StatusGone,
@@ -646,6 +651,11 @@ func TestRejectReview_SentinelErrors(t *testing.T) {
 			expectedStatus: http.StatusConflict,
 		},
 		{
+			name:           "ErrRetryable → 503",
+			serviceErr:     events.ErrRetryable,
+			expectedStatus: http.StatusServiceUnavailable,
+		},
+		{
 			name:           "ErrEventDeleted → 410",
 			serviceErr:     events.ErrEventDeleted,
 			expectedStatus: http.StatusGone,
@@ -697,6 +707,11 @@ func TestFixReview_SentinelErrors(t *testing.T) {
 			name:           "ErrConflict → 409",
 			serviceErr:     events.ErrConflict,
 			expectedStatus: http.StatusConflict,
+		},
+		{
+			name:           "ErrRetryable → 503",
+			serviceErr:     events.ErrRetryable,
+			expectedStatus: http.StatusServiceUnavailable,
 		},
 		{
 			name:           "ErrEventDeleted → 410",

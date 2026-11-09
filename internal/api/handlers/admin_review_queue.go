@@ -330,6 +330,11 @@ func (h *AdminReviewQueueHandler) ApproveReview(w http.ResponseWriter, r *http.R
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
 			return
 		}
+		if errors.Is(err, events.ErrRetryable) {
+			w.Header().Set("Retry-After", "1")
+			problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/server-error", "Transient contention — retry the request", err, h.Env)
+			return
+		}
 		if errors.Is(err, events.ErrConflict) {
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Review entry has already been processed", fmt.Errorf("approve review id=%d: %w", id, err), h.Env)
 			return
@@ -441,6 +446,11 @@ func (h *AdminReviewQueueHandler) RejectReview(w http.ResponseWriter, r *http.Re
 
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("reject review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrRetryable) {
+			w.Header().Set("Retry-After", "1")
+			problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/server-error", "Transient contention — retry the request", err, h.Env)
 			return
 		}
 		if errors.Is(err, events.ErrConflict) {
@@ -568,6 +578,11 @@ func (h *AdminReviewQueueHandler) FixReview(w http.ResponseWriter, r *http.Reque
 
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", fmt.Errorf("fix review id=%d: %w", id, err), h.Env)
+			return
+		}
+		if errors.Is(err, events.ErrRetryable) {
+			w.Header().Set("Retry-After", "1")
+			problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/server-error", "Transient contention — retry the request", err, h.Env)
 			return
 		}
 		if errors.Is(err, events.ErrConflict) {

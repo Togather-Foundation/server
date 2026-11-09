@@ -1809,6 +1809,11 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Occurrence overlap", err, h.Env)
 			return
 		}
+		if errors.Is(err, events.ErrRetryable) {
+			w.Header().Set("Retry-After", "1")
+			problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/server-error", "Transient contention — retry the request", err, h.Env)
+			return
+		}
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
 			return

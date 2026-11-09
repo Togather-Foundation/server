@@ -10,24 +10,10 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/oklog/ulid/v2"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
-
-// isContentionError reports whether err is one of the transient outcomes the
-// admin review path can surface when it races UpsertReviewRow's lock order.
-func isContentionError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, events.ErrRetryable) || errors.Is(err, events.ErrConflict) {
-		return true
-	}
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && (pgErr.Code == "40P01" || pgErr.Code == "55P03" || pgErr.Code == "40001")
-}
 
 // upsertTestEvent creates a single-occurrence event in the requested lifecycle
 // state. Unlike reviewQueueTestEvent it can create a published event, which is
@@ -411,12 +397,12 @@ func TestUpsertReviewRow_ApproveInterleavingKeepsInvariant(t *testing.T) {
 		close(start)
 		wg.Wait()
 
-		if approveErr != nil {
-			require.True(t, isContentionError(approveErr), "approve error: %v", approveErr)
-		}
-		if upsertErr != nil {
-			require.True(t, isContentionError(upsertErr), "upsert error: %v", upsertErr)
-		}
+		require.True(t, approveErr == nil || errors.Is(approveErr, events.ErrRetryable),
+			"approve must only fail retryably, got: %v", approveErr)
+		require.True(t, upsertErr == nil || errors.Is(upsertErr, events.ErrRetryable),
+			"upsert must only fail retryably, got: %v", upsertErr)
+		require.True(t, approveErr == nil || upsertErr == nil,
+			"at least one interleaved writer must make progress")
 
 		var lifecycle string
 		require.NoError(t, pool.QueryRow(ctx, `SELECT lifecycle_state FROM events WHERE id = $1`, event.ID).Scan(&lifecycle))
@@ -431,4 +417,113 @@ SELECT COUNT(*) FROM event_review_queue
 			require.Zero(t, pendingRows, "a published event must not keep a pending row")
 		}
 	}
+}
+
+func TestUpsertReviewRow_ReplaceRefreshAndPendingPromotion(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+	place := insertPlace(t, ctx, pool, "Refresh Venue", "Toronto", "ON")
+	event := upsertTestEvent(t, ctx, repo, place, "published")
+
+	_, err := repo.CreateReviewQueueEntry(ctx, events.ReviewQueueCreateParams{
+		EventID:           event.ID,
+		OriginalPayload:   []byte(`{"name":"stale"}`),
+		NormalizedPayload: []byte(`{"name":"stale"}`),
+		Warnings:          []byte(`[{"field":"name","code":"old_code","message":"stale"}]`),
+		EventStartTime:    reviewQueueStart(),
+		EventAllDay:       false,
+	})
+	require.NoError(t, err)
+
+	txRepo, tx, err := repo.BeginTx(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	freshWarnings := []byte(`[{"field":"name","code":"fresh_code","message":"fresh"}]`)
+	result, err := txRepo.UpsertReviewRow(ctx, events.ReviewQueueUpsertParams{
+		EventULID:         event.ULID,
+		OriginalPayload:   []byte(`{"name":"fresh"}`),
+		NormalizedPayload: []byte(`{"name":"fresh"}`),
+		EventStartTime:    reviewQueueStart(),
+		EventAllDay:       true,
+		Warnings:          freshWarnings,
+		WarningMode:       events.ReviewWarningReplace,
+		RefreshPayload:    true,
+		Promotion:         events.ReviewPromotionPending,
+	})
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+	require.False(t, result.Inserted)
+	require.True(t, result.Promoted)
+
+	updated, err := repo.GetReviewByEventUlid(ctx, event.ULID)
+	require.NoError(t, err)
+	require.Equal(t, "pending", updated.Status)
+	require.JSONEq(t, string(freshWarnings), string(updated.Warnings))
+	require.JSONEq(t, `{"name":"fresh"}`, string(updated.OriginalPayload))
+	require.JSONEq(t, `{"name":"fresh"}`, string(updated.NormalizedPayload))
+	require.True(t, updated.EventAllDay)
+
+	var lifecycle string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT lifecycle_state FROM events WHERE id = $1`, event.ID).Scan(&lifecycle))
+	require.Equal(t, "pending_review", lifecycle)
+}
+
+func TestUpsertReviewRow_InsertedPromotionDoesNotFlipDraft(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+	place := insertPlace(t, ctx, pool, "Draft Venue", "Toronto", "ON")
+	event := upsertTestEvent(t, ctx, repo, place, "draft")
+
+	txRepo, tx, err := repo.BeginTx(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	result, err := txRepo.UpsertReviewRow(ctx, events.ReviewQueueUpsertParams{
+		EventULID:         event.ULID,
+		OriginalPayload:   []byte(`{"name":"draft"}`),
+		NormalizedPayload: []byte(`{"name":"draft"}`),
+		EventStartTime:    reviewQueueStart(),
+		Warnings:          []byte(`[{"field":"name","code":"x","message":"y"}]`),
+		WarningMode:       events.ReviewWarningMerge,
+		Promotion:         events.ReviewPromotionInserted,
+	})
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit(ctx))
+	require.True(t, result.Inserted)
+	require.False(t, result.Promoted)
+
+	var lifecycle string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT lifecycle_state FROM events WHERE id = $1`, event.ID).Scan(&lifecycle))
+	require.Equal(t, "draft", lifecycle, "inserted promotion only flips published events")
+}
+
+func TestUpsertReviewRow_RestoresCallerLockTimeout(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
+	place := insertPlace(t, ctx, pool, "Timeout Restore Venue", "Toronto", "ON")
+	event := upsertTestEvent(t, ctx, repo, place, "pending_review")
+
+	tx, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer func() { _ = tx.Rollback(ctx) }()
+	txRepo := &EventRepository{pool: pool, tx: tx, logger: zerolog.Nop()}
+
+	_, err = txRepo.UpsertReviewRow(ctx, events.ReviewQueueUpsertParams{
+		EventULID:         event.ULID,
+		OriginalPayload:   []byte(`{"name":"x"}`),
+		NormalizedPayload: []byte(`{"name":"x"}`),
+		EventStartTime:    reviewQueueStart(),
+		Warnings:          []byte(`[{"field":"name","code":"x","message":"y"}]`),
+		WarningMode:       events.ReviewWarningMerge,
+		Promotion:         events.ReviewPromotionNone,
+	})
+	require.NoError(t, err)
+
+	var current string
+	require.NoError(t, tx.QueryRow(ctx, `SHOW lock_timeout`).Scan(&current))
+	require.Equal(t, "0", current, "the caller's lock_timeout must be restored after the operation")
 }

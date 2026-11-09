@@ -457,9 +457,19 @@ func (m *mockTransactionalRepo) UpsertReviewRow(ctx context.Context, params Revi
 			entry.EventULID = params.EventULID
 		}
 		promoted := false
-		if params.Promotion == ReviewPromotionInserted || params.Promotion == ReviewPromotionPending {
+		switch params.Promotion {
+		case ReviewPromotionInserted:
 			event, getErr := m.GetByULID(ctx, params.EventULID)
 			if getErr == nil && event != nil && event.LifecycleState == "published" {
+				pending := "pending_review"
+				if _, err := m.UpdateEvent(ctx, params.EventULID, UpdateEventParams{LifecycleState: &pending}); err != nil {
+					return nil, err
+				}
+				promoted = true
+			}
+		case ReviewPromotionPending:
+			event, getErr := m.GetByULID(ctx, params.EventULID)
+			if getErr == nil && event != nil && event.LifecycleState != "deleted" {
 				pending := "pending_review"
 				if _, err := m.UpdateEvent(ctx, params.EventULID, UpdateEventParams{LifecycleState: &pending}); err != nil {
 					return nil, err

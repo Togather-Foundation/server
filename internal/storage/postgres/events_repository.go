@@ -785,7 +785,7 @@ INSERT INTO event_occurrences (
 		params.Availability,
 	)
 	if err != nil {
-		return fmt.Errorf("create occurrence: %w", err)
+		return mapDBContention(fmt.Errorf("create occurrence: %w", err))
 	}
 	return nil
 }
@@ -2950,7 +2950,7 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params e
 		if err == pgx.ErrNoRows {
 			return nil, events.ErrNotFound
 		}
-		return nil, fmt.Errorf("update event: %w", err)
+		return nil, mapDBContention(fmt.Errorf("update event: %w", err))
 	}
 
 	// Map back to domain Event (convert pgtype values to native Go types)
@@ -2987,7 +2987,7 @@ func (r *EventRepository) SoftDeleteEvent(ctx context.Context, ulid string, reas
 		if err == pgx.ErrNoRows {
 			return events.ErrNotFound
 		}
-		return fmt.Errorf("soft delete event: %w", err)
+		return mapDBContention(fmt.Errorf("soft delete event: %w", err))
 	}
 
 	return nil
@@ -3501,7 +3501,11 @@ func convertFindReviewByDedupRow(row FindReviewByDedupRow) *events.ReviewQueueEn
 	return convertReviewQueueRowGeneric(row)
 }
 
-// CreateReviewQueueEntry creates a new review queue entry
+// CreateReviewQueueEntry creates a new review queue entry.
+//
+// Deprecated for production callers: use UpsertReviewRow, which serialises on
+// the events row and merges into an existing UNIQUE row instead of returning
+// 23505. Kept as the low-level insert primitive for repository tests.
 func (r *EventRepository) CreateReviewQueueEntry(ctx context.Context, params events.ReviewQueueCreateParams) (*events.ReviewQueueEntry, error) {
 	queries := Queries{db: r.queryer()}
 
@@ -3597,8 +3601,9 @@ const reviewRowLockTimeout = "3s"
 // applies the promotion policy.
 //
 // Lock order (must be called inside a transaction):
-//  1. events row, SELECT ... FOR UPDATE by ULID — the single serialisation
-//     point for every review-row writer for that event.
+//  1. events row, SELECT ... FOR UPDATE by ULID — the serialisation point for
+//     every UpsertReviewRow caller for that event. Targeted warning/payload
+//     updates on an existing row use the review-row lock instead.
 //  2. event_review_queue row, acquired by the ON CONFLICT upsert on the UNIQUE
 //     event_id.
 //
@@ -3647,11 +3652,11 @@ func (r *EventRepository) UpsertReviewRow(ctx context.Context, params events.Rev
 	if _, err := queryer.Exec(ctx, `SELECT set_config('lock_timeout', $1, true)`, r.effectiveReviewRowLockTimeout()); err != nil {
 		return nil, fmt.Errorf("upsert review row: set lock_timeout: %w", err)
 	}
-	succeeded := false
+	// Restore the caller's lock_timeout on every return path. If an earlier
+	// error already aborted the transaction the restore fails with 25P02 and is
+	// harmlessly ignored; the whole transaction is rolling back anyway.
 	defer func() {
-		if succeeded {
-			_, _ = queryer.Exec(ctx, `SELECT set_config('lock_timeout', $1, true)`, previousLockTimeout)
-		}
+		_, _ = queryer.Exec(ctx, `SELECT set_config('lock_timeout', $1, true)`, previousLockTimeout)
 	}()
 
 	var eventID pgtype.UUID
@@ -3664,7 +3669,7 @@ func (r *EventRepository) UpsertReviewRow(ctx context.Context, params events.Rev
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("upsert review row: lock event %s: %w", params.EventULID, events.ErrNotFound)
 		}
-		return nil, mapReviewRowContention(fmt.Errorf("upsert review row: lock event %s: %w", params.EventULID, err))
+		return nil, mapDBContention(fmt.Errorf("upsert review row: lock event %s: %w", params.EventULID, err))
 	}
 
 	originalPayload := params.OriginalPayload
@@ -3713,7 +3718,7 @@ func (r *EventRepository) UpsertReviewRow(ctx context.Context, params events.Rev
 	queries := Queries{db: queryer}
 	row, err := queries.UpsertReviewQueueEntry(ctx, upsertParams)
 	if err != nil {
-		return nil, mapReviewRowContention(fmt.Errorf("upsert review row for event %s: %w", params.EventULID, err))
+		return nil, mapDBContention(fmt.Errorf("upsert review row for event %s: %w", params.EventULID, err))
 	}
 
 	entryRow, err := queries.GetReviewQueueEntry(ctx, row.ID)
@@ -3734,7 +3739,7 @@ UPDATE events
  WHERE id = $1
    AND lifecycle_state = 'published'`, eventID)
 				if err != nil {
-					return nil, mapReviewRowContention(fmt.Errorf("upsert review row: promote event %s: %w", params.EventULID, err))
+					return nil, mapDBContention(fmt.Errorf("upsert review row: promote event %s: %w", params.EventULID, err))
 				}
 				promoted = result.RowsAffected() > 0
 			}
@@ -3746,13 +3751,12 @@ UPDATE events
  WHERE id = $1
    AND lifecycle_state <> 'deleted'`, eventID)
 			if err != nil {
-				return nil, mapReviewRowContention(fmt.Errorf("upsert review row: promote event %s: %w", params.EventULID, err))
+				return nil, mapDBContention(fmt.Errorf("upsert review row: promote event %s: %w", params.EventULID, err))
 			}
 			promoted = result.RowsAffected() > 0
 		}
 	}
 
-	succeeded = true
 	return &events.ReviewQueueUpsertResult{
 		Entry:    entry,
 		Inserted: row.Inserted,
@@ -3767,10 +3771,10 @@ func (r *EventRepository) effectiveReviewRowLockTimeout() string {
 	return reviewRowLockTimeout
 }
 
-// mapReviewRowContention translates transient lock contention into
+// mapDBContention translates transient lock contention into
 // events.ErrRetryable and the other unique indexes on event_review_queue into
 // events.ErrConflict, so callers can retry or surface a 409 instead of a 500.
-func mapReviewRowContention(err error) error {
+func mapDBContention(err error) error {
 	var pgErr *pgconn.PgError
 	if !errors.As(err, &pgErr) {
 		return err

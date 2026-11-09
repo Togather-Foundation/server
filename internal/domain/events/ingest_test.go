@@ -795,8 +795,19 @@ func (m *MockRepository) UpsertReviewRow(_ context.Context, params ReviewQueueUp
 		m.nextReviewID++
 
 		promoted := false
-		if params.Promotion == ReviewPromotionInserted || params.Promotion == ReviewPromotionPending {
+		switch params.Promotion {
+		case ReviewPromotionInserted:
 			if event != nil && event.LifecycleState == "published" {
+				pending := "pending_review"
+				m.updateEventCalls = append(m.updateEventCalls, updateEventCall{
+					ULID:   params.EventULID,
+					Params: UpdateEventParams{LifecycleState: &pending},
+				})
+				event.LifecycleState = pending
+				promoted = true
+			}
+		case ReviewPromotionPending:
+			if event != nil && event.LifecycleState != "deleted" {
 				pending := "pending_review"
 				m.updateEventCalls = append(m.updateEventCalls, updateEventCall{
 					ULID:   params.EventULID,
@@ -2680,6 +2691,39 @@ func TestIngestService_MultiOccurrenceParentVenue(t *testing.T) {
 			t.Errorf("Ingest() error = %T (%v); want ValidationError", err, err)
 		}
 	})
+}
+
+// appendWarnings merges two JSON arrays of ValidationWarning objects, deduplicating
+// by (field, code, message) so that distinct warnings with the same code (e.g. two
+// separate near_duplicate_of_new_event warnings for different new events) are both
+// retained, while truly identical warnings (same event re-ingested) are dropped.
+func appendWarnings(existing []byte, toAdd []byte) ([]byte, error) {
+	var existingList []ValidationWarning
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &existingList); err != nil {
+			return nil, fmt.Errorf("unmarshal existing warnings: %w", err)
+		}
+	}
+	var addList []ValidationWarning
+	if len(toAdd) > 0 {
+		if err := json.Unmarshal(toAdd, &addList); err != nil {
+			return nil, fmt.Errorf("unmarshal warnings to add: %w", err)
+		}
+	}
+	// Dedup by (field, code, message) — message includes the new event ULID for
+	// near_duplicate_of_new_event, so two different near-duplicate pairings produce
+	// distinct entries while re-ingesting the same pair is idempotent.
+	type key struct{ field, code, message string }
+	seen := make(map[key]struct{}, len(existingList))
+	for _, w := range existingList {
+		seen[key{w.Field, w.Code, w.Message}] = struct{}{}
+	}
+	for _, w := range addList {
+		if _, ok := seen[key{w.Field, w.Code, w.Message}]; !ok {
+			existingList = append(existingList, w)
+		}
+	}
+	return json.Marshal(existingList)
 }
 
 func TestAppendWarnings(t *testing.T) {

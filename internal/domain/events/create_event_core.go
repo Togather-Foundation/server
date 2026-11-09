@@ -17,7 +17,7 @@ package events
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -765,13 +765,14 @@ func (s *IngestService) createEventCore(
 	var dbRepo Repository
 	var tx TxCommitter
 	ownTx := opts.TxRepo == nil
+	committed := false
 	if ownTx {
 		dbRepo, tx, err = s.repo.BeginTx(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("begin transaction: %w", err)
 		}
 		defer func() {
-			if err != nil {
+			if !committed {
 				_ = tx.Rollback(ctx)
 			}
 		}()
@@ -903,6 +904,7 @@ func (s *IngestService) createEventCore(
 		if err := tx.Commit(ctx); err != nil {
 			return nil, fmt.Errorf("commit transaction: %w", err)
 		}
+		committed = true
 
 		// Post-commit near-dup cross-linking (only when we own the transaction)
 		s.crossLinkNearDuplicates(ctx, event, validated, nearDuplicateCandidates)
@@ -1062,6 +1064,53 @@ func (s *IngestService) runDedupWarningChecks(
 	return warnings, candidates, companion, nil
 }
 
+// upsertReviewRowWithRetry runs the best-effort cross-link write in a short
+// transaction and retries a transient contention failure a couple of times.
+// The upsert is idempotent (same event, same warning), so a retry cannot
+// duplicate a row or a warning; it just keeps the flag from being dropped on a
+// routine lock wait.
+func (s *IngestService) upsertReviewRowWithRetry(ctx context.Context, params ReviewQueueUpsertParams) error {
+	const attempts = 3
+
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * 25 * time.Millisecond):
+			}
+		}
+
+		txRepo, tx, err := s.repo.BeginTx(ctx)
+		if err != nil {
+			lastErr = err
+			if errors.Is(err, ErrRetryable) {
+				continue
+			}
+			return err
+		}
+		_, err = txRepo.UpsertReviewRow(ctx, params)
+		if err != nil {
+			_ = tx.Rollback(ctx)
+			lastErr = err
+			if errors.Is(err, ErrRetryable) {
+				continue
+			}
+			return err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			lastErr = err
+			if errors.Is(err, ErrRetryable) {
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return lastErr
+}
+
 // crossLinkSeriesCompanions adds a cross_week_series_companion warning to the
 // companion event's review queue entry when the new event (Week 2) is ingested.
 // The companion (Week 1) was already identified by FindSeriesCompanion during
@@ -1135,15 +1184,7 @@ func (s *IngestService) crossLinkSeriesCompanions(
 	// status or the companion's lifecycle; when no row exists it inserts one.
 	// The events row lock inside UpsertReviewRow is the serialisation point, so
 	// a concurrent writer cannot make this fail with 23505 after a flip.
-	txRepo, tx, beginErr := s.repo.BeginTx(ctx)
-	if beginErr != nil {
-		s.logger.Warn().Err(beginErr).Str("companion_ulid", companion.ULID).
-			Msg("Series companion cross-link: failed to begin transaction, skipping")
-		return
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	if _, upsertErr := txRepo.UpsertReviewRow(ctx, ReviewQueueUpsertParams{
+	if upsertErr := s.upsertReviewRowWithRetry(ctx, ReviewQueueUpsertParams{
 		EventULID:         companion.ULID,
 		OriginalPayload:   reconstructedPayload,
 		NormalizedPayload: reconstructedPayload,
@@ -1156,11 +1197,6 @@ func (s *IngestService) crossLinkSeriesCompanions(
 	}); upsertErr != nil {
 		s.logger.Warn().Err(upsertErr).Str("companion_ulid", companion.ULID).
 			Msg("Series companion cross-link: failed to upsert review queue entry, skipping")
-		return
-	}
-	if commitErr := tx.Commit(ctx); commitErr != nil {
-		s.logger.Warn().Err(commitErr).Str("companion_ulid", companion.ULID).
-			Msg("Series companion cross-link: failed to commit review queue entry, skipping")
 	}
 }
 
@@ -1215,20 +1251,14 @@ func (s *IngestService) crossLinkNearDuplicates(
 			existingWarnings = []byte("[]")
 		}
 
-		// One transaction per candidate: the atomic create-or-merge locks the
-		// candidate's events row (the serialisation point), merges the warning
+		// One short transaction per candidate: the atomic create-or-merge locks
+		// the candidate's events row (the serialisation point), merges the warning
 		// into any existing row without touching its status, and only flips a
 		// published candidate to pending_review when it actually inserts a new
 		// row. No pre-check, so a concurrent writer cannot turn this into a
-		// 23505 after the lifecycle flip.
-		txRepo, tx, beginErr := s.repo.BeginTx(ctx)
-		if beginErr != nil {
-			s.logger.Warn().Err(beginErr).
-				Str("candidate_ulid", c.ULID).
-				Msg("Near-duplicate: failed to begin transaction, skipping")
-			continue
-		}
-		_, upsertErr := txRepo.UpsertReviewRow(ctx, ReviewQueueUpsertParams{
+		// 23505 after the lifecycle flip. The helper retries transient
+		// contention so the warning is not silently dropped.
+		if upsertErr := s.upsertReviewRowWithRetry(ctx, ReviewQueueUpsertParams{
 			EventULID:          c.ULID,
 			OriginalPayload:    reconstructedPayload,
 			NormalizedPayload:  reconstructedPayload,
@@ -1239,51 +1269,10 @@ func (s *IngestService) crossLinkNearDuplicates(
 			DuplicateOfEventID: &newEventID,
 			WarningMode:        ReviewWarningMerge,
 			Promotion:          ReviewPromotionInserted,
-		})
-		if upsertErr != nil {
-			_ = tx.Rollback(ctx)
+		}); upsertErr != nil {
 			s.logger.Warn().Err(upsertErr).
 				Str("candidate_ulid", c.ULID).
 				Msg("Near-duplicate: failed to upsert review queue entry for existing event, skipping")
-			continue
-		}
-		if commitErr := tx.Commit(ctx); commitErr != nil {
-			s.logger.Warn().Err(commitErr).
-				Str("candidate_ulid", c.ULID).
-				Msg("Near-duplicate: failed to commit review queue entry for existing event, skipping")
 		}
 	}
-}
-
-// appendWarnings merges two JSON arrays of ValidationWarning objects, deduplicating
-// by (field, code, message) so that distinct warnings with the same code (e.g. two
-// separate near_duplicate_of_new_event warnings for different new events) are both
-// retained, while truly identical warnings (same event re-ingested) are dropped.
-func appendWarnings(existing []byte, toAdd []byte) ([]byte, error) {
-	var existingList []ValidationWarning
-	if len(existing) > 0 {
-		if err := json.Unmarshal(existing, &existingList); err != nil {
-			return nil, fmt.Errorf("unmarshal existing warnings: %w", err)
-		}
-	}
-	var addList []ValidationWarning
-	if len(toAdd) > 0 {
-		if err := json.Unmarshal(toAdd, &addList); err != nil {
-			return nil, fmt.Errorf("unmarshal warnings to add: %w", err)
-		}
-	}
-	// Dedup by (field, code, message) — message includes the new event ULID for
-	// near_duplicate_of_new_event, so two different near-duplicate pairings produce
-	// distinct entries while re-ingesting the same pair is idempotent.
-	type key struct{ field, code, message string }
-	seen := make(map[key]struct{}, len(existingList))
-	for _, w := range existingList {
-		seen[key{w.Field, w.Code, w.Message}] = struct{}{}
-	}
-	for _, w := range addList {
-		if _, ok := seen[key{w.Field, w.Code, w.Message}]; !ok {
-			existingList = append(existingList, w)
-		}
-	}
-	return json.Marshal(existingList)
 }
