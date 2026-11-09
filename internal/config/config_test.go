@@ -6,6 +6,84 @@ import (
 	"testing"
 )
 
+func TestLoad_GeocodingBoundaryFallback(t *testing.T) {
+	baseEnv := func(t *testing.T) {
+		t.Helper()
+		t.Setenv("ENVIRONMENT", "test")
+		t.Setenv("DATABASE_URL", "postgres://test:test@localhost:5432/testdb")
+		t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+	}
+
+	t.Run("defaults to disabled with a five-lookup budget", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_ENABLED", "")
+		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH", "")
+		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS", "")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.Geocoding.BoundaryFallbackEnabled {
+			t.Error("BoundaryFallbackEnabled = true, want false by default")
+		}
+		if got := cfg.Geocoding.BoundaryFallbackMaxLookupsPerBatch; got != 5 {
+			t.Errorf("BoundaryFallbackMaxLookupsPerBatch = %d, want 5", got)
+		}
+		if got := cfg.Geocoding.BoundaryFallbackBudgetMS; got != cfg.Scraper.PollTimeout/2 {
+			t.Errorf("BoundaryFallbackBudgetMS = %d, want half the scraper poll window %d", got, cfg.Scraper.PollTimeout/2)
+		}
+	})
+
+	t.Run("reads explicit env values", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_ENABLED", "true")
+		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH", "9")
+		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS", "1234")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if !cfg.Geocoding.BoundaryFallbackEnabled {
+			t.Error("BoundaryFallbackEnabled = false, want true")
+		}
+		if got := cfg.Geocoding.BoundaryFallbackMaxLookupsPerBatch; got != 9 {
+			t.Errorf("BoundaryFallbackMaxLookupsPerBatch = %d, want 9", got)
+		}
+		if got := cfg.Geocoding.BoundaryFallbackBudgetMS; got != 1234 {
+			t.Errorf("BoundaryFallbackBudgetMS = %d, want 1234", got)
+		}
+	})
+
+	t.Run("adopts half the scraper poll window when the budget is unset", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("SCRAPER_POLL_TIMEOUT_MS", "45000")
+		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS", "0")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if got := cfg.Geocoding.BoundaryFallbackBudgetMS; got != 22500 {
+			t.Errorf("BoundaryFallbackBudgetMS = %d, want half the poll window 22500", got)
+		}
+	})
+
+	t.Run("negative budget keeps the wall-clock window disabled", func(t *testing.T) {
+		baseEnv(t)
+		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS", "-1")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if got := cfg.Geocoding.BoundaryFallbackBudgetMS; got != -1 {
+			t.Errorf("BoundaryFallbackBudgetMS = %d, want -1 (no window)", got)
+		}
+	})
+}
+
 func TestLoad_ProductionCORS_EmptyOrigins(t *testing.T) {
 	// Setup
 	originalEnv := map[string]string{

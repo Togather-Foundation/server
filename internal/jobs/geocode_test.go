@@ -78,6 +78,7 @@ func TestNewWorkersWithPool_RegistersGeocodingWorkers(t *testing.T) {
 		"test",
 		nil, // submissionRepo
 		0,   // enrichmentRefreshDays
+		BatchLocationBudget{},
 	)
 
 	assert.NotNil(t, workers)
@@ -99,6 +100,7 @@ func TestNewWorkersWithPool_NilGeocodingService(t *testing.T) {
 		"test",
 		nil, // submissionRepo
 		0,   // enrichmentRefreshDays
+		BatchLocationBudget{},
 	)
 
 	assert.NotNil(t, workers)

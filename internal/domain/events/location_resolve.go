@@ -33,8 +33,32 @@ func (s *IngestService) resolveLocationOnBoundaryFailure(ctx context.Context, in
 		return false
 	}
 
-	parts, ok := s.locationResolver.Resolve(ctx, raw)
+	// A batch may carry a budget. Allow reserves one lookup when it returns
+	// true, so concurrent batches never exceed their cap. When it is
+	// exhausted, keep the offline decision instead of calling the geocoder.
+	budget := geoloc.BudgetFromContext(ctx)
+	if budget != nil && !budget.Allow() {
+		budget.RecordSkipped()
+		s.logger.Debug().
+			Str("raw_location", raw).
+			Msg("location resolution budget exhausted; keeping offline decision")
+		return false
+	}
+
+	// Clamp the lookup to the budget's remaining window so a request started
+	// just before the deadline cannot keep the batch alive past it.
+	resolveCtx := ctx
+	if budget != nil {
+		if deadline, ok := budget.Deadline(); ok {
+			var cancel context.CancelFunc
+			resolveCtx, cancel = context.WithDeadline(ctx, deadline)
+			defer cancel()
+		}
+	}
+
+	parts, ok := s.locationResolver.Resolve(resolveCtx, raw)
 	if !ok {
+		budget.RecordUnresolved()
 		return false
 	}
 
@@ -46,10 +70,14 @@ func (s *IngestService) resolveLocationOnBoundaryFailure(ctx context.Context, in
 	trial := *input
 	trial.Location = &candidate
 	if err := CheckGeographicBoundary(trial, s.geoBoundaryConfig); err != nil {
+		// The geocoder answered but still could not place the event inside the
+		// boundary; that is an unresolved lookup, not a skipped one.
+		budget.RecordUnresolved()
 		return false
 	}
 
 	input.Location = &candidate
+	budget.RecordResolved()
 	s.logger.Info().
 		Str("raw_location", raw).
 		Str("resolved_locality", candidate.AddressLocality).
@@ -57,6 +85,13 @@ func (s *IngestService) resolveLocationOnBoundaryFailure(ctx context.Context, in
 		Str("resolved_country", candidate.AddressCountry).
 		Msg("geographic boundary satisfied by geocoding the location string")
 	return true
+}
+
+// LocationResolverEnabled reports whether the boundary geocoder fallback is
+// wired. Callers use it to decide whether per-batch budgeting and reporting is
+// needed at all; when false, behaviour is exactly the pre-fallback path.
+func (s *IngestService) LocationResolverEnabled() bool {
+	return s != nil && s.locationResolver != nil
 }
 
 // applyResolvedLocation copies resolved components onto a PlaceInput. Resolved

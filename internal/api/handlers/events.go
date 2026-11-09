@@ -1012,6 +1012,13 @@ func (h *EventsHandler) GetBatchStatus(w http.ResponseWriter, r *http.Request) {
 	created := 0
 	failed := 0
 	duplicates := 0
+	// location_resolution is only present on results produced by a node with the
+	// boundary geocoder fallback enabled, so the counts (and the keys) are
+	// omitted entirely for batches from disabled nodes.
+	locationResolved := 0
+	locationUnresolved := 0
+	locationSkipped := 0
+	locationReported := false
 	for _, result := range results {
 		if status, ok := result["status"].(string); ok {
 			switch status {
@@ -1021,6 +1028,17 @@ func (h *EventsHandler) GetBatchStatus(w http.ResponseWriter, r *http.Request) {
 				failed++
 			case "duplicate":
 				duplicates++
+			}
+		}
+		if resolution, ok := result["location_resolution"].(string); ok {
+			locationReported = true
+			switch resolution {
+			case "resolved":
+				locationResolved++
+			case "unresolved":
+				locationUnresolved++
+			case "skipped":
+				locationSkipped++
 			}
 		}
 	}
@@ -1036,6 +1054,11 @@ func (h *EventsHandler) GetBatchStatus(w http.ResponseWriter, r *http.Request) {
 		"failed":       failed,
 		"duplicates":   duplicates,
 		"results":      results,
+	}
+	if locationReported {
+		response["location_resolved"] = locationResolved
+		response["location_unresolved"] = locationUnresolved
+		response["location_skipped"] = locationSkipped
 	}
 
 	writeJSON(w, http.StatusOK, response, contentTypeFromRequest(r))

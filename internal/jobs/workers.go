@@ -15,6 +15,7 @@ import (
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	domainScraper "github.com/Togather-Foundation/server/internal/domain/scraper"
 	"github.com/Togather-Foundation/server/internal/geocoding"
+	"github.com/Togather-Foundation/server/internal/geoloc"
 	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
@@ -824,6 +825,39 @@ type BatchIngestionWorker struct {
 	// after successful event ingestion. Set to true only when a ReconciliationService
 	// is configured and the ReconciliationWorker is registered.
 	ReconciliationEnabled bool
+	// BoundaryFallbackMaxLookups caps boundary-geocoder lookups for this batch.
+	// Negative means unlimited (bounded only by the time window).
+	BoundaryFallbackMaxLookups int
+	// BoundaryFallbackBudget is the wall-clock budget for boundary-geocoder
+	// lookups in this batch. Zero means no window.
+	BoundaryFallbackBudget time.Duration
+}
+
+// BatchLocationBudget carries the boundary-geocoder budget into worker
+// construction. Kept explicit (no globals) so each deployment's config reaches
+// the worker that enforces it.
+type BatchLocationBudget struct {
+	// MaxLookups is the per-batch lookup cap; negative means unlimited.
+	MaxLookups int
+	// Window is the per-batch wall-clock budget; zero means no window.
+	Window time.Duration
+}
+
+// resolutionOutcome names the single location-resolution outcome that changed
+// between two budget snapshots. Resolved wins over unresolved over skipped: one
+// Ingest call performs at most one boundary lookup, so exactly one counter can
+// advance; this only disambiguates a corrupt or externally-mutated budget.
+func resolutionOutcome(before, after geoloc.BatchStats) string {
+	switch {
+	case after.Resolved > before.Resolved:
+		return "resolved"
+	case after.Unresolved > before.Unresolved:
+		return "unresolved"
+	case after.Skipped > before.Skipped:
+		return "skipped"
+	default:
+		return ""
+	}
 }
 
 func (BatchIngestionWorker) Kind() string { return JobKindBatchIngestion }
@@ -855,13 +889,37 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 		"attempt", job.Attempt,
 	)
 
+	// The boundary geocoder fallback is bounded per batch: a budget carried in
+	// the context caps both lookups and wall-clock time so one large feed cannot
+	// outlive the scraper's poll window. Without a resolver there is nothing to
+	// budget, so the context stays untouched (byte-identical pre-fallback path).
+	var budget *geoloc.Budget
+	if w.IngestService.LocationResolverEnabled() {
+		budget = geoloc.NewBudget(w.BoundaryFallbackMaxLookups, w.BoundaryFallbackBudget)
+		ctx = geoloc.WithBudget(ctx, budget)
+	}
+
 	// Process each event in the batch
 	var successCount, duplicateCount, failureCount int
 	results := make([]map[string]any, 0, len(job.Args.Events))
 	for i, eventInput := range job.Args.Events {
+		var statsBefore geoloc.BatchStats
+		if budget != nil {
+			statsBefore = budget.Stats()
+		}
+
 		result, err := w.IngestService.Ingest(ctx, eventInput)
 		itemResult := map[string]any{
 			"index": i,
+		}
+
+		// Report how the boundary geocoder treated this event, but only when it
+		// actually ran (or was skipped for this event). Batches from nodes with
+		// the fallback disabled keep their existing result shape.
+		if budget != nil {
+			if outcome := resolutionOutcome(statsBefore, budget.Stats()); outcome != "" {
+				itemResult["location_resolution"] = outcome
+			}
 		}
 
 		if err != nil {
@@ -966,6 +1024,21 @@ func (w BatchIngestionWorker) Work(ctx context.Context, job *river.Job[BatchInge
 		"failures", failureCount,
 	)
 
+	// Exactly one location-resolution summary per batch, and only when the
+	// fallback is enabled — otherwise the batch never touched the geocoder.
+	// Skip the line when nothing happened (batch inside the boundary), so an
+	// enabled node does not log noise for every ordinary feed.
+	if budget != nil {
+		if s := budget.Stats(); s.Resolved+s.Unresolved+s.Skipped > 0 {
+			logger.Info("batch location resolution summary",
+				"batch_id", batchID,
+				"resolved", s.Resolved,
+				"unresolved", s.Unresolved,
+				"skipped", s.Skipped,
+			)
+		}
+	}
+
 	// Store batch results in a table for status queries using SQLc
 	resultsJSON, err := json.Marshal(results)
 	if err != nil {
@@ -1005,8 +1078,8 @@ func NewWorkers() *river.Workers {
 }
 
 // NewWorkersWithPool creates workers including cleanup jobs that need DB access.
-func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, submissionRepo domainScraper.SubmissionRepository, enrichmentRefreshDays int) *river.Workers {
-	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, (*postgres.Queries)(nil), submissionRepo, 0, 0, 0, enrichmentRefreshDays)
+func NewWorkersWithPool(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, submissionRepo domainScraper.SubmissionRepository, enrichmentRefreshDays int, locationBudget BatchLocationBudget) *river.Workers {
+	return NewWorkersWithScraper(pool, ingestService, eventsRepo, geocodingService, reconciliationService, placeService, orgService, logger, slot, nil, (*postgres.Queries)(nil), submissionRepo, 0, 0, 0, enrichmentRefreshDays, locationBudget)
 }
 
 // scraperQueries combines both config and sources queries needed by scrape workers.
@@ -1017,7 +1090,7 @@ type scraperQueries interface {
 
 // NewWorkersWithScraper creates workers like NewWorkersWithPool but also
 // registers ScrapeSourceWorker when a non-nil scraper is provided.
-func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperQueries, submissionRepo domainScraper.SubmissionRepository, scrapeSourceJobTimeout, chainEnqueueTimeout time.Duration, chainEnqueueRetries int, enrichmentRefreshDays int) *river.Workers {
+func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestService, eventsRepo events.Repository, geocodingService *geocoding.GeocodingService, reconciliationService KGService, placeService PlaceUpdater, orgService OrgUpdater, logger *slog.Logger, slot string, scr scraperSourceScraper, cfgQueries scraperQueries, submissionRepo domainScraper.SubmissionRepository, scrapeSourceJobTimeout, chainEnqueueTimeout time.Duration, chainEnqueueRetries int, enrichmentRefreshDays int, locationBudget BatchLocationBudget) *river.Workers {
 	workers := NewWorkers()
 	river.AddWorker[IdempotencyCleanupArgs](workers, IdempotencyCleanupWorker{
 		Pool:   pool,
@@ -1029,10 +1102,12 @@ func NewWorkersWithScraper(pool *pgxpool.Pool, ingestService *events.IngestServi
 		Logger: logger,
 	})
 	river.AddWorker[BatchIngestionArgs](workers, BatchIngestionWorker{
-		IngestService:         ingestService,
-		Pool:                  pool,
-		Logger:                logger,
-		ReconciliationEnabled: reconciliationService != nil,
+		IngestService:              ingestService,
+		Pool:                       pool,
+		Logger:                     logger,
+		ReconciliationEnabled:      reconciliationService != nil,
+		BoundaryFallbackMaxLookups: locationBudget.MaxLookups,
+		BoundaryFallbackBudget:     locationBudget.Window,
 	})
 	river.AddWorker[ReviewQueueCleanupArgs](workers, ReviewQueueCleanupWorker{
 		Repo:   eventsRepo,

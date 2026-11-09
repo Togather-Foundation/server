@@ -46,6 +46,9 @@ Deployment fails without these three:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DAILY_REPORT_EXCLUDE_IPS` | `-` | Comma-separated list of IP addresses to exclude from the daily usage report endpoint (`GET /api/v1/admin/reports/daily-usage`). Typically set to the server owner's own IPs. |
+| `GEOCODING_BOUNDARY_FALLBACK_ENABLED` | `false` | Enable the opt-in boundary geocoder fallback. When false no geocoding request is made from ingest. |
+| `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` | `5` | Per-batch cap on boundary fallback lookups. |
+| `GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS` | half of `SCRAPER_POLL_TIMEOUT_MS` (`15000`) | Per-batch wall-clock budget for boundary fallback lookups; `0` inherits half the poll window (headroom for the rest of the batch), negative disables the window. |
 
 ---
 

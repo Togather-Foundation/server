@@ -2,6 +2,7 @@ package geocoding
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/Togather-Foundation/server/internal/geoloc"
@@ -35,6 +36,12 @@ func NewLocationResolver(geocoder ForwardGeocoder, countryCodes string, logger z
 
 // Resolve implements geoloc.Resolver. It returns ok=false on any failure or
 // empty result so the caller keeps its existing (heuristic) answer.
+//
+// It makes at most two geocoder calls: the input as given, and — only when the
+// first call honestly found nothing (geocoding.ErrNoResults) — the same string
+// without its leading venue name. A timeout, transport error, rate limit (429)
+// or any other failure stops immediately: retrying a shortened query after a
+// provider problem would double the load without improving the odds.
 func (r *LocationResolver) Resolve(ctx context.Context, raw string) (geoloc.Parts, bool) {
 	if r == nil || r.geocoder == nil {
 		return geoloc.Parts{}, false
@@ -46,22 +53,18 @@ func (r *LocationResolver) Resolve(ctx context.Context, raw string) (geoloc.Part
 
 	// Free-form Nominatim search often returns nothing for
 	// "<venue name>, <street>, <city>, <region>, <country>" — the venue name is
-	// not an address component. Try the string as given, then once without the
-	// leading name (see addressWithoutVenueName).
-	queries := []string{raw}
-	if stripped, ok := addressWithoutVenueName(raw); ok {
-		queries = append(queries, stripped)
-	}
-
-	var result *GeocodeResult
-	var err error
-	for i, query := range queries {
-		result, err = r.geocoder.Geocode(ctx, query, r.countryCodes)
-		if err == nil && result != nil {
-			raw = query
-			break
+	// not an address component. So if (and only if) the first query reports no
+	// results, try once without the leading name (see addressWithoutVenueName).
+	query := raw
+	result, err := r.geocoder.Geocode(ctx, query, r.countryCodes)
+	if err != nil || result == nil {
+		if errors.Is(err, ErrNoResults) {
+			if stripped, ok := addressWithoutVenueName(raw); ok {
+				query = stripped
+				result, err = r.geocoder.Geocode(ctx, query, r.countryCodes)
+			}
 		}
-		if i == len(queries)-1 {
+		if err != nil || result == nil {
 			if err != nil {
 				r.logger.Debug().Err(err).Str("location", raw).Msg("geoloc: resolver could not geocode location")
 			}
@@ -70,7 +73,7 @@ func (r *LocationResolver) Resolve(ctx context.Context, raw string) (geoloc.Part
 	}
 
 	parts := geoloc.Parts{
-		Name:        raw,
+		Name:        query,
 		Street:      result.Address.Road,
 		Locality:    result.Address.City,
 		Region:      result.Address.State,

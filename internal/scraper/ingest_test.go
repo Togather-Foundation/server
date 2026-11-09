@@ -141,6 +141,58 @@ func TestSubmitBatch_ImmediateCompletion(t *testing.T) {
 	}
 }
 
+// TestSubmitBatch_MapsLocationResolutionCounts verifies the optional
+// boundary-geocoder counts are carried through from /batch-status into the
+// IngestResult, and that their absence leaves them zero.
+func TestSubmitBatch_MapsLocationResolutionCounts(t *testing.T) {
+	t.Run("present", func(t *testing.T) {
+		body := completedStatusBody("batch-loc", 1, 0, 2)
+		body["location_resolved"] = 3
+		body["location_unresolved"] = 2
+		body["location_skipped"] = 1
+
+		handler := &batchHandlerPair{
+			batchID: "batch-loc",
+			statusFn: func(int32) (int, any) {
+				return http.StatusOK, body
+			},
+		}
+		srv := httptest.NewServer(handler)
+		defer srv.Close()
+		handler.srvURL = srv.URL
+
+		result, err := NewIngestClient(srv.URL, "test-api-key").SubmitBatch(context.Background(), sampleEvts(3))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.LocationResolved != 3 || result.LocationUnresolved != 2 || result.LocationSkipped != 1 {
+			t.Errorf("location counts = %d/%d/%d, want 3/2/1",
+				result.LocationResolved, result.LocationUnresolved, result.LocationSkipped)
+		}
+	})
+
+	t.Run("absent", func(t *testing.T) {
+		handler := &batchHandlerPair{
+			batchID: "batch-noloc",
+			statusFn: func(int32) (int, any) {
+				return http.StatusOK, completedStatusBody("batch-noloc", 2, 0, 0)
+			},
+		}
+		srv := httptest.NewServer(handler)
+		defer srv.Close()
+		handler.srvURL = srv.URL
+
+		result, err := NewIngestClient(srv.URL, "test-api-key").SubmitBatch(context.Background(), sampleEvts(2))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if result.LocationResolved != 0 || result.LocationUnresolved != 0 || result.LocationSkipped != 0 {
+			t.Errorf("location counts = %d/%d/%d, want 0/0/0",
+				result.LocationResolved, result.LocationUnresolved, result.LocationSkipped)
+		}
+	})
+}
+
 // TestSubmitBatch_FallbackStatusURL verifies that when status_url is absent
 // from the 202 body, submitChunk constructs it from batch_id and baseURL.
 func TestSubmitBatch_FallbackStatusURL(t *testing.T) {

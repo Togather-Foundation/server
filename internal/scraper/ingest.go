@@ -85,6 +85,12 @@ type IngestResult struct {
 	EventsDuplicate int           `json:"events_duplicate"`
 	EventsFailed    int           `json:"events_failed"`
 	Errors          []IngestError `json:"errors,omitempty"`
+	// Boundary-geocoder outcomes reported by the server. All zero when the
+	// server has GEOCODING_BOUNDARY_FALLBACK_ENABLED=false or the batch never
+	// reached the boundary check.
+	LocationResolved   int `json:"location_resolved,omitempty"`
+	LocationUnresolved int `json:"location_unresolved,omitempty"`
+	LocationSkipped    int `json:"location_skipped,omitempty"`
 }
 
 // IngestError describes a per-event error within a batch.
@@ -115,6 +121,11 @@ type batchStatusResponse struct {
 	Duplicates int                 `json:"duplicates"`
 	Failed     int                 `json:"failed"`
 	Results    []batchStatusResult `json:"results,omitempty"`
+	// Optional boundary-geocoder counts. Absent from responses of servers
+	// running with the fallback disabled; unmarshalling leaves them zero.
+	LocationResolved   int `json:"location_resolved,omitempty"`
+	LocationUnresolved int `json:"location_unresolved,omitempty"`
+	LocationSkipped    int `json:"location_skipped,omitempty"`
 }
 
 // NewIngestClient constructs an IngestClient targeting baseURL with the given
@@ -189,6 +200,9 @@ func (c *IngestClient) SubmitBatch(ctx context.Context, evts []events.EventInput
 		combined.EventsCreated += result.EventsCreated
 		combined.EventsDuplicate += result.EventsDuplicate
 		combined.EventsFailed += result.EventsFailed
+		combined.LocationResolved += result.LocationResolved
+		combined.LocationUnresolved += result.LocationUnresolved
+		combined.LocationSkipped += result.LocationSkipped
 		// Adjust chunk-relative indices to global indices before appending.
 		for _, ie := range result.Errors {
 			ie.Index += i
@@ -390,11 +404,14 @@ func (c *IngestClient) fetchBatchStatus(ctx context.Context, batchID, statusURL 
 	}
 
 	return IngestResult{
-		BatchID:         batchID,
-		EventsCreated:   status.Created,
-		EventsDuplicate: status.Duplicates,
-		EventsFailed:    status.Failed,
-		Errors:          batchStatusErrors(status.Results),
+		BatchID:            batchID,
+		EventsCreated:      status.Created,
+		EventsDuplicate:    status.Duplicates,
+		EventsFailed:       status.Failed,
+		Errors:             batchStatusErrors(status.Results),
+		LocationResolved:   status.LocationResolved,
+		LocationUnresolved: status.LocationUnresolved,
+		LocationSkipped:    status.LocationSkipped,
 	}, true, nil
 }
 

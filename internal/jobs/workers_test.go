@@ -8,6 +8,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
+	"github.com/Togather-Foundation/server/internal/geoloc"
 	"github.com/Togather-Foundation/server/internal/identity"
 	"github.com/Togather-Foundation/server/internal/kg"
 	"github.com/Togather-Foundation/server/internal/kg/artsdata"
@@ -97,6 +98,61 @@ func TestBatchIngestionWorker_Kind(t *testing.T) {
 	worker := BatchIngestionWorker{}
 	if worker.Kind() != JobKindBatchIngestion {
 		t.Errorf("Kind() = %q, want %q", worker.Kind(), JobKindBatchIngestion)
+	}
+}
+
+func TestResolutionOutcome(t *testing.T) {
+	tests := []struct {
+		name   string
+		before geoloc.BatchStats
+		after  geoloc.BatchStats
+		want   string
+	}{
+		{
+			name:   "no change",
+			before: geoloc.BatchStats{Resolved: 1},
+			after:  geoloc.BatchStats{Resolved: 1},
+			want:   "",
+		},
+		{
+			name:   "resolved",
+			before: geoloc.BatchStats{Resolved: 1},
+			after:  geoloc.BatchStats{Resolved: 2},
+			want:   "resolved",
+		},
+		{
+			name:   "unresolved",
+			before: geoloc.BatchStats{Resolved: 1},
+			after:  geoloc.BatchStats{Resolved: 1, Unresolved: 1},
+			want:   "unresolved",
+		},
+		{
+			name:   "skipped",
+			before: geoloc.BatchStats{Resolved: 1},
+			after:  geoloc.BatchStats{Resolved: 1, Skipped: 1},
+			want:   "skipped",
+		},
+		{
+			name:   "resolved wins when several counts move",
+			before: geoloc.BatchStats{},
+			after:  geoloc.BatchStats{Resolved: 1, Unresolved: 1, Skipped: 1},
+			want:   "resolved",
+		},
+		{
+			name:   "unresolved wins over skipped",
+			before: geoloc.BatchStats{},
+			after:  geoloc.BatchStats{Unresolved: 1, Skipped: 1},
+			want:   "unresolved",
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolutionOutcome(tc.before, tc.after); got != tc.want {
+				t.Errorf("resolutionOutcome(%+v, %+v) = %q, want %q", tc.before, tc.after, got, tc.want)
+			}
+		})
 	}
 }
 

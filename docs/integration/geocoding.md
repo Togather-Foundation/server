@@ -508,6 +508,34 @@ GET  /api/v1/admin/geocoding/stats       -- Cache statistics (hit rates, top que
 | `GEOCODING_DEFAULT_COUNTRY` | `ca` | Default country code for queries |
 | `GEOCODING_MAX_RADIUS_KM` | `100` | Maximum proximity search radius |
 | `GEOCODING_DEFAULT_RADIUS_KM` | `10` | Default proximity search radius |
+| `GEOCODING_BOUNDARY_FALLBACK_ENABLED` | `false` | Enable the boundary geocoder fallback for out-of-boundary events |
+| `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` | `5` | Per-batch cap on boundary fallback lookups (`0` = none, negative = unlimited) |
+| `GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS` | half of `SCRAPER_POLL_TIMEOUT_MS` (`15000`) | Per-batch wall-clock budget for boundary fallback lookups; `0` inherits half the poll window, negative disables the window |
+
+### Boundary Fallback
+
+When the offline location parse cannot place an event inside the node's
+geographic boundary, ingest can ask this service to re-derive the address. The
+fallback is **disabled by default**; set `GEOCODING_BOUNDARY_FALLBACK_ENABLED=true`
+to wire the resolver. With it off, the boundary fallback makes no geocoding
+request and the offline decision stands. (Separate per-event geocoding jobs still
+run and are not affected by this switch.)
+
+Only the event's location string is transmitted — `PlaceInput.Name`, or
+`StreetAddress` when the name is empty. For ICS feeds that string is the venue
+name plus the address as written in the feed. The query goes to
+`NOMINATIM_API_URL`. A shortened retry (without the leading venue name) happens
+only after an honest no-result; timeouts, transport errors and HTTP 429 stop
+after one query. See [ICS feeds](ics-feeds.md) for the full contract.
+
+Work is bounded per batch ingestion job by
+`GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` and
+`GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS`. The budget defaults to half the scraper's
+poll window, leaving headroom for ingest and result reporting; the budget clock
+starts no earlier than the scraper's, so half prevents a batch from still
+geocoding when the poll gives up. Once either limit is reached, remaining events
+keep their offline decision and are reported as `skipped`.
+
 
 ---
 

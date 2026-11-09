@@ -280,16 +280,53 @@ country skipped — the parser does that for known country names and for a bare
 two-letter code that follows a region. It cannot tell whether a place is actually
 inside the node's boundary.
 
-**Geocoder fallback.** If an event's parsed location falls outside the node's
-geographic boundary, ingest asks the configured location resolver (the cached
-Nominatim service, see `internal/geocoding`) to re-derive the address *before*
+**Geocoder fallback (opt-in, disabled by default).** If an event's parsed
+location falls outside the node's geographic boundary, ingest can ask the cached
+Nominatim service (see `internal/geocoding`) to re-derive the address *before*
 rejecting. If the geocoded address is inside the boundary, the event is accepted
-with the resolved locality/region/country and coordinates. A geocoder failure, an
-unresolved address, or an address that is still outside keeps the original
-rejection. This is a fallback tier, not a replacement: it only sees the events the
-offline parse could not place, so volume stays small and the cache makes repeat
-venues free. Disable it by not wiring a resolver — behaviour is then exactly the
-offline parse.
+with the resolved locality/region/country and coordinates. A geocoder failure,
+an unresolved address, or an address that is still outside keeps the original
+decision. This is a fallback tier, not a replacement: it only sees the events
+the offline parse could not place, so volume stays small and the cache makes
+repeat venues free.
+
+The fallback is **off unless `GEOCODING_BOUNDARY_FALLBACK_ENABLED=true`**. When
+it is false the server never wires a boundary resolver: ingest keeps exactly the
+offline decision. This switch governs the *boundary fallback only*; the separate
+per-event geocoding jobs (which fill coordinates after an event is accepted) run
+regardless and are unaffected.
+
+*What is transmitted.* Exactly one field: the event's location string —
+`PlaceInput.Name`, falling back to `StreetAddress` when the name is empty. For
+ICS that field holds the venue name followed by the address components as the
+feed wrote them (for example `Sweat and Tonic, 486 Front St W, Toronto, ON M5V
+0V2, Canada`), because that is the string the offline parse could not place. No
+event name, description, organiser or URL is sent. The query goes to
+`NOMINATIM_API_URL` (default `https://nominatim.openstreetmap.org`). If — and
+only if — Nominatim answers with no results, the same string is retried once
+without its leading venue name; a timeout, transport error or HTTP 429 stops
+after the first query. Successful answers are cached, so a repeated venue is
+free. A cached no-result also keeps its "no result" meaning, so the shortened
+query is still tried on later events.
+
+*Work is bounded per batch.* `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH`
+(default `5`) caps lookups per batch ingestion job, and
+`GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS` (default: half of the scraper's
+`SCRAPER_POLL_TIMEOUT_MS`, so `15000` at the default `30000`) caps the
+wall-clock time spent looking up. Half, rather than the whole poll window,
+leaves headroom for ingest and result reporting: the budget clock starts no
+earlier than the scraper's, so a batch cannot be left geocoding when the poll
+gives up. Once either limit is reached, the remaining events keep their offline
+decision and are counted as skipped. Each batch logs a single `batch location
+resolution summary` line with resolved/unresolved/skipped counts;
+`/api/v1/batch-status/{id}` adds `location_resolved`, `location_unresolved` and
+`location_skipped` when the run used the fallback, and scraper run diagnostics
+expose the same counts plus a
+`location_unresolved: N event(s) could not be placed by the boundary geocoder`
+quality warning (also visible in `server scrape failures`).
+
+To disable, set `GEOCODING_BOUNDARY_FALLBACK_ENABLED=false` (or unset it) and
+restart the server; nothing else needs changing.
 
 ### Virtual Signal Keywords
 

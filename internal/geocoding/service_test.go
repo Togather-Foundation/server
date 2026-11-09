@@ -3,6 +3,7 @@ package geocoding
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -18,6 +19,24 @@ import (
 )
 
 // TestGeocode_MockNominatim tests geocoding with a mock Nominatim server
+func TestCachedFailureError(t *testing.T) {
+	noResult := cachedFailureError("Venue, Toronto", failureReasonNoResults)
+	if !errors.Is(noResult, ErrNoResults) {
+		t.Errorf("cached no-result error = %v, want errors.Is(ErrNoResults)", noResult)
+	}
+	if errors.Is(noResult, ErrGeocodingFailed) {
+		t.Errorf("cached no-result error = %v, must not match ErrGeocodingFailed", noResult)
+	}
+
+	transient := cachedFailureError("Venue, Toronto", "max retries exceeded: http request: context deadline exceeded")
+	if !errors.Is(transient, ErrGeocodingFailed) {
+		t.Errorf("cached transient error = %v, want errors.Is(ErrGeocodingFailed)", transient)
+	}
+	if errors.Is(transient, ErrNoResults) {
+		t.Errorf("cached transient error = %v, must not match ErrNoResults", transient)
+	}
+}
+
 func TestGeocode_MockNominatim(t *testing.T) {
 	// Create mock Nominatim server
 	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -425,6 +425,34 @@ type GeocodingConfig struct {
 	PopularPreserveCount int
 	// DefaultCountry is the default country code for geocoding queries (default: "ca")
 	DefaultCountry string
+
+	// BoundaryFallbackEnabled gates the geocoder fallback for events whose
+	// offline location parse cannot be placed inside the node's geographic
+	// boundary. When false (the default), the router never wires a location
+	// resolver, so ingest keeps the pure-offline decision and no query leaves
+	// the process. When true, ingest may ask the cached geocoder before
+	// rejecting an event.
+	// Environment variable: GEOCODING_BOUNDARY_FALLBACK_ENABLED (default: false)
+	BoundaryFallbackEnabled bool
+
+	// BoundaryFallbackMaxLookupsPerBatch caps how many boundary-geocoder
+	// lookups a single batch ingestion job may perform. Events beyond the cap
+	// keep their offline decision (rejected or accepted as before) instead of
+	// waiting on the geocoder. 0 allows no lookups at all; a negative value
+	// means unlimited (bounded only by BoundaryFallbackBudgetMS).
+	// Environment variable: GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH (default: 5)
+	BoundaryFallbackMaxLookupsPerBatch int
+
+	// BoundaryFallbackBudgetMS is the wall-clock budget, in milliseconds, for
+	// boundary-geocoder lookups in one batch job. Zero means "adopt half of
+	// Scraper.PollTimeout": the scraper gives up polling a batch after that
+	// window, and the budget clock starts no earlier than the poll clock, so
+	// half leaves headroom for the rest of the batch to finish and report.
+	// A negative value means "no wall-clock window" (the lookup cap still
+	// applies).
+	// Environment variable: GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS
+	// (default: half of SCRAPER_POLL_TIMEOUT_MS, itself default 30000)
+	BoundaryFallbackBudgetMS int
 }
 
 // GeographicBoundaryConfig defines the geographic scope for this SEL node.
@@ -581,6 +609,10 @@ func Load() (Config, error) {
 			FailureTTLDays:           getEnvInt("GEOCODING_FAILURE_TTL_DAYS", 7),
 			PopularPreserveCount:     getEnvInt("GEOCODING_POPULAR_PRESERVE_COUNT", 10000),
 			DefaultCountry:           getEnv("GEOCODING_DEFAULT_COUNTRY", "ca"),
+
+			BoundaryFallbackEnabled:            getEnvBool("GEOCODING_BOUNDARY_FALLBACK_ENABLED", false),
+			BoundaryFallbackMaxLookupsPerBatch: getEnvInt("GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH", 5),
+			BoundaryFallbackBudgetMS:           getEnvInt("GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS", 0),
 		},
 		Artsdata: ArtsdataConfig{
 			Endpoint:              getEnv("ARTSDATA_ENDPOINT", "https://api.artsdata.ca/recon"),
@@ -642,6 +674,17 @@ func Load() (Config, error) {
 	// Validate scraper polling configuration
 	if err := validateScraperPollingConfig(cfg.Scraper); err != nil {
 		return Config{}, err
+	}
+
+	// The boundary geocoder fallback runs inside a batch ingestion job that the
+	// scraper polls for at most Scraper.PollTimeout. Use half that window as the
+	// default budget: the budget clock starts no earlier than the scraper's, and
+	// the rest of the batch (ingest, DB writes, result reporting) still has to
+	// finish before the poll times out. A batch that spends the whole poll
+	// window geocoding would never be observed. Operators can override
+	// explicitly; a negative value disables the wall-clock window.
+	if cfg.Geocoding.BoundaryFallbackBudgetMS == 0 {
+		cfg.Geocoding.BoundaryFallbackBudgetMS = cfg.Scraper.PollTimeout / 2
 	}
 
 	if cfg.Server.ShutdownPoolCloseTimeout <= 0 {

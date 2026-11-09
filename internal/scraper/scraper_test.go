@@ -20,6 +20,62 @@ import (
 // dates are fixed in the past. Guard behaviour is covered by past_event_test.go.
 const testPastEventGrace = 100 * 365 * 24 * time.Hour
 
+func TestApplyBoundaryLocationResult(t *testing.T) {
+	t.Run("copies counts and appends an unresolved warning", func(t *testing.T) {
+		result := &ScrapeResult{SourceName: "feed"}
+		applyBoundaryLocationResult(result, IngestResult{
+			LocationResolved:   2,
+			LocationUnresolved: 3,
+			LocationSkipped:    1,
+		})
+
+		if result.LocationResolved != 2 || result.LocationUnresolved != 3 || result.LocationSkipped != 1 {
+			t.Errorf("counts = %d/%d/%d, want 2/3/1",
+				result.LocationResolved, result.LocationUnresolved, result.LocationSkipped)
+		}
+		if len(result.QualityWarnings) != 1 {
+			t.Fatalf("QualityWarnings = %v, want one entry", result.QualityWarnings)
+		}
+		want := "location_unresolved: 3 event(s) could not be placed by the boundary geocoder"
+		if result.QualityWarnings[0] != want {
+			t.Errorf("warning = %q, want %q", result.QualityWarnings[0], want)
+		}
+	})
+
+	t.Run("no warning when nothing is unresolved", func(t *testing.T) {
+		result := &ScrapeResult{SourceName: "feed"}
+		applyBoundaryLocationResult(result, IngestResult{LocationResolved: 4})
+		if len(result.QualityWarnings) != 0 {
+			t.Errorf("QualityWarnings = %v, want none", result.QualityWarnings)
+		}
+	})
+
+	t.Run("nil result is safe", func(t *testing.T) {
+		applyBoundaryLocationResult(nil, IngestResult{LocationUnresolved: 1})
+	})
+}
+
+func TestLocationRunMetadata(t *testing.T) {
+	if got := locationRunMetadata(ScrapeResult{}); got != nil {
+		t.Errorf("locationRunMetadata(zero) = %v, want nil", got)
+	}
+
+	got := locationRunMetadata(ScrapeResult{LocationResolved: 1, LocationUnresolved: 2, LocationSkipped: 3})
+	want := map[string]int{
+		"location_resolved":   1,
+		"location_unresolved": 2,
+		"location_skipped":    3,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("metadata = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("metadata[%q] = %d, want %d", k, got[k], v)
+		}
+	}
+}
+
 // newTestScraper builds a Scraper with a real IngestClient pointing at
 // baseURL. queries is nil — DB tracking is skipped.
 func newTestScraper(t *testing.T, ingestBaseURL string) *Scraper {

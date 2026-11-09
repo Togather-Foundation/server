@@ -536,6 +536,18 @@ paths:
       description: |
         Retrieve the status and results of a batch event submission. Returns 404 if
         the batch is still processing or doesn't exist.
+
+        When the node has the boundary geocoder fallback enabled
+        (`GEOCODING_BOUNDARY_FALLBACK_ENABLED`, default `false`), ingest may ask
+        the geocoder to place events whose offline location parse falls outside
+        the geographic boundary. A result that was looked up may then carry
+        `location_resolution`, and the response adds `location_resolved`,
+        `location_unresolved` and `location_skipped` counts. Work is bounded per
+        batch by `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` (default
+        `5`) and `GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS` (default half of
+        `SCRAPER_POLL_TIMEOUT_MS`, i.e. `15000`); events beyond the budget keep
+        their offline decision and are counted as skipped. With the fallback
+        disabled the response shape is unchanged.
       tags: [Events]
       security: []
       parameters:
@@ -578,6 +590,27 @@ paths:
                   duplicates:
                     type: integer
                     description: Number of duplicate events detected
+                  location_resolved:
+                    type: integer
+                    description: |
+                      Number of events the boundary geocoder placed inside the
+                      boundary. Present only when at least one result carries
+                      `location_resolution`, i.e. when the node runs with
+                      `GEOCODING_BOUNDARY_FALLBACK_ENABLED` (default `false`).
+                  location_unresolved:
+                    type: integer
+                    description: |
+                      Number of boundary lookups that ran but did not produce an
+                      accepted location. Present only when the fallback was used.
+                  location_skipped:
+                    type: integer
+                    description: |
+                      Number of events not looked up because the per-batch budget
+                      (`GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH`,
+                      default `5`) or time window
+                      (`GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS`, default half of
+                      `SCRAPER_POLL_TIMEOUT_MS`) was exhausted. Present only
+                      when the fallback was used.
                   results:
                     type: array
                     items:
@@ -595,6 +628,18 @@ paths:
                         error:
                           type: string
                           description: Error message (if failed)
+                        location_resolution:
+                          type: string
+                          enum: [resolved, unresolved, skipped]
+                          description: |
+                            Boundary geocoder outcome for this event. Absent when
+                            the fallback did not run for it (including every
+                            event on a node with
+                            `GEOCODING_BOUNDARY_FALLBACK_ENABLED` unset or
+                            `false`). `resolved` = placed inside the boundary;
+                            `unresolved` = looked up but not accepted;
+                            `skipped` = not looked up because the per-batch
+                            budget was exhausted.
         '404':
           description: Batch not found or still processing
           content:
@@ -5362,6 +5407,36 @@ components:
           description: Per-event ingest failure details from the run metadata
           items:
             $ref: '#/components/schemas/EventFailure'
+        quality_warnings:
+          type: array
+          description: |
+            Run-level quality warnings from the run metadata (the `ics_warnings`
+            key). Includes `location_unresolved: N event(s) could not be placed
+            by the boundary geocoder` when the opt-in boundary fallback
+            (`GEOCODING_BOUNDARY_FALLBACK_ENABLED`, default `false`) could not
+            place some events. Omitted when the run recorded none.
+          items:
+            type: string
+        location_resolved:
+          type: integer
+          description: |
+            Events the boundary geocoder placed inside the boundary (surfaced
+            from the run metadata). Present only when
+            `GEOCODING_BOUNDARY_FALLBACK_ENABLED=true` (default `false`) and the
+            fallback did work for this run.
+        location_unresolved:
+          type: integer
+          description: |
+            Boundary lookups that ran but did not produce an accepted location.
+            Present only when the fallback was used.
+        location_skipped:
+          type: integer
+          description: |
+            Events not looked up because the per-batch budget
+            (`GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH`, default `5`)
+            or time window (`GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS`, default
+            half of `SCRAPER_POLL_TIMEOUT_MS`) was exhausted. Present only when
+            the fallback was used.
 
     EventFailure:
       type: object

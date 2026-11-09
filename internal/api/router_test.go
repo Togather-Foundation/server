@@ -1,10 +1,79 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/Togather-Foundation/server/internal/config"
+	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/geocoding"
+	"github.com/rs/zerolog"
 )
+
+// stubForwardGeocoder counts calls and answers with a Toronto address.
+type stubForwardGeocoder struct {
+	calls int
+}
+
+func (s *stubForwardGeocoder) Geocode(_ context.Context, _ string, _ string) (*geocoding.GeocodeResult, error) {
+	s.calls++
+	return &geocoding.GeocodeResult{
+		Address: geocoding.AddressComponents{City: "Toronto", State: "Ontario", Country: "Canada"},
+	}, nil
+}
+
+// TestConfigureBoundaryFallback verifies the operator switch: disabled (the
+// default) leaves the ingest service without a resolver — so it can never call
+// the geocoder — and enabled wires one.
+func TestConfigureBoundaryFallback(t *testing.T) {
+	newService := func() *events.IngestService {
+		return events.NewIngestService(nil, "", "America/Toronto", config.ValidationConfig{}, zerolog.Nop())
+	}
+
+	t.Run("disabled by default", func(t *testing.T) {
+		geocoder := &stubForwardGeocoder{}
+		svc := newService()
+
+		configureBoundaryFallback(svc, config.Config{}, geocoder, zerolog.Nop())
+
+		if svc.LocationResolverEnabled() {
+			t.Error("LocationResolverEnabled() = true, want false")
+		}
+		if geocoder.calls != 0 {
+			t.Errorf("geocoder calls = %d, want 0", geocoder.calls)
+		}
+	})
+
+	t.Run("enabled wires the resolver", func(t *testing.T) {
+		geocoder := &stubForwardGeocoder{}
+		svc := newService()
+
+		configureBoundaryFallback(svc, config.Config{
+			Geocoding: config.GeocodingConfig{BoundaryFallbackEnabled: true},
+		}, geocoder, zerolog.Nop())
+
+		if !svc.LocationResolverEnabled() {
+			t.Error("LocationResolverEnabled() = false, want true")
+		}
+		if geocoder.calls != 0 {
+			t.Errorf("geocoder calls = %d before any ingest, want 0", geocoder.calls)
+		}
+	})
+
+	t.Run("enabled without a geocoder stays offline", func(t *testing.T) {
+		svc := newService()
+
+		configureBoundaryFallback(svc, config.Config{
+			Geocoding: config.GeocodingConfig{BoundaryFallbackEnabled: true},
+		}, nil, zerolog.Nop())
+
+		if svc.LocationResolverEnabled() {
+			t.Error("LocationResolverEnabled() = true with a nil geocoder, want false (offline path)")
+		}
+	})
+}
 
 func TestMethodMux(t *testing.T) {
 	getHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

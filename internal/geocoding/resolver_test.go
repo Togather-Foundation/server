@@ -3,6 +3,7 @@ package geocoding
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -157,6 +158,72 @@ func TestLocationResolver_DoesNotShortenAStreetAddress(t *testing.T) {
 	}
 	if len(geocoder.calls) != 1 {
 		t.Fatalf("calls = %v, a street-first address must not be shortened", geocoder.calls)
+	}
+}
+
+// funcGeocoder answers each call through fn, recording the queries, so tests
+// can script "no results, then success" and count the attempts.
+type funcGeocoder struct {
+	calls []string
+	fn    func(call int, query string) (*GeocodeResult, error)
+}
+
+func (g *funcGeocoder) Geocode(_ context.Context, query string, _ string) (*GeocodeResult, error) {
+	g.calls = append(g.calls, query)
+	return g.fn(len(g.calls), query)
+}
+
+func TestLocationResolver_RetriesOnlyOnNoResults(t *testing.T) {
+	toronto := &GeocodeResult{Address: AddressComponents{City: "Toronto", State: "Ontario"}}
+	geocoder := &funcGeocoder{fn: func(call int, query string) (*GeocodeResult, error) {
+		if call == 1 {
+			return nil, fmt.Errorf("%w for query: %s", ErrNoResults, query)
+		}
+		return toronto, nil
+	}}
+
+	parts, ok := NewLocationResolver(geocoder, "ca", zerolog.Nop()).
+		Resolve(context.Background(), "Sweat and Tonic, 486 Front St W, Toronto, ON M5V 0V2, Canada")
+	if !ok || parts.Locality != "Toronto" {
+		t.Fatalf("parts = %+v, ok = %v", parts, ok)
+	}
+	if len(geocoder.calls) != 2 {
+		t.Fatalf("calls = %v, want exactly two (full string, then address)", geocoder.calls)
+	}
+	if geocoder.calls[1] != "486 Front St W, Toronto, ON M5V 0V2, Canada" {
+		t.Errorf("retry query = %q", geocoder.calls[1])
+	}
+	if parts.Name != "486 Front St W, Toronto, ON M5V 0V2, Canada" {
+		t.Errorf("parts.Name = %q, want the query that matched", parts.Name)
+	}
+}
+
+func TestLocationResolver_DoesNotRetryOnProviderFailure(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"timeout", fmt.Errorf("%w: context deadline exceeded", ErrGeocodingFailed)},
+		{"transport error", errors.New("connection reset by peer")},
+		{"rate limited 429", fmt.Errorf("%w: rate limited (429)", ErrGeocodingFailed)},
+		{"context deadline", context.DeadlineExceeded},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			geocoder := &funcGeocoder{fn: func(int, string) (*GeocodeResult, error) {
+				return nil, tc.err
+			}}
+
+			if _, ok := NewLocationResolver(geocoder, "", zerolog.Nop()).
+				Resolve(context.Background(), "Sweat and Tonic, 486 Front St W, Toronto, ON"); ok {
+				t.Fatal("expected ok=false")
+			}
+			if len(geocoder.calls) != 1 {
+				t.Fatalf("calls = %v, want exactly one (no shortened retry on %v)", geocoder.calls, tc.err)
+			}
+		})
 	}
 }
 

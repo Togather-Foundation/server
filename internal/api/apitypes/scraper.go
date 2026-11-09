@@ -22,6 +22,15 @@ type ScraperRunResponse struct {
 	EventsFailed  int32                  `json:"events_failed"`
 	ErrorMessage  string                 `json:"error_message,omitempty"`
 	EventFailures []EventFailureResponse `json:"event_failures,omitempty"`
+	// QualityWarnings holds run-level warnings from the scrape metadata,
+	// e.g. "location_unresolved: 2 event(s) could not be placed by the
+	// boundary geocoder". Omitted when the run recorded none.
+	QualityWarnings []string `json:"quality_warnings,omitempty"`
+	// Boundary-geocoder outcomes for the run. Present only when the node runs
+	// with GEOCODING_BOUNDARY_FALLBACK_ENABLED=true and the fallback did work.
+	LocationResolved   int `json:"location_resolved,omitempty"`
+	LocationUnresolved int `json:"location_unresolved,omitempty"`
+	LocationSkipped    int `json:"location_skipped,omitempty"`
 }
 
 type DiagnosticsResponse struct {

@@ -63,6 +63,35 @@ type RouterWithClient struct {
 	Broker        *sse.Broker
 }
 
+// configureBoundaryFallback wires the cached geocoder as ingest's location
+// resolver only when GEOCODING_BOUNDARY_FALLBACK_ENABLED is true. Keeping the
+// gate in one function makes the default-off contract explicit and testable.
+func configureBoundaryFallback(ingestService *events.IngestService, cfg config.Config, geocoder geocoding.ForwardGeocoder, logger zerolog.Logger) {
+	if !cfg.Geocoding.BoundaryFallbackEnabled {
+		logger.Debug().Msg("boundary geocoder fallback disabled (GEOCODING_BOUNDARY_FALLBACK_ENABLED=false)")
+		return
+	}
+	if ingestService == nil || geocoder == nil {
+		// A non-nil resolver around a nil geocoder would report itself as
+		// enabled while every lookup failed; keep the offline path instead.
+		logger.Warn().Msg("boundary geocoder fallback enabled but no geocoder is available; keeping offline path")
+		return
+	}
+	ingestService.WithLocationResolver(geocoding.NewLocationResolver(geocoder, cfg.Geocoding.DefaultCountry, logger))
+	logger.Info().Msg("boundary geocoder fallback enabled")
+}
+
+// batchLocationBudget translates the geocoding config into the per-batch budget
+// the batch ingestion worker enforces. Only consulted when the boundary
+// fallback is enabled; carrying it unconditionally keeps worker construction
+// explicit and free of globals.
+func batchLocationBudget(cfg config.Config) jobs.BatchLocationBudget {
+	return jobs.BatchLocationBudget{
+		MaxLookups: cfg.Geocoding.BoundaryFallbackMaxLookupsPerBatch,
+		Window:     time.Duration(cfg.Geocoding.BoundaryFallbackBudgetMS) * time.Millisecond,
+	}
+}
+
 func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, version, gitCommit, buildDate string, shutdownCtx ...context.Context) *RouterWithClient {
 	repo, err := postgres.NewRepository(pool, logger)
 	if err != nil {
@@ -95,7 +124,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	geocodingService := geocoding.NewGeocodingService(nominatimClient, geocodingCache, logger, cfg.Geocoding.DefaultCountry)
 	// Boundary fallback: when the offline location parse cannot be placed inside
 	// this node's boundary, ask the (cached) geocoder before rejecting the event.
-	ingestService.WithLocationResolver(geocoding.NewLocationResolver(geocodingService, cfg.Geocoding.DefaultCountry, logger))
+	// Disabled by default: with no resolver wired, ingest behaviour is identical
+	// to the pure-offline path and no query leaves the process.
+	configureBoundaryFallback(ingestService, cfg, geocodingService, logger)
 
 	// Create SQLc queries instance for direct database access
 	queries := postgres.New(pool)
@@ -164,7 +195,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	// Create a single ScraperSubmissionRepository shared by workers and handlers (srv-rgmjl).
 	submissionRepo := postgres.NewScraperSubmissionRepository(pool)
 
-	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, submissionRepo, cfg.Artsdata.EnrichmentRefreshDays)
+	workers := jobs.NewWorkersWithPool(pool, ingestService, repo.Events(), geocodingService, reconciliationService, placesService, orgService, slogLogger, slot, submissionRepo, cfg.Artsdata.EnrichmentRefreshDays, batchLocationBudget(cfg))
 
 	// Create River metrics hook for Prometheus monitoring
 	riverHooks := []rivertype.Hook{
@@ -261,6 +292,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 			time.Duration(cfg.Scraper.ChainEnqueueTimeoutMs)*time.Millisecond,
 			cfg.Scraper.ChainEnqueueRetries,
 			cfg.Artsdata.EnrichmentRefreshDays,
+			batchLocationBudget(cfg),
 		)
 	}
 

@@ -76,6 +76,13 @@ type ScrapeResult struct {
 	Error           error
 	DryRun          bool
 
+	// Boundary-geocoder outcomes reported by the ingest API. Non-zero only when
+	// the server runs with the boundary fallback enabled (see
+	// GEOCODING_BOUNDARY_FALLBACK_ENABLED).
+	LocationResolved   int
+	LocationUnresolved int
+	LocationSkipped    int
+
 	// DryRunEvents holds the normalized EventInput payloads when DryRun &&
 	// Verbose are both true. Populated by runWithTracking so the CLI can
 	// display individual events. Empty in non-verbose or non-dry-run modes
@@ -123,6 +130,41 @@ func buildRunMetadata(failures []IngestError, validEvents []events.EventInput) (
 		return nil, fmt.Errorf("marshal run metadata: %w", err)
 	}
 	return data, nil
+}
+
+// applyBoundaryLocationResult copies the boundary-geocoder outcome counts from
+// an ingest response onto a ScrapeResult and, when some events could not be
+// placed, appends a quality warning. That warning is persisted as an ICS
+// warning in scraper_runs.metadata, which is what admin scraper diagnostics and
+// `server scrape failures` surface.
+func applyBoundaryLocationResult(result *ScrapeResult, ingestResult IngestResult) {
+	if result == nil {
+		return
+	}
+	result.LocationResolved = ingestResult.LocationResolved
+	result.LocationUnresolved = ingestResult.LocationUnresolved
+	result.LocationSkipped = ingestResult.LocationSkipped
+	if ingestResult.LocationUnresolved > 0 {
+		result.QualityWarnings = append(result.QualityWarnings, fmt.Sprintf(
+			"location_unresolved: %d event(s) could not be placed by the boundary geocoder",
+			ingestResult.LocationUnresolved,
+		))
+	}
+}
+
+// locationRunMetadata returns the boundary-geocoder counts to persist in
+// scraper_runs.metadata. It returns nil when the fallback never ran or nothing
+// happened, so runs from nodes with the fallback disabled keep their existing
+// metadata shape.
+func locationRunMetadata(result ScrapeResult) map[string]int {
+	if result.LocationResolved == 0 && result.LocationUnresolved == 0 && result.LocationSkipped == 0 {
+		return nil
+	}
+	return map[string]int{
+		"location_resolved":   result.LocationResolved,
+		"location_unresolved": result.LocationUnresolved,
+		"location_skipped":    result.LocationSkipped,
+	}
 }
 
 // Scraper orchestrates fetching, normalising, and ingesting events from
@@ -1228,6 +1270,13 @@ func (s *Scraper) runWithTracking(
 	result.EventsDuplicate = ingestResult.EventsDuplicate
 	result.EventsFailed = ingestResult.EventsFailed
 	result.IngestErrors = ingestResult.Errors
+	applyBoundaryLocationResult(result, ingestResult)
+	if result.LocationUnresolved > 0 {
+		s.logger.Warn().
+			Str("source", result.SourceName).
+			Int("location_unresolved", result.LocationUnresolved).
+			Msg("scraper: boundary geocoder could not place some events")
+	}
 
 	if len(ingestResult.Errors) > 0 {
 		for _, ie := range ingestResult.Errors {
@@ -1348,6 +1397,11 @@ func (s *Scraper) updateRunCompleted(ctx context.Context, runID int64, result *S
 		meta["ics_warnings"] = storedWarnings
 		meta["ics_warning_count"] = len(result.QualityWarnings)
 		meta["ics_warning_truncated"] = truncated
+	}
+
+	// Persist boundary-geocoder outcome counts when the fallback did any work.
+	for k, v := range locationRunMetadata(*result) {
+		meta[k] = v
 	}
 
 	if len(meta) > 0 {

@@ -1280,6 +1280,35 @@ func TestToScraperRunResponse_MalformedMetadata(t *testing.T) {
 	}
 }
 
+func TestToScraperRunResponse_LocationCounts(t *testing.T) {
+	metaJSON := []byte(`{"location_resolved":3,"location_unresolved":2,"location_skipped":1}`)
+	resp := toScraperRunResponse(postgres.ScraperRun{ID: 5, SourceName: "s", Status: "completed", Metadata: metaJSON})
+
+	if resp.LocationResolved != 3 || resp.LocationUnresolved != 2 || resp.LocationSkipped != 1 {
+		t.Errorf("location counts = %d/%d/%d, want 3/2/1",
+			resp.LocationResolved, resp.LocationUnresolved, resp.LocationSkipped)
+	}
+}
+
+func TestToScraperRunResponse_QualityWarnings(t *testing.T) {
+	metaJSON := []byte(`{"ics_warnings":["location_unresolved: 2 event(s) could not be placed by the boundary geocoder"],"ics_warning_count":1}`)
+	resp := toScraperRunResponse(postgres.ScraperRun{ID: 4, SourceName: "s", Status: "completed", Metadata: metaJSON})
+
+	if len(resp.QualityWarnings) != 1 {
+		t.Fatalf("QualityWarnings = %v, want one entry", resp.QualityWarnings)
+	}
+	want := "location_unresolved: 2 event(s) could not be placed by the boundary geocoder"
+	if resp.QualityWarnings[0] != want {
+		t.Errorf("QualityWarnings[0] = %q, want %q", resp.QualityWarnings[0], want)
+	}
+
+	// Metadata without warnings must leave the field empty.
+	resp = toScraperRunResponse(postgres.ScraperRun{ID: 5, Metadata: []byte(`{"event_failures":[]}`)})
+	if resp.QualityWarnings != nil {
+		t.Errorf("QualityWarnings = %v, want nil", resp.QualityWarnings)
+	}
+}
+
 func TestToScraperRunResponse_EmptyEventFailuresArray(t *testing.T) {
 	metaJSON := []byte(`{"event_failures":[]}`)
 	run := postgres.ScraperRun{

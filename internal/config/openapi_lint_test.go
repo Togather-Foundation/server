@@ -77,6 +77,18 @@ var openapiConfigEntries = []struct {
 		envVar:     "SCRAPER_PAST_EVENT_GRACE_HOURS",
 		wantSubstr: "SCRAPER_PAST_EVENT_GRACE_HOURS",
 	},
+	{
+		envVar:     "GEOCODING_BOUNDARY_FALLBACK_ENABLED",
+		wantSubstr: "GEOCODING_BOUNDARY_FALLBACK_ENABLED",
+	},
+	{
+		envVar:     "GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH",
+		wantSubstr: "GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH",
+	},
+	{
+		envVar:     "GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS",
+		wantSubstr: "GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

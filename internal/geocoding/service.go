@@ -116,6 +116,24 @@ var ErrGeocodingFailed = errors.New("geocoding failed")
 // ErrNoResults is returned when Nominatim returns no results for a query.
 var ErrNoResults = errors.New("no geocoding results found")
 
+// failureReasonNoResults is the negative-cache reason recorded for a genuine
+// no-result. It must survive the failure cache: callers distinguish "the
+// provider found nothing" (worth retrying a different query) from a transient
+// failure (worth backing off), and losing that distinction turns a cached
+// no-result into a hard failure.
+const failureReasonNoResults = "no results found"
+
+// cachedFailureError maps a negative-cache row back to the error a live attempt
+// would have produced. Cached no-results keep ErrNoResults so the location
+// resolver can still retry a shortened query; every other cached failure is
+// transient and maps to ErrGeocodingFailed.
+func cachedFailureError(query, reason string) error {
+	if reason == failureReasonNoResults {
+		return fmt.Errorf("%w for query: %s (cached)", ErrNoResults, query)
+	}
+	return fmt.Errorf("%w: %s (cached failure, try again later)", ErrGeocodingFailed, reason)
+}
+
 // Geocode performs forward geocoding (query -> coordinates).
 // It checks the cache first, then calls Nominatim if needed, and caches the result.
 func (s *GeocodingService) Geocode(ctx context.Context, query string, countryCodes string) (*GeocodeResult, error) {
@@ -137,7 +155,7 @@ func (s *GeocodingService) Geocode(ctx context.Context, query string, countryCod
 	}
 	if failure != nil {
 		metrics.GeocodingRequestsTotal.WithLabelValues("forward", "failure_cache").Inc()
-		return nil, fmt.Errorf("%w: %s (cached failure, try again later)", ErrGeocodingFailed, failure.FailureReason)
+		return nil, cachedFailureError(query, failure.FailureReason)
 	}
 
 	// Check cache for existing result
@@ -204,10 +222,15 @@ func (s *GeocodingService) Geocode(ctx context.Context, query string, countryCod
 			Dur("latency", time.Since(startTime)).
 			Msg("nominatim search failed")
 
-		// Record failure in cache to avoid repeated attempts
-		cacheErr := s.cache.RecordFailure(ctx, normalized, countryCodes, err.Error())
-		if cacheErr != nil {
-			s.logger.Warn().Err(cacheErr).Str("query", query).Msg("failed to cache geocoding failure")
+		// Record failure in cache to avoid repeated attempts. A timeout or an
+		// operator-cancelled context says nothing about the place, and caching
+		// it would suppress this venue for the whole failure TTL — including
+		// the shortened-query retry the resolver depends on.
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			cacheErr := s.cache.RecordFailure(ctx, normalized, countryCodes, err.Error())
+			if cacheErr != nil {
+				s.logger.Warn().Err(cacheErr).Str("query", query).Msg("failed to cache geocoding failure")
+			}
 		}
 
 		return nil, fmt.Errorf("%w: %v", ErrGeocodingFailed, err)
@@ -223,7 +246,7 @@ func (s *GeocodingService) Geocode(ctx context.Context, query string, countryCod
 			Msg("nominatim returned no results")
 
 		// Record failure (no results) in cache
-		cacheErr := s.cache.RecordFailure(ctx, normalized, countryCodes, "no results found")
+		cacheErr := s.cache.RecordFailure(ctx, normalized, countryCodes, failureReasonNoResults)
 		if cacheErr != nil {
 			s.logger.Warn().Err(cacheErr).Str("query", query).Msg("failed to cache no-results failure")
 		}

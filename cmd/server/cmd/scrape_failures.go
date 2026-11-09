@@ -211,6 +211,18 @@ func printRunDetail(out io.Writer, label string, run *apitypes.ScraperRunRespons
 		}
 	}
 
+	if run.LocationResolved > 0 || run.LocationUnresolved > 0 || run.LocationSkipped > 0 {
+		_, _ = fmt.Fprintf(out, "  Boundary geocoder: resolved=%d unresolved=%d skipped=%d\n",
+			run.LocationResolved, run.LocationUnresolved, run.LocationSkipped)
+	}
+
+	if len(run.QualityWarnings) > 0 {
+		_, _ = fmt.Fprintln(out, "  Quality warnings:")
+		for _, w := range run.QualityWarnings {
+			_, _ = fmt.Fprintf(out, "    %s\n", w)
+		}
+	}
+
 }
 
 func printTable(out io.Writer, resp *apitypes.AllDiagnosticsResponse) {

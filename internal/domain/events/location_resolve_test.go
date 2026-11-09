@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/geoloc"
@@ -112,6 +113,170 @@ func TestIngest_UnresolvedLocationKeepsTheOriginalDecision(t *testing.T) {
 	var boundaryErr *ErrOutsideGeographicBoundary
 	if !errors.As(err, &boundaryErr) {
 		t.Fatalf("err = %v, want ErrOutsideGeographicBoundary", err)
+	}
+}
+
+func TestIngest_LocationResolverDisabledByDefault(t *testing.T) {
+	service := newTestService(NewMockRepository()).WithGeographicBoundaryConfig(torontoBoundary())
+	if service.LocationResolverEnabled() {
+		t.Error("LocationResolverEnabled() = true, want false without WithLocationResolver")
+	}
+
+	_, err := service.Ingest(context.Background(), misparsedInput())
+	var boundaryErr *ErrOutsideGeographicBoundary
+	if !errors.As(err, &boundaryErr) {
+		t.Fatalf("err = %v, want ErrOutsideGeographicBoundary", err)
+	}
+}
+
+func TestIngest_BoundaryBudgetExhaustedKeepsOfflineDecision(t *testing.T) {
+	resolver := &stubLocationResolver{
+		ok:    true,
+		parts: geoloc.Parts{Locality: "Toronto", Region: "Ontario", Country: "Canada"},
+	}
+	service := newTestService(NewMockRepository()).
+		WithGeographicBoundaryConfig(torontoBoundary()).
+		WithLocationResolver(resolver)
+	if !service.LocationResolverEnabled() {
+		t.Fatal("LocationResolverEnabled() = false, want true")
+	}
+
+	budget := geoloc.NewBudget(0, 0)
+	ctx := geoloc.WithBudget(context.Background(), budget)
+
+	_, err := service.Ingest(ctx, misparsedInput())
+	var boundaryErr *ErrOutsideGeographicBoundary
+	if !errors.As(err, &boundaryErr) {
+		t.Fatalf("err = %v, want ErrOutsideGeographicBoundary", err)
+	}
+	if resolver.calls != 0 {
+		t.Errorf("resolver calls = %d, want 0 when the budget is exhausted", resolver.calls)
+	}
+	if got, want := budget.Stats(), (geoloc.BatchStats{Skipped: 1}); got != want {
+		t.Errorf("budget stats = %+v, want %+v", got, want)
+	}
+}
+
+func TestIngest_BoundaryBudgetCapsLookupsPerBatch(t *testing.T) {
+	resolver := &stubLocationResolver{ok: false}
+	service := newTestService(NewMockRepository()).
+		WithGeographicBoundaryConfig(torontoBoundary()).
+		WithLocationResolver(resolver)
+
+	// One lookup shared by two out-of-boundary events: the first attempt is
+	// made (and fails), the second keeps its offline decision without calling
+	// the resolver.
+	budget := geoloc.NewBudget(1, 0)
+	ctx := geoloc.WithBudget(context.Background(), budget)
+
+	for i := 0; i < 2; i++ {
+		_, err := service.Ingest(ctx, misparsedInput())
+		var boundaryErr *ErrOutsideGeographicBoundary
+		if !errors.As(err, &boundaryErr) {
+			t.Fatalf("event %d: err = %v, want ErrOutsideGeographicBoundary", i, err)
+		}
+	}
+
+	if resolver.calls != 1 {
+		t.Errorf("resolver calls = %d, want 1", resolver.calls)
+	}
+	if got, want := budget.Stats(), (geoloc.BatchStats{Unresolved: 1, Skipped: 1}); got != want {
+		t.Errorf("budget stats = %+v, want %+v", got, want)
+	}
+}
+
+func TestIngest_BoundaryBudgetRecordsResolved(t *testing.T) {
+	resolver := &stubLocationResolver{
+		ok: true,
+		parts: geoloc.Parts{
+			Locality: "Toronto",
+			Region:   "Ontario",
+			Country:  "Canada",
+		},
+	}
+	service := newTestService(NewMockRepository()).
+		WithGeographicBoundaryConfig(torontoBoundary()).
+		WithLocationResolver(resolver)
+
+	budget := geoloc.NewBudget(5, 0)
+	ctx := geoloc.WithBudget(context.Background(), budget)
+
+	if _, err := service.Ingest(ctx, misparsedInput()); err != nil {
+		t.Fatalf("Ingest() error = %v", err)
+	}
+	if got, want := budget.Stats(), (geoloc.BatchStats{Resolved: 1}); got != want {
+		t.Errorf("budget stats = %+v, want %+v", got, want)
+	}
+}
+
+func TestIngest_BoundaryBudgetRecordsStillOutsideAsUnresolved(t *testing.T) {
+	resolver := &stubLocationResolver{
+		ok:    true,
+		parts: geoloc.Parts{Locality: "Oakville", Region: "Ontario", Country: "Canada"},
+	}
+	service := newTestService(NewMockRepository()).
+		WithGeographicBoundaryConfig(torontoBoundary()).
+		WithLocationResolver(resolver)
+
+	budget := geoloc.NewBudget(5, 0)
+	ctx := geoloc.WithBudget(context.Background(), budget)
+
+	_, err := service.Ingest(ctx, misparsedInput())
+	var boundaryErr *ErrOutsideGeographicBoundary
+	if !errors.As(err, &boundaryErr) {
+		t.Fatalf("err = %v, want ErrOutsideGeographicBoundary", err)
+	}
+	if got, want := budget.Stats(), (geoloc.BatchStats{Unresolved: 1}); got != want {
+		t.Errorf("budget stats = %+v, want %+v", got, want)
+	}
+}
+
+type deadlineRecordingResolver struct {
+	calls       int
+	hasDeadline bool
+	deadline    time.Time
+}
+
+func (r *deadlineRecordingResolver) Resolve(ctx context.Context, _ string) (geoloc.Parts, bool) {
+	r.calls++
+	r.deadline, r.hasDeadline = ctx.Deadline()
+	return geoloc.Parts{}, false
+}
+
+func TestIngest_BoundaryBudgetClampsLookupToWindow(t *testing.T) {
+	resolver := &deadlineRecordingResolver{}
+	service := newTestService(NewMockRepository()).
+		WithGeographicBoundaryConfig(torontoBoundary()).
+		WithLocationResolver(resolver)
+
+	budget := geoloc.NewBudget(5, time.Minute)
+	ctx := geoloc.WithBudget(context.Background(), budget)
+
+	_, _ = service.Ingest(ctx, misparsedInput())
+	if resolver.calls != 1 {
+		t.Fatalf("resolver calls = %d, want 1", resolver.calls)
+	}
+	if !resolver.hasDeadline {
+		t.Error("resolver context has no deadline; an in-flight lookup could outlive the batch window")
+	}
+	// The deadline must be the budget's own window, not an unrelated one.
+	if remaining := time.Until(resolver.deadline); remaining > time.Minute || remaining < 0 {
+		t.Errorf("resolver deadline is %v away, want within the 1m budget", remaining)
+	}
+}
+
+func TestIngest_NoBudgetDoesNotAddADeadline(t *testing.T) {
+	resolver := &deadlineRecordingResolver{}
+	service := newTestService(NewMockRepository()).
+		WithGeographicBoundaryConfig(torontoBoundary()).
+		WithLocationResolver(resolver)
+
+	_, _ = service.Ingest(context.Background(), misparsedInput())
+	if resolver.calls != 1 {
+		t.Fatalf("resolver calls = %d, want 1", resolver.calls)
+	}
+	if resolver.hasDeadline {
+		t.Error("resolver context has a deadline without a budget")
 	}
 }
 

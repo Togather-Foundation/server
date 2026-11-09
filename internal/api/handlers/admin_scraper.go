@@ -145,13 +145,26 @@ func toScraperRunResponse(run postgres.ScraperRun) apitypes.ScraperRunResponse {
 	if run.ErrorMessage.Valid {
 		resp.ErrorMessage = run.ErrorMessage.String
 	}
-	// Unmarshal per-event failure details from the metadata JSONB column.
+	// Unmarshal per-event failure details and run-level warnings from the
+	// metadata JSONB column.
 	if len(run.Metadata) > 0 {
 		var meta struct {
-			EventFailures []apitypes.EventFailureResponse `json:"event_failures"`
+			EventFailures      []apitypes.EventFailureResponse `json:"event_failures"`
+			ICSWarnings        []string                        `json:"ics_warnings"`
+			LocationResolved   int                             `json:"location_resolved"`
+			LocationUnresolved int                             `json:"location_unresolved"`
+			LocationSkipped    int                             `json:"location_skipped"`
 		}
-		if err := json.Unmarshal(run.Metadata, &meta); err == nil && len(meta.EventFailures) > 0 {
-			resp.EventFailures = meta.EventFailures
+		if err := json.Unmarshal(run.Metadata, &meta); err == nil {
+			if len(meta.EventFailures) > 0 {
+				resp.EventFailures = meta.EventFailures
+			}
+			if len(meta.ICSWarnings) > 0 {
+				resp.QualityWarnings = meta.ICSWarnings
+			}
+			resp.LocationResolved = meta.LocationResolved
+			resp.LocationUnresolved = meta.LocationUnresolved
+			resp.LocationSkipped = meta.LocationSkipped
 		}
 	}
 	return resp
