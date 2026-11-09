@@ -807,6 +807,10 @@ CREATE INDEX idx_event_sources_event ON event_sources (event_id);
 CREATE INDEX idx_event_sources_source ON event_sources (source_id, retrieved_at DESC);
 CREATE INDEX idx_event_sources_hash ON event_sources (payload_hash);
 CREATE INDEX idx_event_sources_external_id ON event_sources (source_id, source_event_id);
+-- Supports the feed-scoped identity lookup (migration 000058). The expression
+-- must match FindByFeedEventID verbatim; source_event_id leads because it is the
+-- selective column.
+CREATE INDEX idx_event_sources_feed_identity ON event_sources (source_event_id, rtrim(source_url, '/'));
 ```
 
 **Event identity is `(source_url, source_event_id)`, not `source_id`.**
