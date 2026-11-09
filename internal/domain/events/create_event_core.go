@@ -145,6 +145,7 @@ func (s *IngestService) createEventCore(
 			Name:        sourceName(validated.Source, validated.Name),
 			SourceType:  "api",
 			BaseURL:     sourceBaseURL(validated.Source.URL),
+			FeedURL:     validated.Source.URL,
 			LicenseURL:  licenseURL(sourceLicense(validated)),
 			LicenseType: sourceLicenseType(validated),
 			TrustLevel:  5,

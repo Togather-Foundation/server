@@ -3100,6 +3100,9 @@ func TestScenario_PerFeedProvenance(t *testing.T) {
 			if params.BaseURL != "https://unnamed.example.com" {
 				t.Errorf("BaseURL = %q, want %q", params.BaseURL, "https://unnamed.example.com")
 			}
+			if params.FeedURL != "https://unnamed.example.com/events" {
+				t.Errorf("FeedURL = %q, want %q (source resolution needs the feed URL to reuse an existing row)", params.FeedURL, "https://unnamed.example.com/events")
+			}
 		}
 	})
 }

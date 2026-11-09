@@ -564,13 +564,14 @@ Consequences when re-running or adding a feed:
 
 - Re-running a feed resolves to its own `(base_url, name)` row every time; the row is not
   recreated or renamed.
-- **Renaming a config's `name:` creates a new provenance row.** Source-row identity
-  includes the name, so subsequent runs resolve to a new `sources` row. Events already
-  attributed to the old row keep that attribution — there is no retroactive merge — and
-  the old row is left orphaned. Keep feed names stable; do not rename casually. Event
-  identity does **not** depend on it (see below), so the rename no longer duplicates
-  events; it only splits per-source metadata (license, review-warning suppression) across
-  two rows.
+- **Renaming a config's `name:` reuses the row that already owns the feed.** Resolution is
+  `(base_url, name)` first, then the feed URL: if no row exists for the new name, ingest
+  adopts the `sources` row that already owns that feed (the one with the most attributions,
+  then the oldest). So a rename keeps provenance and per-source metadata intact instead of
+  splitting it across two rows. The one case that still creates a row is a rename before
+  the feed has ever produced an event — there is no attribution to key the feed to yet.
+  A row named `unknown` is never adopted, because that would relabel a named feed as
+  unknown (set `name:` on every config).
 - Events already ingested from another feed are matched by feed event identity, not by
   source row (see below). Auto-merge then records the current feed's source attribution
   against the existing event, so a re-run backfills per-feed provenance going forward.
@@ -581,6 +582,28 @@ Consequences when re-running or adding a feed:
 - A source config with an empty/absent `name` is labelled `unknown` and groups per host;
   always set `name:` so provenance stays per-feed. (Ingest deliberately does not fall back
   to the event id or title, which would create a new `sources` row per event.)
+
+#### Auditing existing source rows
+
+Resolution stops new fragmentation but does not merge rows created before it. Two
+read-only/repair commands cover that (both read `DATABASE_URL` directly):
+
+```bash
+server source audit                 # zero-event rows + feeds served by more than one row
+server source audit --json
+server source prune-empty           # dry run: count rows that reference nothing
+server source prune-empty --confirm # delete them
+```
+
+`prune-empty` deletes a `sources` row only when **nothing** references it:
+no `event_sources`, `field_provenance`, `event_changes` or `api_keys` row points at it.
+A row that owns events is never touched — merging two populated rows is a separate data
+operation because `event_sources.source_id` would have to be repointed.
+
+`audit` also reports feeds that are still split across several rows (for example a
+catch-all `Meetup` row that already holds events from the same feed URL as a configured
+`meetup-*` row). Those are historical: the fix prevents new twins, and a populated-row
+merge is tracked separately.
 
 ### Event Identity: `(feed URL, sourceEventId)`
 

@@ -1104,13 +1104,24 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 // Source.Name to the config's `name:` and Source.URL to the feed URL, which
 // makes (base_url, name) a stable per-feed key.
 //
-// Resolution uses a single INSERT ... ON CONFLICT (base_url, name) DO UPDATE ...
-// RETURNING id so concurrent feeds racing on the same row cannot create
-// duplicates or fail: the conflicting row is returned in the same statement.
-// DO UPDATE (rather than DO NOTHING) is deliberate — it guarantees RETURNING
-// yields a row. The update is a logical no-op that leaves existing metadata
-// untouched, but it is a physical row rewrite per ingest (HOT update), not a
-// read-only probe.
+// Resolution order:
+//
+//  1. An existing row for (base_url, name). A configured name owns its own row,
+//     so a config that has one always keeps using it.
+//  2. If this name is new, the row that already owns this feed URL — a feed that
+//     was previously ingested under another name must not acquire a second
+//     provenance row just because a config was renamed. The row with the most
+//     attributions wins, then the oldest, so the choice is deterministic.
+//     Rows named "unknown" are excluded: reusing one would relabel a named feed
+//     as unknown instead of recording its real provenance.
+//  3. Insert.
+//
+// Steps 1 and 2 are read-only probes; the insert is a single
+// INSERT ... ON CONFLICT (base_url, name) DO UPDATE ... RETURNING id so
+// concurrent feeds racing on the same row cannot create duplicates or fail: the
+// conflicting row is returned in the same statement. DO UPDATE (rather than DO
+// NOTHING) is deliberate — it guarantees RETURNING yields a row. The update is
+// a logical no-op that leaves existing metadata untouched.
 //
 // When no name is supplied (legacy/caller-supplied sources), the original
 // base_url-only behaviour is preserved: reuse any row with that base_url, and
@@ -1121,10 +1132,44 @@ func (r *EventRepository) GetOrCreateSource(ctx context.Context, params events.S
 	queryer := r.queryer()
 	baseURL := strings.TrimSpace(params.BaseURL)
 	name := strings.TrimSpace(params.Name)
+	feedURL := strings.TrimSpace(params.FeedURL)
 
 	if baseURL != "" && name != "" {
+		// 1. The configured name owns its row.
 		var id string
 		err := queryer.QueryRow(ctx, `
+SELECT id FROM sources WHERE base_url = $1 AND name = $2 LIMIT 1
+`, baseURL, name).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if err != pgx.ErrNoRows {
+			return "", fmt.Errorf("get source by base_url and name: %w", err)
+		}
+
+		// 2. A renamed config reuses the row that already owns the feed.
+		if feedURL != "" {
+			err = queryer.QueryRow(ctx, `
+SELECT es.source_id
+  FROM event_sources es
+ WHERE rtrim(es.source_url, '/') = rtrim($1, '/')
+   AND NOT EXISTS (
+       SELECT 1 FROM sources s WHERE s.id = es.source_id AND s.name = 'unknown'
+   )
+ GROUP BY es.source_id
+ ORDER BY count(*) DESC, min(es.retrieved_at) ASC, es.source_id ASC
+ LIMIT 1
+`, feedURL).Scan(&id)
+			if err == nil {
+				return id, nil
+			}
+			if err != pgx.ErrNoRows {
+				return "", fmt.Errorf("get source by feed url: %w", err)
+			}
+		}
+
+		// 3. Insert.
+		err = queryer.QueryRow(ctx, `
 INSERT INTO sources (
 	name,
 	source_type,

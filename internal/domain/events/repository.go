@@ -238,6 +238,10 @@ type SourceLookupParams struct {
 	LicenseURL  string
 	LicenseType string
 	TrustLevel  int
+	// FeedURL is the concrete feed URL being ingested. When no row exists for
+	// (BaseURL, Name) — e.g. the config was renamed — it lets the repository
+	// reuse the row that already owns this feed instead of minting a twin.
+	FeedURL string
 }
 
 type Filters struct {
