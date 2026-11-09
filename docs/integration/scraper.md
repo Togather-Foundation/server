@@ -633,7 +633,7 @@ What follows from that:
   `.../rss/events?types=A` and `.../rss/events?programs=B` both store `.../rss/events`,
   so an event returned by both is one event with two attributions. This is deliberate:
   the five TPL BiblioCommons configs are filtered views over one catalogue, and
-  **5,981 of 6,188 TPL events are currently seen by more than one TPL config** — treating
+  **5,981 of 6,188 TPL events are currently seen by more than one TPL config** (staging, 2026-11-09) — treating
   the views as separate feeds would duplicate every one of them. The accepted risk is an
   upstream that reuses its event ids per query-scoped feed; no current source does, and
   `TestSourceConfigs_FeedIdentityCollisions` fails when two configs collapse onto one feed
@@ -647,6 +647,13 @@ Provenance is append-like and **the stored URL is never rewritten after validati
 a feed refreshes the existing `(event_id, source_id, source_url)` row through the unique
 index instead of adding a second one. Do not "clean up" stored feed URLs to match a new
 lookup rule — the write path and the upsert key have to agree.
+
+**Legacy rows cannot be given their query back.** Everything above describes rows written
+from now on. For `event_sources` rows ingested before this rule the per-config query string
+was never persisted — it is not in `source_url`, and the attribution payload stores the
+*normalised* input, so it is not recoverable from `payload` either. There is no backfill;
+the only surviving distinction for those rows is `source_id`, i.e. which config produced
+the attribution. Treat early attributions as "this feed family", not "this filter".
 
 The `sources` row is **not** the identity scope. `sources` upserts on
 `(host-only base_url, name)`, and a feed ingested under a second name used to acquire a

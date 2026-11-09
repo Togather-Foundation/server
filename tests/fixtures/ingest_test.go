@@ -131,8 +131,9 @@ func (m *IngestMockRepository) CreateSource(ctx context.Context, params events.E
 	defer m.mu.Unlock()
 
 	// Record the event for feed-scoped duplicate detection. Identity is
-	// (feed URL, source event id), not the source row. The URL is compared
-	// verbatim except that trailing slashes are ignored on both sides.
+	// (feed URL, source event id), not the source row. The URL is normalised
+	// (query and fragment stripped) and compared with trailing slashes ignored
+	// on both sides.
 	if params.SourceURL != "" && params.SourceEventID != "" {
 		feedURL := feedIdentityKey(params.SourceURL)
 		if _, ok := m.eventsByFeedEvent[feedURL]; !ok {
@@ -149,8 +150,8 @@ func (m *IngestMockRepository) CreateSource(ctx context.Context, params events.E
 	return nil
 }
 
-// feedIdentityKey mirrors the repository's URL comparison rule: verbatim,
-// except that trailing slashes are ignored.
+// feedIdentityKey mirrors the repository's URL comparison rule: the normalised
+// form, except that trailing slashes are ignored.
 func feedIdentityKey(feedURL string) string {
 	return strings.TrimRight(feedURL, "/")
 }

@@ -111,9 +111,9 @@ func TestFindByFeedEventID(t *testing.T) {
 	})
 
 	t.Run("legacy trailing slash: stored with slash, incoming without", func(t *testing.T) {
-		// Every event_sources row written before this rule stores whatever the
-		// feed reported; many carry a trailing slash. The lookup must still find
-		// them without a backfill.
+		// Every event_sources row stores the normalised form (query stripped);
+		// many written before this rule carry a trailing slash. The lookup must
+		// still find them without a backfill.
 		stored := "https://legacy.example.org/eventslist/"
 		incoming := "https://legacy.example.org/eventslist"
 
@@ -138,8 +138,8 @@ func TestFindByFeedEventID(t *testing.T) {
 	})
 
 	t.Run("different feed path does not match", func(t *testing.T) {
-		// Only trailing slashes are ignored; the rest of the URL is verbatim, so
-		// two feeds on one host stay distinct.
+		// Only trailing slashes are ignored; the rest of the stored path is
+		// compared as-is, so two feeds on one host stay distinct.
 		feedOne := "https://legacy.example.org/eventslist"
 		feedTwo := "https://legacy.example.org/eventslist/archive"
 
@@ -150,7 +150,7 @@ func TestFindByFeedEventID(t *testing.T) {
 		require.ErrorIs(t, err, events.ErrNotFound)
 	})
 
-	t.Run("provenance URL is stored verbatim and upserts in place", func(t *testing.T) {
+	t.Run("provenance URL is stored once and upserts in place", func(t *testing.T) {
 		stored := "https://legacy.example.org/eventslist/"
 		ulidValue := insertEvent(t, ctx, pool, "Verbatim Listing", "Provenance check", org, place, "community", "published", nil, start)
 		var eventID string
@@ -165,7 +165,7 @@ func TestFindByFeedEventID(t *testing.T) {
 			PayloadHash:   "verbatim-hash",
 		}
 		require.NoError(t, repo.CreateSource(ctx, params))
-		// A re-scrape writes the same verbatim URL; it must refresh the existing
+		// A re-scrape writes the same normalised URL; it must refresh the existing
 		// row rather than insert a second one for the same upsert key.
 		require.NoError(t, repo.CreateSource(ctx, params))
 

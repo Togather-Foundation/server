@@ -27,8 +27,8 @@ import (
 var sharedFeedAllowlist = map[string]sharedFeed{
 	"https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events": {
 		Reason: "TPL BiblioCommons: one library catalogue, five filtered views " +
-			"(types/programs query params). 5,981 of 6,188 TPL events are returned by " +
-			"more than one view; BiblioCommons ids are global.",
+			"(types/programs query params). 5,981 of 6,188 TPL events (staging, " +
+			"2026-11-09) are returned by more than one view; BiblioCommons ids are global.",
 		Configs: []string{
 			"tpl-artificial-intelligence",
 			"tpl-career-coaches-in-residence",

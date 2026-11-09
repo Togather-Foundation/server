@@ -21,7 +21,7 @@ package events
 //     event returned by several of them becomes one event with several
 //     attributions. That is deliberate: the five TPL BiblioCommons configs are
 //     views over one library catalogue, and separating them would duplicate
-//     thousands of events (5,981 of 6,188 TPL events are currently seen by more
+//     thousands of events (5,981 of 6,188 TPL events on staging, 2026-11-09, are seen by more
 //     than one TPL config). The risk this accepts is an upstream that reuses its
 //     event ids per query-scoped feed; no current source does, and
 //     TestSourceConfigs_FeedIdentityCollisions makes any collapse explicit.
@@ -29,8 +29,8 @@ package events
 //   - an uppercase host only matches the same spelling (this field is not
 //     lowercased by validation);
 //
-// Comparison rule: URLs are compared verbatim in their normalised form, except
-// that trailing slashes are ignored on both sides. The comparison lives in SQL
+// Comparison rule: URLs are compared in their normalised form, except that
+// trailing slashes are ignored on both sides. The comparison lives in SQL
 // (`rtrim(es.source_url, '/') = rtrim($1, '/')`, Repository.FindByFeedEventID)
 // so rows written before the rule — many of which carry a trailing slash — still
 // match without a backfill. `https://example.com/eventslist/` therefore matches
@@ -50,6 +50,11 @@ package events
 // can be the only row matching a key. That is the open gap also tracked by
 // specs/006-curator-protection/plan.md; filtering deleted events is not the fix,
 // because it would re-create occurrences that were deliberately retired.
+//
+// Legacy rows: the query never reached storage, so it cannot be backfilled — not
+// from source_url, and not from the attribution payload (which stores the
+// normalised input). For rows ingested before this rule the only surviving
+// per-config distinction is source_id.
 //
 // Negative control: the same sourceEventID from a genuinely different feed is a
 // different event. "Different feed" here means a different host or path — a

@@ -943,12 +943,14 @@ SET retrieved_at = now(),
 // single feed event into two events whenever a feed was ingested under two
 // names.
 //
-// URLs are compared verbatim except that trailing slashes are ignored on both
-// sides. Event sources are append-like provenance: the stored URL is whatever
-// the feed reported and is never rewritten, and thousands of rows written before
-// this rule carry a trailing slash. Comparing with rtrim on both sides matches
-// them (and the currently-configured feed URLs) without a backfill, and without
-// a transform that only one side applies.
+// URLs are compared in their normalised form — validation strips the query and
+// fragment from source.url before it is stored — except that trailing slashes
+// are ignored on both sides. Event sources are append-like provenance: the
+// stored URL is written once and never rewritten, and thousands of rows written
+// before this rule carry a trailing slash. Comparing with rtrim on both sides
+// matches them (and the currently-configured feed URLs) without a backfill. The
+// normalised form also means two configs that differ only by query resolve to
+// the same feed; see feed_identity.go.
 //
 // When several events match (historical duplicate pairs), prefer a live twin
 // over a soft-deleted one and a published event over any other lifecycle state,

@@ -7,12 +7,14 @@ import (
 
 // Feed-scoped event identity: (feed URL, sourceEventID).
 //
-// The `sources` row is not the identity scope. One feed can acquire two source
-// rows (the sources upsert key is the host-only base_url plus the config name),
-// and before this rule the same feed event looked new under the second row.
+// The `sources` row is not the identity scope. A feed used to acquire two
+// source rows (the sources upsert key is the host-only base_url plus the config
+// name), and before this rule the same feed event looked new under the second
+// row.
 //
-// The URL is compared verbatim except that trailing slashes are ignored on both
-// sides; the stored value itself is never rewritten.
+// The URL is stored in its normalised form (validation strips the query and
+// fragment) and compared with trailing slashes ignored on both sides; the stored
+// value itself is never rewritten after that.
 
 // TestIngest_FeedIdentity_LegacyTrailingSlash is the regression guard for the
 // pre-existing corpus: thousands of event_sources rows were written with a

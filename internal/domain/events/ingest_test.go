@@ -239,8 +239,9 @@ func (m *MockRepository) CreateSource(ctx context.Context, params EventSourceCre
 // indexFeedEventLocked records event under the (feed URL, source event id)
 // identity key. Callers must hold m.mu.
 //
-// feedIdentityKey mirrors the repository: the URL is compared verbatim except
-// that trailing slashes are ignored on both sides.
+// feedIdentityKey mirrors the repository: the URL is compared in its normalised
+// form (query and fragment stripped by validation) with trailing slashes ignored
+// on both sides.
 func (m *MockRepository) indexFeedEventLocked(feedURL, sourceEventID string, event *Event) {
 	feedURL = feedIdentityKey(feedURL)
 	if feedURL == "" || sourceEventID == "" {
