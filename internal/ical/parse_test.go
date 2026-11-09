@@ -885,6 +885,72 @@ END:VCALENDAR`
 	}
 }
 
+// TestParse_TZID_AcrossDSTBoundary parses one America/Toronto feed that spans
+// both halves of the year. Meetup emits wall-clock times with TZID and no UTC
+// offset, so a parser that applies a fixed offset (or swaps AM/PM) lands an
+// hour — or twelve — off in exactly one of these events. Both must keep their
+// local wall time and resolve to the correct instant for their own date.
+func TestParse_TZID_AcrossDSTBoundary(t *testing.T) {
+	t.Parallel()
+
+	ics := `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//EN
+BEGIN:VEVENT
+UID:standard-time@example.org
+DTSTART;TZID=America/Toronto:20261121T133000
+DTEND;TZID=America/Toronto:20261121T153000
+SUMMARY:Standard time (EST, UTC-5)
+END:VEVENT
+BEGIN:VEVENT
+UID:daylight-time@example.org
+DTSTART;TZID=America/Toronto:20270410T070000
+DTEND;TZID=America/Toronto:20270423T210000
+SUMMARY:Daylight time (EDT, UTC-4)
+END:VEVENT
+END:VCALENDAR`
+
+	cal, err := Parse([]byte(ics))
+	if err != nil {
+		t.Fatalf("Parse error: %v", err)
+	}
+	if len(cal.Events) != 2 {
+		t.Fatalf("expected 2 events, got %d", len(cal.Events))
+	}
+
+	toronto, err := time.LoadLocation("America/Toronto")
+	if err != nil {
+		t.Fatalf("load America/Toronto: %v", err)
+	}
+
+	tests := []struct {
+		uid      string
+		wantUTC  string
+		wantWall string
+	}{
+		{"standard-time@example.org", "2026-11-21T18:30:00Z", "2026-11-21T13:30:00-05:00"},
+		{"daylight-time@example.org", "2027-04-10T11:00:00Z", "2027-04-10T07:00:00-04:00"},
+	}
+	for _, tc := range tests {
+		var ev *ParsedEvent
+		for i := range cal.Events {
+			if cal.Events[i].UID == tc.uid {
+				ev = &cal.Events[i]
+				break
+			}
+		}
+		if ev == nil {
+			t.Fatalf("event %s not found", tc.uid)
+		}
+		if got := ev.Start.UTC().Format(time.RFC3339); got != tc.wantUTC {
+			t.Errorf("%s: instant = %s, want %s", tc.uid, got, tc.wantUTC)
+		}
+		if got := ev.Start.In(toronto).Format(time.RFC3339); got != tc.wantWall {
+			t.Errorf("%s: local wall time = %s, want %s", tc.uid, got, tc.wantWall)
+		}
+	}
+}
+
 // TestParse_MeetupVTIMEZONE is a regression test for Meetup-style ICS feeds that
 // place non-standard calendar properties (e.g. X-WR-CALNAME, X-WR-TIMEZONE) AFTER
 // END:VTIMEZONE rather than in the calendar header section. The golang-ical library's
