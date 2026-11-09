@@ -1,6 +1,6 @@
-// Package testdata provides synthetic event fixtures for testing the ingestion pipeline.
+// Package fixtures provides synthetic event fixtures for testing the ingestion pipeline.
 // These fixtures are based on real scraper field mappings from event_mocks.csv.
-package testdata
+package fixtures
 
 import (
 	"fmt"

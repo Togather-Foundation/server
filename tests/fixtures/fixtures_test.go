@@ -1,4 +1,4 @@
-package testdata
+package fixtures
 
 import (
 	"strings"
@@ -127,7 +127,7 @@ func TestGenerator_EventInputFarFuture(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should be more than 730 days (2 years) in the future
-	daysAhead := startTime.Sub(time.Now()).Hours() / 24
+	daysAhead := time.Until(startTime).Hours() / 24
 	assert.Greater(t, daysAhead, float64(730), "Event should be more than 2 years in the future")
 }
 

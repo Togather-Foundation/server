@@ -11,6 +11,14 @@ Run targeted package tests first; expand to `make ci-fast` for quick CI feedback
 
 For E2E details see `tests/e2e/AGENTS.md`.
 
+## Package Layout — never put a Go package under `testdata/`
+
+The Go tool **ignores any directory named `testdata`** when expanding `./...`. A package placed there still compiles when imported by path, but `go build ./...`, `go vet ./...` and `go test ./...` will silently skip it — its tests never run and its API can drift out of sync with the interfaces it mocks. This is how `tests/testdata` rotted for months.
+
+- Go test/fixture packages live in a normal directory: `tests/fixtures`, `tests/testhelpers`, `tests/integration`, ...
+- `testdata/` is only for **non-Go fixture assets** (`.ics`, `.json`, `.golden`, recorded payloads). `tests/testdata/ics/` and `tests/testdata/artsdata/` are asset roots and are referenced by path on purpose.
+- The unit-test target in the `Makefile` lists `./tests/fixtures/` explicitly because it is not under `./internal/...`; the GitHub unit job (`.github/workflows/ci.yml`) and release workflow do the same, so adding another `tests/` package means updating all three places.
+
 ## Shared Test Helpers (`tests/testhelpers`)
 
 The `tests/testhelpers` package provides shared utilities for `integration`, `integration_batch`, and `contracts` test packages. **Always use these instead of duplicating them.**
@@ -83,7 +91,7 @@ Flags: `--extraction-method`, `--tier` (default: auto-detect from extension), `-
 
 **`example.com` and any `*.example.com` subdomain URLs are a hard ingest error (HTTP 422)** in staging and production (all RFC 2606 reserved test domains are blocked). Tests or test harnesses that submit fixture events using those domains **must** set `ValidationConfig{AllowTestDomains: true}`. This field is never set via an env var — it is test-only and must be set explicitly.
 
-**Fixture generators in `tests/testdata/fixtures.go` (`RandomEventInput`, `EventInputReversedDates`, `EventInputMissingVenue`, `EventInputLikelyDuplicate`, `EventInputMultipleWarnings`, review scenarios) no longer produce `example.com` URLs** — they use `source.BaseURL` (realistic domains like eventbrite.ca, meetup.com, squarespace.com) for event URLs and `unsplashImage` for images. Tests using these generators do not require `AllowTestDomains` on that basis alone.
+**Fixture generators in `tests/fixtures/fixtures.go` (`RandomEventInput`, `EventInputReversedDates`, `EventInputMissingVenue`, `EventInputLikelyDuplicate`, `EventInputMultipleWarnings`, review scenarios) no longer produce `example.com` URLs** — they use `source.BaseURL` (realistic domains like eventbrite.ca, meetup.com, squarespace.com) for event URLs and `unsplashImage` for images. Tests using these generators do not require `AllowTestDomains` on that basis alone.
 
 **`server generate` and `cmd/loadtest` still inject `example.com` placeholder URLs** — never ingest their output against staging without source-tagging.
 

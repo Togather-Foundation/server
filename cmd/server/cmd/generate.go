@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Togather-Foundation/server/tests/testdata"
+	"github.com/Togather-Foundation/server/tests/fixtures"
 	"github.com/spf13/cobra"
 )
 
@@ -56,11 +56,11 @@ func init() {
 
 func runGenerate(args []string) error {
 	// Create generator
-	var gen *testdata.Generator
+	var gen *fixtures.Generator
 	if generateSeed != 0 {
-		gen = testdata.NewGenerator(generateSeed)
+		gen = fixtures.NewGenerator(generateSeed)
 	} else {
-		gen = testdata.NewGenerator(0) // Will use time-based seed
+		gen = fixtures.NewGenerator(0) // Will use time-based seed
 	}
 
 	if generateReviewEvents {
@@ -136,7 +136,7 @@ type reviewScenarioJSON struct {
 	Events      []any  `json:"events"`
 }
 
-func runGenerateReviewEvents(gen *testdata.Generator, args []string) error {
+func runGenerateReviewEvents(gen *fixtures.Generator, args []string) error {
 	scenarios := gen.BatchReviewEventInputs()
 
 	out := reviewEventsOutput{

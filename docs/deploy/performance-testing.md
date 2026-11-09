@@ -330,7 +330,7 @@ Use `--dry-run` instead of `--confirm` to preview without deleting.
 
 ## Performance Test Data
 
-The load tester uses realistic test fixtures from `tests/testdata/`:
+The load tester uses realistic test fixtures from `tests/fixtures/`:
 
 - **10 Toronto venues** with real addresses and coordinates
 - **10 sample organizers** with URLs

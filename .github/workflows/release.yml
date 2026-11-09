@@ -100,7 +100,7 @@ jobs:
           DATABASE_URL: "postgres://sel_test:sel_test_pass@localhost:5432/sel_test?sslmode=disable"
 
       - name: Run unit tests with race detector
-        run: go test -v -race ./internal/...
+        run: go test -v -race ./internal/... ./tests/fixtures/
 
       - name: Run contract tests
         run: go test -v -timeout 20m ./tests/contracts/...

@@ -1,22 +1,19 @@
-package testdata
+package fixtures
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Togather-Foundation/server/internal/config"
-	"github.com/rs/zerolog"
 	"net/url"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -591,16 +588,6 @@ func sourceBaseURL(value string) string {
 		return trimmed
 	}
 	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
-}
-
-// hashEventInput creates a hash for idempotency testing.
-func hashEventInput(input events.EventInput) (string, error) {
-	payload, err := json.Marshal(input)
-	if err != nil {
-		return "", fmt.Errorf("hash input: %w", err)
-	}
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:]), nil
 }
 
 // Tests using synthetic fixtures

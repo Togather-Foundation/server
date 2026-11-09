@@ -2,7 +2,7 @@
 
 Manual regression test plan for the event review queue, covering duplicate detection, consolidate, approve, reject, and near-duplicate workflows. Uses the `--review-events` fixture set (11 scenario groups, 22 events).
 
-**Fixture source:** `tests/testdata/fixtures.go` (`BatchReviewEventInputs`)
+**Fixture source:** `tests/fixtures/fixtures.go` (`BatchReviewEventInputs`)
 **Generate command:** `server generate review-fixtures.json --review-events`
 **Helper script:** `scripts/review-regression-test.sh`
 

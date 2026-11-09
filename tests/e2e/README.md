@@ -147,7 +147,7 @@ The `make e2e` target handles the split automatically.
 
 ## Test Fixtures
 
-E2E tests that need data use Go-based fixture generation piped through the real ingestion pipeline. All fixture generators live in `tests/testdata/fixtures.go` and are exposed via the `server generate` CLI command.
+E2E tests that need data use Go-based fixture generation piped through the real ingestion pipeline. All fixture generators live in `tests/fixtures/fixtures.go` and are exposed via the `server generate` CLI command.
 
 ### Quick Start
 
@@ -187,7 +187,7 @@ Output is a JSON batch (`{"events": [...]}`) compatible with `server ingest`.
 
 ### Available Fixture Types
 
-The `Generator` in `tests/testdata/fixtures.go` provides:
+The `Generator` in `tests/fixtures/fixtures.go` provides:
 
 **Standard events:**
 
@@ -216,10 +216,10 @@ The `Generator` in `tests/testdata/fixtures.go` provides:
 ### Using Fixtures in Go Tests
 
 ```go
-import "github.com/Togather-Foundation/server/tests/testdata"
+import "github.com/Togather-Foundation/server/tests/fixtures"
 
-gen := testdata.NewDeterministicGenerator() // fixed seed
-gen := testdata.NewGenerator(42)            // custom seed
+gen := fixtures.NewDeterministicGenerator() // fixed seed
+gen := fixtures.NewGenerator(42)            // custom seed
 
 event := gen.RandomEventInput()
 batch := gen.BatchEventInputs(10)

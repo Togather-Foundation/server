@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/testauth"
-	"github.com/Togather-Foundation/server/tests/testdata"
+	"github.com/Togather-Foundation/server/tests/fixtures"
 )
 
 // LoadProfile defines different load testing scenarios.
@@ -91,7 +91,7 @@ var LoadProfiles = map[LoadProfile]ProfileConfig{
 type LoadTester struct {
 	baseURL       string
 	httpClient    *http.Client
-	generator     *testdata.Generator
+	generator     *fixtures.Generator
 	stats         *Statistics
 	authenticator *testauth.TestAuthenticator
 	apiKeys       []string
@@ -113,7 +113,7 @@ func NewLoadTester(baseURL string) *LoadTester {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		generator:     testdata.NewGenerator(time.Now().UnixNano()),
+		generator:     fixtures.NewGenerator(time.Now().UnixNano()),
 		stats:         &Statistics{},
 		authenticator: auth,
 	}
