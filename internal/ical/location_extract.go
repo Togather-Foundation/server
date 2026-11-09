@@ -145,8 +145,24 @@ func DecomposeLocation(name string, opts DecomposeOpts) events.PlaceInput {
 //
 // Returns empty strings when no structured address components can be extracted
 // (fewer than 3 comma-separated parts, or no recognizable region code).
+// extractAddressComponents extracts a locality and region from an address whose
+// components are comma-separated, working from the end.
 func extractAddressComponents(raw string) (locality, region string) {
 	parts := splitAddressParts(raw)
+
+	// Some feeds append the country: "Venue, 450 Dupont St, Toronto, ON M5R 3P3,
+	// Canada". Without this the last component is read as the region (yielding
+	// region "Canada", locality "ON M5R 3P3") and the event is rejected by the
+	// geographic boundary check.
+	//
+	// Only strip it when at least three components remain. A short
+	// "Venue, London, England" must keep region "England" so it is still
+	// rejected as out of boundary, rather than collapsing to two components and
+	// silently inheriting the source's default location.
+	if len(parts) >= 4 && isCountryComponent(parts[len(parts)-1], parts[len(parts)-2]) {
+		parts = parts[:len(parts)-1]
+	}
+
 	if len(parts) < 3 {
 		return "", ""
 	}
@@ -164,6 +180,67 @@ func extractAddressComponents(raw string) (locality, region string) {
 	}
 
 	return locality, region
+}
+
+// knownCountryComponents lists trailing address components that name a country
+// rather than a region. Only names are listed: a bare two-letter code is
+// ambiguous ("CA" is both Canada and California), so codes are handled
+// structurally in isCountryComponent instead.
+var knownCountryComponents = map[string]struct{}{
+	"CANADA":                   {},
+	"UNITED STATES":            {},
+	"UNITED STATES OF AMERICA": {},
+	"USA":                      {},
+	"UNITED KINGDOM":           {},
+	"GREAT BRITAIN":            {},
+	"ENGLAND":                  {},
+	"SCOTLAND":                 {},
+	"WALES":                    {},
+	"IRELAND":                  {},
+	"FRANCE":                   {},
+	"GERMANY":                  {},
+	"MEXICO":                   {},
+	"AUSTRALIA":                {},
+	"NEW ZEALAND":              {},
+	"INDIA":                    {},
+	"CHINA":                    {},
+	"JAPAN":                    {},
+	"BRAZIL":                   {},
+	"NETHERLANDS":              {},
+	"SPAIN":                    {},
+	"ITALY":                    {},
+	"PORTUGAL":                 {},
+}
+
+// isCountryComponent reports whether last is the country in an address whose
+// preceding component is previous.
+func isCountryComponent(last, previous string) bool {
+	candidate := strings.Trim(strings.TrimSpace(last), ".,;")
+	if candidate == "" {
+		return false
+	}
+	if _, ok := knownCountryComponents[strings.ToUpper(candidate)]; ok {
+		return true
+	}
+	// "... , ON, CA" — a bare two-letter code is the country here because the
+	// component before it is a region. "... , Los Angeles, CA" keeps CA as the
+	// region. Require upper case so a lowercase word ("on") is never read as a
+	// code.
+	if len(candidate) == 2 && isAlphaStr(candidate) && candidate == strings.ToUpper(candidate) {
+		return startsWithRegionCode(previous)
+	}
+	return false
+}
+
+// startsWithRegionCode reports whether a component begins with an upper-case
+// two-letter region code, optionally followed by a postal code ("ON M5R 3P3").
+func startsWithRegionCode(component string) bool {
+	fields := strings.Fields(strings.TrimSpace(component))
+	if len(fields) == 0 {
+		return false
+	}
+	first := strings.TrimRight(fields[0], ".,;:")
+	return len(first) == 2 && isAlphaStr(first) && first == strings.ToUpper(first)
 }
 
 // splitAddressParts splits a raw address string into comma-separated parts.

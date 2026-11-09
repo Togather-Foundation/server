@@ -296,6 +296,23 @@ func TestDecomposeLocation(t *testing.T) {
 		}
 	})
 
+	t.Run("country suffix keeps the real city and region", func(t *testing.T) {
+		t.Parallel()
+		// The defaults are deliberately wrong: if extraction silently fell back
+		// to them (as it would if the country were still read as the region),
+		// this would report Wrongville/XX and the event would be rejected by the
+		// geographic boundary check.
+		opts := DecomposeOpts{DefaultLocality: "Wrongville", DefaultRegion: "XX", DefaultCountry: "CA"}
+		pi := DecomposeLocation("Creeds Coffee Bar, 450 Dupont St, Toronto, ON M5R 3P3, Canada", opts)
+
+		if pi.AddressLocality != "Toronto" {
+			t.Errorf("AddressLocality = %q, want %q", pi.AddressLocality, "Toronto")
+		}
+		if pi.AddressRegion != "ON" {
+			t.Errorf("AddressRegion = %q, want %q", pi.AddressRegion, "ON")
+		}
+	})
+
 	t.Run("extracted overrides defaults", func(t *testing.T) {
 		t.Parallel()
 		opts := DecomposeOpts{
@@ -440,6 +457,48 @@ func TestExtractAddressComponents(t *testing.T) {
 			raw:          "Studio, Vancouver, BC V6B 1A1",
 			wantLocality: "Vancouver",
 			wantRegion:   "BC",
+		},
+		{
+			name:         "country suffix after region",
+			raw:          "Creeds Coffee Bar, 450 Dupont St, Toronto, ON M5R 3P3, Canada",
+			wantLocality: "Toronto",
+			wantRegion:   "ON",
+		},
+		{
+			name:         "country suffix with escaped commas",
+			raw:          "MaRS Discovery District\\, 101 College St\\, Toronto\\, ON M5S 3H8\\, Canada",
+			wantLocality: "Toronto",
+			wantRegion:   "ON",
+		},
+		{
+			name:         "US country name",
+			raw:          "Venue, 123 Main St, Buffalo, NY 14201, United States",
+			wantLocality: "Buffalo",
+			wantRegion:   "NY",
+		},
+		{
+			name:         "two-letter country code after a region",
+			raw:          "Venue, 123 Main St, Buffalo, NY 14201, US",
+			wantLocality: "Buffalo",
+			wantRegion:   "NY",
+		},
+		{
+			name:         "state code that looks like a country is kept",
+			raw:          "Venue, 123 Main St, Los Angeles, CA 90012",
+			wantLocality: "Los Angeles",
+			wantRegion:   "CA",
+		},
+		{
+			name:         "state code with a country after it",
+			raw:          "Venue, 123 Main St, Los Angeles, CA 90012, USA",
+			wantLocality: "Los Angeles",
+			wantRegion:   "CA",
+		},
+		{
+			name:         "short address ending in a country is left intact",
+			raw:          "Venue, London, England",
+			wantLocality: "London",
+			wantRegion:   "England",
 		},
 		{
 			name:         "simple venue no comma",
