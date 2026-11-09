@@ -93,6 +93,9 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 	)
 	geocodingCache := postgres.NewGeocodingCacheRepository(pool)
 	geocodingService := geocoding.NewGeocodingService(nominatimClient, geocodingCache, logger, cfg.Geocoding.DefaultCountry)
+	// Boundary fallback: when the offline location parse cannot be placed inside
+	// this node's boundary, ask the (cached) geocoder before rejecting the event.
+	ingestService.WithLocationResolver(geocoding.NewLocationResolver(geocodingService, cfg.Geocoding.DefaultCountry, logger))
 
 	// Create SQLc queries instance for direct database access
 	queries := postgres.New(pool)

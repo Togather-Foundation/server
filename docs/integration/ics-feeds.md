@@ -271,9 +271,25 @@ When a venue name is extracted from DESCRIPTION (step 3), the `DecomposeLocation
 helper creates a `PlaceInput` with `Name` and `StreetAddress` both set to the
 extracted text. Missing address components (`addressLocality`, `addressRegion`,
 `addressCountry`) are filled from `default_location` if configured, with a fallback
-to `MapperOptions.CountryCode` (default: `"CA"`). Full geocoding decomposition
-(e.g. parsing `"123 Main St, Toronto, ON M5V 1A1"`) is handled downstream by the
-geocoding pipeline.
+to `MapperOptions.CountryCode` (default: `"CA"`).
+
+**Offline decomposition is a heuristic, not a geocoder.** It expects the common
+`Venue, Street, City, REGION [POSTAL]` shape and reads the components from the end,
+so a feed that appends the country (`..., Toronto, ON M5R 3P3, Canada`) needs the
+country skipped — the parser does that for known country names and for a bare
+two-letter code that follows a region. It cannot tell whether a place is actually
+inside the node's boundary.
+
+**Geocoder fallback.** If an event's parsed location falls outside the node's
+geographic boundary, ingest asks the configured location resolver (the cached
+Nominatim service, see `internal/geocoding`) to re-derive the address *before*
+rejecting. If the geocoded address is inside the boundary, the event is accepted
+with the resolved locality/region/country and coordinates. A geocoder failure, an
+unresolved address, or an address that is still outside keeps the original
+rejection. This is a fallback tier, not a replacement: it only sees the events the
+offline parse could not place, so volume stays small and the cache makes repeat
+venues free. Disable it by not wiring a resolver — behaviour is then exactly the
+offline parse.
 
 ### Virtual Signal Keywords
 

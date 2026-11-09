@@ -52,6 +52,9 @@ type GeocodeResult struct {
 	DisplayName string
 	Source      string // "cache" or "nominatim"
 	Cached      bool
+	// Address carries the structured components Nominatim returns with the
+	// match. It is populated on cache hits too, from the stored raw response.
+	Address AddressComponents
 }
 
 // ReverseGeocodeResult represents the result of a reverse geocoding operation.
@@ -64,14 +67,47 @@ type ReverseGeocodeResult struct {
 	Cached      bool
 }
 
-// AddressComponents contains structured address fields from reverse geocoding.
+// AddressComponents contains structured address fields from geocoding.
 type AddressComponents struct {
-	Road     string `json:"road,omitempty"`
-	Suburb   string `json:"suburb,omitempty"`
-	City     string `json:"city,omitempty"`
-	State    string `json:"state,omitempty"`
-	Postcode string `json:"postcode,omitempty"`
-	Country  string `json:"country,omitempty"`
+	Road        string `json:"road,omitempty"`
+	Suburb      string `json:"suburb,omitempty"`
+	City        string `json:"city,omitempty"`
+	County      string `json:"county,omitempty"`
+	State       string `json:"state,omitempty"`
+	Postcode    string `json:"postcode,omitempty"`
+	Country     string `json:"country,omitempty"`
+	CountryCode string `json:"country_code,omitempty"`
+}
+
+// addressComponentsFromNominatim converts a provider address into the neutral
+// shape callers use. Returns the zero value for a nil address.
+func addressComponentsFromNominatim(a *nominatim.Address) AddressComponents {
+	if a == nil {
+		return AddressComponents{}
+	}
+	return AddressComponents{
+		Road:        a.Road,
+		Suburb:      a.Suburb,
+		City:        a.City,
+		County:      a.County,
+		State:       a.State,
+		Postcode:    a.Postcode,
+		Country:     a.Country,
+		CountryCode: a.CountryCode,
+	}
+}
+
+// addressComponentsFromRaw recovers the structured address from a cached raw
+// Nominatim response. A malformed or missing response yields the zero value.
+func addressComponentsFromRaw(raw []byte) AddressComponents {
+	if len(raw) == 0 {
+		return AddressComponents{}
+	}
+	var result nominatim.SearchResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return AddressComponents{}
+	}
+	return addressComponentsFromNominatim(result.Address)
 }
 
 // ErrGeocodingFailed is returned when geocoding fails after all retries.
@@ -137,6 +173,7 @@ func (s *GeocodingService) Geocode(ctx context.Context, query string, countryCod
 			DisplayName: cached.DisplayName,
 			Source:      "cache",
 			Cached:      true,
+			Address:     addressComponentsFromRaw(cached.RawResponse),
 		}, nil
 	}
 
@@ -243,6 +280,7 @@ func (s *GeocodingService) Geocode(ctx context.Context, query string, countryCod
 		DisplayName: result.DisplayName,
 		Source:      "nominatim",
 		Cached:      false,
+		Address:     addressComponentsFromNominatim(result.Address),
 	}, nil
 }
 

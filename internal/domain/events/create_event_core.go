@@ -100,7 +100,8 @@ func (s *IngestService) createEventCore(
 
 	// ── 1.5. Geographic boundary check ──────────────────────────────────────
 	if err := CheckGeographicBoundary(validated, s.geoBoundaryConfig); err != nil {
-		if s.geoBoundaryConfig.Mode == "review" {
+		switch {
+		case s.geoBoundaryConfig.Mode == "review":
 			warnings = append(warnings, ValidationWarning{
 				Field:   "location",
 				Message: err.Error(),
@@ -109,7 +110,10 @@ func (s *IngestService) createEventCore(
 					"mode": s.geoBoundaryConfig.Mode,
 				},
 			})
-		} else {
+		case s.resolveLocationOnBoundaryFailure(ctx, &validated):
+			// The offline parse could not place the event, but the geocoder
+			// could. Accept with the resolved address instead of rejecting.
+		default:
 			return nil, err
 		}
 	}

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
+	"github.com/Togather-Foundation/server/internal/geoloc"
 	"github.com/rs/zerolog"
 )
 
@@ -56,7 +57,11 @@ type IngestService struct {
 	validationConfig  config.ValidationConfig
 	dedupConfig       config.DedupConfig
 	geoBoundaryConfig config.GeographicBoundaryConfig
-	logger            zerolog.Logger
+	// locationResolver re-derives an address when the offline parse cannot be
+	// placed inside the node's boundary (see resolveLocationOnBoundaryFailure).
+	// nil disables the fallback: behaviour is then exactly as before.
+	locationResolver geoloc.Resolver
+	logger           zerolog.Logger
 }
 
 func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string, validationConfig config.ValidationConfig, logger zerolog.Logger) *IngestService {
@@ -72,6 +77,13 @@ func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string
 // WithDedupConfig sets the deduplication configuration and returns the service for chaining.
 func (s *IngestService) WithDedupConfig(cfg config.DedupConfig) *IngestService {
 	s.dedupConfig = cfg
+	return s
+}
+
+// WithLocationResolver enables the geocoder fallback for locations the offline
+// parser cannot place. Passing nil (the default) keeps the pure-offline path.
+func (s *IngestService) WithLocationResolver(resolver geoloc.Resolver) *IngestService {
+	s.locationResolver = resolver
 	return s
 }
 
