@@ -695,10 +695,12 @@ attributions, so skipping it would re-create the occurrences that consolidation
 deliberately retired. The fix is to follow `merged_into_id` to the canonical event (or move
 the attributions), not to hide tombstones.
 
-**Follow-up (not implemented):** `sources` still upserts on `(host-only base_url, name)`,
-so one feed can still acquire two source rows. Ingest identity no longer depends on it, but
-per-source metadata (license, trust, review-warning suppression) can still fragment across
-the rows. Changing source-row uniqueness is a separate change with its own data migration.
+**Historical note:** `sources` still upserts on `(host-only base_url, name)`, so a feed
+ingested under two names used to acquire two rows. Ingest now resolves an existing row
+before creating one (see
+[Per-Feed Provenance and Source Identity](#per-feed-provenance-and-source-identity)), and
+identity never depended on the row. Rows created before that fix still exist; they are
+reported by `server source audit` and are not merged automatically.
 
 ### Minimal Tier 0 Config
 

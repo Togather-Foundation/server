@@ -48,11 +48,11 @@ backfill. Because the stored value is
 unchanged, a re-scrape still hits the `UNIQUE (event_id, source_id, source_url)` upsert
 target and refreshes the attribution in place.
 
-Why not the `sources` row: `sources` upserts on `(host-only base_url, name)`, so one feed
-can own two source rows (ingested under two names, e.g. a per-feed config and the
-catch-all `Google Calendar` row). Row-scoped identity made the same feed event look new
-under the second row and inserted a duplicate. The feed URL identifies the feed; the row
-identifies provenance metadata.
+Why not the `sources` row: `sources` upserts on `(host-only base_url, name)`, and a feed
+that was ingested under two names used to end up with two rows (e.g. a per-feed config plus
+the catch-all `Google Calendar` row; ingest now reuses the row that already owns the feed).
+Row-scoped identity made the same feed event look new under the second row and inserted a
+duplicate. The feed URL identifies the feed; the row identifies provenance metadata.
 
 Conflict rule: **the feed that owns the id is authoritative for the name.** Every other
 field keeps the existing trust-based auto-merge (`description`, `image_url`, `public_url`,
@@ -79,9 +79,10 @@ attributions and skipping it would re-create the occurrences consolidation retir
 the feed-identity path applies the rename explicitly and rebuilds the hash. Without a
 `sourceEventId` there is no feed identity, so ingest falls through to the dedup-hash path.
 
-**Follow-up (not implemented):** `sources` still upserts on `(host-only base_url, name)`.
-Identity no longer depends on it, but per-source metadata (license, trust,
-`suppress_review_warnings`) can still fragment across two rows for one feed.
+**Historical note:** `sources` still upserts on `(host-only base_url, name)`. A feed
+ingested under two names used to acquire two rows, which fragmented per-source metadata
+(license, trust, `suppress_review_warnings`). Ingest now reuses the row that already owns
+the feed; rows created before that fix remain and are reported by `server source audit`.
 
 
 ## Auto-Merge Strategy (exact dedup hash match)
