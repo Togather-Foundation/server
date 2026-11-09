@@ -49,6 +49,7 @@ Deployment fails without these three:
 | `GEOCODING_BOUNDARY_FALLBACK_ENABLED` | `false` | Enable the opt-in boundary geocoder fallback. When false no geocoding request is made from ingest. |
 | `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` | `5` | Per-batch cap on boundary fallback lookups. |
 | `GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS` | half of `SCRAPER_POLL_TIMEOUT_MS` (`15000`) | Per-batch wall-clock budget for boundary fallback lookups; `0` inherits half the poll window (headroom for the rest of the batch), negative disables the window. |
+| `GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM` | `50` | Distance beyond which a geocoded coordinate pair is treated as contradicting coordinates already supplied. Loose by design; raise for multi-city nodes. |
 
 ---
 

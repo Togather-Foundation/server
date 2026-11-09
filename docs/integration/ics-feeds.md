@@ -296,18 +296,52 @@ offline decision. This switch governs the *boundary fallback only*; the separate
 per-event geocoding jobs (which fill coordinates after an event is accepted) run
 regardless and are unaffected.
 
-*What is transmitted.* Exactly one field: the event's location string —
-`PlaceInput.Name`, falling back to `StreetAddress` when the name is empty. For
-ICS that field holds the venue name followed by the address components as the
-feed wrote them (for example `Sweat and Tonic, 486 Front St W, Toronto, ON M5V
-0V2, Canada`), because that is the string the offline parse could not place. No
-event name, description, organiser or URL is sent. The query goes to
-`NOMINATIM_API_URL` (default `https://nominatim.openstreetmap.org`). If — and
-only if — Nominatim answers with no results, the same string is retried once
-without its leading venue name; a timeout, transport error or HTTP 429 stops
-after the first query. Successful answers are cached, so a repeated venue is
-free. A cached no-result also keeps its "no result" meaning, so the shortened
-query is still tried on later events.
+*What is transmitted.* One geocoder query per event, built from the strongest
+evidence the extractor supplied:
+
+1. the **structured address** — `streetAddress`, `addressLocality`,
+   `addressRegion`, `postalCode`, `addressCountry` — when a street address is
+   present;
+2. otherwise the **venue name with its locality/region/country**;
+3. otherwise the **venue name alone** (logged as `query_kind=name_only`).
+
+Components already present in the query are skipped, so the ICS shape (whose
+`Name`/`StreetAddress` already hold the whole feed string while a misparsed
+locality/region is also set) does not produce a duplicated franken-address. The
+query goes to `NOMINATIM_API_URL` (default
+`https://nominatim.openstreetmap.org`). If — and only if — Nominatim answers
+with no results, the same query is retried once without its leading venue name;
+a timeout, transport error or HTTP 429 stops after the first query. Successful
+answers are cached, so a repeated venue is free. A cached no-result also keeps
+its "no result" meaning, so the shortened query is still tried on later events.
+No event name, description, organiser or URL is sent — only the location string
+built above.
+
+*The answer must agree with the evidence.* A resolution is only applied when it
+does not contradict what the extractor already supplied. The check compares the
+country (code, name or common alpha-3 alias), the region (a region field that
+actually names a country — `addressRegion="Canada"` — is ignored as region
+evidence; without this exception the fallback would reject the very events it
+exists to repair), the locality (only when the supplied locality looks like a
+name; a digit-bearing `ON M5R 3P3` is not evidence, while `St. Catharines` is)
+and coordinates (a difference of more than
+`GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM`, default `50`). A disagreement is
+treated as a conflict, not a correction: the event keeps its offline
+(outside-boundary) decision rather than being accepted with a contradicted
+address. It is deliberately not routed to review — this path only runs for
+events already outside the boundary, and approving a contradicted address would
+reintroduce the same data bug.
+
+*Administrative components and coordinates are applied together or not at all.*
+When the resolution supplies a coordinate pair, it must also supply the
+locality/region the event already carries; otherwise the resolution is refused
+so new coordinates can never be stored beside a stale locality. When it supplies
+components but no coordinates while the event already has coordinates, it is
+refused for the same reason, and the offline decision stands. Each attempt emits
+one `boundary location resolution` line carrying `query`, `query_kind`,
+`decision` (`accepted`/`rejected`), `conflict` or `reason`
+(`conflict`, `outside_boundary`, `no_result`, `coordinates_unavailable`,
+`components_unavailable`), and the resolved components.
 
 *Work is bounded per batch.* `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH`
 (default `5`) caps lookups per batch ingestion job, and
@@ -317,8 +351,9 @@ wall-clock time spent looking up. Half, rather than the whole poll window,
 leaves headroom for ingest and result reporting: the budget clock starts no
 earlier than the scraper's, so a batch cannot be left geocoding when the poll
 gives up. Once either limit is reached, the remaining events keep their offline
-decision and are counted as skipped. Each batch logs a single `batch location
-resolution summary` line with resolved/unresolved/skipped counts;
+decision and are counted as skipped. Each batch that consults the geocoder logs
+a single `batch location resolution summary` line with resolved/unresolved/skipped
+counts (batches with no boundary failures log nothing);
 `/api/v1/batch-status/{id}` adds `location_resolved`, `location_unresolved` and
 `location_skipped` when the run used the fallback, and scraper run diagnostics
 expose the same counts plus a

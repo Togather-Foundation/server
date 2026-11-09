@@ -453,6 +453,14 @@ type GeocodingConfig struct {
 	// Environment variable: GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS
 	// (default: half of SCRAPER_POLL_TIMEOUT_MS, itself default 30000)
 	BoundaryFallbackBudgetMS int
+
+	// BoundaryConflictRadiusKM is the distance beyond which a resolution's
+	// coordinates are treated as contradicting coordinates the extractor
+	// already supplied. It is deliberately loose: it tolerates a genuine venue
+	// correction within a metropolitan area while separating two cities. A
+	// single-city node rarely needs to change it; a multi-city node can.
+	// Environment variable: GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM (default: 50)
+	BoundaryConflictRadiusKM float64
 }
 
 // GeographicBoundaryConfig defines the geographic scope for this SEL node.
@@ -613,6 +621,7 @@ func Load() (Config, error) {
 			BoundaryFallbackEnabled:            getEnvBool("GEOCODING_BOUNDARY_FALLBACK_ENABLED", false),
 			BoundaryFallbackMaxLookupsPerBatch: getEnvInt("GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH", 5),
 			BoundaryFallbackBudgetMS:           getEnvInt("GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS", 0),
+			BoundaryConflictRadiusKM:           getEnvFloat("GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM", 50),
 		},
 		Artsdata: ArtsdataConfig{
 			Endpoint:              getEnv("ARTSDATA_ENDPOINT", "https://api.artsdata.ca/recon"),

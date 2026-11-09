@@ -546,8 +546,10 @@ paths:
         batch by `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` (default
         `5`) and `GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS` (default half of
         `SCRAPER_POLL_TIMEOUT_MS`, i.e. `15000`); events beyond the budget keep
-        their offline decision and are counted as skipped. With the fallback
-        disabled the response shape is unchanged.
+        their offline decision and are counted as skipped. A resolution that
+        contradicts supplied evidence is rejected; the coordinate-agreement
+        tolerance is `GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM` (default `50`).
+        With the fallback disabled the response shape is unchanged.
       tags: [Events]
       security: []
       parameters:

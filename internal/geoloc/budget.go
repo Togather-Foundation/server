@@ -14,8 +14,9 @@ type BatchStats struct {
 	// boundary (and that were therefore accepted).
 	Resolved int
 	// Unresolved is the number of lookups that ran but did not produce an
-	// accepted location: no result, a resolver error, or a resolved address
-	// that is still outside the boundary.
+	// accepted location: no result, a resolver error, a resolved address that
+	// is still outside the boundary, or a resolution rejected for contradicting
+	// supplied evidence (or for being impossible to apply consistently).
 	Unresolved int
 	// Skipped is the number of events that were not looked up because the
 	// budget (lookup count or wall-clock window) was already exhausted.

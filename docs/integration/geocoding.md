@@ -511,6 +511,7 @@ GET  /api/v1/admin/geocoding/stats       -- Cache statistics (hit rates, top que
 | `GEOCODING_BOUNDARY_FALLBACK_ENABLED` | `false` | Enable the boundary geocoder fallback for out-of-boundary events |
 | `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` | `5` | Per-batch cap on boundary fallback lookups (`0` = none, negative = unlimited) |
 | `GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS` | half of `SCRAPER_POLL_TIMEOUT_MS` (`15000`) | Per-batch wall-clock budget for boundary fallback lookups; `0` inherits half the poll window, negative disables the window |
+| `GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM` | `50` | Distance beyond which a geocoded coordinate pair contradicts coordinates already supplied (conflict => rejection) |
 
 ### Boundary Fallback
 
@@ -521,12 +522,26 @@ to wire the resolver. With it off, the boundary fallback makes no geocoding
 request and the offline decision stands. (Separate per-event geocoding jobs still
 run and are not affected by this switch.)
 
-Only the event's location string is transmitted — `PlaceInput.Name`, or
-`StreetAddress` when the name is empty. For ICS feeds that string is the venue
-name plus the address as written in the feed. The query goes to
-`NOMINATIM_API_URL`. A shortened retry (without the leading venue name) happens
-only after an honest no-result; timeouts, transport errors and HTTP 429 stop
-after one query. See [ICS feeds](ics-feeds.md) for the full contract.
+*What is transmitted.* The query is built from the strongest location evidence
+the extractor supplied:
+
+- the street address plus locality/region/postal/country when a street address
+  exists;
+- otherwise the venue name plus locality/region/country;
+- otherwise the venue name alone.
+
+Components already present in the query are not repeated. No event name,
+description, organiser or URL is sent. The query goes to `NOMINATIM_API_URL`. A
+shortened retry (without the leading venue name) happens only after an honest
+no-result; timeouts, transport errors and HTTP 429 stop after one query. See
+[ICS feeds](ics-feeds.md) for the full contract.
+
+A resolution is accepted only when it agrees with supplied evidence: a
+different country, a different region (unless the region field actually holds
+the country — a known ICS/JSON-LD misparse), a different plain-name locality, or
+coordinates more than `GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM` from supplied
+coordinates is a conflict, not a correction, and keeps the offline decision.
+Administrative components and coordinates are applied together or not at all.
 
 Work is bounded per batch ingestion job by
 `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` and

@@ -33,6 +33,9 @@ func TestLoad_GeocodingBoundaryFallback(t *testing.T) {
 		if got := cfg.Geocoding.BoundaryFallbackBudgetMS; got != cfg.Scraper.PollTimeout/2 {
 			t.Errorf("BoundaryFallbackBudgetMS = %d, want half the scraper poll window %d", got, cfg.Scraper.PollTimeout/2)
 		}
+		if got := cfg.Geocoding.BoundaryConflictRadiusKM; got != 50 {
+			t.Errorf("BoundaryConflictRadiusKM = %v, want 50", got)
+		}
 	})
 
 	t.Run("reads explicit env values", func(t *testing.T) {
@@ -40,6 +43,7 @@ func TestLoad_GeocodingBoundaryFallback(t *testing.T) {
 		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_ENABLED", "true")
 		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH", "9")
 		t.Setenv("GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS", "1234")
+		t.Setenv("GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM", "12.5")
 
 		cfg, err := Load()
 		if err != nil {
@@ -53,6 +57,9 @@ func TestLoad_GeocodingBoundaryFallback(t *testing.T) {
 		}
 		if got := cfg.Geocoding.BoundaryFallbackBudgetMS; got != 1234 {
 			t.Errorf("BoundaryFallbackBudgetMS = %d, want 1234", got)
+		}
+		if got := cfg.Geocoding.BoundaryConflictRadiusKM; got != 12.5 {
+			t.Errorf("BoundaryConflictRadiusKM = %v, want 12.5", got)
 		}
 	})
 

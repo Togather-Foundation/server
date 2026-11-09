@@ -61,7 +61,11 @@ type IngestService struct {
 	// placed inside the node's boundary (see resolveLocationOnBoundaryFailure).
 	// nil disables the fallback: behaviour is then exactly as before.
 	locationResolver geoloc.Resolver
-	logger           zerolog.Logger
+	// locationConflictKm is the distance beyond which a resolution's
+	// coordinates contradict coordinates already supplied (see
+	// locationEvidenceConflict). Zero uses the package default.
+	locationConflictKm float64
+	logger             zerolog.Logger
 }
 
 func NewIngestService(repo Repository, nodeDomain string, defaultTimezone string, validationConfig config.ValidationConfig, logger zerolog.Logger) *IngestService {
@@ -84,6 +88,14 @@ func (s *IngestService) WithDedupConfig(cfg config.DedupConfig) *IngestService {
 // parser cannot place. Passing nil (the default) keeps the pure-offline path.
 func (s *IngestService) WithLocationResolver(resolver geoloc.Resolver) *IngestService {
 	s.locationResolver = resolver
+	return s
+}
+
+// WithLocationConflictRadiusKM sets how far a resolution's coordinates may be
+// from supplied coordinates before the two count as contradictory. Zero keeps
+// the package default (50 km).
+func (s *IngestService) WithLocationConflictRadiusKM(km float64) *IngestService {
+	s.locationConflictKm = km
 	return s
 }
 

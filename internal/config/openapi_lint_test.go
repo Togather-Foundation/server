@@ -89,6 +89,10 @@ var openapiConfigEntries = []struct {
 		envVar:     "GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS",
 		wantSubstr: "GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS",
 	},
+	{
+		envVar:     "GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM",
+		wantSubstr: "GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM",
+	},
 }
 
 // TestOpenAPIDocumentsConfigTunables asserts that each config-tunable

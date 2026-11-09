@@ -27,6 +27,7 @@ type MockRepository struct {
 	eventsBySources   map[string]map[string]*Event // sourceID -> sourceEventID -> Event (trust linkage)
 	eventsByDedupHash map[string]*Event
 	places            map[string]*PlaceRecord
+	placeParams       map[string]PlaceCreateParams // "ulid:"+ULID -> stored parameters
 	organizations     map[string]*OrganizationRecord
 	occurrences       map[string][]OccurrenceCreateParams // eventID -> occurrences
 	reviewQueue       map[int]*ReviewQueueEntry           // id -> review queue entry
@@ -101,6 +102,7 @@ func NewMockRepository() *MockRepository {
 		eventsBySources:    make(map[string]map[string]*Event),
 		eventsByDedupHash:  make(map[string]*Event),
 		places:             make(map[string]*PlaceRecord),
+		placeParams:        make(map[string]PlaceCreateParams),
 		organizations:      make(map[string]*OrganizationRecord),
 		occurrences:        make(map[string][]OccurrenceCreateParams),
 		reviewQueue:        make(map[int]*ReviewQueueEntry),
@@ -383,6 +385,9 @@ func (m *MockRepository) UpsertPlace(ctx context.Context, params PlaceCreatePara
 	}
 
 	key := params.Name + params.AddressLocality
+	// Record what ingest tried to store, even when a place with the same
+	// name/locality already exists, so tests can assert the stored address.
+	m.placeParams["ulid:"+params.ULID] = params
 	if place, ok := m.places[key]; ok {
 		return place, nil
 	}
@@ -395,6 +400,17 @@ func (m *MockRepository) UpsertPlace(ctx context.Context, params PlaceCreatePara
 	// Also index by ULID so GetPlaceByULID can find places created via UpsertPlace.
 	m.places["ulid:"+params.ULID] = place
 	return place, nil
+}
+
+// PlaceParams returns the parameters the mock stored for the place with the
+// given ULID. GetPlaceByULID only carries identifiers, so address assertions use
+// this instead.
+func (m *MockRepository) PlaceParams(ulid string) (PlaceCreateParams, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	params, ok := m.placeParams["ulid:"+ulid]
+	return params, ok
 }
 
 func (m *MockRepository) GetPlaceByULID(ctx context.Context, ulid string) (*PlaceRecord, error) {
