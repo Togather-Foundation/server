@@ -1,7 +1,7 @@
 name: "tranzac"
 # Tranzac Club (Toronto). Nuxt.js + DatoCMS SPA.
 # Tier 3 (GraphQL): queries DatoCMS directly for structured event data with ISO dates.
-# Public read-only token embedded in page JS.
+# Public read-only token from /calendar runtime public.datoCmsToken (verified 2026-11-10).
 url: "https://tranzac.org/calendar"
 tier: 3
 schedule: "daily"
@@ -14,7 +14,7 @@ exclude_url_pattern: '/events/private-booking-'
 exclude_title_pattern: '(?i)^private booking$'
 graphql:
   endpoint: "https://graphql.datocms.com/"
-  token: "045a924c6d43923a1572e41cb866b0"
+  token: "6478acdbc92845767c38d53f0c1c81"
   query: |
     {
       allEvents {

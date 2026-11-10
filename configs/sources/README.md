@@ -125,7 +125,7 @@ Requires `SCRAPER_HEADLESS_ENABLED=true`. All sources below were evaluated with
 | obsidian-theatre | disabled | 0 | WordPress | Dates only on detail pages, not on listing |
 | orpheus-choir-toronto | disabled | 0 | Gutenberg WP | No repeating container; `wp-block-columns` with `hr` separators — not selectable |
 | reel-asian | disabled | 0 | WordPress + Elevent | Cross-origin Elevent iframe; same-origin policy blocks CSS access |
-| tranzac | disabled | 25 | DatoCMS | No ISO dates in rendered DOM; DatoCMS API adapter needed (`srv-wz0h7`) |
+| tranzac | **enabled** | 20 (default API page) | DatoCMS GraphQL (Tier 3) | Public read-only token from `/calendar` runtime `public.datoCmsToken`; refreshed 2026-11-10. Private bookings excluded by URL/title rules. |
 | xtsc | disabled | 102 names | Zuluru | Event titles in `data-event` attributes now extractable via `::attribute` syntax; dates not on listing page |
 
 ### Tier 3 (REST JSON — Eventbrite organizer pages)
