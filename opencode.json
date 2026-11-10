@@ -64,6 +64,11 @@
         "@upstash/context7-mcp@latest"
       ]
     },
+    "hermes-kanban": {
+      "type": "remote",
+      "enabled": true,
+      "url": "http://100.126.212.105:9130/mcp"
+    },
     "togather": {
       "type": "remote",
       "enabled": true,

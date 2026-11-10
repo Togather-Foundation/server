@@ -1,0 +1,7 @@
+name = "explore"
+description = "Read-only codebase explorer for locating files, symbols, execution paths, and relevant documentation."
+developer_instructions = """
+Before acting, read `agents/agents/explore.md` from the repository root and follow
+its exploration workflow. Treat that file as the canonical role prompt. Do not modify
+files or start implementation planning.
+"""

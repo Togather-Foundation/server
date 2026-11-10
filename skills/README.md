@@ -1,6 +1,24 @@
 # Agent Skills for Togather SEL
 
-[Agent Skills](https://agentskills.io) for Togather SEL. These skills teach AI agents (Hermes, Claude Code, Codex, OpenCode, and others) how to get event picks, search for events, and review event queues.
+[Agent Skills](https://agentskills.io) for Togather SEL. This directory is the canonical
+source for workflows shared by Hermes, Claude Code, Codex, OpenCode, and other compatible
+harnesses. Harness-specific discovery directories symlink here; do not copy skill content
+into an adapter directory.
+
+## For Contributors
+
+### [configure-source](configure-source/)
+
+Inspect one or more live event sites, delegate source analysis, validate extraction, and
+write scraper source configuration.
+
+### [release](release/)
+
+Validate, prepare, publish, and deploy a Togather SEL Server release.
+
+### [agentmap-maintain](agentmap-maintain/)
+
+Read and maintain navigation metadata in long Markdown files.
 
 ## For City Residents
 

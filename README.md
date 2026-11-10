@@ -213,6 +213,7 @@ make build
 - [SEL Documentation](docs/README.md) - Landing page for contributors, integrators, and node builders
 - [Architecture Guide](docs/contributors/architecture.md) - System design and core patterns
 - [Development Guide](docs/contributors/development.md) - Standards, tools, and workflows
+- [Agent Tooling](docs/contributors/agent-tooling.md) - Codex/OpenCode setup, shared skills, custom agents, and MCP connections
 - [Database Guide](docs/contributors/database.md) - Schema and migrations
 - [Testing Guide](docs/contributors/testing.md) - TDD workflow and test commands
 - [Security Guide](docs/contributors/security.md) - Security model and practices
@@ -221,7 +222,7 @@ make build
 
 ## Thanks
 
-This project is built with help from [OpenCode](https://opencode.ai/), [Spec Kit](https://github.com/github/spec-kit), along with the teams behind:
+This project is built with help from [Codex](https://developers.openai.com/codex/), [OpenCode](https://opencode.ai/), [Spec Kit](https://github.com/github/spec-kit), along with the teams behind:
 
 - ChatGPT 5.2 Codex
 - Claude Sonnet 4.5

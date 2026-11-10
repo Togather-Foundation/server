@@ -1,1 +1,1 @@
-/home/ryankelln/Documents/Projects/Art/togather/server/agents/agents/scraper-worker.md
+../../agents/agents/scraper-worker.md

@@ -1,0 +1,18 @@
+# Project-scoped Codex configuration. Codex loads this file only after the
+# repository is trusted. Secrets stay in environment variables.
+
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp@latest"]
+
+[mcp_servers.hermes-kanban]
+url = "http://100.126.212.105:9130/mcp"
+
+[mcp_servers.togather]
+url = "https://staging.toronto.togather.foundation/mcp"
+bearer_token_env_var = "TOGATHER_MCP_API_KEY"
+auth = "oauth"
+
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 5

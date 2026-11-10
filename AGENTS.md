@@ -264,10 +264,11 @@ Docs:
 
 When asked to add, fix, or debug a scraper source config:
 
-1. **Use `/configure-source <URL>`** — the OpenCode command that orchestrates the full
-   workflow (platform detection, DOM inspection, selector validation, YAML writing).
-   It dispatches `scraper-worker` subagents in parallel for batch URLs.
-2. **For single-source deep work**, use the Task tool with `subagent_type: "scraper-worker"`.
+1. **Use the `configure-source` workflow** — `/configure-source <URL>` in OpenCode or
+   `$configure-source <URL>` in Codex — to orchestrate platform detection, DOM inspection,
+   selector validation, and YAML writing. It dispatches `scraper-worker` subagents in
+   parallel for batch URLs.
+2. **For single-source deep work**, delegate to the `scraper-worker` custom agent.
 3. **After writing configs**, sync to DB: `server scrape sync` (YAML changes are ignored
    at runtime until synced — the scraper reads from the database by default).
 4. **To inspect scraper health**, use `server scrape failures` — queries the admin
@@ -279,7 +280,9 @@ Key docs:
 - `docs/integration/event-platforms.md` — platform recognition cheatsheet (read before inspecting a new site)
 - `configs/sources/README.md` — YAML config format and field reference
 
-Do NOT manually write scraper configs from scratch — always use `/configure-source` or `scraper-worker`, which handle platform detection, tier selection, live validation, and org database lookup.
+Do NOT manually write scraper configs from scratch — always use the `configure-source`
+workflow or `scraper-worker`, which handle platform detection, tier selection, live
+validation, and org database lookup.
 
 The `domain` field sets the default `event_domain` (`arts`, `music`, `culture`, `sports`, `community`, `education`, `general`) for all events from a source.
 

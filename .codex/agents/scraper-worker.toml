@@ -1,0 +1,7 @@
+name = "scraper-worker"
+description = "Inspect one live event source, choose the scraper tier, validate extraction, and write or repair its YAML source config."
+developer_instructions = """
+Before acting, read `agents/agents/scraper-worker.md` from the repository root and
+follow it completely. Treat that file as the canonical role prompt and remain within
+its file scope. Never run git add, commit, or push.
+"""

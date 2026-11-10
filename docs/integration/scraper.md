@@ -122,8 +122,9 @@ server scrape inspect https://example.com/events
 # Test selectors against a live URL without writing a config
 server scrape test https://example.com/events --event-list ".event-card" --name "h2"
 
-# AI-assisted: generate a source config for a URL (requires OpenCode)
-# /configure-source https://example.com/events
+# AI-assisted: generate a source config for a URL
+# OpenCode: /configure-source https://example.com/events
+# Codex:    $configure-source https://example.com/events
 ```
 
 The scraper submits events to the SEL batch ingest API (`POST /api/v1/events:batch`),
@@ -1851,7 +1852,8 @@ psql "$DATABASE_URL" -c "
 
 ### Quickest path: AI-assisted generation (recommended)
 
-Use the `/configure-source` OpenCode slash command (see `agents/commands/configure-source.md`):
+Use the shared `configure-source` agent skill (canonical instructions in
+`skills/configure-source/SKILL.md`):
 
 ```bash
 # Single URL
@@ -1859,6 +1861,9 @@ Use the `/configure-source` OpenCode slash command (see `agents/commands/configu
 
 # File of URLs (one per line)
 /configure-source urls.txt
+
+# In Codex, invoke the same workflow as a skill
+$configure-source https://example.com/events
 ```
 
 The command inspects the URL, proposes CSS selectors, validates live, checks the
@@ -2036,19 +2041,19 @@ different purposes and are designed to work together.
 
 ### Tool comparison
 
-| | `/configure-source` command | `scraper-worker` agent |
+| | `configure-source` skill | `scraper-worker` agent |
 |---|---|---|
-| **What it is** | An OpenCode slash command (orchestrator) | An OpenCode subagent type |
+| **What it is** | A shared agent skill (orchestrator) | A shared custom subagent role |
 | **When to use** | Adding new sources — one or many URLs at once | Single-URL deep investigation, fixing broken configs, manual config work |
-| **Invocation** | `/configure-source https://example.com/events` | Launched automatically by `/configure-source`, or manually via Task tool with `subagent_type: "scraper-worker"` |
+| **Invocation** | OpenCode: `/configure-source URL`; Codex: `$configure-source URL` | Launched automatically by the skill, or requested by name for focused work |
 | **Parallelism** | Dispatches up to 5 `scraper-worker` subagents in parallel | Runs as a single focused agent |
 | **Handles** | URL parsing, conflict detection, batch dispatch, result summary, git instructions | Platform detection, DOM inspection, selector proposal, live validation, YAML writing |
 | **Does NOT** | Run git commands (tells you what to commit) | Run git commands (orchestrator handles that) |
 
 ### How they relate
 
-`/configure-source` is the **orchestrator** and `scraper-worker` is the **worker**.
-When you run `/configure-source https://a.com https://b.com`, the orchestrator:
+`configure-source` is the **orchestrator** and `scraper-worker` is the **worker**.
+When you invoke the skill with `https://a.com https://b.com`, the orchestrator:
 
 1. Checks for existing configs in `configs/sources/`
 2. Launches one `scraper-worker` subagent per URL (up to 5 in parallel)
@@ -2064,7 +2069,7 @@ handling a complex site that needs manual guidance.
 #### Adding new sources (batch)
 
 ```bash
-# 1. Run the orchestrator with one or more URLs
+# 1. Run the orchestrator with one or more URLs (use $configure-source in Codex)
 /configure-source https://example.com/events https://another.ca/calendar
 
 # 2. Review the generated YAML files

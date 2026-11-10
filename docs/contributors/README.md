@@ -17,6 +17,7 @@ You're building features, fixing bugs, or improving the SEL codebase. These docs
 3. **[Database Guide](database.md)** - Schema design, migrations, query patterns
 4. **[Testing Guide](testing.md)** - TDD workflow, test types, coverage requirements
 5. **[Security Guide](security.md)** - Threat model, security implementations, best practices
+6. **[Agent Tooling](agent-tooling.md)** - Codex/OpenCode setup, shared skills, custom agents, and MCP connections
 
 ## Essential Resources
 

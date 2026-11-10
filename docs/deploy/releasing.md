@@ -6,8 +6,9 @@ from preparing a release to deploying it to production.
 ## Quick Reference
 
 ```bash
-# Option A: Agent-assisted (recommended) — use in OpenCode
-/release 0.1.0
+# Option A: Agent-assisted (recommended)
+# OpenCode: /release 0.1.0
+# Codex:    $release 0.1.0
 
 # Option B: Manual release
 make release-check VERSION=0.1.0   # dry run
@@ -36,7 +37,7 @@ make test-production-smoke
 ```
 1. Prepare       All changes merged to main, CI green
 2. Changelog     Generate/review changelog + release notes
-3. Tag & push    scripts/release.sh OR /release in OpenCode
+3. Tag & push    scripts/release.sh OR the shared release agent skill
                    ↓ triggers GitHub Actions
 4. CI gate       Full test suite with race detector
 5. Artifacts     Binary + Docker image (GHCR) published
@@ -97,7 +98,7 @@ When you run `/release 0.1.0`, the agent:
 1. **Reads the existing `[Unreleased]` content** — your hand-written notes
 2. **Gathers raw git data** — buckets all commits since the last tag by type
    (feat, fix, refactor, breaking changes, etc.) using Conventional Commit prefixes
-3. **Synthesizes both** using the prompt in `agents/release.md` — merging manual
+3. **Synthesizes both** using `skills/release/SKILL.md` — merging manual
    notes with anything in the git log not yet captured, producing a polished
    Keep a Changelog entry
 4. **Shows you the draft** for review before writing anything
@@ -120,10 +121,14 @@ has to guess what kind of change each commit is. See
 
 ### Option A: Agent-Assisted (Recommended)
 
-Use the `/release` command in OpenCode:
+Use the shared release workflow in your agent:
 
 ```
+# OpenCode
 /release 0.1.0
+
+# Codex
+$release 0.1.0
 ```
 
 The agent will:
@@ -362,7 +367,7 @@ git pull --rebase origin main
 
 ## Related Documentation
 
-- `agents/release.md` — Full step-by-step agent workflow
+- `skills/release/SKILL.md` — Full step-by-step agent workflow
 - `docs/contributing/commits.md` — Commit message conventions
 - `docs/deploy/rollback.md` — Detailed rollback procedures
 - `docs/deploy/deployment-testing.md` — Deployment testing checklist

@@ -121,7 +121,7 @@ propose CSS selectors. A malicious webpage could embed prompt injection payloads
 2. **HTML sanitization** — `<script>`, `<style>` tags and HTML comments are stripped from
    sample card snippets before they reach the agent. These elements carry no structural
    value for selector discovery but are common injection vectors.
-3. **Agent prompt hardening** — The worker prompt in `agents/commands/configure-source.md` includes
+3. **Agent prompt hardening** — The worker prompt in `agents/agents/scraper-worker.md` includes
    explicit prompt injection defense rules: treat boundary content as data only, flag
    suspicious patterns, never execute embedded code/URLs.
 4. **Human review gate** — Generated configs are written to `configs/sources/` and must be
