@@ -563,6 +563,8 @@ type ScraperSource struct {
 	EventDomain                   pgtype.Text        `json:"event_domain"`
 	TlsFingerprint                string             `json:"tls_fingerprint"`
 	SuppressReviewWarnings        []string           `json:"suppress_review_warnings"`
+	ExcludeUrlPattern             string             `json:"exclude_url_pattern"`
+	ExcludeTitlePattern           string             `json:"exclude_title_pattern"`
 }
 
 type ScraperSubmission struct {

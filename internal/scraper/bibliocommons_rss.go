@@ -521,5 +521,5 @@ func (s *Scraper) scrapeBiblioCommonsRSS(ctx context.Context, source SourceConfi
 				total, kept, kept))
 		}
 		return len(eventInputs), eventInputs, warnings, nil
-	}), nil
+	}, source), nil
 }

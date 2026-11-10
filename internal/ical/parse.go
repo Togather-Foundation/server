@@ -85,6 +85,14 @@ var WindowsTZIDAliases = map[string]string{
 // ParsedCalendar.Warnings. Only returns error if the overall VCALENDAR
 // structure is unparseable.
 func Parse(data []byte) (*ParsedCalendar, error) {
+	return ParseWithEventFilter(data, nil)
+}
+
+// ParseWithEventFilter applies keep to each VEVENT's decoded summary and URL
+// before validating its properties. Rejected components generate no event-level
+// parse warnings and never reach recurrence expansion or mapping. A nil keep
+// preserves Parse's behavior; calendar-level parse diagnostics are retained.
+func ParseWithEventFilter(data []byte, keep func(summary, url string) bool) (*ParsedCalendar, error) {
 	result := &ParsedCalendar{}
 
 	// Use AcceptUnknownPropertyHandler so that non-standard properties
@@ -123,6 +131,18 @@ func Parse(data []byte) (*ParsedCalendar, error) {
 	seenUIDs := make(map[string]bool)
 
 	for _, vevent := range cal.Events() {
+		if keep != nil {
+			var summary, eventURL string
+			if prop := vevent.GetProperty(ics.ComponentPropertySummary); prop != nil {
+				summary = strings.TrimSpace(ics.FromText(prop.Value))
+			}
+			if prop := vevent.GetProperty(ics.ComponentPropertyUrl); prop != nil {
+				eventURL = strings.TrimSpace(prop.Value)
+			}
+			if !keep(summary, eventURL) {
+				continue
+			}
+		}
 		parsed, warnings, err := parseVEvent(vevent, seenUIDs)
 		result.Warnings = append(result.Warnings, warnings...)
 		if err != nil {

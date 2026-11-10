@@ -60,6 +60,8 @@ func SourceConfigFromDomain(src domainScraper.Source, logger zerolog.Logger) (So
 
 	emitDescriptionDeprecationWarnings(logger, "source", src.Name, hadDescription, hadDescriptionSelectors)
 
+	cfg.ExcludeURLPattern = src.ExcludeURLPattern
+	cfg.ExcludeTitlePattern = src.ExcludeTitlePattern
 	cfg.EventURLPattern = src.EventURLPattern
 	cfg.SkipMultiSessionCheck = src.SkipMultiSessionCheck
 	cfg.MultiSessionDurationThreshold = src.MultiSessionDurationThreshold

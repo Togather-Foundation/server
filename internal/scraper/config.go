@@ -39,7 +39,11 @@ func emitDescriptionDeprecationWarnings(logger zerolog.Logger, key string, ident
 
 // SourceConfig defines a scrape source loaded from a YAML config file.
 type SourceConfig struct {
-	Name string `yaml:"name"            json:"name"`
+	// ExcludeURLPattern and ExcludeTitlePattern drop matching events in every tier.
+	// Empty patterns disable exclusion; either pattern matching is sufficient.
+	ExcludeURLPattern   string `yaml:"exclude_url_pattern,omitempty" json:"exclude_url_pattern,omitempty"`
+	ExcludeTitlePattern string `yaml:"exclude_title_pattern,omitempty" json:"exclude_title_pattern,omitempty"`
+	Name                string `yaml:"name"            json:"name"`
 	// URL is the primary entry-point URL for this source. When URLs is also
 	// set, URL is not validated and not used for fetching — GetURLs() returns
 	// URLs instead, and URL is stored only as human-readable metadata (e.g. in
@@ -674,6 +678,17 @@ func ValidateConfigWithWarnings(cfg SourceConfig) ([]string, error) {
 			}
 			if cfg.REST.Flatten && cfg.REST.ResultsField == "." {
 				warnings = append(warnings, `rest.flatten: flatten is ignored when rest.results_field is "." (bare-array mode)`)
+			}
+		}
+	}
+
+	for _, rule := range []struct{ name, pattern string }{
+		{"exclude_url_pattern", cfg.ExcludeURLPattern},
+		{"exclude_title_pattern", cfg.ExcludeTitlePattern},
+	} {
+		if rule.pattern != "" {
+			if _, err := regexp.Compile(rule.pattern); err != nil {
+				errs = append(errs, fmt.Sprintf("%s: invalid Go regex: %v", rule.name, err))
 			}
 		}
 	}

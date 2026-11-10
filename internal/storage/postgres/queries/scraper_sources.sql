@@ -4,7 +4,7 @@
 -- Insert or update a scraper source by name (used by 'server scrape sync').
 INSERT INTO scraper_sources (
   name, url, urls, tier, schedule, trust_level, license, event_domain, tls_fingerprint, enabled,
-  max_pages, selectors, notes, event_url_pattern, skip_multi_session_check,
+  max_pages, selectors, notes, exclude_url_pattern, exclude_title_pattern, event_url_pattern, skip_multi_session_check,
   multi_session_duration_threshold, suppress_review_warnings, follow_event_urls, timezone,
   last_scraped_at,
   headless_wait_selector, headless_wait_timeout_ms, headless_pagination_btn,
@@ -33,6 +33,8 @@ INSERT INTO scraper_sources (
   sqlc.arg('max_pages'),
   sqlc.arg('selectors'),
   sqlc.arg('notes'),
+  sqlc.arg('exclude_url_pattern'),
+  sqlc.arg('exclude_title_pattern'),
   sqlc.arg('event_url_pattern'),
   sqlc.arg('skip_multi_session_check'),
   sqlc.arg('multi_session_duration_threshold'),
@@ -71,6 +73,8 @@ ON CONFLICT (name) DO UPDATE SET
   max_pages                = EXCLUDED.max_pages,
   selectors                = EXCLUDED.selectors,
   notes                    = EXCLUDED.notes,
+  exclude_url_pattern = EXCLUDED.exclude_url_pattern,
+  exclude_title_pattern = EXCLUDED.exclude_title_pattern,
   event_url_pattern        = EXCLUDED.event_url_pattern,
   skip_multi_session_check = EXCLUDED.skip_multi_session_check,
   multi_session_duration_threshold = EXCLUDED.multi_session_duration_threshold,

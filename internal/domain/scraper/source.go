@@ -29,6 +29,8 @@ type Source struct {
 	MaxPages                      int
 	Selectors                     []byte // JSONB: encoded SelectorConfig; nil for Tier 0
 	Notes                         string
+	ExcludeURLPattern             string
+	ExcludeTitlePattern           string
 	EventURLPattern               string
 	SkipMultiSessionCheck         bool
 	MultiSessionDurationThreshold string
@@ -81,6 +83,8 @@ type UpsertParams struct {
 	MaxPages                      int
 	Selectors                     []byte
 	Notes                         string
+	ExcludeURLPattern             string
+	ExcludeTitlePattern           string
 	EventURLPattern               string
 	SkipMultiSessionCheck         bool
 	MultiSessionDurationThreshold string

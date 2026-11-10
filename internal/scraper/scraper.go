@@ -366,8 +366,8 @@ func (s *Scraper) ScrapeURL(ctx context.Context, rawURL string, opts ScrapeOptio
 			s.logger.Warn().Str("source", sourceName).Int("skipped", skipped).
 				Msg("scraper: events skipped during normalisation")
 		}
-		return len(rawEvents), valid, checkAllMidnight(valid), nil
-	}), nil
+		return len(rawEvents), valid, nil, nil
+	}, source), nil
 }
 
 // ScrapeSource loads source configs (DB-first, YAML fallback), locates the
@@ -647,11 +647,8 @@ func (s *Scraper) scrapeTier1(ctx context.Context, source SourceConfig, opts Scr
 				Msg("scraper: tier 1 events skipped during normalisation")
 		}
 
-		// Quality check: all-midnight heuristic.
-		warnings = append(warnings, checkAllMidnight(validEvents)...)
-
 		return len(rawEvents), validEvents, warnings, nil
-	}), nil
+	}, source), nil
 }
 
 // scrapeTier2 fetches and processes a Tier 2 (headless browser) source.
@@ -705,11 +702,8 @@ func (s *Scraper) scrapeTier2(ctx context.Context, source SourceConfig, opts Scr
 				Msg("scraper: tier 2 events skipped during normalisation")
 		}
 
-		// Quality check: all-midnight heuristic.
-		warnings = append(warnings, checkAllMidnight(validEvents)...)
-
 		return len(rawEvents), validEvents, warnings, nil
-	}), nil
+	}, source), nil
 }
 
 // scrapeTier0 fetches and processes a Tier 0 (JSON-LD) source.
@@ -756,7 +750,7 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 				if i > 0 {
 					select {
 					case <-ctx.Done():
-						return len(rawEvents), valid, checkAllMidnight(valid), nil
+						return len(rawEvents), valid, nil, nil
 					case <-time.After(500 * time.Millisecond):
 					}
 				}
@@ -784,8 +778,8 @@ func (s *Scraper) scrapeTier0(ctx context.Context, source SourceConfig, opts Scr
 			}
 		}
 
-		return len(rawEvents), valid, checkAllMidnight(valid), nil
-	}), nil
+		return len(rawEvents), valid, nil, nil
+	}, source), nil
 }
 
 // scrapeTier3 fetches and processes a Tier 3 (API: GraphQL or REST JSON) source.
@@ -817,9 +811,8 @@ func (s *Scraper) scrapeTier3(ctx context.Context, source SourceConfig, opts Scr
 				Msg("scraper: tier 3 events skipped during normalisation")
 		}
 
-		// Quality check: all-midnight heuristic.
-		return len(rawEvents), validEvents, checkAllMidnight(validEvents), nil
-	}), nil
+		return len(rawEvents), validEvents, nil, nil
+	}, source), nil
 }
 
 // scrapeSitemap discovers URLs from a sitemap XML and scrapes each one
@@ -994,11 +987,8 @@ func (s *Scraper) scrapeSitemap(ctx context.Context, source SourceConfig, opts S
 				Msg("scraper: sitemap detail page failures")
 		}
 
-		// Quality check: all-midnight heuristic.
-		warnings = append(warnings, checkAllMidnight(allEvents)...)
-
 		return totalFound, allEvents, warnings, nil
-	}), nil
+	}, source), nil
 }
 
 // scrapeFunc is the signature for the inner scraping work done by each tier.
@@ -1189,8 +1179,18 @@ func (s *Scraper) runWithTracking(
 	ctx context.Context,
 	result *ScrapeResult,
 	fn scrapeFunc,
+	sources ...SourceConfig,
 ) ScrapeResult {
 	start := time.Now()
+	var source SourceConfig
+	if len(sources) > 0 {
+		source = sources[0]
+	}
+	rules, compileErr := compileExclusionRules(source)
+	if compileErr != nil {
+		result.Error = compileErr
+		return *result
+	}
 
 	// Insert run record (best-effort).
 	var runID int64
@@ -1210,6 +1210,13 @@ func (s *Scraper) runWithTracking(
 
 	eventsFound, validEvents, qualityWarnings, err := fn(ctx)
 	result.EventsFound = eventsFound
+	if err == nil && source.ExtractionMethod != "ics" {
+		validEvents = s.excludeEvents(validEvents, rules, result.SourceName)
+	}
+
+	if err == nil && len(sources) > 0 && source.ExtractionMethod != "ics" && source.ExtractionMethod != "bibliocommons_rss" {
+		qualityWarnings = append(qualityWarnings, checkAllMidnight(validEvents)...)
+	}
 
 	// Defensive past-event guard: skip events that already ended before they
 	// reach submission. Applies to every extraction path because they all run

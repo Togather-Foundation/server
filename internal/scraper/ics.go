@@ -44,6 +44,10 @@ func NewICSExtractor(client *http.Client, maxBodyBytes int64, insecureSkipVerify
 // Extract fetches the ICS feed and returns EventInputs.
 func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig config.ICSConfig) ([]events.EventInput, []string, error) {
 	var allWarnings []string
+	rules, err := compileExclusionRules(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// 1. Fetch the ICS feed.
 	data, fetchWarnings, err := e.fetchFeed(ctx, cfg.URL, cfg.Headers)
@@ -53,7 +57,30 @@ func (e *ICSExtractor) Extract(ctx context.Context, cfg SourceConfig, icsConfig 
 	}
 
 	// 2. Parse the ICS data.
-	cal, err := ical.Parse(data)
+	// Exclude before event validation/recurrence mapping, which can themselves
+	// generate warnings for malformed or private VEVENTs.
+	var candidates []events.EventInput
+	var keep func(name, eventURL string) bool
+	if len(rules) > 0 {
+		keep = func(name, eventURL string) bool {
+			candidate := events.EventInput{Name: name, URL: eventURL}
+			candidates = append(candidates, candidate)
+			for _, rule := range rules {
+				value := eventURL
+				if rule.field == "title_pattern" {
+					value = name
+				}
+				if rule.re.MatchString(value) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	cal, err := ical.ParseWithEventFilter(data, keep)
+	if len(rules) > 0 {
+		filterExcludedEvents(candidates, rules, cfg.Name, e.logger)
+	}
 	if err != nil {
 		return nil, allWarnings, fmt.Errorf("ics parse: %w", err)
 	}
@@ -216,5 +243,5 @@ func (s *Scraper) scrapeICS(ctx context.Context, source SourceConfig, opts Scrap
 		}
 
 		return len(eventInputs), eventInputs, warnings, nil
-	}), nil
+	}, source), nil
 }

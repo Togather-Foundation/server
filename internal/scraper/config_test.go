@@ -2555,6 +2555,8 @@ func TestSourceConfig_DBRoundTrip(t *testing.T) {
 			require.NoError(t, err, "SourceConfigToUpsertParams must succeed")
 
 			src := domainScraper.Source{
+				ExcludeURLPattern:             params.ExcludeURLPattern,
+				ExcludeTitlePattern:           params.ExcludeTitlePattern,
 				Name:                          params.Name,
 				URL:                           params.URL,
 				URLs:                          params.URLs,

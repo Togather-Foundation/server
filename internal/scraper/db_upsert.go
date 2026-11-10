@@ -102,6 +102,8 @@ func SourceConfigToUpsertParams(cfg SourceConfig) (domainScraper.UpsertParams, e
 		MaxPages:                      cfg.MaxPages,
 		Selectors:                     selectorsJSON,
 		Notes:                         cfg.Notes,
+		ExcludeURLPattern:             cfg.ExcludeURLPattern,
+		ExcludeTitlePattern:           cfg.ExcludeTitlePattern,
 		EventURLPattern:               cfg.EventURLPattern,
 		SkipMultiSessionCheck:         cfg.SkipMultiSessionCheck,
 		MultiSessionDurationThreshold: cfg.MultiSessionDurationThreshold,

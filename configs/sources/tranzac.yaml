@@ -9,6 +9,9 @@ trust_level: 7
 license: "CC0-1.0"
 domain: music
 enabled: true
+# Room rental holds are not public events.
+exclude_url_pattern: '/events/private-booking-'
+exclude_title_pattern: '(?i)^private booking$'
 graphql:
   endpoint: "https://graphql.datocms.com/"
   token: "045a924c6d43923a1572e41cb866b0"

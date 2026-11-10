@@ -1133,6 +1133,8 @@ at debug level and the URL is left empty.
 | `schedule` | `"manual"` | Hint for future scheduling (`daily`, `weekly`, `manual`) |
 | `trust_level` | `5` | SEL source trust score (1–10) |
 | `license` | `""` | License applied to ingested events |
+| `exclude_url_pattern` | `""` | Go regex rejecting extracted event-page URLs across every tier. See [Per-source event exclusions](#per-source-event-exclusions). |
+| `exclude_title_pattern` | `""` | Go regex rejecting extracted event titles across every tier. Either exclusion pattern can reject an event. |
 | `event_url_pattern` | `""` | Colly URL allow-list pattern |
 | `max_pages` | `10` | Tier 1 pagination limit |
 | `skip_multi_session_check` | `false` | Skip multi-session detection for this source. Use for sources that legitimately publish long-duration events (e.g. exhibitions, residencies, summer institutes). |
@@ -1145,6 +1147,30 @@ at debug level and the URL is left empty.
 | `graphql` | — | Required for `tier: 3` GraphQL variant (mutually exclusive with `rest`) |
 | `rest` | — | Required for `tier: 3` REST variant (mutually exclusive with `graphql`) |
 | `sitemap` | — | Sitemap-based URL discovery (mutually exclusive with `urls`). See [Sitemap-Based URL Discovery](#sitemap-based-url-discovery). |
+
+### Per-source event exclusions
+
+Use optional top-level `exclude_url_pattern` and `exclude_title_pattern` to drop
+non-public listings, such as private room bookings, from any extraction tier
+(JSON-LD, CSS, headless HTML, GraphQL, REST, ICS, RSS, or sitemap). Both are Go
+regular expressions; invalid patterns fail validation. An event is excluded if
+**either** pattern matches its extracted event-page URL or title respectively.
+Empty patterns disable filtering, preserving existing source behavior.
+
+```yaml
+exclude_url_pattern: '/events/private-booking-'
+exclude_title_pattern: '(?i)^private booking$'
+```
+
+Exclusions run before event quality warnings and ingest, so excluded listings
+create no event or review row. Every configured pattern logs its match count
+and a sample match, for example `excluded: 9 by url_pattern=/events/private-booking-`.
+An event matching both patterns is removed once but counted for each pattern.
+Check these logs after changing a pattern to catch overly broad expressions.
+Sync YAML changes using `server scrape sync`; on remote environments deploy the
+new binary and config first, since extraction and database loading must support
+the new keys. Existing events are not deleted retroactively; retire previously
+ingested private bookings through the admin event delete endpoint.
 
 ### Per-source review-warning suppression
 
