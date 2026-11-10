@@ -7,6 +7,34 @@ args = ["-y", "@upstash/context7-mcp@latest"]
 
 [mcp_servers.hermes-kanban]
 url = "http://100.126.212.105:9130/mcp"
+bearer_token_env_var = "KANBAN_MCP_API_KEY"
+
+[mcp_servers.hermes-kanban.tools.board_list]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.kanban_help]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.ticket_get]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.ticket_claim]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.ticket_comment]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.ticket_block]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.ticket_request_review]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.ticket_events]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.ticket_create]
+approval_mode = "approve"
 
 [mcp_servers.togather]
 url = "https://staging.toronto.togather.foundation/mcp"

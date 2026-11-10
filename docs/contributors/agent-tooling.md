@@ -9,13 +9,14 @@ to each client.
 
 1. Open the repository in Codex and mark it as trusted. Codex only loads project-scoped
    `.codex/config.toml`, custom agents, hooks, and rules for trusted projects.
-2. Export the Togather MCP credential before starting Codex:
+2. Export both MCP credentials before starting Codex:
 
    ```bash
+   export KANBAN_MCP_API_KEY="..."
    export TOGATHER_MCP_API_KEY="..."
    ```
 
-   Keep the value in local environment or secret-manager configuration. Never commit it.
+   Keep the values in local environment or secret-manager configuration. Never commit them.
 3. Start Codex from the repository root and verify the project MCP servers:
 
    ```bash
@@ -25,8 +26,9 @@ to each client.
    The expected project servers are `context7`, `hermes-kanban`, and `togather`.
 
 `context7` provides current external-library documentation. `hermes-kanban` is the
-project task board; every call must use `board: "togather"`. `togather` connects to the
-staging SEL MCP endpoint and reads its bearer token from `TOGATHER_MCP_API_KEY`.
+project task board and reads its bearer token from `KANBAN_MCP_API_KEY`; every call must
+use `board: "togather"`. `togather` connects to the staging SEL MCP endpoint and reads
+its bearer token from `TOGATHER_MCP_API_KEY`.
 
 ## Shared instructions
 
@@ -55,10 +57,13 @@ load the canonical prompt in `agents/agents/`, avoiding a second copy of the rol
 
 ## MCP configuration boundary
 
-MCP transports are declared twice because Codex uses TOML and OpenCode uses JSON, and
-neither client consumes the other's schema. Keep the server names and endpoints aligned
-between `.codex/config.toml` and `opencode.json`. Credentials remain environment-backed;
-do not add static authorization headers to either file.
+Repository MCP transports are declared in `.codex/config.toml`. Selected kanban tools
+have explicit approval policies there. Credentials remain environment-backed; do not
+add static authorization headers.
+
+The repository no longer supplies `opencode.json`. OpenCode users configure MCP
+transports in their own client configuration; shared instructions, skills, and role
+adapters remain available.
 
 Codex CLI, the Codex IDE extension, and the ChatGPT desktop app share Codex's configuration
 layers. Project configuration overrides user defaults only for this trusted repository.
@@ -68,8 +73,8 @@ layers. Project configuration overrides user defaults only for this trusted repo
 After changing agent configuration:
 
 ```bash
-# Validate JSON syntax
-jq empty opencode.json
+# Validate TOML syntax
+python3 -c 'import pathlib, tomllib; tomllib.loads(pathlib.Path(".codex/config.toml").read_text())'
 
 # Validate that Codex can parse project configuration and enumerate MCP servers
 codex mcp list
