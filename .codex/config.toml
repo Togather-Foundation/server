@@ -8,6 +8,7 @@ args = ["-y", "@upstash/context7-mcp@latest"]
 [mcp_servers.hermes-kanban]
 url = "http://100.126.212.105:9130/mcp"
 bearer_token_env_var = "KANBAN_MCP_API_KEY"
+approval_mode = "approve"
 
 [mcp_servers.hermes-kanban.tools.board_list]
 approval_mode = "approve"
@@ -34,6 +35,9 @@ approval_mode = "approve"
 approval_mode = "approve"
 
 [mcp_servers.hermes-kanban.tools.ticket_create]
+approval_mode = "approve"
+
+[mcp_servers.hermes-kanban.tools.ticket_complete]
 approval_mode = "approve"
 
 [mcp_servers.togather]
