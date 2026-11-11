@@ -134,7 +134,9 @@ jobs:
         # Exclude them; they are operator tools, not units under test.
         # ./tests/fixtures/ is listed explicitly because it is not under ./internal/.
         run: |
-          PKGS="$(go list ./internal/... | grep -v 'internal/loadtest$\|internal/telemetry$' | tr '\n' ' ') ./tests/fixtures/"
+          PKGS="$(go list ./internal/... \
+            | grep -v 'internal/loadtest$\|internal/telemetry$' \
+            | tr '\n' ' ') ./tests/fixtures/"
           go test -coverprofile=coverage.out -covermode=atomic $PKGS
 
       - name: Upload coverage to Codecov

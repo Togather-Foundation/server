@@ -49,6 +49,10 @@ scripts/agent-run.sh make test-ci
 # Lint
 scripts/agent-run.sh make lint
 
+# Workflow/config YAML (same strict gate as CI's "Validate YAML" job;
+# needs docker, or a local yamllint/uvx — no longer silently skipped)
+scripts/agent-run.sh make lint-yaml
+
 # Format
 make fmt
 
