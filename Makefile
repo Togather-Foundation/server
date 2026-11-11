@@ -404,28 +404,36 @@ lint-openapi:
 	fi
 
 # Validate YAML files (GitHub workflows, configs)
+# The workflow pass mirrors the CI "Validate YAML" job exactly (yamllint --strict over
+# .github/workflows/ with .yamllint.yml), so a warning that fails CI also fails here.
 lint-yaml:
 	@echo "Validating YAML files..."
-	@if command -v docker > /dev/null 2>&1; then \
-		EXIT_CODE=0; \
-		docker run --rm -v "$(PWD):/data" cytopia/yamllint:latest \
-			-c /data/.yamllint.yml \
-			-f parsable \
-			/data/.github/workflows/ \
-			/data/.yamllint.yml \
-			/data/deploy/docker/docker-compose.yml \
-			/data/deploy/docker/docker-compose.blue-green.yml || EXIT_CODE=$$?; \
-		if [ $$EXIT_CODE -eq 0 ]; then \
-			echo "✓ YAML validation passed"; \
-		elif [ $$EXIT_CODE -eq 1 ]; then \
-			echo "✗ YAML validation found errors"; \
-			exit 1; \
-		else \
-			echo "✓ YAML validation complete (warnings only)"; \
-		fi; \
+	@EXIT_CODE=0; \
+	if command -v docker > /dev/null 2>&1; then \
+		YAMLLINT="docker run --rm -v $(PWD):/data cytopia/yamllint:latest -c /data/.yamllint.yml -f parsable"; \
+		BASE=/data/; \
+	elif command -v yamllint > /dev/null 2>&1; then \
+		YAMLLINT="yamllint -c .yamllint.yml -f parsable"; \
+		BASE=; \
+	elif command -v uvx > /dev/null 2>&1; then \
+		YAMLLINT="uvx --quiet yamllint -c .yamllint.yml -f parsable"; \
+		BASE=; \
 	else \
-		echo "WARNING: docker not found. Skipping YAML validation."; \
-		echo "Install docker to enable YAML validation."; \
+		echo "WARNING: docker and yamllint not found. Skipping YAML validation."; \
+		echo "Install docker, or yamllint (pipx install yamllint / uv tool install yamllint)."; \
+		exit 0; \
+	fi; \
+	echo "  GitHub workflows (CI-equivalent, warnings fail)..."; \
+	$$YAMLLINT --strict $${BASE}.github/workflows/ || EXIT_CODE=1; \
+	echo "  Config and compose files..."; \
+	$$YAMLLINT $${BASE}.yamllint.yml \
+		$${BASE}deploy/docker/docker-compose.yml \
+		$${BASE}deploy/docker/docker-compose.blue-green.yml || EXIT_CODE=1; \
+	if [ $$EXIT_CODE -eq 0 ]; then \
+		echo "✓ YAML validation passed"; \
+	else \
+		echo "✗ YAML validation found errors"; \
+		exit 1; \
 	fi
 
 # Validate JavaScript syntax (requires esbuild)
@@ -579,7 +587,9 @@ ci: sqlc-generate vulncheck
 	@echo "=========================================="
 
 # Fast CI gate for agent pre-commit use (~90s).
-# Skips: vulncheck, webfiles, and docker-dependent checks (lint-yaml, docker-compose-lint).
+# Skips: vulncheck, webfiles, and docker-compose-lint.
+# lint-yaml runs here too: it prefers docker, but falls back to a local yamllint
+# (or `uvx yamllint`) so the workflow-YAML gate that fails CI is reproducible offline.
 # The SQLc step regenerates and verifies drift, so stale committed output fails here.
 ci-fast:
 	@echo ""
@@ -610,6 +620,9 @@ ci-fast:
 	@echo ""
 	@echo "==> Linting shell scripts..."
 	@$(MAKE) lint-shell
+	@echo ""
+	@echo "==> Validating YAML files..."
+	@$(MAKE) lint-yaml
 	@echo ""
 	@echo "==> Building server..."
 	@$(MAKE) build
