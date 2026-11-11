@@ -37,18 +37,17 @@ func TestFindByFeedEventID(t *testing.T) {
 		sourceEventID = "evt_R20250311T190000@example.org:2026-11-10T15:00:00-05:00"
 	)
 
-	// Two source rows for one feed, exactly how the duplicate pair was created.
-	sourceA, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
-		Name: "Google Calendar", SourceType: "api", BaseURL: "https://calendar.example.org", TrustLevel: 5,
-		LicenseURL: "https://creativecommons.org/publicdomain/zero/1.0/", LicenseType: "CC0",
-	})
-	require.NoError(t, err)
-	sourceB, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
-		Name: "cita-local-events", SourceType: "api", BaseURL: "https://calendar.example.org", TrustLevel: 5,
-		LicenseURL: "https://creativecommons.org/publicdomain/zero/1.0/", LicenseType: "CC0",
-	})
-	require.NoError(t, err)
-	require.NotEqual(t, sourceA, sourceB, "one feed must be able to own two source rows")
+	// Seed historical fragmentation directly. The current registry prevents new
+	// duplicates, but event lookup must continue to work across legacy rows.
+	historicalSource := func(name string) string {
+		t.Helper()
+		var id string
+		require.NoError(t, pool.QueryRow(ctx, `INSERT INTO sources(name,source_type,base_url,trust_level,license_url,license_type) VALUES ($1,'api','https://calendar.example.org',5,'https://creativecommons.org/publicdomain/zero/1.0/','CC0') RETURNING id::text`, name).Scan(&id))
+		return id
+	}
+	sourceA := historicalSource("Google Calendar")
+	sourceB := historicalSource("cita-local-events")
+	require.NotEqual(t, sourceA, sourceB, "fixture must preserve historical row fragmentation")
 
 	t.Run("matches on feed URL and source event id", func(t *testing.T) {
 		ulidValue := insertEvent(t, ctx, pool, "GW Focus Group", "Journal club", org, place, "education", "published", nil, start)

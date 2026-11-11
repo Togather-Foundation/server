@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -187,7 +186,13 @@ func (m *IngestMockRepository) GetOrCreateSource(ctx context.Context, params eve
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	key := fmt.Sprintf("%s|%s", params.Name, params.BaseURL)
+	key := events.NormalizeFeedURL(params.FeedURL)
+	if key == "" {
+		key = events.NormalizeFeedURL(params.BaseURL)
+	}
+	if key == "" {
+		key = "name:" + params.Name
+	}
 	if sourceID, ok := m.sources[key]; ok {
 		return sourceID, nil
 	}
@@ -592,19 +597,6 @@ func (m *IngestMockRepository) AddExistingEvent(feedURL, sourceEventID string, e
 	m.events[event.ULID] = event
 }
 
-// sourceBaseURL extracts base URL from a full URL.
-func sourceBaseURL(value string) string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return ""
-	}
-	parsed, err := url.Parse(trimmed)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return trimmed
-	}
-	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
-}
-
 // Tests using synthetic fixtures
 
 func TestIngestService_WithSyntheticFixtures(t *testing.T) {
@@ -792,7 +784,7 @@ func TestIngestService_SourceTracking(t *testing.T) {
 		require.NotNil(t, result.Event)
 
 		// Verify source was registered
-		sourceKey := input.Source.Name + "|" + sourceBaseURL(input.Source.URL)
+		sourceKey := events.NormalizeFeedURL(input.Source.URL)
 		_, exists := repo.sources[sourceKey]
 		assert.True(t, exists, "Source should be registered")
 	})
