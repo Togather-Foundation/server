@@ -58,15 +58,14 @@ func TestUpsertPlaceReconciliation(t *testing.T) {
 }
 
 // TestGetOrCreateSourceReconciliation tests source reconciliation by
-// (base_url, name) for named feeds, including the legacy base_url-only
-// behaviour for empty names and NULL/empty base_url values.
+// normalized feed URL, including names that change and URL-less legacy callers.
 func TestGetOrCreateSourceReconciliation(t *testing.T) {
 	ctx := context.Background()
 	pool, _ := setupPostgres(t, ctx)
 
 	repo := &EventRepository{pool: pool, logger: zerolog.Nop()}
 
-	t.Run("different names sharing a base_url create separate sources", func(t *testing.T) {
+	t.Run("different labels sharing a feed reuse one source", func(t *testing.T) {
 		// All TPL BiblioCommons feeds share gateway.bibliocommons.com; each feed
 		// must get its own provenance row.
 		source1, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
@@ -89,14 +88,14 @@ func TestGetOrCreateSourceReconciliation(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		require.NotEqual(t, source1, source2, "Different feed names on the same base_url must not share a source")
+		require.Equal(t, source1, source2, "Names label the same feed; they do not create identity")
 
 		var count int
 		require.NoError(t, pool.QueryRow(ctx,
 			`SELECT count(*) FROM sources WHERE base_url = $1`,
 			"https://gateway.bibliocommons.com",
 		).Scan(&count), "count rows for base_url")
-		require.Equal(t, 2, count, "two names on one base_url must produce exactly two rows")
+		require.Equal(t, 1, count, "two names on one feed must produce exactly one row")
 	})
 
 	t.Run("same base_url and name deduplicates", func(t *testing.T) {
@@ -184,52 +183,13 @@ SELECT name, source_type, license_url, license_type, trust_level
 		require.Equal(t, source1, source2, "Empty base_url should deduplicate correctly")
 	})
 
-	t.Run("empty name resolves deterministically and prefers the unknown row", func(t *testing.T) {
-		// Callers that do not send a feed name must still resolve by base_url
-		// alone. With several feeds on one host the choice is deterministic:
-		// the neutral "unknown" row wins, then oldest, then id.
-		const baseURL = "https://deterministic.example.com"
-		licenseURL := "https://creativecommons.org/publicdomain/zero/1.0/"
-
-		named, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
-			Name:        "Toronto Open Data Events",
-			SourceType:  "api",
-			BaseURL:     baseURL,
-			LicenseURL:  licenseURL,
-			LicenseType: "CC0",
-			TrustLevel:  7,
-		})
+	t.Run("unnamed URL-based source shares feed identity", func(t *testing.T) {
+		const feed = "https://unnamed.example.org/events"
+		named, err := repo.GetOrCreateSource(ctx, sourceParams("named", feed, feed))
 		require.NoError(t, err)
-
-		neutral, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
-			Name:        "unknown",
-			SourceType:  "api",
-			BaseURL:     baseURL,
-			LicenseURL:  licenseURL,
-			LicenseType: "CC0",
-			TrustLevel:  1,
-		})
+		neutral, err := repo.GetOrCreateSource(ctx, sourceParams("", feed, feed))
 		require.NoError(t, err)
-		require.NotEqual(t, named, neutral)
-
-		for i := 0; i < 3; i++ {
-			resolved, err := repo.GetOrCreateSource(ctx, events.SourceLookupParams{
-				Name:        "",
-				SourceType:  "api",
-				BaseURL:     baseURL,
-				LicenseURL:  licenseURL,
-				LicenseType: "CC0",
-				TrustLevel:  5,
-			})
-			require.NoError(t, err)
-			require.Equal(t, neutral, resolved, "empty name must deterministically prefer the unknown row")
-		}
-
-		var count int
-		require.NoError(t, pool.QueryRow(ctx,
-			`SELECT count(*) FROM sources WHERE base_url = $1`, baseURL,
-		).Scan(&count), "count rows for base_url")
-		require.Equal(t, 2, count, "empty-name lookups must not insert a third row")
+		require.Equal(t, named, neutral)
 	})
 
 	t.Run("different base_url creates different sources", func(t *testing.T) {

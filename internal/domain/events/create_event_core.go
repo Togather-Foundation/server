@@ -145,15 +145,9 @@ func (s *IngestService) createEventCore(
 	// ── 3. Source resolution ─────────────────────────────────────────────────
 	sourceID := opts.SourceID
 	if validated.Source != nil && validated.Source.URL != "" {
-		resolvedID, err := s.repo.GetOrCreateSource(ctx, SourceLookupParams{
-			Name:        sourceName(validated.Source, validated.Name),
-			SourceType:  "api",
-			BaseURL:     sourceBaseURL(validated.Source.URL),
-			FeedURL:     validated.Source.URL,
-			LicenseURL:  licenseURL(sourceLicense(validated)),
-			LicenseType: sourceLicenseType(validated),
-			TrustLevel:  5,
-		})
+		resolvedID, err := s.repo.GetOrCreateSource(ctx, SourceParamsForFeed(
+			sourceName(validated.Source, validated.Name), validated.Source.URL, sourceLicense(validated), 5,
+		))
 		if err != nil {
 			return nil, err
 		}

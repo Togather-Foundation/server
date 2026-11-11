@@ -54,6 +54,27 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
   request. Full spec in `specs/003-scraper/url-submissions-spec.md`.
   Epic: srv-1cxmi.
 
+### Canonical feed registry and repair (t_eafc6fae)
+
+A provenance source is identified only by the normalized feed URL (query and fragment
+removed, trailing slashes ignored, paths significant, host spelling preserved).
+`base_url` on canonical rows contains the full normalized feed URL. Config sync and
+ingest share resolution; a changed name is a label update, including before the feed
+has produced events. Concurrent first observations must resolve one row. Different
+feed paths on one host must resolve separate rows. Event identity remains scoped to
+feed URL plus source event id, never a registry row.
+
+The schema transition retains historical rows. Explicit reconciliation defaults to a
+rolled-back preview and reports counts and SQL. Apply preserves payloads, event dates,
+configured trust/license and scraper suppression. Duplicate live attributions are
+consolidated only after archiving their complete attribution and source metadata;
+archive counts make history preservation accountable. Ambiguous/colliding field history
+and policy conflicts are retained and reported. A second run makes no further safe
+moves or archives. Orphan cleanup protects configured rows from YAML and DB inventories,
+all references and all nondefault operator metadata; reports distinguish configured
+idle rows, orphans and metadata protection. Test fixtures must demonstrate these
+invariants before staging repair. Operational evidence belongs in the ticket handoff.
+
 ## User Scenarios & Testing
 
 ### User Story 1 — Operator Scrapes a URL for JSON-LD Events (Priority: P1)

@@ -80,7 +80,7 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 			LifecycleState: "published",
 		}
 		repo.AddExistingEvent("https://example.com/events/evt-001", "evt-001", "source-A", existingEvent)
-		repo.sources["Scraper A|https://example.com"] = "source-A"
+		repo.sources["https://example.com/events/evt-001"] = "source-A"
 		repo.SetSourceTrust("source-A", 5)
 
 		service := newTestService(repo)
@@ -124,7 +124,7 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 			LifecycleState: "published",
 		}
 		repo.AddExistingEvent("https://example.com/events/evt-001", "evt-001", "source-A", existingEvent)
-		repo.sources["Scraper A|https://example.com"] = "source-A"
+		repo.sources["https://example.com/events/evt-001"] = "source-A"
 		repo.SetSourceTrust("source-A", 7) // higher trust for new submission
 
 		// Set existing event trust lower by mapping it to a different source
@@ -147,7 +147,7 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 		}
 		// Link existing event to source-A for FindByFeedEventID lookup
 		repo2.AddExistingEvent("https://example.com/events/evt-001", "evt-001", "source-A", existingEvent2)
-		repo2.sources["Scraper A|https://example.com"] = "source-A"
+		repo2.sources["https://example.com/events/evt-001"] = "source-A"
 		repo2.SetSourceTrust("source-A", 7) // new source trust is 7
 		// Override the existing event's trust to 3 (as if originally from a lower-trust source)
 		repo2.SetEventTrust("existing-2", 3)
@@ -188,7 +188,7 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 			LifecycleState: "published",
 		}
 		repo.AddExistingEvent("https://scraper-a.com/events/evt-001", "evt-001", "source-A", existingEvent)
-		repo.sources["Scraper A|https://scraper-a.com"] = "source-A"
+		repo.sources["https://scraper-a.com/events/evt-001"] = "source-A"
 
 		service := newTestService(repo)
 
@@ -259,7 +259,7 @@ func TestScenario_S4_DedupHash(t *testing.T) {
 		}
 
 		// Pre-create the high quality source with trust 7
-		repo.sources["High Quality Source|https://highquality.com"] = "source-hq"
+		repo.sources["https://highquality.com/events/123"] = "source-hq"
 		repo.SetSourceTrust("source-hq", 7)
 
 		result, err := service.Ingest(context.Background(), input)
@@ -325,7 +325,7 @@ func TestScenario_S4_DedupHash(t *testing.T) {
 				Name:    "Low Trust Source",
 			},
 		}
-		repo.sources["Low Trust Source|https://lowtrust.com"] = "source-low"
+		repo.sources["https://lowtrust.com/events/x"] = "source-low"
 		repo.SetSourceTrust("source-low", 3)
 
 		result, err := service.Ingest(context.Background(), input)
@@ -387,7 +387,7 @@ func TestScenario_S4_DedupHash(t *testing.T) {
 				Name:    "Low Trust",
 			},
 		}
-		repo.sources["Low Trust|https://lowtrust.com"] = "source-low"
+		repo.sources["https://lowtrust.com/events/y"] = "source-low"
 		repo.SetSourceTrust("source-low", 2)
 
 		result, err := service.Ingest(context.Background(), input)
@@ -3035,9 +3035,9 @@ func TestScenario_PerFeedProvenance(t *testing.T) {
 		repo.AddExistingEvent("https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events", "tpl-events-1", "source-tpl-events", existingEvent)
 		repo.SetSourceTrust("source-tpl-events", 5)
 
-		// The subset feed is a distinct source row on the same base_url.
-		repo.sources["tpl-career-job-search|https://gateway.bibliocommons.com"] = "source-career"
-		repo.SetSourceTrust("source-career", 5)
+		// Query-filtered views share one canonical feed source row.
+		repo.sources["https://gateway.bibliocommons.com/v2/libraries/tpl/rss/events"] = "source-tpl-events"
+		repo.SetSourceTrust("source-tpl-events", 5)
 
 		service := newTestService(repo)
 		input := completeEventInputWithSource(
@@ -3059,26 +3059,20 @@ func TestScenario_PerFeedProvenance(t *testing.T) {
 		// per-feed provenance is backfilled even though the event predates it.
 		found := false
 		for _, created := range repo.createdSources {
-			if created.EventID == existingEvent.ID && created.SourceID == "source-career" {
+			if created.EventID == existingEvent.ID && created.SourceID == "source-tpl-events" {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Errorf("Expected event_sources attribution for source-career on existing event, got %+v", repo.createdSources)
+			t.Errorf("Expected event_sources attribution for source-tpl-events on existing event, got %+v", repo.createdSources)
 		}
 
-		// The lumped/other feed's attribution is untouched.
-		for _, created := range repo.createdSources {
-			if created.SourceID == "source-tpl-events" {
-				t.Errorf("Did not expect new attribution for source-tpl-events, got %+v", created)
-			}
-		}
 	})
 
 	t.Run("unnamed_source_does_not_become_per_event_identity", func(t *testing.T) {
 		// External submitters often send source.url + source.eventId without a
-		// name. Those must keep base_url-only grouping ("unknown"), not create a
+		// name. Those must share one normalized feed row ("unknown"), not create a
 		// sources row named after the event id.
 		repo := NewMockRepository()
 		service := newTestService(repo)
@@ -3097,8 +3091,8 @@ func TestScenario_PerFeedProvenance(t *testing.T) {
 			if params.Name != "unknown" {
 				t.Errorf("Source name = %q, want %q (must not use per-event identity)", params.Name, "unknown")
 			}
-			if params.BaseURL != "https://unnamed.example.com" {
-				t.Errorf("BaseURL = %q, want %q", params.BaseURL, "https://unnamed.example.com")
+			if params.BaseURL != "https://unnamed.example.com/events" {
+				t.Errorf("BaseURL = %q, want %q", params.BaseURL, "https://unnamed.example.com/events")
 			}
 			if params.FeedURL != "https://unnamed.example.com/events" {
 				t.Errorf("FeedURL = %q, want %q (source resolution needs the feed URL to reuse an existing row)", params.FeedURL, "https://unnamed.example.com/events")

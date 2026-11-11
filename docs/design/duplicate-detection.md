@@ -48,11 +48,9 @@ backfill. Because the stored value is
 unchanged, a re-scrape still hits the `UNIQUE (event_id, source_id, source_url)` upsert
 target and refreshes the attribution in place.
 
-Why not the `sources` row: `sources` upserts on `(host-only base_url, name)`, and a feed
-that was ingested under two names used to end up with two rows (e.g. a per-feed config plus
-the catch-all `Google Calendar` row; ingest now reuses the row that already owns the feed).
-Row-scoped identity made the same feed event look new under the second row and inserted a
-duplicate. The feed URL identifies the feed; the row identifies provenance metadata.
+The registry now resolves by normalized feed URL, but event identity remains independent
+of source-row ids. Historical rows may still be fragmented; scoping identity to a row
+would make an already-ingested feed event appear new under another attribution row.
 
 Conflict rule: **the feed that owns the id is authoritative for the name.** Every other
 field keeps the existing trust-based auto-merge (`description`, `image_url`, `public_url`,
@@ -79,11 +77,10 @@ attributions and skipping it would re-create the occurrences consolidation retir
 the feed-identity path applies the rename explicitly and rebuilds the hash. Without a
 `sourceEventId` there is no feed identity, so ingest falls through to the dedup-hash path.
 
-**Historical note:** `sources` still upserts on `(host-only base_url, name)`. A feed
-ingested under two names used to acquire two rows, which fragmented per-source metadata
-(license, trust, `suppress_review_warnings`). Ingest now reuses the row that already owns
-the feed; rows created before that fix remain and are reported by `server source audit`.
-
+**Historical source reconciliation:** `server source reconcile` previews safe moves
+from legacy rows to canonical feed rows. It archives complete attribution/source
+snapshots before consolidating duplicate live attributions, and reports policy conflicts. Trust/license belong to the source registry; warning suppression
+belongs to scraper config. See [source identity](../integration/scraper.md#per-feed-provenance-and-source-identity).
 
 ## Auto-Merge Strategy (exact dedup hash match)
 

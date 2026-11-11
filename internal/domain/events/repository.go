@@ -238,15 +238,17 @@ type IdempotencyKeyCreateParams struct {
 }
 
 type SourceLookupParams struct {
-	Name        string
-	SourceType  string
-	BaseURL     string
-	LicenseURL  string
-	LicenseType string
-	TrustLevel  int
-	// FeedURL is the concrete feed URL being ingested. When no row exists for
-	// (BaseURL, Name) — e.g. the config was renamed — it lets the repository
-	// reuse the row that already owns this feed instead of minting a twin.
+	// RequirePolicyMatch makes config sync refuse conflicting canonical policy.
+	// Ingest leaves this false so new submissions cannot overwrite stored policy.
+	RequirePolicyMatch bool
+	Name               string
+	SourceType         string
+	BaseURL            string
+	LicenseURL         string
+	LicenseType        string
+	TrustLevel         int
+	// FeedURL is the concrete feed URL and the canonical source identity.
+	// BaseURL is a legacy fallback for callers that have not supplied FeedURL.
 	FeedURL string
 }
 

@@ -602,6 +602,15 @@ type Source struct {
 	Notes                  pgtype.Text        `json:"notes"`
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	FeedUrl                pgtype.Text        `json:"feed_url"`
+}
+
+type SourceRepairAttributionArchive struct {
+	OriginalAttributionID  pgtype.UUID        `json:"original_attribution_id"`
+	CanonicalAttributionID pgtype.UUID        `json:"canonical_attribution_id"`
+	OriginalAttribution    []byte             `json:"original_attribution"`
+	OriginalSource         []byte             `json:"original_source"`
+	ArchivedAt             pgtype.Timestamptz `json:"archived_at"`
 }
 
 type User struct {

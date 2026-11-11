@@ -948,17 +948,13 @@ https://gateway.bibliocommons.com/v2/libraries/<lib>/rss/events?types=<id>&progr
   `tpl-career-coaches-in-residence` (`programs=`), `tpl-innovator-in-residence`
   (`programs=`). They duplicate events already present in `tpl-events`; cross-source
   dedup absorbs that, so do not disable them for that reason alone.
-- **Provenance is per feed, not per host.** All five feeds share
-  `base_url = https://gateway.bibliocommons.com`, so sources are identified by
-  `(base_url, name)`; each feed gets its own `sources` row and events ingested by a feed
-  are attributed to it. Events ingested before this rule (migration 000056) keep their old
-  lumped attribution — that history cannot be split, because `event_sources` records only
-  the source id. Re-running a feed matches its existing events by event identity —
-  `(feed URL, sourceEventId)`, i.e. `event_sources.source_url` plus `source_event_id`,
-  compared in its validated form (query stripped) with trailing slashes ignored — and adds the per-feed
-  attribution to them, regardless of which `sources` row the run resolves to. That is how
-  re-running each TPL feed after deploying backfills correct provenance for everything the
-  feed still returns: the match does not depend on the source row.
+- **Provenance is per normalized feed URL.** The five query-filtered TPL views share
+  one canonical `sources.feed_url` and source row; `base_url` contains the full normalized
+  RSS URL. Different paths still identify separate feeds. Event identity remains
+  `(feed URL, sourceEventId)`, independently of registry rows. Historical attributions
+  can be reconciled explicitly with `server source reconcile`; policy conflicts and
+  payload collisions are reported without losing history. See
+  [source identity](scraper.md#per-feed-provenance-and-source-identity).
 - **Prerequisite 1 — `max_batch_size`:** the scrape job copies `scraper_config.max_batch_size`
   into `ScrapeOptions.Limit`, and the `bibliocommons_rss` extractor truncates its output to
   that limit. It must therefore be **at least the inventory size (~6,500)**; a smaller value

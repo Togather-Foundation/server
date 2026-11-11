@@ -152,8 +152,10 @@ func TestIngest_FeedIdentity_RenameUpdatesOneEvent(t *testing.T) {
 	// Copy, not a reference: the mock mutates the stored event in place.
 	firstHash := firstResult.Event.DedupHash
 
-	// The feed renamed the event; the second observation arrives through a
-	// second source row for the same feed.
+	// Simulate reconciliation switching resolution from a historical catch-all
+	// to the canonical per-feed row. Event identity must remain independent of
+	// whichever registry row resolves, including when the feed renames the event.
+	repo.sources[NormalizeFeedURL(feedURL)] = "canonical-after-repair"
 	second := completeEventInputWithSource(newName, feedURL, sourceEvent, secondSource)
 	second.StartDate = startDate
 	second.Description = first.Description

@@ -4,13 +4,12 @@ package events
 //
 // A feed event's identity is the pair (feed URL, sourceEventID) — the source's
 // own id for the event, scoped to the feed that published it. It is
-// deliberately NOT scoped to a `sources` row: a feed used to acquire several
-// source rows (the `sources` upsert key is `(host-only base_url, name)`, so
-// ingesting one feed under two config names created two rows — ingest now reuses
-// the row that owns the feed), and the same feed event then looked like a
-// brand-new event under the second row. The feed URL is the thing that actually
-// identifies the feed, and it is stored per attribution in
-// `event_sources.source_url` in the normalised form described below.
+// deliberately NOT scoped to a `sources` row: historical host/name-based source
+// registration could give one feed several source rows, making the same feed
+// event look new under a second row. Sources now register a canonical normalized
+// feed URL (`sources.feed_url`, also stored as the full `base_url`), while legacy
+// rows await explicit reconciliation. Event identity remains independent of that
+// registry and uses `event_sources.source_url` in the form described below.
 //
 // Feed URL form: the feed is `scheme://host/path`. `source.url` goes through the
 // same validation normalisation as every other URL (`normalize.go`), which strips

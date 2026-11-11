@@ -553,64 +553,60 @@ fully-documented template. Sources starting with `_` are ignored by the loader.
 
 ### Per-Feed Provenance and Source Identity
 
-Each scraped event carries `Source.Name` = the config's `name:` and `Source.URL` = the
-feed URL. On ingest the URL is reduced to `scheme://host`, and the `sources` row is
-resolved by **`(base_url, name)`**. Row identity is therefore per **feed**, not per host:
-several configs pointing at different feeds on the same host get separate provenance
-rows. This matters wherever one platform serves many feeds — every TPL BiblioCommons
-config uses `https://gateway.bibliocommons.com` (see
-[event-platforms.md §23](event-platforms.md#23-bibliocommons-public-libraries)).
+A provenance `sources` row represents **one normalized feed URL**. Its `feed_url`
+is the unique registry key; `base_url` now stores that full normalized feed URL,
+including its path. The name is a human-readable label. Ingest and `server scrape
+sync` use the same resolver, so a config rename reuses the row even before its first
+event. Two paths on one host are separate feeds; query-filtered views of the same
+path share a row. Normalization strips query strings, fragments and trailing slashes,
+and preserves host spelling, matching the event identity rule below.
 
-Consequences when re-running or adding a feed:
+Migration `000060` adds the nullable unique `feed_url` key without rewriting old
+attributions. The resolver can adopt a legacy row whose full `base_url` matches the
+feed and which does not own another feed. A mixed-feed host catch-all is not adopted.
+Existing trust and license values survive adoption; resolving a new name does not
+replace operator policy. Warning suppression stays on `scraper_sources` and travels
+with scraper input; it is not a column on `sources`.
 
-- Re-running a feed resolves to its own `(base_url, name)` row every time; the row is not
-  recreated or renamed.
-- **Renaming a config's `name:` reuses the row that already owns the feed.** Resolution is
-  `(base_url, name)` first, then the feed URL: if no row exists for the new name, ingest
-  adopts the `sources` row that already owns that feed (the one with the most attributions,
-  then the oldest). So a rename keeps provenance and per-source metadata intact instead of
-  splitting it across two rows. The one case that still creates a row is a rename before
-  the feed has ever produced an event — there is no attribution to key the feed to yet.
-  A row named `unknown` is never adopted, because that would relabel a named feed as
-  unknown (set `name:` on every config).
-- Events already ingested from another feed are matched by feed event identity, not by
-  source row (see below). Auto-merge then records the current feed's source attribution
-  against the existing event, so a re-run backfills per-feed provenance going forward.
-- Events ingested **before** the per-feed identity change keep their original attribution.
-  A row that lumped several feeds cannot be split retroactively: `event_sources` stores
-  only the source id, not the feed name. Accept the historical lumping; new runs add the
-  correct attribution on top.
-- A source config with an empty/absent `name` is labelled `unknown` and groups per host;
-  always set `name:` so provenance stays per-feed. (Ingest deliberately does not fall back
-  to the event id or title, which would create a new `sources` row per event.)
+#### Reconciling historical source rows
 
-#### Auditing existing source rows
-
-Resolution stops new fragmentation but does not merge rows created before it. Two
-read-only/repair commands cover that (both read `DATABASE_URL` directly):
+These commands use `DATABASE_URL` directly and require the complete YAML inventory
+(default `configs/sources`; override with `--sources`). The database config inventory
+also protects configured sources. A missing or invalid YAML inventory fails closed.
 
 ```bash
-server source audit                 # zero-event rows + feeds served by more than one row
 server source audit --json
-server source prune-empty           # dry run: count rows that reference nothing
-server source prune-empty --confirm # delete them
+server source reconcile --json-report                  # preview; transaction rolled back
+server source reconcile --json-report --confirm        # apply after inspecting preview
+server source reconcile --json-report                  # verify no further moves
+server source prune-empty --json-report                # preview safe orphan cleanup
+server source prune-empty --json-report --confirm      # retire eligible orphans
 ```
 
-`prune-empty` deletes a `sources` row only when **nothing** references it:
-no `event_sources`, `field_provenance`, `event_changes` or `api_keys` row points at it.
-A row that owns events is never touched — merging two populated rows is a separate data
-operation because `event_sources.source_id` would have to be repointed.
+Reconciliation maps `event_sources.source_url` to the canonical feed row, retaining
+attribution ids, URLs, source event ids and payloads. It reports before/after counts
+and the SQL used. It registers configured feeds with their trust/license policy;
+conflicting policies among configs sharing one normalized feed are reported and
+left unchanged. Destination policy mismatches are also retained for operator review.
+Scraper suppression settings are never rewritten. Field provenance and change records
+move only when the event/old-source pair identifies one destination.
 
-`audit` reports feeds that are still served by more than one `sources` row, split into two
-very different classes:
+When moving an attribution would collide with an existing
+`(event_id, source_id, source_url)` row, reconciliation archives the complete original
+attribution and original source metadata before removing the duplicate live attribution.
+The archive records the canonical attribution id, preserves both payload histories and
+is included in before/after counts. The canonical live attribution is retained unchanged.
+Migration `000061` creates this archive. Preview rolls archive writes back too.
+Ambiguous or colliding field history stays on the original row and is reported.
+A second repair makes no further moves or archives. No event identity, occurrence,
+or event date is changed.
 
-- **every row belongs to a configured source** — nothing to repair. Either several configs
-  filter one upstream feed (the five TPL BiblioCommons views, the two Lu.ma views), or a
-  config was retargeted to a different URL and its old attributions remain.
-- **with a row no config owns** — historical fragmentation, e.g. a catch-all `Meetup` row
-  that already holds events from the same feed URL as a configured `meetup-*` row. Report
-  these; the fix prevents new rows, and merging two populated rows is tracked separately
-  because `event_sources.source_id` would have to be repointed.
+Cleanup classifies zero-event rows as configured-but-idle or orphaned and reports
+protected metadata separately. It deletes only unreferenced orphan rows with default
+policy and no operator metadata. Config names and feed URLs from both inventories
+protect idle rows; event attribution, field provenance, change records and API keys
+protect referenced rows. Trust, license, config, authentication, contact, rate-limit,
+notes and inactive-state metadata prevent silent retirement.
 
 ### Event Identity: `(feed URL, sourceEventId)`
 
@@ -656,14 +652,11 @@ was never persisted — it is not in `source_url`, and the attribution payload s
 the only surviving distinction for those rows is `source_id`, i.e. which config produced
 the attribution. Treat early attributions as "this feed family", not "this filter".
 
-The `sources` row is **not** the identity scope. `sources` upserts on
-`(host-only base_url, name)`, and a feed ingested under a second name used to acquire a
-second source row (ingest now reuses the row that already owns the feed, see
-[Per-Feed Provenance](#per-feed-provenance-and-source-identity), but historical rows still
-exist — e.g. a catch-all `Google Calendar` row beside the configured one). Scoping
-identity to the row made every event from that feed look new under the second row and
-created a duplicate event. The feed URL is what actually identifies the feed, and it is
-stored on every attribution.
+The `sources` row is **not** the event identity scope. The source registry uses the
+normalized feed URL as its key, while event identity remains the feed URL together
+with `sourceEventId`. Historical source-row fragmentation must never make an existing
+event look new. See [Per-Feed Provenance](#per-feed-provenance-and-source-identity)
+for explicit reconciliation of legacy rows.
 
 Consequences:
 
@@ -685,10 +678,9 @@ Consequences:
   feeds may reuse one id namespace (every Google Calendar event id carries its calendar's
   domain), so the feed URL half of the key is load-bearing. Two feeds on the same host are
   still two feeds.
-- **Two source rows for one feed still fragment provenance metadata.** License, trust and
-  `suppress_review_warnings` are per `sources` row, so a feed that owns two rows can carry
-  two different policies. Event identity no longer depends on it, but the split is not
-  repaired by this rule.
+- **Historical source rows can carry different policies.** Reconciliation preserves
+  configured policy and reports conflicting or ambiguous records for operator review;
+  suppression remains attached to scraper config.
 - **Empty `sourceEventId`** has no feed identity to match, so ingest falls through to the
   dedup-hash path; ingest validation rejects a `source.url` without `source.eventId`
   anyway.
@@ -702,13 +694,6 @@ Filtering deleted events in this lookup is not the fix: the retired event still 
 attributions, so skipping it would re-create the occurrences that consolidation
 deliberately retired. The fix is to follow `merged_into_id` to the canonical event (or move
 the attributions), not to hide tombstones.
-
-**Historical note:** `sources` still upserts on `(host-only base_url, name)`, so a feed
-ingested under two names used to acquire two rows. Ingest now resolves an existing row
-before creating one (see
-[Per-Feed Provenance and Source Identity](#per-feed-provenance-and-source-identity)), and
-identity never depended on the row. Rows created before that fix still exist; they are
-reported by `server source audit` and are not merged automatically.
 
 ### Minimal Tier 0 Config
 
@@ -990,9 +975,9 @@ Behaviour: sets `?page=N` (other query params are preserved), identifies as
 address + coordinates, virtual events to a `VirtualLocation`, categories to keywords
 (language categories to `inLanguage`), registration state + room into the description, and
 skips cancelled events (reported as quality warnings). The channel title
-(`Events | <Library>`) becomes the organizer. Each RSS config is its own provenance
-source: identity is `(base_url, name)`, so feeds that share
-`gateway.bibliocommons.com` no longer collapse into one `sources` row. See
+(`Events | <Library>`) becomes the organizer. RSS configs with the same normalized
+feed URL share one canonical provenance source; query filters do not identify separate
+rows. Different feed paths on the same host remain distinct. See
 [event-platforms.md §23](event-platforms.md#23-bibliocommons-public-libraries) for the feed
 shape, filter ids and the terms/licence notes. `extraction_method` is constrained in the DB
 (migration 000053), so run `make migrate-up` before `server scrape sync`.

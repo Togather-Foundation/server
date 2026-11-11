@@ -306,7 +306,13 @@ func (m *MockRepository) GetOrCreateSource(ctx context.Context, params SourceLoo
 		return "", errors.New("mock get or create source error")
 	}
 
-	key := fmt.Sprintf("%s|%s", params.Name, params.BaseURL)
+	key := NormalizeFeedURL(params.FeedURL)
+	if key == "" {
+		key = NormalizeFeedURL(params.BaseURL)
+	}
+	if key == "" {
+		key = "name:" + params.Name
+	}
 	if sourceID, ok := m.sources[key]; ok {
 		return sourceID, nil
 	}
@@ -1394,7 +1400,7 @@ func TestIngestService_Ingest(t *testing.T) {
 				}
 				m.AddExistingEvent("https://example.com/events/123", "ext-123", "source-1", existingEvent)
 				// Pre-create the source so it matches
-				m.sources["Example Source|https://example.com"] = "source-1"
+				m.sources["https://example.com/events/123"] = "source-1"
 			},
 			wantErr: false,
 			wantDup: true,
@@ -1951,7 +1957,7 @@ func TestIngestService_WarningsInDuplicateDetection(t *testing.T) {
 					Name: "Existing Event",
 				}
 				m.AddExistingEvent("https://example.com/events/123", "ext-123", "source-1", existingEvent)
-				m.sources["Example Source|https://example.com"] = "source-1"
+				m.sources["https://example.com/events/123"] = "source-1"
 			},
 			wantDuplicate: true,
 			wantWarnings:  true,

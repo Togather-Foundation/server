@@ -7,7 +7,28 @@ package postgres
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const adoptLegacyFeedSource = `-- name: AdoptLegacyFeedSource :one
+UPDATE sources SET feed_url = $1::text,
+                   base_url = $1::text
+WHERE id = $2::uuid AND feed_url IS NULL
+RETURNING id::text
+`
+
+type AdoptLegacyFeedSourceParams struct {
+	FeedUrl string      `json:"feed_url"`
+	ID      pgtype.UUID `json:"id"`
+}
+
+func (q *Queries) AdoptLegacyFeedSource(ctx context.Context, arg AdoptLegacyFeedSourceParams) (string, error) {
+	row := q.db.QueryRow(ctx, adoptLegacyFeedSource, arg.FeedUrl, arg.ID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
 
 const countAllSources = `-- name: CountAllSources :one
 
@@ -20,4 +41,172 @@ func (q *Queries) CountAllSources(ctx context.Context) (int64, error) {
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const getCanonicalSourcePolicy = `-- name: GetCanonicalSourcePolicy :one
+SELECT id::text, trust_level, license_url, license_type
+FROM sources WHERE feed_url = $1::text
+`
+
+type GetCanonicalSourcePolicyRow struct {
+	ID          string `json:"id"`
+	TrustLevel  int32  `json:"trust_level"`
+	LicenseUrl  string `json:"license_url"`
+	LicenseType string `json:"license_type"`
+}
+
+func (q *Queries) GetCanonicalSourcePolicy(ctx context.Context, feedUrl string) (GetCanonicalSourcePolicyRow, error) {
+	row := q.db.QueryRow(ctx, getCanonicalSourcePolicy, feedUrl)
+	var i GetCanonicalSourcePolicyRow
+	err := row.Scan(
+		&i.ID,
+		&i.TrustLevel,
+		&i.LicenseUrl,
+		&i.LicenseType,
+	)
+	return i, err
+}
+
+const insertCanonicalSource = `-- name: InsertCanonicalSource :one
+INSERT INTO sources (name, source_type, base_url, feed_url, license_url, license_type, trust_level)
+VALUES ($1, $2, $3::text, $3::text,
+        $4, $5, $6)
+ON CONFLICT (feed_url) WHERE feed_url IS NOT NULL DO UPDATE SET name = EXCLUDED.name
+RETURNING id::text
+`
+
+type InsertCanonicalSourceParams struct {
+	Name        string `json:"name"`
+	SourceType  string `json:"source_type"`
+	FeedUrl     string `json:"feed_url"`
+	LicenseUrl  string `json:"license_url"`
+	LicenseType string `json:"license_type"`
+	TrustLevel  int32  `json:"trust_level"`
+}
+
+func (q *Queries) InsertCanonicalSource(ctx context.Context, arg InsertCanonicalSourceParams) (string, error) {
+	row := q.db.QueryRow(ctx, insertCanonicalSource,
+		arg.Name,
+		arg.SourceType,
+		arg.FeedUrl,
+		arg.LicenseUrl,
+		arg.LicenseType,
+		arg.TrustLevel,
+	)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
+const listLegacyFeedSources = `-- name: ListLegacyFeedSources :many
+SELECT s.id::text, s.trust_level, s.license_url, s.license_type,
+ EXISTS (
+   SELECT 1 FROM scraper_sources ss,
+   LATERAL unnest(CASE WHEN cardinality(ss.urls)>0 THEN ss.urls ELSE ARRAY[ss.url] END) u(url)
+   WHERE ss.name=s.name
+     AND rtrim(split_part(split_part(u.url, '#', 1), '?', 1), '/') = $1::text
+ )::boolean AS configured
+FROM sources s
+WHERE s.feed_url IS NULL
+ AND rtrim(split_part(split_part(s.base_url, '#', 1), '?', 1), '/') = $1::text
+ AND NOT EXISTS (
+   SELECT 1 FROM event_sources es WHERE es.source_id=s.id
+    AND rtrim(split_part(split_part(es.source_url, '#', 1), '?', 1), '/') <> $1::text
+ )
+ORDER BY configured DESC, s.created_at, s.id
+`
+
+type ListLegacyFeedSourcesRow struct {
+	SID         string `json:"s_id"`
+	TrustLevel  int32  `json:"trust_level"`
+	LicenseUrl  string `json:"license_url"`
+	LicenseType string `json:"license_type"`
+	Configured  bool   `json:"configured"`
+}
+
+func (q *Queries) ListLegacyFeedSources(ctx context.Context, feedUrl string) ([]ListLegacyFeedSourcesRow, error) {
+	rows, err := q.db.Query(ctx, listLegacyFeedSources, feedUrl)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListLegacyFeedSourcesRow{}
+	for rows.Next() {
+		var i ListLegacyFeedSourcesRow
+		if err := rows.Scan(
+			&i.SID,
+			&i.TrustLevel,
+			&i.LicenseUrl,
+			&i.LicenseType,
+			&i.Configured,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockSourceFeed = `-- name: LockSourceFeed :exec
+SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))
+`
+
+func (q *Queries) LockSourceFeed(ctx context.Context, feedUrl string) error {
+	_, err := q.db.Exec(ctx, lockSourceFeed, feedUrl)
+	return err
+}
+
+const lockSourceRegistry = `-- name: LockSourceRegistry :exec
+SELECT pg_advisory_xact_lock_shared(hashtextextended('togather:sources:registry', 0))
+`
+
+func (q *Queries) LockSourceRegistry(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockSourceRegistry)
+	return err
+}
+
+const relabelCanonicalSource = `-- name: RelabelCanonicalSource :exec
+UPDATE sources SET name = $1::text
+WHERE feed_url = $2::text AND name <> $1::text
+`
+
+type RelabelCanonicalSourceParams struct {
+	Name    string `json:"name"`
+	FeedUrl string `json:"feed_url"`
+}
+
+func (q *Queries) RelabelCanonicalSource(ctx context.Context, arg RelabelCanonicalSourceParams) error {
+	_, err := q.db.Exec(ctx, relabelCanonicalSource, arg.Name, arg.FeedUrl)
+	return err
+}
+
+const upsertSourceWithoutURL = `-- name: UpsertSourceWithoutURL :one
+INSERT INTO sources (name, source_type, base_url, license_url, license_type, trust_level)
+VALUES ($1, $2, NULL, $3, $4, $5)
+ON CONFLICT (name) WHERE base_url IS NULL DO UPDATE SET name = EXCLUDED.name
+RETURNING id::text
+`
+
+type UpsertSourceWithoutURLParams struct {
+	Name        string `json:"name"`
+	SourceType  string `json:"source_type"`
+	LicenseUrl  string `json:"license_url"`
+	LicenseType string `json:"license_type"`
+	TrustLevel  int32  `json:"trust_level"`
+}
+
+func (q *Queries) UpsertSourceWithoutURL(ctx context.Context, arg UpsertSourceWithoutURLParams) (string, error) {
+	row := q.db.QueryRow(ctx, upsertSourceWithoutURL,
+		arg.Name,
+		arg.SourceType,
+		arg.LicenseUrl,
+		arg.LicenseType,
+		arg.TrustLevel,
+	)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }

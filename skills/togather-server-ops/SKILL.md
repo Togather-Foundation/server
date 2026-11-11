@@ -180,12 +180,13 @@ Operational rules that prevent silent data loss and provenance mistakes:
   LIMIT 5;
   ```
 
-- **Per-feed provenance identity.** Named `sources` rows are keyed by
-  `(base_url, name)`. The YAML `name:` is identity: renaming it sends new events to a
-  new row; the old row keeps its existing events but receives no new ones (renaming
-  back re-resolves to it). There is no retroactive merge. Keep names stable, and
-  always set `name:` (blank groups by host). See
-  [Per-Feed Provenance and Source Identity](https://github.com/Togather-Foundation/server/blob/main/docs/integration/scraper.md#per-feed-provenance-and-source-identity).
+- **Per-feed provenance identity.** A canonical `sources` row is keyed by the
+  normalized feed URL (`feed_url`); `base_url` contains the full feed URL including
+  path, and names are labels. Config sync and ingest use the same resolver, so a
+  rename does not create a row. Historical attribution repair is explicit and
+  dry-run-first: `server source reconcile --json-report`, then `--confirm` after
+  checking the report. `prune-empty` protects configured rows and operator metadata.
+  See [Per-Feed Provenance and Source Identity](https://github.com/Togather-Foundation/server/blob/main/docs/integration/scraper.md#per-feed-provenance-and-source-identity).
 - **Legitimate recurring floods.** If a confirmed source trips the same benign
   warning on nearly every event, set `suppress_review_warnings` in its YAML config
   and `server scrape sync` instead of repeatedly batch-approving. On staging/production

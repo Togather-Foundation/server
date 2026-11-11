@@ -94,9 +94,9 @@ Examples:
 				continue
 			}
 
-			result, upsertErr := repo.Upsert(ctx, params)
+			result, upsertErr := repo.SyncConfig(ctx, params)
 			if upsertErr != nil {
-				warnings++
+				errors++
 				if !syncJSON {
 					fmt.Fprintf(os.Stderr, "Warning: upsert %q: %v\n", cfg.Name, upsertErr)
 				}
@@ -130,6 +130,9 @@ Examples:
 			if loadErr != nil {
 				return fmt.Errorf("sync completed with invalid source configs: %w", loadErr)
 			}
+			if errors > 0 {
+				return fmt.Errorf("sync failed for %d source config(s)", errors)
+			}
 			return nil
 		}
 
@@ -137,6 +140,9 @@ Examples:
 			created, updated, total)
 		if loadErr != nil {
 			return fmt.Errorf("sync completed with invalid source configs: %w", loadErr)
+		}
+		if errors > 0 {
+			return fmt.Errorf("sync failed for %d source config(s)", errors)
 		}
 		return nil
 	},

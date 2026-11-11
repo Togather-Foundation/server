@@ -14,8 +14,10 @@ import (
 type Querier interface {
 	AcceptDeveloperInvitation(ctx context.Context, id pgtype.UUID) error
 	ActivateUser(ctx context.Context, id pgtype.UUID) error
+	AdoptLegacyFeedSource(ctx context.Context, arg AdoptLegacyFeedSourceParams) (string, error)
 	// Mark review as approved
 	ApproveReview(ctx context.Context, arg ApproveReviewParams) (EventReviewQueue, error)
+	ArchiveSourceRepairAttribution(ctx context.Context, arg ArchiveSourceRepairAttributionParams) (int64, error)
 	CheckAPIKeyOwnership(ctx context.Context, arg CheckAPIKeyOwnershipParams) (bool, error)
 	// Archive old approved/superseded/merged/dismissed reviews (90 day retention)
 	CleanupArchivedReviews(ctx context.Context) error
@@ -49,6 +51,8 @@ type Querier interface {
 	CountRunningScraperRuns(ctx context.Context) (int64, error)
 	// Count submissions with optional status filter (for pagination total).
 	CountScraperSubmissions(ctx context.Context, status pgtype.Text) (int64, error)
+	CountSourceRepairArchivedAttributions(ctx context.Context) (int64, error)
+	CountSourceRepairRetainedFields(ctx context.Context, arg CountSourceRepairRetainedFieldsParams) (int64, error)
 	// Count entities of a type that have no external identifiers
 	CountUnreconciledEntities(ctx context.Context) (int64, error)
 	CountUpcomingEvents(ctx context.Context) (int64, error)
@@ -76,6 +80,7 @@ type Querier interface {
 	DeactivateDeveloper(ctx context.Context, id pgtype.UUID) error
 	// User Management Queries
 	DeactivateUser(ctx context.Context, id pgtype.UUID) error
+	DeleteArchivedSourceRepairAttribution(ctx context.Context, attributionID pgtype.UUID) (int64, error)
 	// Delete a specific entity identifier
 	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
@@ -91,6 +96,7 @@ type Querier interface {
 	DeleteOldScraperSubmissions(ctx context.Context, olderThan pgtype.Interval) (int64, error)
 	// Delete a scraper source by name.
 	DeleteScraperSource(ctx context.Context, name string) error
+	DeleteSourceRepairOrphan(ctx context.Context, sourceID pgtype.UUID) (int64, error)
 	DeleteUser(ctx context.Context, id pgtype.UUID) error
 	// Demote every primary in the group except the winner, recording the superseding row.
 	// superseded_by_id records the *immediate successor* at demotion time, not necessarily
@@ -148,6 +154,7 @@ type Querier interface {
 	// Gets the canonical (winning) field value based on conflict resolution rules
 	// Priority: trust_level DESC, confidence DESC, observed_at DESC
 	GetCanonicalFieldValue(ctx context.Context, arg GetCanonicalFieldValueParams) (GetCanonicalFieldValueRow, error)
+	GetCanonicalSourcePolicy(ctx context.Context, feedUrl string) (GetCanonicalSourcePolicyRow, error)
 	GetDailyUsageReportData(ctx context.Context, arg GetDailyUsageReportDataParams) ([]GetDailyUsageReportDataRow, error)
 	GetDeveloperByEmail(ctx context.Context, email string) (Developer, error)
 	GetDeveloperByGitHubID(ctx context.Context, githubID pgtype.Int8) (Developer, error)
@@ -231,6 +238,7 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id pgtype.UUID) (GetUserByIDRow, error)
 	GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error)
 	GetUserInvitationByTokenHash(ctx context.Context, tokenHash string) (UserInvitation, error)
+	InsertCanonicalSource(ctx context.Context, arg InsertCanonicalSourceParams) (string, error)
 	// Records a source's contribution to an event with source and received timestamps (FR-029)
 	InsertEventSource(ctx context.Context, arg InsertEventSourceParams) (EventSource, error)
 	// Records field-level provenance with source timestamp
@@ -301,6 +309,7 @@ type Querier interface {
 	// hard-scoped to place and organization: events/persons are Phase 4 and must
 	// never be touched by tidy.
 	ListIdentityGroups(ctx context.Context, entityType pgtype.Text) ([]ListIdentityGroupsRow, error)
+	ListLegacyFeedSources(ctx context.Context, feedUrl string) ([]ListLegacyFeedSourcesRow, error)
 	// List all events that have been confirmed as NOT duplicates of a given event.
 	// Returns both sides of the pair (the given event could be event_id_a or event_id_b).
 	ListNotDuplicatesForEvent(ctx context.Context, eventID string) ([]EventNotDuplicate, error)
@@ -338,6 +347,10 @@ type Querier interface {
 	ListScraperSourcesWithLatestRun(ctx context.Context, enabled pgtype.Bool) ([]ListScraperSourcesWithLatestRunRow, error)
 	// Paginated list of submissions, optionally filtered by status (for admin).
 	ListScraperSubmissions(ctx context.Context, arg ListScraperSubmissionsParams) ([]ScraperSubmission, error)
+	ListSourceAuditFragments(ctx context.Context) ([]ListSourceAuditFragmentsRow, error)
+	ListSourceRepairAttributions(ctx context.Context) ([]ListSourceRepairAttributionsRow, error)
+	ListSourceRepairConfigs(ctx context.Context) ([]ListSourceRepairConfigsRow, error)
+	ListSourceRepairRegistry(ctx context.Context) ([]ListSourceRepairRegistryRow, error)
 	// Get organizations that have no external identifiers, ordered by creation date
 	ListUnreconciledOrganizations(ctx context.Context, maxResults int32) ([]ListUnreconciledOrganizationsRow, error)
 	// Get places that have no external identifiers, ordered by creation date
@@ -347,14 +360,24 @@ type Querier interface {
 	// Serialize concurrent elections on one (entity_type, entity_id, authority_code) group.
 	// pg_advisory_xact_lock is released automatically at transaction end.
 	LockIdentityGroup(ctx context.Context, key string) error
+	LockSourceFeed(ctx context.Context, feedUrl string) error
+	LockSourceRegistry(ctx context.Context) error
+	// Source reconciliation uses the same snapshot for its dry run and apply.
+	// Locks prevent concurrent ingest/config writes from invalidating that snapshot.
+	LockSourceRegistryExclusive(ctx context.Context) error
+	LockSourceRepairTables(ctx context.Context) error
 	MarkInvitationAccepted(ctx context.Context, id pgtype.UUID) error
 	MarkOrganizationEnriched(ctx context.Context, ulid string) error
 	MarkPlaceEnriched(ctx context.Context, ulid string) error
 	// Mark events as deleted before cleaning up their pending reviews
 	MarkUnreviewedEventsAsDeleted(ctx context.Context) error
 	MergeEventIntoDuplicate(ctx context.Context, arg MergeEventIntoDuplicateParams) error
+	MoveSourceRepairAttribution(ctx context.Context, arg MoveSourceRepairAttributionParams) (int64, error)
+	MoveSourceRepairChanges(ctx context.Context, arg MoveSourceRepairChangesParams) (int64, error)
+	MoveSourceRepairFields(ctx context.Context, arg MoveSourceRepairFieldsParams) (int64, error)
 	// Mark review as rejected
 	RejectReview(ctx context.Context, arg RejectReviewParams) (EventReviewQueue, error)
+	RelabelCanonicalSource(ctx context.Context, arg RelabelCanonicalSourceParams) error
 	// Follow the merged_into_id chain from a given ULID to find the final canonical event.
 	// Uses a recursive CTE with a max depth of 10 to prevent infinite loops.
 	// Returns the ULID of the final canonical event (the one that is not itself merged).
@@ -471,6 +494,7 @@ type Querier interface {
 	// SQLc queries for scraper_sources and linkage tables.
 	// Insert or update a scraper source by name (used by 'server scrape sync').
 	UpsertScraperSource(ctx context.Context, arg UpsertScraperSourceParams) (UpsertScraperSourceRow, error)
+	UpsertSourceWithoutURL(ctx context.Context, arg UpsertSourceWithoutURLParams) (string, error)
 }
 
 var _ Querier = (*Queries)(nil)

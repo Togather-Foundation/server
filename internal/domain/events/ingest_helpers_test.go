@@ -322,7 +322,7 @@ func TestFallbackOrUnknown(t *testing.T) {
 	}
 }
 
-func TestSourceBaseURL(t *testing.T) {
+func TestNormalizeFeedURL(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -336,12 +336,12 @@ func TestSourceBaseURL(t *testing.T) {
 		{
 			name:     "full URL",
 			input:    "https://example.com/events/123",
-			expected: "https://example.com",
+			expected: "https://example.com/events/123",
 		},
 		{
 			name:     "URL with port",
 			input:    "http://localhost:3000/api/events",
-			expected: "http://localhost:3000",
+			expected: "http://localhost:3000/api/events",
 		},
 		{
 			name:     "invalid URL returns as-is",
@@ -356,15 +356,17 @@ func TestSourceBaseURL(t *testing.T) {
 		{
 			name:     "URL with query params",
 			input:    "https://api.eventbrite.com/v3/events?id=123",
-			expected: "https://api.eventbrite.com",
+			expected: "https://api.eventbrite.com/v3/events",
 		},
+		{name: "query fragment and trailing slash", input: " https://EXAMPLE.org/feed///?a=b#part ", expected: "https://EXAMPLE.org/feed"},
+		{name: "escaped path remains significant", input: "https://example.org/feed%2Fpart/", expected: "https://example.org/feed%2Fpart"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := sourceBaseURL(tt.input)
+			result := NormalizeFeedURL(tt.input)
 			if result != tt.expected {
-				t.Errorf("sourceBaseURL() = %v, want %v", result, tt.expected)
+				t.Errorf("NormalizeFeedURL() = %v, want %v", result, tt.expected)
 			}
 		})
 	}

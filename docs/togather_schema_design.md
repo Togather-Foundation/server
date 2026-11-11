@@ -715,16 +715,16 @@ Tracks all data sources with trust levels and license information.
 CREATE TABLE sources (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   
-  -- Identification: identity is (base_url, name) when base_url IS NOT NULL,
-  -- otherwise name alone. The global UNIQUE on name was replaced in 000023 and
-  -- the base_url-only index in 000056 (see indexes below).
+  -- Canonical identity (000060): normalized feed_url; names are labels.
+  -- URL-less sources retain name-only uniqueness. Legacy rows may have NULL feed_url.
   name TEXT NOT NULL,
   source_type TEXT NOT NULL CHECK (
     source_type IN ('scraper', 'api', 'partner', 'user', 'federation', 'manual')
   ),
   
   -- Connection details
-  base_url TEXT,
+  base_url TEXT, -- full normalized feed URL on canonical rows
+  feed_url TEXT, -- unique canonical identity; NULL on unclaimed legacy rows
   api_endpoint TEXT,
   
   -- Trust and quality
@@ -768,13 +768,22 @@ CREATE TABLE sources (
 CREATE INDEX idx_sources_active ON sources (is_active, trust_level DESC);
 CREATE INDEX idx_sources_type ON sources (source_type);
 
--- Source identity (000056): a source row is a feed, not a provider.
--- (base_url, name) for URLs; name alone for sources without a base_url.
+-- Canonical source identity (000060); compatibility index (000056) remains
+-- available to older binaries during blue/green cutover and application rollback.
+CREATE UNIQUE INDEX sources_feed_url_unique
+  ON sources (feed_url) WHERE feed_url IS NOT NULL;
 CREATE UNIQUE INDEX sources_base_url_name_unique
   ON sources (base_url, name) WHERE base_url IS NOT NULL;
 CREATE UNIQUE INDEX sources_name_unique_when_no_url
   ON sources (name) WHERE base_url IS NULL;
 ```
+
+Historical duplicate live attributions are preserved in
+`source_repair_attribution_archive` (migration `000061`): original attribution UUID,
+canonical attribution UUID, complete attribution JSONB, complete source JSONB and
+archive timestamp. Reconciliation archives before deleting a duplicate live upsert key.
+An immutable-row trigger rejects updates/deletes; UUID references intentionally survive
+source cleanup. Archive totals are reported alongside live attribution totals.
 
 ### 3.2 Event Sources (Row-Level Provenance)
 

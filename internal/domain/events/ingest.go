@@ -463,13 +463,11 @@ func virtualURL(input EventInput) string {
 	return strings.TrimSpace(input.VirtualLocation.URL)
 }
 
-// sourceName returns the stable source name used for provenance identity.
+// sourceName returns the human-readable source label.
 //
 // Only an explicitly supplied name (the scraper's YAML `name:`) is used.
-// Source identity is (base_url, name), so falling back to the per-event
-// EventID or event title would create a new sources row for every submission
-// that does not name its source. Unnamed sources are labelled "unknown" and
-// therefore share one row per base_url, which keeps the legacy grouping.
+// Names do not participate in URL-based source identity. Unnamed submissions
+// use the neutral "unknown" label.
 func sourceName(source *SourceInput, fallback string) string {
 	if source == nil {
 		return fallbackOrUnknown(fallback)
@@ -487,6 +485,16 @@ func sourceLicense(input EventInput) string {
 		}
 	}
 	return input.License
+}
+
+// SourceParamsForFeed builds source registry metadata consistently for ingest,
+// config sync, and reconciliation. Existing rows retain their stored policy.
+func SourceParamsForFeed(name, feed, license string, trust int) SourceLookupParams {
+	input := EventInput{Source: &SourceInput{License: license}}
+	return SourceLookupParams{
+		Name: name, SourceType: "api", BaseURL: NormalizeFeedURL(feed), FeedURL: feed,
+		LicenseURL: licenseURL(license), LicenseType: sourceLicenseType(input), TrustLevel: trust,
+	}
 }
 
 func sourceLicenseType(input EventInput) string {
@@ -511,11 +519,11 @@ func fallbackOrUnknown(value string) string {
 	return trimmed
 }
 
-// sourceBaseURL reduces a feed URL to scheme://host for the `sources` row
-// identity. It is host-only by design (sources upserts on (base_url, name)), so
-// it must never be used as an event identity key — event identity is the feed
-// URL itself, see Repository.FindByFeedEventID.
-func sourceBaseURL(value string) string {
+// NormalizeFeedURL is the shared source-registry identity form. It follows
+// ingest URL normalization (query and fragment removed), and ignores trailing
+// slashes for compatibility with the feed-scoped event identity comparison.
+// Host spelling and significant path components remain unchanged.
+func NormalizeFeedURL(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return ""
@@ -524,7 +532,11 @@ func sourceBaseURL(value string) string {
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return trimmed
 	}
-	return fmt.Sprintf("%s://%s", parsed.Scheme, parsed.Host)
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return strings.TrimRight(parsed.String(), "/")
 }
 
 func licenseURL(value string) string {

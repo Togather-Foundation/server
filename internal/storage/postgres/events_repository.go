@@ -1100,141 +1100,96 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	return event, nil
 }
 
-// GetOrCreateSource resolves the provenance source row for an ingest.
-//
-// A named feed is identified by the pair (base_url, name): several distinct
-// feeds can share one host (all TPL BiblioCommons feeds live under
-// https://gateway.bibliocommons.com), so base_url alone would attribute every
-// feed's events to whichever row was created first. The scraper sets
-// Source.Name to the config's `name:` and Source.URL to the feed URL, which
-// makes (base_url, name) a stable per-feed key.
-//
-// Resolution order:
-//
-//  1. An existing row for (base_url, name). A configured name owns its own row,
-//     so a config that has one always keeps using it.
-//  2. If this name is new, the row that already owns this feed URL — a feed that
-//     was previously ingested under another name must not acquire a second
-//     provenance row just because a config was renamed. The row with the most
-//     attributions wins, then the oldest, so the choice is deterministic.
-//     Rows named "unknown" are excluded: reusing one would relabel a named feed
-//     as unknown instead of recording its real provenance.
-//  3. Insert.
-//
-// Steps 1 and 2 are read-only probes; the insert is a single
-// INSERT ... ON CONFLICT (base_url, name) DO UPDATE ... RETURNING id so
-// concurrent feeds racing on the same row cannot create duplicates or fail: the
-// conflicting row is returned in the same statement. DO UPDATE (rather than DO
-// NOTHING) is deliberate — it guarantees RETURNING yields a row. The update is
-// a logical no-op that leaves existing metadata untouched.
-//
-// When no name is supplied (legacy/caller-supplied sources), the original
-// base_url-only behaviour is preserved: reuse any row with that base_url, and
-// only insert when none exists. That lookup is ordered deterministically, with
-// the neutral "unknown" row (used by ingest for unnamed submissions) preferred,
-// then oldest row, then id.
+// GetOrCreateSource resolves solely by the normalized feed URL. Names are labels
+// and policy metadata on existing rows is preserved. Legacy host catch-alls are
+// left to explicit reconciliation: adopting a row shared by several feeds would
+// copy the wrong policy and perpetuate attribution fragmentation.
 func (r *EventRepository) GetOrCreateSource(ctx context.Context, params events.SourceLookupParams) (string, error) {
-	queryer := r.queryer()
-	baseURL := strings.TrimSpace(params.BaseURL)
-	name := strings.TrimSpace(params.Name)
-	feedURL := strings.TrimSpace(params.FeedURL)
-
-	if baseURL != "" && name != "" {
-		// 1. The configured name owns its row.
-		var id string
-		err := queryer.QueryRow(ctx, `
-SELECT id FROM sources WHERE base_url = $1 AND name = $2 LIMIT 1
-`, baseURL, name).Scan(&id)
-		if err == nil {
-			return id, nil
-		}
-		if err != pgx.ErrNoRows {
-			return "", fmt.Errorf("get source by base_url and name: %w", err)
-		}
-
-		// 2. A renamed config reuses the row that already owns the feed.
-		if feedURL != "" {
-			err = queryer.QueryRow(ctx, `
-SELECT es.source_id
-  FROM event_sources es
- WHERE rtrim(es.source_url, '/') = rtrim($1, '/')
-   AND NOT EXISTS (
-       SELECT 1 FROM sources s WHERE s.id = es.source_id AND s.name = 'unknown'
-   )
- GROUP BY es.source_id
- ORDER BY count(*) DESC, min(es.retrieved_at) ASC, es.source_id ASC
- LIMIT 1
-`, feedURL).Scan(&id)
-			if err == nil {
-				return id, nil
-			}
-			if err != pgx.ErrNoRows {
-				return "", fmt.Errorf("get source by feed url: %w", err)
-			}
-		}
-
-		// 3. Insert.
-		err = queryer.QueryRow(ctx, `
-INSERT INTO sources (
-	name,
-	source_type,
-	base_url,
-	license_url,
-	license_type,
-	trust_level
-) VALUES ($1, $2, $3, $4, $5, $6)
-ON CONFLICT (base_url, name) WHERE base_url IS NOT NULL
-DO UPDATE SET name = EXCLUDED.name
-RETURNING id
-`,
-			name,
-			params.SourceType,
-			baseURL,
-			params.LicenseURL,
-			params.LicenseType,
-			params.TrustLevel,
-		).Scan(&id)
+	feed := events.NormalizeFeedURL(params.FeedURL)
+	if feed == "" {
+		feed = events.NormalizeFeedURL(params.BaseURL)
+	}
+	params.Name = strings.TrimSpace(params.Name)
+	if params.Name == "" {
+		params.Name = "unknown"
+	}
+	if feed == "" {
+		id, err := (&Queries{db: r.queryer()}).UpsertSourceWithoutURL(ctx, UpsertSourceWithoutURLParams{
+			Name: params.Name, SourceType: params.SourceType, LicenseUrl: params.LicenseURL,
+			LicenseType: params.LicenseType, TrustLevel: int32(params.TrustLevel),
+		})
 		if err != nil {
-			return "", fmt.Errorf("get or create source: %w", err)
+			return "", fmt.Errorf("resolve source without URL: %w", err)
 		}
 		return id, nil
 	}
-
-	row := queryer.QueryRow(ctx, `
-SELECT id
-  FROM sources
- WHERE base_url IS NOT DISTINCT FROM NULLIF($1, '')
- ORDER BY (name = 'unknown') DESC, created_at, id
- LIMIT 1
-`, baseURL)
-
-	var id string
-	if err := row.Scan(&id); err == nil {
-		return id, nil
-	} else if err != pgx.ErrNoRows {
-		return "", fmt.Errorf("get source: %w", err)
+	if r.tx != nil {
+		return resolveFeedSource(ctx, &Queries{db: r.tx}, feed, params)
 	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return "", fmt.Errorf("begin source resolution: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	id, err := resolveFeedSource(ctx, &Queries{db: tx}, feed, params)
+	if err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit source resolution: %w", err)
+	}
+	return id, nil
+}
 
-	row = queryer.QueryRow(ctx, `
-INSERT INTO sources (
-	name,
-	source_type,
-	base_url,
-	license_url,
-	license_type,
-	trust_level
-) VALUES ($1, $2, NULLIF($3, ''), $4, $5, $6)
-RETURNING id
-`,
-		name,
-		params.SourceType,
-		baseURL,
-		params.LicenseURL,
-		params.LicenseType,
-		params.TrustLevel,
-	)
-	if err := row.Scan(&id); err != nil {
-		return "", fmt.Errorf("create source: %w", err)
+func resolveFeedSource(ctx context.Context, q *Queries, feed string, params events.SourceLookupParams) (string, error) {
+	// Reconciliation takes the exclusive registry lock before its table locks.
+	// Always acquire this shared lock first to keep the order consistent.
+	if err := q.LockSourceRegistry(ctx); err != nil {
+		return "", fmt.Errorf("lock source registry: %w", err)
+	}
+	// The advisory lock serializes legacy adoption as well as insertions, including
+	// differently named first observations. The unique index is the final guard.
+	if err := q.LockSourceFeed(ctx, feed); err != nil {
+		return "", fmt.Errorf("lock source feed: %w", err)
+	}
+	policy, err := q.GetCanonicalSourcePolicy(ctx, feed)
+	if err == nil {
+		if params.RequirePolicyMatch && !sourcePolicyMatches(policy.TrustLevel, policy.LicenseUrl, policy.LicenseType, params) {
+			return "", fmt.Errorf("source policy conflict for feed %q: canonical trust/license differs from config; reconcile policy explicitly before syncing", feed)
+		}
+		if err := q.RelabelCanonicalSource(ctx, RelabelCanonicalSourceParams{Name: params.Name, FeedUrl: feed}); err != nil {
+			return "", sourceIdentityError(feed, err)
+		}
+		return policy.ID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("get canonical source: %w", err)
+	}
+	candidate, err := selectLegacyFeedSource(ctx, q, feed, params)
+	if err != nil {
+		return "", err
+	}
+	var id string
+	if candidate != nil {
+		if params.RequirePolicyMatch && !sourcePolicyMatches(candidate.TrustLevel, candidate.LicenseUrl, candidate.LicenseType, params) {
+			return "", fmt.Errorf("source policy conflict for feed %q: legacy trust/license differs from config; reconcile policy explicitly before syncing", feed)
+		}
+		var legacyID pgtype.UUID
+		if err := legacyID.Scan(candidate.SID); err != nil {
+			return "", fmt.Errorf("parse legacy source id: %w", err)
+		}
+		id, err = q.AdoptLegacyFeedSource(ctx, AdoptLegacyFeedSourceParams{FeedUrl: feed, ID: legacyID})
+	} else {
+		id, err = q.InsertCanonicalSource(ctx, InsertCanonicalSourceParams{
+			Name: params.Name, SourceType: params.SourceType, FeedUrl: feed,
+			LicenseUrl: params.LicenseURL, LicenseType: params.LicenseType, TrustLevel: int32(params.TrustLevel),
+		})
+	}
+	if err != nil {
+		return "", sourceIdentityError(feed, err)
+	}
+	if err := q.RelabelCanonicalSource(ctx, RelabelCanonicalSourceParams{Name: params.Name, FeedUrl: feed}); err != nil {
+		return "", sourceIdentityError(feed, err)
 	}
 	return id, nil
 }

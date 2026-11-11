@@ -66,6 +66,20 @@ migration also fails while multiple sources share a `base_url` (the per-feed sta
 delete the extra rows before reverting, and expect historical `event_sources` attribution for
 the removed rows to be lost.
 
+### Canonical feed registry (migration 000060)
+
+Migration `000060` adds nullable `sources.feed_url` and its unique index while retaining
+`sources_base_url_name_unique` for the previous binary during blue/green cutover and
+application rollback. Historical rows are not automatically merged. Canonical
+registration uses the new feed key; the older base/name index remains a compatibility
+constraint. A conflicting legacy row must be reviewed rather than silently overwritten.
+
+Roll the application back before removing `feed_url`: the new binary requires it.
+The down migration removes only the canonical index/column; provenance rows and repaired
+references remain. Migration `000061` holds complete attribution/source snapshots
+for duplicate attribution consolidation; do not drop that archive after repair. Restore
+the pre-deployment snapshot if the data repair itself must be undone. Never delete provenance rows merely to make a rollback index succeed.
+
 ## Troubleshooting
 
 - **No previous deployment found**: first deployment or cleared state; redeploy target version.
