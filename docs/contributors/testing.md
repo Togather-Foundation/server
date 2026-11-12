@@ -874,11 +874,23 @@ make test-unit
 make test-unit UNIT_TEST_FLAGS=-race
 make test-unit-coverage
 
+# Hermetic backup, read-only smoke and performance-wrapper regressions
+scripts/agent-run.sh make test-tooling
+
 # Run tests with short flag (skip slow tests)
 go test -short ./...
 ```
 
 ### Test Flags
+
+`test-tooling` runs three shell behavior suites with fake Docker, HTTP and load-test
+clients. It needs Bash, jq, ripgrep, Python 3 and standard Linux utilities, with no
+live database, Docker daemon or network requests. A real `pg_restore` corruption
+check runs when the client is installed; otherwise the backup suite explicitly
+reports that check as skipped. The mocked full-read checks still run. Both local
+CI targets (`ci` and `ci-fast`) and GitHub CI execute this shared target. The tests
+exercise private backup evidence, failure-before-mutation routing, read-only defaults,
+HTTP failure propagation, load-client exit status and secret-free output.
 
 - `-race`: Enable race detector (detects data races)
 - `-count=1`: Disable test caching (use when you need a clean rerun)

@@ -127,10 +127,10 @@ The deployment follows a zero-downtime blue-green strategy:
 - Inject build-time labels (version, commit, timestamp)
 
 ### Phase 4: Database Safety
-- Create timestamped database snapshot using pg_dump
-- Store in `/var/backups/togather/` with format: `togather_<env>_<timestamp>.sql.gz`
-- Snapshot includes schema, data, and permissions
-- Retention: Keeps last 7 snapshots by default
+- Use the exact migration `DATABASE_URL` to create a private PostgreSQL custom-format backup
+- Store `<reason>-<UTC timestamp>-<random>.dump` and `.dump.json` evidence in the deployment user's `$HOME/.togather/snapshots`
+- Require a nonempty dump, SHA-256 evidence and a successful full archive read before migrations
+- Retention policy: seven days, managed by the operator; retain required recovery points longer (automation tracked by `t_f4f92c6f`)
 
 ### Phase 5: Migrations
 - Run forward migrations using golang-migrate
@@ -223,19 +223,14 @@ ls -la internal/storage/postgres/migrations/
 
 **Option 1: Restore snapshot and retry**
 ```bash
-# Find latest snapshot
-ls -lh /var/backups/togather/
+# Inspect custom backups and their verification evidence on the deployment host
+ls -lh "$HOME/.togather/snapshots/"
 
-# Restore manually using server snapshot CLI
-# Stop the application first to prevent conflicts
-docker compose down
+# Stop application writes before destructive recovery.
+# DATABASE_URL must identify the intended recovery database.
+pg_restore --exit-on-error --clean --if-exists --dbname "$DATABASE_URL" < /path/to/verified-backup.dump
 
-# Restore from gzipped snapshot
-gunzip -c /var/backups/togather/togather_production_20260128_143022.sql.gz | psql "$DATABASE_URL"
-
-# Or extract first, then restore
-gunzip /var/backups/togather/togather_production_20260128_143022.sql.gz
-psql "$DATABASE_URL" < /var/backups/togather/togather_production_20260128_143022.sql
+# Legacy server snapshot .sql.gz files require gunzip | psql instead; see below.
 
 # Fix migration issue in code
 # Redeploy
@@ -346,11 +341,14 @@ docker build -f deploy/docker/Dockerfile -t togather-server:test .
 
 3. **Restore database if needed:**
    ```bash
-   # List available snapshots
+   # Custom backups: inspect host .dump files and .dump.json evidence.
+   ls -lh "$HOME/.togather/snapshots/"
+   # Destructive recovery: confirm DATABASE_URL identifies the intended database.
+   pg_restore --exit-on-error --clean --if-exists --dbname "$DATABASE_URL" < /path/to/verified-backup.dump
+
+   # Legacy gzip SQL snapshots only (separate CLI inventory):
    server snapshot list
-   
-   # Restore from gzipped snapshot
-   gunzip -c /var/backups/togather/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"
+   gunzip -c /path/to/legacy-snapshot.sql.gz | psql "$DATABASE_URL"
    ```
 
 4. **Redeploy working version:**
@@ -508,13 +506,42 @@ sudo systemctl restart caddy
 
 ### Database Snapshots
 
-Automatic backup before every deployment:
+Before migrations, deployment requires the supported `deploy/scripts/snapshot-db.sh`
+helper to produce a verified backup. `--skip-migrations` skips both migrations and
+this automatic backup.
 
-- Format: PostgreSQL SQL dump (gzip compressed)
-- Location: `/var/backups/togather/`
-- Naming: `togather_<env>_<YYYYMMDD_HHMMSS>.sql.gz`
-- Retention: Last 7 snapshots kept (configurable)
-- Includes: Schema, data, roles, permissions
+```bash
+# On the deployment host, export the same trusted DATABASE_URL as the mutation.
+./deploy/scripts/snapshot-db.sh --container "$db_container_id" \
+  --output-dir "$HOME/.togather/snapshots" --reason pre-repair
+```
+
+`--container` and `--output-dir` are required. `--reason` defaults to `manual` and
+accepts letters, digits, `_` and `-`. Legacy database/compression/retention flags
+are rejected. Host clients handle loopback/socket/encoded/multi-host URLs; ordinary
+shared network hostnames use clients in the selected database container. Both modes
+use the exact `DATABASE_URL`, without guessing host ports or rewriting localhost.
+
+Archives are PostgreSQL custom-format `.dump` files, with private `.dump.json`
+evidence containing `snapshot_path`, `size_bytes`, `sha256`, `verified`,
+`verification`, `format`, `client_mode`, `reason`, `git_commit` and `deployment_id`.
+Success prints that JSON; failures return nonzero (validation, dump and verification
+failures use exit 1) and stop deployment. `pg_restore --exit-on-error --file=/dev/null`
+reads every archive entry before reporting `verification: pg_restore_full_read`;
+this does not execute a restore or replace an isolated restore rehearsal.
+
+Deployment stores these backups under the deployment user's
+`$HOME/.togather/snapshots`, outside application containers. New directories are
+mode `0700` and files mode `0600`. Inventory the `.dump` and `.dump.json` files
+there: `server snapshot list` and `cleanup` only manage legacy `.sql.gz` snapshots
+and their `.meta.json` metadata. Restore custom archives with `pg_restore`;
+legacy gzip SQL snapshots use `gunzip | psql`.
+
+The deployment retention policy is seven days; preserve required recovery points
+longer. Retention of custom archives and evidence is operator-managed; automation
+is tracked by kanban ticket `t_f4f92c6f`. The helper does not expire archives.
+
+See [backup safety and standalone repair instructions](../docs/deploy/remote-deployment.md#snapshot-tooling-and-database-container-fallback).
 
 ### Health Checks
 
@@ -576,7 +603,7 @@ deploy/
 └── scripts/
     ├── deploy.sh               # Main deployment script (853 lines)
     ├── health-check.sh         # Health validation utility
-    └── snapshot-db.sh          # Database backup wrapper (deprecated, use: server snapshot)
+    └── snapshot-db.sh          # Verified custom-format database backup helper
 ```
 
 ### Key Configuration Files
@@ -590,8 +617,8 @@ deployment:
   grace_period: 10
 
 database:
-  snapshot_retention: 7
-  backup_location: /var/backups/togather
+  migrations:
+    snapshot_retention_days: 7  # Policy; custom archive cleanup is operator-managed
 ```
 
 **docker-compose.yml** - Service definitions:

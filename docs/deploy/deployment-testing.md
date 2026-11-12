@@ -70,6 +70,17 @@ See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
   ls -lh dist/togather-*.tar.gz
   ```
 
+### Deployment tooling regression tests
+
+```bash
+scripts/agent-run.sh make test-tooling
+```
+
+Runs three hermetic suites for deployment snapshot safety, read-only smoke checks,
+and performance-probe behavior. They use temporary fixtures and command stubs;
+no live database, Docker daemon, SSH connection or deployment is required. Run this
+when changing deployment tooling; live post-deploy checks below remain separate.
+
 ### Database backup readiness
 
 `deploy.sh` enforces a private, fully read custom-format backup before migrations.

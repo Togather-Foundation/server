@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Isolated wrapper contract: no live server or real load-test binary.
 set -euo pipefail
+for tool in rg python3; do
+    command -v "$tool" >/dev/null || { echo "FAIL: required assertion tool missing: $tool" >&2; exit 1; }
+done
 TEST_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 probe_tmp=$(mktemp -d)
 trap 'rm -rf "$probe_tmp"' EXIT

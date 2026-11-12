@@ -11,7 +11,7 @@ This document defines the command-line interface contracts for deployment script
 
 ### Exit Codes
 
-All deployment scripts use standard exit codes:
+Deployment scripts use these exit codes unless their specific contract below states otherwise:
 
 | Code | Meaning | When Used |
 |------|---------|-----------|
@@ -31,7 +31,7 @@ All deployment scripts use standard exit codes:
 
 ### Environment Variables
 
-All scripts respect these environment variables:
+Deployment orchestration uses these environment variables; standalone helpers may define their own requirements below:
 
 - `ENVIRONMENT`: Target environment (`development`, `staging`, `production`) - **REQUIRED**
 - `CONFIG_DIR`: Path to deployment config directory (default: `./deploy/config`)
@@ -88,7 +88,7 @@ All scripts respect these environment variables:
 ✓ Lock acquired
 ✓ Configuration validated
 ✓ Building Docker image (version: abc1234)
-✓ Database snapshot created: togather_production_20260128_103014_abc1234.sql.gz
+✓ Verified custom backup created: pre-deploy-production-20261112T120000Z-a1B2c3.dump
 ✓ Running 3 database migrations
 ✓ Deploying blue-green (blue -> green)
 ✓ Health checks passed (5/5)
@@ -303,68 +303,92 @@ Last response (HTTP 503):
 
 ## 4. snapshot-db.sh
 
-> **⚠️ DEPRECATED**: This script is deprecated. Use the `server snapshot` CLI command instead.
-> 
-> - `server snapshot create --reason "pre-deploy backup"`
-> - `server snapshot list`
-> - `server snapshot cleanup --retention-days 7`
->
-> See `server snapshot --help` for full documentation.
-
-**Purpose**: Create database snapshot before migrations (wrapper for backward compatibility).
+**Purpose**: Supported deployment backup helper. Create a private PostgreSQL
+custom-format archive of the exact `DATABASE_URL` used by the pending migration or
+repair, then read the complete archive before reporting success.
 
 ### Synopsis
 
 ```bash
-./deploy/scripts/snapshot-db.sh [OPTIONS]
+./deploy/scripts/snapshot-db.sh --container <DB-container-ID> --output-dir <private-directory> [--reason <label>]
 ```
 
-**Note**: This script now forwards calls to `server snapshot` CLI. Update your scripts to use the CLI directly.
+### Options and Environment
 
-### Options
+- `--container <ID>`: Required explicit database container, even when host clients are selected.
+- `--output-dir <path>`: Required host directory for the archive and evidence; no default.
+- `--reason <label>`: Optional filename label, default `manual`; only letters, digits, `_` and `-` are accepted.
+- `--help`: Display usage and exit 0.
+- `DATABASE_URL`: Required `postgres://` or `postgresql://` URL matching the mutation target exactly; multiline URLs are rejected.
+- `GIT_COMMIT`, `DEPLOYMENT_ID`: Optional references recorded as strings in evidence, empty when unset.
 
-- `--database <name>`: Database name (default: from `DATABASE_URL`)
-- `--output-dir <path>`: Snapshot storage directory (default: `/var/backups/togather`)
-- `--compression <type>`: Compression algorithm (`gzip`, `zstd`, `none`) (default: `gzip`)
-- `--retention-days <n>`: Days to keep snapshots (default: 7)
-- `--help`: Display help message
+Legacy `--database`, `--compression` and `--retention-days` flags are rejected.
+The helper does not forward to `server snapshot` or use the common deployment
+configuration variables above.
 
-### Examples
+### Execution and Security
+
+The host requires `docker`, `jq`, `sha256sum`, `mktemp` and `wc`. Host `pg_dump`
+and `pg_restore` are required for loopback/socket/encoded/multi-host targets;
+ordinary shared network hostnames use clients in the explicit database container.
+Clients must support the target server and archive format. The URL is never
+translated to a guessed host port or another network namespace. Container clients
+receive the exact URL over stdin; errors and evidence omit connection secrets.
+
+The helper sets `umask 077`, creates a private custom-format `.dump` with `pg_dump -Fc`,
+and reads every archive entry with `pg_restore --exit-on-error --file=/dev/null`.
+This verifies a full archive read, not a database restore; an isolated restore
+rehearsal is a separate recovery check. New directories are mode `0700` and files
+mode `0600`; use a private directory when one already exists.
+
+### Example
 
 ```bash
-# Create snapshot with defaults
-./snapshot-db.sh
-
-# Create snapshot with custom output directory
-./snapshot-db.sh --output-dir /mnt/backups
-
-# Create uncompressed snapshot (faster, larger)
-./snapshot-db.sh --compression none
+# Run on the deployment host with the mutation's trusted DATABASE_URL exported.
+./deploy/scripts/snapshot-db.sh --container "$db_container_id" \
+  --output-dir "$HOME/.togather/snapshots" --reason pre-repair
 ```
 
-### Output
+### Output and Failures
 
-**Success** (exit code 0):
+**Success** (exit code 0): stdout is the evidence JSON, also saved beside the
+archive as `<archive-path>.json` (a `.dump.json` file). Filenames follow
+`<reason>-<UTC YYYYMMDDTHHMMSSZ>-<random>.dump`.
+
+```json
+{
+  "snapshot_path": "/home/deploy/.togather/snapshots/pre-repair-20261112T120000Z-a1B2c3.dump",
+  "size_bytes": 1024,
+  "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "verified": true,
+  "verification": "pg_restore_full_read",
+  "format": "postgres_custom",
+  "client_mode": "container",
+  "reason": "pre-repair",
+  "git_commit": "",
+  "deployment_id": ""
+}
 ```
-==> Creating database snapshot
-Database: togather_production
-Output: /var/backups/togather/togather_production_20260128_103014_abc1234.sql.gz
 
-✓ Snapshot created (15.2 MB compressed)
-✓ Retention: 7 days (expires 2026-02-04)
+`client_mode` is `host` or `container`; `size_bytes` is a positive number and
+`sha256` is the archive's 64-character SHA-256 digest.
 
-Snapshot ID: snap_01JBQR4KXYZ9876543210
-File: togather_production_20260128_103014_abc1234.sql.gz
-```
+**Failure**: nonzero exit (validation, dump and verification failures use exit 1),
+with an error on stderr. An empty dump or failed full read cannot produce successful
+evidence. Incomplete artifacts are removed. Deployment callers must abort before
+migrations or traffic switch on failure.
 
-**Failure** (exit code 5):
-```
-==> Creating database snapshot
-✗ Database connection failed: connection refused
+### Inventory and Retention
 
-Check DATABASE_URL environment variable:
-  postgresql://user:pass@host:5432/dbname
-```
+`deploy.sh` stores these host artifacts in `$HOME/.togather/snapshots`. Inventory the
+`.dump` files and their `.dump.json` evidence there. `server snapshot list` and
+`server snapshot cleanup` manage legacy gzip SQL (`.sql.gz`, `.meta.json`) snapshots
+only; they do not inventory or expire these custom archives.
+
+The deployment retention policy is seven days, with required recovery points kept
+longer. Cleanup of custom archives and their evidence is operator-managed;
+automated retention is tracked by kanban ticket `t_f4f92c6f`. The helper neither
+expires backups nor accepts a retention flag.
 
 ---
 

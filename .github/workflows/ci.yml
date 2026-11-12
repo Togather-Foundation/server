@@ -13,6 +13,19 @@ env:
   COVERAGE_THRESHOLD: 35
 
 jobs:
+  test-tooling:
+    name: Operational Tooling Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install shell test dependencies
+        run: sudo apt-get update && sudo apt-get install -y jq ripgrep
+
+      - name: Test operational safeguards without a live database
+        run: make test-tooling
+
   # YAML validation
   validate-yaml:
     name: Validate YAML

@@ -4,6 +4,17 @@ Unified testing infrastructure for running smoke tests and performance tests aga
 
 ## Quick Start
 
+Run the local operational tooling regressions without a live server or database:
+
+```bash
+scripts/agent-run.sh make test-tooling
+```
+
+This runs the backup, read-only smoke and performance-wrapper behavior suites using
+stubbed clients. Install Bash, jq, ripgrep and Python 3 first. The optional real
+archive-corruption check reports a skip if `pg_restore` is absent. Both local CI
+gates and GitHub CI run the target automatically.
+
 ```bash
 # Test local server
 make test-local

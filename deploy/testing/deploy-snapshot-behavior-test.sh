@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Behavior tests use no live Docker daemon, database, migrations or traffic switch.
 set -euo pipefail
+for tool in jq rg; do
+    command -v "$tool" >/dev/null || { echo "FAIL: required assertion tool missing: $tool" >&2; exit 1; }
+done
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$TEST_DIR"' EXIT
@@ -85,9 +88,22 @@ check_disk_space() { :; }
 prune_docker_cache() { :; }
 build_docker_image() { :; }
 run_migrations() { echo migrated >> "$TEST_DIR/events"; return 78; }
+get_inactive_slot() { echo slot-preparation >> "$TEST_DIR/events"; exit 79; }
+switch_traffic() { echo traffic-switch >> "$TEST_DIR/events"; }
 bash() {
     case "$CASE" in
         malformed-evidence) printf '{"verified":true}\n' ;;
+        unverified-evidence|wrong-verification|wrong-format)
+            local checksum verified=true verification=pg_restore_full_read format=postgres_custom
+            checksum=$(sha256sum "$TEST_DIR/unverified.dump")
+            [[ "$CASE" != unverified-evidence ]] || verified=false
+            [[ "$CASE" != wrong-verification ]] || verification=catalog_only
+            [[ "$CASE" != wrong-format ]] || format=unknown
+            jq -n --arg path "$TEST_DIR/unverified.dump" --arg sha "${checksum%% *}" \
+                --argjson size "$(wc -c < "$TEST_DIR/unverified.dump")" \
+                --argjson verified "$verified" --arg verification "$verification" --arg format "$format" \
+                '{snapshot_path:$path,size_bytes:$size,sha256:$sha,verified:$verified,verification:$verification,format:$format}'
+            ;;
         checksum-mismatch) printf '{"verified":true,"verification":"pg_restore_full_read","format":"postgres_custom","snapshot_path":"%s/unverified.dump","size_bytes":22,"sha256":"%064d"}\n' "$TEST_DIR" 0 ;;
         missing-artifact) printf '{"verified":true,"verification":"pg_restore_full_read","format":"postgres_custom","snapshot_path":"/nonexistent/backup.dump","size_bytes":22,"sha256":"%064d"}\n' 0 ;;
         *) command bash "$@" ;;
@@ -100,7 +116,7 @@ printf 'return 1\n' > "$TEST_DIR/bad.env"
 printf 'DATABASE_URL=\n' > "$TEST_DIR/empty.env"
 printf 'custom archive payload' > "$TEST_DIR/unverified.dump"
 # Failure cases must stop before any migration or traffic change.
-failure_cases=(missing-env source-failure missing-target compose-failure multiple-containers checksum-mismatch no-container missing-tools dump-failure empty-dump truncated-dump corrupt-archive malformed-evidence missing-artifact)
+failure_cases=(missing-env source-failure missing-target compose-failure multiple-containers checksum-mismatch no-container missing-tools dump-failure empty-dump truncated-dump corrupt-archive malformed-evidence missing-artifact unverified-evidence wrong-verification wrong-format)
 if [[ -n "$REAL_PG_RESTORE" ]]; then
     failure_cases+=(real-corrupt-archive)
 else
@@ -115,8 +131,8 @@ for case_name in "${failure_cases[@]}"; do
     if rg -q secret "$TEST_DIR/output"; then
         echo "FAIL: $case_name leaked database credential"; exit 1
     fi
-    if rg -q migrated "$TEST_DIR/events"; then
-        echo "FAIL: $case_name reached migrations"; exit 1
+    if rg -q 'migrated|slot-preparation|traffic-switch' "$TEST_DIR/events"; then
+        echo "FAIL: $case_name reached a mutation or traffic phase"; exit 1
     fi
     if [[ -d "$TEST_DIR/work/snapshots" ]] && find "$TEST_DIR/work/snapshots" -type f | rg -q .; then
         echo "FAIL: $case_name left partial backup artifacts"; exit 1
@@ -155,9 +171,8 @@ bash "$TEST_DIR/run.sh" > "$TEST_DIR/output" 2>&1 || true
 if rg -q secret "$TEST_DIR/output"; then echo 'FAIL: leaked connection secret'; exit 1; fi
 echo 'PASS: loopback target uses exact host connection before migration'
 # --skip-migrations intentionally bypasses this gate; stop at get_inactive_slot.
-printf '\nget_inactive_slot() { exit 79; }\n' >> "$TEST_DIR/functions.sh"
 : > "$TEST_DIR/events"
 SKIP=true bash "$TEST_DIR/run.sh" > "$TEST_DIR/output" 2>&1 || true
-[[ ! -s "$TEST_DIR/events" ]]
+[[ "$(cat "$TEST_DIR/events")" == slot-preparation ]]
 rg -q 'Skipping database snapshot' "$TEST_DIR/output"
 echo 'PASS: explicit no-migration path does not create backup or migrate'

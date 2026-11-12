@@ -16,6 +16,22 @@ func quickConfig() ProfileConfig {
 }
 
 func TestPublicProbeNeverWritesOrRequestsMetrics(t *testing.T) {
+	// Check the complete workload contract, independently of random sampling.
+	expected := map[string]bool{
+		"/health":               true,
+		"/api/v1/events":        true,
+		"/api/v1/places":        true,
+		"/api/v1/organizations": true,
+	}
+	for _, operation := range publicReadOperations() {
+		if operation.method != http.MethodGet || !expected[operation.path] {
+			t.Fatalf("unexpected public operation %s %s", operation.method, operation.path)
+		}
+		delete(expected, operation.path)
+	}
+	if len(expected) != 0 {
+		t.Fatalf("public workload missing operations: %v", expected)
+	}
 	var requests atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)

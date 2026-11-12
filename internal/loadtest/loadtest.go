@@ -365,14 +365,19 @@ func (lt *LoadTester) calculateCurrentRPS(elapsed time.Duration, config ProfileC
 	return 1 // Minimum fallback
 }
 
-// generateReadRequest creates a random read operation.
-func (lt *LoadTester) generateReadRequest() workItem {
-	operations := []workItem{
+// publicReadOperations defines the public, non-mutating probe contract.
+func publicReadOperations() []workItem {
+	return []workItem{
 		{method: "GET", path: "/health", endpoint: "health"},
 		{method: "GET", path: "/api/v1/events", endpoint: "list_events"},
 		{method: "GET", path: "/api/v1/places", endpoint: "list_places"},
 		{method: "GET", path: "/api/v1/organizations", endpoint: "list_orgs"},
 	}
+}
+
+// generateReadRequest creates a random read operation.
+func (lt *LoadTester) generateReadRequest() workItem {
+	operations := publicReadOperations()
 	return operations[rand.Intn(len(operations))]
 }
 

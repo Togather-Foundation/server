@@ -3,6 +3,7 @@
 # Extracted production functions consume these globals and mocks indirectly.
 # shellcheck disable=SC2034,SC2329
 set -euo pipefail
+command -v jq >/dev/null || { echo 'FAIL: required assertion tool missing: jq' >&2; exit 1; }
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$TEST_DIR"' EXIT

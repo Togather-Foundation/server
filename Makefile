@@ -1,6 +1,6 @@
 .PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate sqlc-check migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles webfiles-bootstrap release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape remote-staging remote-production
 
-.PHONY: test-unit test-unit-coverage
+.PHONY: test-unit test-unit-coverage test-tooling
 
 # Shared local/CI/release unit package contract. CLI regressions belong in every gate.
 UNIT_TEST_ROOTS := ./internal/... ./cmd/... ./tests/fixtures/
@@ -43,6 +43,7 @@ help:
 	@echo "  make webfiles      - Generate web/robots.txt and sitemap.xml"
 	@echo "  make test          - Run all tests"
 	@echo "  make test-ci       - Run all test suites (fast, no race detector)"
+	@echo "  make test-tooling  - Run hermetic operational safeguard regressions (no DB)"
 	@echo "  make test-ci-race  - Run tests exactly as CI does (with race detector, ~10min)"
 	@echo "  make lint          - Run golangci-lint"
 	@echo "  make lint-debug-cold - Debug GH Actions lint failures (cold cache, slow)"
@@ -170,6 +171,12 @@ test-unit:
 test-unit-coverage:
 	@set -e; PKGS=$$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' $(UNIT_TEST_ROOTS)); \
 	$(RUN) go test -v $(UNIT_TEST_FLAGS) -coverprofile=coverage.out -covermode=atomic $$PKGS
+
+# Hermetic operational regression checks: fake Docker/HTTP/load clients, no live DB.
+test-tooling:
+	@$(RUN) bash deploy/testing/deploy-snapshot-behavior-test.sh
+	@$(RUN) bash deploy/testing/smoke-readonly-behavior-test.sh
+	@$(RUN) bash deploy/testing/performance-probe-behavior-test.sh
 
 # Run all test suites (fast, no race detector — use for local pre-push checks)
 test-ci:
@@ -557,6 +564,9 @@ ci: sqlc-generate vulncheck
 	@echo "==> Linting shell scripts..."
 	@$(MAKE) lint-shell
 	@echo ""
+	@echo "==> Testing operational tooling..."
+	@$(MAKE) test-tooling
+	@echo ""
 	@echo "==> Checking code formatting..."
 	@if [ "$$(gofmt -l . | wc -l)" -gt 0 ]; then \
 		echo "✗ Code is not formatted. Run 'make fmt'"; \
@@ -636,6 +646,9 @@ ci-fast:
 	@echo ""
 	@echo "==> Linting shell scripts..."
 	@$(MAKE) lint-shell
+	@echo ""
+	@echo "==> Testing operational tooling..."
+	@$(MAKE) test-tooling
 	@echo ""
 	@echo "==> Validating YAML files..."
 	@$(MAKE) lint-yaml
