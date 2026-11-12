@@ -829,11 +829,12 @@ paths:
         via `event_sources`, so an event with no source attribution is excluded
         from a source-scoped run. A cluster that spans sources is narrowed to the
         requested source's events: the other members are absent from the response
-        and must not be retired by a scoped consolidation. Source names are only
-        unique per `base_url`, so a name that matches more than one row is a 400;
-        use the source UUID in that case. Historical events may live on a
-        differently-named provenance row after a feed rename, in which case a
-        scoped run can look empty.
+        and must not be retired by a scoped consolidation. Source names are labels;
+        canonical identity is the normalized feed URL. A name matching more than
+        one retained row is a 400; use the source UUID in that case. Renaming a
+        feed reuses its canonical row. Historical attributions on legacy rows stay
+        there until explicit source reconciliation, so a scoped run may not include
+        those events.
 
         Each cluster reports description evidence: `distinct_description_count`,
         `distinct_descriptions`, `described_member_count`,
@@ -6022,10 +6023,14 @@ components:
         url:
           type: string
           format: uri
-          description: Source URL for provenance
+          description: |
+            Feed URL for provenance and canonical source identity. Query strings
+            and fragments are removed during validation; identity comparisons
+            ignore trailing slashes. Different paths on one host identify
+            separate feeds. A source name is a label and does not change this key.
         eventId:
           type: string
-          description: External system's event ID
+          description: External system's event ID, scoped to the feed URL rather than a source registry row.
 
     EventSummary:
       type: object
@@ -7205,9 +7210,10 @@ components:
           type: integer
           format: int64
           description: |
-            Number of source rows. Since migration 000056 a source row is a feed
-            (`base_url` + `name`), not a provider, so one provider that serves several
-            feeds contributes several rows.
+            Number of source rows, including retained legacy and idle rows.
+            Canonical rows use the normalized feed URL as their unique key;
+            base_url contains that full URL and names are labels. One provider
+            serving different feed paths contributes multiple canonical rows.
         total_users:
           type: integer
           format: int64
