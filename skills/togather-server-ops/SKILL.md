@@ -153,10 +153,11 @@ The MCP server auto-discovers tools. API key is sent as a bearer token.
 
 ## Database backups before repair
 
-Check the actual backup result before a data repair. Deployment can continue after
-`server binary not found, skipping automated snapshot`; `server snapshot create`
-inside the application container can also fail because `pg_dump` is absent there.
-Tools must exist where the command runs, not merely on the agent's workstation.
+Check the actual backup result before a data repair. Deployment migrations now
+require a verified backup of the migration target; this does not automatically back up
+standalone repair commands. `server snapshot create` inside the application container
+can still fail because `pg_dump` is absent there. Tools must exist where the command
+runs, not merely on the agent's workstation.
 
 When needed, use the database container's matching `pg_dump`/`pg_restore` tools via the
 [documented fallback](../../docs/deploy/remote-deployment.md#snapshot-tooling-and-database-container-fallback).
@@ -171,9 +172,12 @@ Transaction locks do not invalidate previously resolved source ids; old-slot cod
 reintroduce host rows until stopped. Verify a no-op preview and audit after cutover.
 Use the [source repair runbook](../../docs/integration/scraper.md#reconciling-historical-source-rows)
 and [retrospective](../../docs/operations/source-feed-reconciliation-retrospective.md)
-for the operating sequence and known limitations. For post-deploy load probes, prefer
-read-only traffic unless write isolation and cleanup ownership have been verified;
-inspect status-code distributions even when the wrapper exits zero.
+for the operating sequence and known limitations. Routine post-deploy load probes
+default to public read-only traffic and fail on unexpected authorization, server or
+transport errors. Inspect their structured endpoint/status results. Enable writes
+only after verifying isolation and cleanup ownership; an authenticated preflight
+does not establish fixture ownership. See the
+[load-testing workflow](../../docs/operations/load-testing.md).
 
 ## Scraper Operations
 

@@ -5,14 +5,15 @@ leaving fixture data behind.
 
 ## Overview
 
-The load tester (`cmd/loadtest`) generates write traffic using fixture events. Without
-source tagging these events accumulate in staging and pollute queries. The recommended
-workflow is:
+The load tester (`cmd/loadtest`) defaults to public read-only traffic. Deliberately
+enabled writes create persistent fixture events. Before write testing on shared
+staging, prepare and verify cleanup ownership:
 
 1. Create a dedicated load-test source in the staging database.
 2. Create an API key linked to that source.
-3. Run the load test with that key.
-4. Clean up after the run with `server cleanup loadtest`.
+3. Verify actual event attribution; the key alone does not establish isolation.
+4. Run write traffic only with proven ownership or a disposable database.
+5. Clean up verified fixtures with `server cleanup loadtest`.
 
 ## Current isolation limitation
 
@@ -30,10 +31,20 @@ For a routine post-deployment load probe, use the supported read-only option:
 ./deploy/scripts/performance-test.sh --profile light --slot blue --read-ratio 1
 ```
 
-This still requests protected endpoints such as `/metrics`; inspect status codes and
-use suitable credentials or an appropriate endpoint selection. Wrapper exit zero is
-not proof of an error-free workload. Write testing needs verified run isolation and
-cleanup ownership, or a disposable database, before sustained traffic.
+Read-only is now the default for every profile and routine `test-remote.sh` run.
+The public workload excludes protected `/metrics`. Unexpected authentication errors,
+5xx and transport failures always return nonzero; other failures exceed the default
+zero error budget. Use the Go CLI's `--json` to inspect endpoint/status distributions.
+The wrapper forwards `--max-error-rate` for deliberate non-authentication 4xx budgets.
+Write testing needs verified run isolation and cleanup ownership, or a disposable
+database, before sustained traffic.
+
+An explicit `--read-ratio` below 1 requires credentials. Before sustained traffic,
+each key must pass a harmless authenticated malformed-JSON request (expected HTTP400
+from the create handler before ingest). This preflight creates no event; it does not
+establish fixture ownership or guarantee subsequent event validation will succeed.
+Smoke checks also default to no event writes: `SMOKE_WRITE_TESTS=true` is an explicit
+opt-in requiring `ALLOW_DESTRUCTIVE`, an API key, and a non-production environment.
 
 ## Setup (one-time per environment)
 
@@ -72,7 +83,7 @@ Or set the key in your environment and reference it in the shell wrapper:
 
 ```bash
 export LOADTEST_API_KEY=<key>
-./deploy/scripts/performance-test.sh --profile medium --slot blue --api-key "$LOADTEST_API_KEY"
+./deploy/scripts/performance-test.sh --profile medium --slot blue --read-ratio 0.8 --api-key "$LOADTEST_API_KEY"
 ```
 
 ## Running a load test

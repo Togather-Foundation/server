@@ -9,9 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"math/rand"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +40,7 @@ type ProfileConfig struct {
 	Duration          time.Duration // How long to run the test
 	RampUpTime        time.Duration // Time to gradually reach target RPS
 	RampDownTime      time.Duration // Time to gradually decrease RPS
+	MaxErrorRate      float64       // Allowed fraction of non-authentication 4xx failures; default zero
 	ReadWriteRatio    float64       // Ratio of reads to writes (0.8 = 80% reads, 20% writes)
 }
 
@@ -48,42 +51,42 @@ var LoadProfiles = map[LoadProfile]ProfileConfig{
 		Duration:          1 * time.Minute,
 		RampUpTime:        10 * time.Second,
 		RampDownTime:      10 * time.Second,
-		ReadWriteRatio:    0.8,
+		ReadWriteRatio:    1,
 	},
 	ProfileMedium: {
 		RequestsPerSecond: 20,
 		Duration:          2 * time.Minute,
 		RampUpTime:        20 * time.Second,
 		RampDownTime:      20 * time.Second,
-		ReadWriteRatio:    0.8,
+		ReadWriteRatio:    1,
 	},
 	ProfileHeavy: {
 		RequestsPerSecond: 50,
 		Duration:          5 * time.Minute,
 		RampUpTime:        30 * time.Second,
 		RampDownTime:      30 * time.Second,
-		ReadWriteRatio:    0.7,
+		ReadWriteRatio:    1,
 	},
 	ProfileStress: {
 		RequestsPerSecond: 100,
 		Duration:          10 * time.Minute,
 		RampUpTime:        1 * time.Minute,
 		RampDownTime:      1 * time.Minute,
-		ReadWriteRatio:    0.6,
+		ReadWriteRatio:    1,
 	},
 	ProfileBurst: {
 		RequestsPerSecond: 10, // Base RPS (will spike to 100)
 		Duration:          5 * time.Minute,
 		RampUpTime:        0,
 		RampDownTime:      0,
-		ReadWriteRatio:    0.8,
+		ReadWriteRatio:    1,
 	},
 	ProfilePeak: {
 		RequestsPerSecond: 40, // Peak RPS
 		Duration:          10 * time.Minute,
 		RampUpTime:        3 * time.Minute,
 		RampDownTime:      3 * time.Minute,
-		ReadWriteRatio:    0.75,
+		ReadWriteRatio:    1,
 	},
 }
 
@@ -101,21 +104,14 @@ type LoadTester struct {
 
 // NewLoadTester creates a new load tester targeting the specified base URL.
 func NewLoadTester(baseURL string) *LoadTester {
-	// Try to create dev authenticator (will use dev defaults)
-	auth, err := testauth.NewDevAuthenticator()
-	if err != nil {
-		// If auth fails, continue without authentication
-		auth = nil
-	}
-
 	return &LoadTester{
 		baseURL: baseURL,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout:       30 * time.Second,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
-		generator:     fixtures.NewGenerator(time.Now().UnixNano()),
-		stats:         &Statistics{},
-		authenticator: auth,
+		generator: fixtures.NewGenerator(time.Now().UnixNano()),
+		stats:     &Statistics{},
 	}
 }
 
@@ -150,7 +146,8 @@ func (lt *LoadTester) WithAPIKeys(keys []string) *LoadTester {
 
 // Statistics tracks load test metrics.
 type Statistics struct {
-	mu sync.Mutex
+	mu       sync.Mutex
+	failures []string
 
 	totalRequests   int64
 	successRequests int64
@@ -171,12 +168,13 @@ type Statistics struct {
 
 // EndpointStats tracks statistics for a specific endpoint.
 type EndpointStats struct {
-	count   int64
-	total   int64   // total response time in ms
-	times   []int64 // all response times for percentile calculation
-	errors  int64
-	minTime int64
-	maxTime int64
+	count       int64
+	total       int64   // total response time in ms
+	times       []int64 // all response times for percentile calculation
+	statusCodes map[int]int64
+	errors      int64
+	minTime     int64
+	maxTime     int64
 }
 
 // Run executes a load test with the specified profile.
@@ -190,20 +188,44 @@ func (lt *LoadTester) Run(ctx context.Context, profile LoadProfile) (*Statistics
 }
 
 // RunCustom executes a load test with a custom configuration.
-func (lt *LoadTester) RunCustom(ctx context.Context, config ProfileConfig) (*Statistics, error) {
+func (lt *LoadTester) RunCustom(ctx context.Context, config ProfileConfig) (stats *Statistics, runErr error) {
 	lt.stats = &Statistics{
 		errors:        make(map[int]int64),
 		endpointStats: make(map[string]*EndpointStats),
 		startTime:     time.Now(),
 	}
 
-	fmt.Printf("Starting load test...\n")
-	fmt.Printf("  Target: %s\n", lt.baseURL)
-	fmt.Printf("  RPS: %d\n", config.RequestsPerSecond)
-	fmt.Printf("  Duration: %s\n", config.Duration)
-	fmt.Printf("  Ramp-up: %s, Ramp-down: %s\n", config.RampUpTime, config.RampDownTime)
-	fmt.Printf("  Read/Write ratio: %.0f%%/%.0f%%\n", config.ReadWriteRatio*100, (1-config.ReadWriteRatio)*100)
-	fmt.Println()
+	defer func() {
+		lt.stats.mu.Lock()
+		defer lt.stats.mu.Unlock()
+		lt.stats.endTime = time.Now()
+		if runErr != nil && len(lt.stats.failures) == 0 {
+			lt.stats.failures = []string{runErr.Error()}
+		}
+	}()
+	if config.RequestsPerSecond <= 0 || config.RequestsPerSecond > int(time.Second) || config.Duration <= 0 || config.RampUpTime < 0 || config.RampDownTime < 0 || math.IsNaN(config.ReadWriteRatio) || math.IsInf(config.ReadWriteRatio, 0) || config.ReadWriteRatio < 0 || config.ReadWriteRatio > 1 || math.IsNaN(config.MaxErrorRate) || math.IsInf(config.MaxErrorRate, 0) || config.MaxErrorRate < 0 || config.MaxErrorRate > 1 {
+		return lt.stats, fmt.Errorf("invalid load configuration")
+	}
+	if config.ReadWriteRatio < 1 {
+		if len(lt.apiKeys) == 0 && lt.authenticator == nil {
+			return lt.stats, fmt.Errorf("write testing requires explicit credentials")
+		}
+		// Malformed JSON reaches the authenticated create handler but cannot decode
+		// into an event. A 400 proves the credential passed the auth middleware
+		// without creating a fixture; 401/403 are never accepted.
+		attempts := len(lt.apiKeys)
+		if attempts == 0 {
+			attempts = 1
+		}
+		for i := 0; i < attempts; i++ {
+			lt.executeRequest(ctx, workItem{method: "POST", path: "/api/v1/events", endpoint: "auth_preflight", rawBody: "{", expectedStatus: http.StatusBadRequest})
+			if lt.stats.failedRequests > 0 {
+				lt.stats.endTime = time.Now()
+				_ = lt.stats.validate(0)
+				return lt.stats, fmt.Errorf("authenticated write preflight failed; sustained traffic was not started")
+			}
+		}
+	}
 
 	// Create worker pool
 	workers := config.RequestsPerSecond * 2 // 2 workers per target RPS
@@ -233,15 +255,23 @@ func (lt *LoadTester) RunCustom(ctx context.Context, config ProfileConfig) (*Sta
 	wg.Wait()
 	lt.stats.endTime = time.Now()
 
+	if err := ctx.Err(); err != nil {
+		return lt.stats, fmt.Errorf("load test interrupted: %w", err)
+	}
+	if err := lt.stats.validate(config.MaxErrorRate); err != nil {
+		return lt.stats, err
+	}
 	return lt.stats, nil
 }
 
 // workItem represents a single HTTP request to be executed.
 type workItem struct {
-	method   string
-	path     string
-	body     interface{}
-	endpoint string // for stats tracking
+	method         string
+	path           string
+	body           interface{}
+	endpoint       string // for stats tracking
+	rawBody        string // Used only for guaranteed non-decodable preflight JSON
+	expectedStatus int    // Zero means any 2xx
 }
 
 // generateWork produces work items according to the load profile.
@@ -284,10 +314,18 @@ func (lt *LoadTester) generateWork(ctx context.Context, config ProfileConfig, wo
 			// Generate work item (read or write based on ratio)
 			if rand.Float64() < config.ReadWriteRatio {
 				// Read operation
-				workChan <- lt.generateReadRequest()
+				select {
+				case workChan <- lt.generateReadRequest():
+				case <-ctx.Done():
+					return
+				}
 			} else {
 				// Write operation
-				workChan <- lt.generateWriteRequest()
+				select {
+				case workChan <- lt.generateWriteRequest():
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}
@@ -334,7 +372,6 @@ func (lt *LoadTester) generateReadRequest() workItem {
 		{method: "GET", path: "/api/v1/events", endpoint: "list_events"},
 		{method: "GET", path: "/api/v1/places", endpoint: "list_places"},
 		{method: "GET", path: "/api/v1/organizations", endpoint: "list_orgs"},
-		{method: "GET", path: "/metrics", endpoint: "metrics"},
 	}
 	return operations[rand.Intn(len(operations))]
 }
@@ -374,7 +411,9 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 
 	// Build request
 	var reqBody io.Reader
-	if work.body != nil {
+	if work.rawBody != "" {
+		reqBody = strings.NewReader(work.rawBody)
+	} else if work.body != nil {
 		jsonData, err := json.Marshal(work.body)
 		if err != nil {
 			lt.recordError(0, work.endpoint)
@@ -389,20 +428,18 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 		return
 	}
 
-	if work.body != nil {
+	if work.body != nil || work.rawBody != "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
 	// Add authentication if available
 	authMode := "none"
-	keyPrefix := ""
 	if len(lt.apiKeys) > 0 {
 		idx := atomic.AddUint32(&lt.apiKeyIndex, 1)
 		key := lt.apiKeys[int(idx-1)%len(lt.apiKeys)]
 		if key != "" {
 			req.Header.Set("Authorization", "Bearer "+key)
 			authMode = "api_key"
-			keyPrefix = apiKeyPrefix(key)
 		}
 	} else if lt.authenticator != nil {
 		lt.authenticator.AddAuth(req)
@@ -420,33 +457,32 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body (to ensure full response time is measured)
-	_, _ = io.Copy(io.Discard, resp.Body)
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		lt.recordError(0, work.endpoint)
+		return
+	}
 
 	// Record statistics
-	lt.recordResponse(resp.StatusCode, duration, work.endpoint)
+	lt.recordResponse(resp.StatusCode, duration, work.endpoint, work.expectedStatus)
 	if lt.debugAuth && resp.StatusCode == http.StatusUnauthorized {
-		fmt.Fprintf(os.Stderr, "AUTH_DEBUG status=401 endpoint=%s method=%s path=%s auth=%s key_prefix=%s\n",
-			work.endpoint, work.method, work.path, authMode, keyPrefix,
+		fmt.Fprintf(os.Stderr, "AUTH_DEBUG status=401 endpoint=%s method=%s path=%s auth=%s \n",
+			work.endpoint, work.method, work.path, authMode,
 		)
 	}
 }
 
-func apiKeyPrefix(key string) string {
-	const prefixLen = 8
-	if len(key) <= prefixLen {
-		return key
-	}
-	return key[:prefixLen]
-}
-
 // recordResponse records a successful response.
-func (lt *LoadTester) recordResponse(statusCode int, durationMs int64, endpoint string) {
+func (lt *LoadTester) recordResponse(statusCode int, durationMs int64, endpoint string, expectedStatus int) {
 	lt.stats.mu.Lock()
 	defer lt.stats.mu.Unlock()
 
 	lt.stats.responseTimes = append(lt.stats.responseTimes, durationMs)
 
-	if statusCode >= 200 && statusCode < 300 {
+	accepted := statusCode >= 200 && statusCode < 300
+	if expectedStatus != 0 {
+		accepted = statusCode == expectedStatus
+	}
+	if accepted {
 		atomic.AddInt64(&lt.stats.successRequests, 1)
 	} else {
 		atomic.AddInt64(&lt.stats.failedRequests, 1)
@@ -456,12 +492,14 @@ func (lt *LoadTester) recordResponse(statusCode int, durationMs int64, endpoint 
 	// Update endpoint stats
 	if lt.stats.endpointStats[endpoint] == nil {
 		lt.stats.endpointStats[endpoint] = &EndpointStats{
-			minTime: durationMs,
-			maxTime: durationMs,
+			statusCodes: make(map[int]int64),
+			minTime:     durationMs,
+			maxTime:     durationMs,
 		}
 	}
 
 	epStats := lt.stats.endpointStats[endpoint]
+	epStats.statusCodes[statusCode]++
 	epStats.count++
 	epStats.total += durationMs
 	epStats.times = append(epStats.times, durationMs)
@@ -473,7 +511,7 @@ func (lt *LoadTester) recordResponse(statusCode int, durationMs int64, endpoint 
 		epStats.maxTime = durationMs
 	}
 
-	if statusCode < 200 || statusCode >= 300 {
+	if !accepted {
 		epStats.errors++
 	}
 }
@@ -487,8 +525,10 @@ func (lt *LoadTester) recordError(statusCode int, endpoint string) {
 	lt.stats.errors[statusCode]++
 
 	if lt.stats.endpointStats[endpoint] == nil {
-		lt.stats.endpointStats[endpoint] = &EndpointStats{}
+		lt.stats.endpointStats[endpoint] = &EndpointStats{statusCodes: make(map[int]int64)}
 	}
+	lt.stats.endpointStats[endpoint].count++
+	lt.stats.endpointStats[endpoint].statusCodes[statusCode]++
 	lt.stats.endpointStats[endpoint].errors++
 }
 
@@ -608,4 +648,55 @@ func calculatePercentile(times []int64, percentile float64) int64 {
 	}
 
 	return sorted[index]
+}
+
+// Result is a machine-readable account of observed status codes and failed expectations.
+type Result struct {
+	TotalRequests      int64                     `json:"total_requests"`
+	FailedRequests     int64                     `json:"failed_requests"`
+	Passed             bool                      `json:"passed"`
+	FailedExpectations []string                  `json:"failed_expectations"`
+	Endpoints          map[string]EndpointResult `json:"endpoints"`
+}
+type EndpointResult struct {
+	Count       int64         `json:"count"`
+	StatusCodes map[int]int64 `json:"status_codes"`
+}
+
+func (s *Statistics) failedExpectations(maxErrorRate float64) []string {
+	failures := []string{}
+	if s.totalRequests == 0 {
+		failures = append(failures, "no requests completed")
+	}
+	for code, count := range s.errors {
+		if count > 0 && (code < 400 || code == 401 || code == 403 || code >= 500) {
+			failures = append(failures, fmt.Sprintf("unexpected status %d: %d requests (0 denotes transport/body failure)", code, count))
+		}
+	}
+	if s.totalRequests > 0 && float64(s.failedRequests)/float64(s.totalRequests) > maxErrorRate {
+		failures = append(failures, fmt.Sprintf("error rate exceeds budget %.4f", maxErrorRate))
+	}
+	return failures
+}
+func (s *Statistics) validate(maxErrorRate float64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failures = s.failedExpectations(maxErrorRate)
+	if len(s.failures) > 0 {
+		return fmt.Errorf("load expectations failed: %v", s.failures)
+	}
+	return nil
+}
+func (s *Statistics) Summary() Result {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := Result{TotalRequests: s.totalRequests, FailedRequests: s.failedRequests, Passed: len(s.failures) == 0 && s.totalRequests > 0, FailedExpectations: append([]string{}, s.failures...), Endpoints: make(map[string]EndpointResult)}
+	for name, ep := range s.endpointStats {
+		codes := make(map[int]int64)
+		for code, n := range ep.statusCodes {
+			codes[code] = n
+		}
+		result.Endpoints[name] = EndpointResult{ep.count, codes}
+	}
+	return result
 }

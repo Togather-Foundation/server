@@ -10,9 +10,11 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Default values
 TARGET_URL="${TARGET_URL:-http://localhost:8080}"
 PROFILE="${PROFILE:-light}"
-DURATION="1m"
-RPS=5
-READ_RATIO=0.8
+DURATION=""
+RPS=""
+READ_RATIO=1
+MAX_ERROR_RATE=0
+JSON_OUTPUT=false
 NO_RAMP=false
 DEBUG_AUTH=false
 
@@ -34,9 +36,11 @@ OPTIONS:
     -p, --profile PROFILE  Load profile: light, medium, heavy, stress, burst, peak (default: light)
     -r, --rps RPS          Custom requests per second
     -d, --duration TIME    Custom test duration (e.g., 30s, 2m, 1h)
-    -R, --read-ratio NUM   Read/write ratio 0.0-1.0 (default: 0.8)
+    -R, --read-ratio NUM   Read/write ratio 0.0-1.0 (default: 1, read-only)
     -s, --slot SLOT        Target specific slot: blue, green, or lb (load balanced)
     -k, --api-key KEY      API key for write endpoints (optional, repeatable)
+    --max-error-rate NUM  Allowed non-authentication 4xx fraction (default: 0)
+    --json                 Print structured endpoint/status results
     --debug-auth           Log auth debug lines for 401 responses
     --no-ramp              Disable ramp-up/ramp-down (instant start/stop)
     -h, --help             Show this help message
@@ -66,10 +70,10 @@ EXAMPLES:
     $0 --rps 50 --duration 2m --read-ratio 0.95
 
     # Use API key for authenticated writes
-    $0 --profile light --api-key YOUR_API_KEY
+    $0 --profile light --read-ratio 0.8 --api-key YOUR_API_KEY
 
     # Use multiple API keys
-    $0 --profile light --api-key KEY_ONE --api-key KEY_TWO
+    $0 --profile light --read-ratio 0.8 --api-key KEY_ONE --api-key KEY_TWO
 
     # Debug auth failures
     $0 --profile light --debug-auth
@@ -142,6 +146,14 @@ while [[ $# -gt 0 ]]; do
             add_perf_key "$2"
             shift 2
             ;;
+        --max-error-rate)
+            MAX_ERROR_RATE="$2"
+            shift 2
+            ;;
+        --json)
+            JSON_OUTPUT=true
+            shift
+            ;;
         --debug-auth)
             DEBUG_AUTH=true
             shift
@@ -208,23 +220,23 @@ echo ""
 cd "$PROJECT_ROOT"
 
 # Build command arguments
-ARGS=(--url "$TARGET_URL")
+ARGS=(--url "$TARGET_URL" --read-ratio "$READ_RATIO" --max-error-rate "$MAX_ERROR_RATE")
+if [[ "$JSON_OUTPUT" == "true" ]]; then
+    ARGS+=(--json)
+fi
 
 if [[ -n "${PROFILE:-}" ]]; then
     ARGS+=(--profile "$PROFILE")
 fi
 
-if [[ -n "${RPS:-}" ]] && [[ "$RPS" != "5" ]]; then
+if [[ -n "${RPS:-}" ]]; then
     ARGS+=(--rps "$RPS")
 fi
 
-if [[ -n "${DURATION:-}" ]] && [[ "$DURATION" != "1m" ]]; then
+if [[ -n "${DURATION:-}" ]]; then
     ARGS+=(--duration "$DURATION")
 fi
 
-if [[ -n "${READ_RATIO:-}" ]] && [[ "$READ_RATIO" != "0.8" ]]; then
-    ARGS+=(--read-ratio "$READ_RATIO")
-fi
 
 if [[ "$NO_RAMP" == "true" ]]; then
     ARGS+=(--no-ramp)
@@ -242,7 +254,13 @@ if [[ ${#perf_api_keys[@]} -gt 0 ]]; then
 fi
 
 # Execute load test
-"$LOADTEST_BIN" "${ARGS[@]}"
+if "$LOADTEST_BIN" "${ARGS[@]}"; then
+    :
+else
+    loadtest_status=$?
+    echo -e "${RED}✗ Load test failed expectations${NC}" >&2
+    exit "$loadtest_status"
+fi
 
 echo ""
 echo -e "${GREEN}✓ Load test completed${NC}"

@@ -56,16 +56,37 @@ All profiles include gradual ramp-up and ramp-down periods to simulate realistic
 
 ### Read/Write Ratio
 
-By default, profiles use an 80/20 read-to-write ratio (80% reads, 20% writes):
+All CLI and wrapper profiles default to **read-only** (`--read-ratio 1`):
+GET `/health`, `/api/v1/events`, `/api/v1/places`, and `/api/v1/organizations`.
+Protected `/metrics` is excluded from this public workload. `test-remote.sh` explicitly
+passes read-only mode and a zero error budget during routine post-deployment checks.
 
-- **Read operations**: GET /health, /events, /places, /organizations, /metrics
-- **Write operations**: POST /events (with realistic test fixtures)
+Write traffic requires an explicit ratio below 1 and explicit credentials:
 
-You can customize this with `--read-ratio`:
 ```bash
-# 95% reads, 5% writes
-./deploy/scripts/performance-test.sh --profile medium --read-ratio 0.95 --slot blue
+# Use only with a disposable database or positively verified fixture ownership.
+./deploy/scripts/performance-test.sh --profile light --read-ratio 0.8 --api-key "$LOADTEST_API_KEY"
 ```
+
+Before sustained writes, each credential is checked with a POST containing malformed
+JSON (`{`) to the authenticated event-create route. The expected HTTP 400 is an explicit
+validation-only expectation: decoding fails before ingest, so this probe creates no
+event. HTTP 401/403 or any other status aborts the run before sustained traffic.
+This establishes authentication, not permission to ingest every generated fixture.
+Actual writes still need the isolation and cleanup precautions in
+[Load Testing Operations](../operations/load-testing.md).
+
+`--max-error-rate` sets the permitted fraction of ordinary non-authentication 4xx
+failures (default 0). HTTP 401/403, 5xx, transport/body failures, cancellation and empty
+runs always fail, even with a larger budget. Redirects are not followed. There is no
+implicit exemption for rate limiting or authentication failures. Negative-security
+checks belong in explicitly specified tests with their own expected status codes.
+
+Use `--json` with the Go CLI for a machine-readable result containing `passed`,
+`failed_expectations`, totals and per-endpoint `status_codes` (0 denotes transport/body
+failure). The shell wrapper forwards this option but also prints its own progress;
+use the binary directly when stdout must be JSON only. Both the CLI and wrappers exit
+nonzero when expectations fail. Keys are omitted from result and debug output.
 
 ## Usage Examples
 
@@ -113,6 +134,10 @@ TARGET_URL=http://localhost:8082 ./deploy/scripts/performance-test.sh --profile 
 
 ### Sample Output
 
+The following is historical output from a failing mixed workload that included
+protected metrics and writes. Current public read-only profiles omit those
+endpoints, and these authentication failures now make the command exit nonzero.
+
 ```
 ═══════════════════════════════════════════════════════════════
                     LOAD TEST RESULTS                           
@@ -149,8 +174,10 @@ metrics                 49        1        4        0        5
 
 - **Duration**: Total test duration including ramp-up/ramp-down
 - **Total Requests**: All HTTP requests sent
-- **Successful**: Requests with 2xx status codes
-- **Failed**: Requests with non-2xx status codes
+- **Successful**: Requests matching their expected status (normally 2xx; the
+  validation-only authentication preflight explicitly expects 400).
+- **Failed**: Requests that do not match their expected status, including transport
+  or response-body failures.
 - **Requests/sec**: Average throughput
 - **Response Times**: Latency percentiles (p50 = median, p95 = 95th percentile, p99 = 99th percentile)
 - **Errors by Status Code**: Breakdown of HTTP error responses
@@ -158,8 +185,8 @@ metrics                 49        1        4        0        5
 
 ### Common Error Codes
 
-- **401 Unauthorized**: Normal for endpoints requiring authentication (POST /events)
-- **429 Too Many Requests**: Rate limiting is working correctly
+- **401/403**: Unexpected authentication failure; the run fails
+- **429 Too Many Requests**: The zero-budget run fails; reduce load or explicitly set an error budget
 - **500 Internal Server Error**: Indicates server issues that need investigation
 - **503 Service Unavailable**: Server may be overloaded
 
@@ -280,17 +307,10 @@ docker compose -f /opt/togather/src/deploy/docker/docker-compose.yml -f /opt/tog
 
 ### All Requests Failing
 
-If you see 100% failures with 401 errors on POST requests, this is expected - the write operations require authentication. To focus on read-only testing:
-
-```bash
-./deploy/scripts/performance-test.sh --profile medium --read-ratio 1.0 --slot blue
-```
-
-### High Error Rates
-
-- **401 errors**: Normal for authenticated endpoints
-- **429 errors**: Rate limiting is working (adjust `--rps` lower)
-- **500/503 errors**: Server may be overloaded (reduce load or investigate logs)
+Authentication failures are not a successful workload. Read-only mode needs no write
+key. For explicit write mode, check credentials and preflight status before retrying.
+Rate-limit responses fail the default zero-error-budget probe; lower the RPS or choose
+an explicit error budget for a deliberate capacity test. Investigate all 5xx failures.
 
 ### Build Errors
 
@@ -307,7 +327,9 @@ go build -o bin/loadtest ./cmd/loadtest
 Events ingested during a load test persist in the staging database. Clean them up after
 each run to avoid data contamination.
 
-**Preferred workflow** — use a source-tagged API key (see
+A source-tagged key alone does not isolate the current generator: explicit payload
+source URLs override its fallback source. Verify actual attribution before relying on
+source-scoped cleanup (see
 [Load Testing Operations](../operations/load-testing.md) for one-time setup):
 
 ```bash
@@ -323,10 +345,8 @@ server cleanup loadtest --env=staging --legacy --confirm
 
 Use `--dry-run` instead of `--confirm` to preview without deleting.
 
-> **Note:** `example.com` and `images.example.com` URLs are blocked at ingest (HTTP 422)
-> in staging and production. The load tester must use a valid API key to submit events;
-> the fixture data itself uses placeholder domains that pass validation internally via
-> `AllowTestDomains: true` in the load-test harness.
+> **Note:** Fixture inputs are subject to the server's normal validation. A valid API
+> key does not bypass reserved-domain checks or otherwise guarantee successful ingest.
 
 ## Performance Test Data
 
@@ -346,9 +366,9 @@ All generated events use these fixtures to create realistic traffic patterns.
 2. **Monitor first**: Have Grafana open before starting tests
 3. **Compare slots**: Test blue and green independently to validate identical performance
 4. **Check logs**: Review server logs during/after tests for errors
-5. **Realistic ratios**: Use 80/20 or 90/10 read/write ratios for most tests
+5. **Read-only first**: Explicitly select writes only after verifying ownership and cleanup
 6. **Long-running tests**: Use `stress` or `peak` profiles to find memory leaks or resource exhaustion
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-11-12
