@@ -2,11 +2,27 @@ package cmd
 
 import (
 	"bytes"
+	"flag"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 )
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	// These command tests share package-level Cobra commands, flag destinations
+	// and output writers. newRootCommand reparents those same objects, so even
+	// tests in different files must not execute concurrently. Keep the race
+	// detector enabled; serialize this package until commands have per-test
+	// factories. Parsing first also makes an explicit -parallel flag obey this
+	// package's shared-state constraint. Other packages retain their parallelism.
+	if err := flag.Set("test.parallel", "1"); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
 
 func TestRootCommand(t *testing.T) {
 	tests := []struct {
@@ -93,7 +109,8 @@ func TestRootCommandSubcommands(t *testing.T) {
 	}
 }
 
-// newRootCommand creates a fresh root command for testing
+// newRootCommand creates a root around shared package-level subcommands.
+// TestMain serializes this package because those subcommands are not fresh copies.
 func newRootCommand() *cobra.Command {
 	testRootCmd := &cobra.Command{
 		Use:   "server",

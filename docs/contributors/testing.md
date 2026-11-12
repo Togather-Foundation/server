@@ -986,6 +986,14 @@ contract, batch and E2E suites retain their separate gates. A regression in a CL
 such as source repair, scrape sync or load-test cleanup therefore fails the
 standard gate without a separate manual `go test ./cmd/...` invocation.
 
+The `cmd/server/cmd` package serializes its tests in `TestMain`, including tests
+marked `t.Parallel()`: its helpers reparent shared package-level Cobra commands
+and mutate their flags and output writers. This package caps `-parallel` at one
+after parsing test flags, so direct `go test -race ./cmd/...` is safe too. All
+tests still run with the race detector enabled when requested; other packages
+retain their normal parallelism. Independent command factories per test are the
+long-term fix before removing this sequencing constraint.
+
 ### CI Checklist
 
 SEL CI pipeline validates:
