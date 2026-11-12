@@ -166,6 +166,15 @@ dump or credentials in git/tickets. A successful catalog listing alone does not 
 all data blocks are readable. Treat client installation as host/image provisioning,
 not an interactive change to a running application container.
 
+For source repairs, quiesce new work and drain in-flight writers before apply.
+Transaction locks do not invalidate previously resolved source ids; old-slot code can
+reintroduce host rows until stopped. Verify a no-op preview and audit after cutover.
+Use the [source repair runbook](../../docs/integration/scraper.md#reconciling-historical-source-rows)
+and [retrospective](../../docs/operations/source-feed-reconciliation-retrospective.md)
+for the operating sequence and known limitations. For post-deploy load probes, prefer
+read-only traffic unless write isolation and cleanup ownership have been verified;
+inspect status-code distributions even when the wrapper exits zero.
+
 ## Scraper Operations
 
 Operational rules that prevent silent data loss and provenance mistakes:

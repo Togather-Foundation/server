@@ -574,6 +574,15 @@ These commands use `DATABASE_URL` directly and require the complete YAML invento
 (default `configs/sources`; override with `--sources`). The database config inventory
 also protects configured sources. A missing or invalid YAML inventory fails closed.
 
+Before applying a repair, pause new scraping/submission work and drain in-flight
+writers using the environment's maintenance controls. The repair's locks protect its
+transaction; they do not invalidate a source id resolved by an earlier request. That
+request can write a legacy attribution after commit. During blue/green cutover the old
+binary can also recreate host-level rows until it is stopped. Verify a second preview
+and audit again after old writers stop; repeat reconciliation if stale writes appeared.
+There is no automatic repair-wide pause/drain flag. See the
+[cleanup retrospective](../operations/source-feed-reconciliation-retrospective.md).
+
 ```bash
 server source audit --json
 server source reconcile --json-report                  # preview; transaction rolled back

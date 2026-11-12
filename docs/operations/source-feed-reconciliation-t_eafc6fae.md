@@ -2,6 +2,9 @@
 
 Staging repair applied on 2026-11-12 UTC using commit `f815a6bddfda26adbaa6407a565215563db33262` on `fix/t_eafc6fae-source-feed-identity`. The rollback-only preview was independently reviewed before application. Preview and apply counts and all seven trust changes matched exactly.
 
+Process lessons and remaining concerns are documented in the
+[retrospective](source-feed-reconciliation-retrospective.md).
+
 ## Result
 
 | Measure | Before repair | After reconciliation | After orphan cleanup |

@@ -14,6 +14,27 @@ workflow is:
 3. Run the load test with that key.
 4. Clean up after the run with `server cleanup loadtest`.
 
+## Current isolation limitation
+
+An API-key source id is a fallback: an explicit event `source.url` takes precedence.
+The current `RandomEventInput` generator supplies a random source URL for every event,
+so a dedicated key alone does **not** isolate the stock load tester's writes under one
+source. Verify the actual `event_sources.source_id` with a one-event probe before
+relying on source-scoped cleanup. The [source cleanup retrospective](source-feed-reconciliation-retrospective.md)
+records a run where 26 fixture writes created 26 independent sources and required
+individually verified cleanup.
+
+For a routine post-deployment load probe, use the supported read-only option:
+
+```bash
+./deploy/scripts/performance-test.sh --profile light --slot blue --read-ratio 1
+```
+
+This still requests protected endpoints such as `/metrics`; inspect status codes and
+use suitable credentials or an appropriate endpoint selection. Wrapper exit zero is
+not proof of an error-free workload. Write testing needs verified run isolation and
+cleanup ownership, or a disposable database, before sustained traffic.
+
 ## Setup (one-time per environment)
 
 ### 1. Create a load-test source record
@@ -36,8 +57,8 @@ server api-key create loadtest --source-id <source-uuid>
 ```
 
 The `--source-id` flag stores the UUID on the `api_keys` row. The ingest handler
-reads this field and calls `WithSourceID(...)` automatically, so every event ingested
-with this key is linked to the load-test source in `event_sources`.
+reads this field and calls `WithSourceID(...)` as a fallback. An explicit input
+`source.url` overrides it; verify attribution as described above before write testing.
 
 ### 3. Configure the load tester to use the key
 
@@ -51,7 +72,7 @@ Or set the key in your environment and reference it in the shell wrapper:
 
 ```bash
 export LOADTEST_API_KEY=<key>
-./deploy/scripts/performance-test.sh --profile medium --slot blue
+./deploy/scripts/performance-test.sh --profile medium --slot blue --api-key "$LOADTEST_API_KEY"
 ```
 
 ## Running a load test
