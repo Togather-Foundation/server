@@ -126,18 +126,11 @@ jobs:
             > web/sitemap.xml
 
       - name: Run unit tests with race detector
-        run: go test -v -race ./internal/... ./tests/fixtures/
+        run: make test-unit UNIT_TEST_FLAGS=-race
 
       - name: Generate coverage profile
-        # internal/loadtest and internal/telemetry have no test files and import test-only
-        # packages that trigger "go: no such tool covdata" under Go 1.25+ coverage instrumentation.
-        # Exclude them; they are operator tools, not units under test.
-        # ./tests/fixtures/ is listed explicitly because it is not under ./internal/.
-        run: |
-          PKGS="$(go list ./internal/... \
-            | grep -v 'internal/loadtest$\|internal/telemetry$' \
-            | tr '\n' ' ') ./tests/fixtures/"
-          go test -coverprofile=coverage.out -covermode=atomic $PKGS
+        # Use the same package selection and no-test instrumentation workaround as local CI.
+        run: make test-unit-coverage
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4

@@ -801,9 +801,14 @@ internal/
 - Utilities: 70%+
 
 **Excluded from Coverage**:
-- Generated code (SQLc, Huma)
-- Main function and config loading
-- Logging statements
+
+The unit coverage profile instruments packages with Go test files under
+`internal/`, `cmd/` and `tests/fixtures/`. Command packages with tests contribute
+to the same profile as domain code; their coverage is not discarded or given a
+lower threshold. Packages without tests are omitted from this unit profile to
+avoid the Go 1.25+ `covdata` instrumentation failure seen with operator tools.
+Adding tests automatically includes such a package. The separate `make coverage`
+job still measures all packages and enforces the unchanged 35% minimum.
 
 ### Measuring Coverage
 
@@ -863,6 +868,11 @@ go test -v ./internal/domain/events
 
 # Run tests with coverage
 make coverage
+
+# Shared unit/CLI gate used by local CI and GitHub Actions
+make test-unit
+make test-unit UNIT_TEST_FLAGS=-race
+make test-unit-coverage
 
 # Run tests with short flag (skip slow tests)
 go test -short ./...
@@ -954,6 +964,15 @@ func dumpDatabase(t *testing.T, pool *pgxpool.Pool) {
 ### GitHub Actions Workflow
 
 See [GitHub workflows](../../.github/workflows/) for details. *Always* keep the external CI consistent with local Makefil based `make ci`.
+
+The Makefile owns the unit package contract: `./internal/...`, `./cmd/...` and
+`./tests/fixtures/`. GitHub unit CI and release verification call `make test-unit
+UNIT_TEST_FLAGS=-race`; the unit coverage upload calls `make test-unit-coverage`.
+Local `test-ci` (also used by `ci-fast` and `ci`) and `test-ci-race` call that same
+coverage target, with the race detector enabled for the latter. Integration,
+contract, batch and E2E suites retain their separate gates. A regression in a CLI
+such as source repair, scrape sync or load-test cleanup therefore fails the
+standard gate without a separate manual `go test ./cmd/...` invocation.
 
 ### CI Checklist
 

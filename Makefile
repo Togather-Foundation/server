@@ -1,5 +1,11 @@
 .PHONY: help build test test-ci test-ci-race test-ci-parallel lint lint-debug-cold lint-openapi lint-yaml lint-js lint-docs lint-shell vulncheck ci ci-fast fmt clean run dev serve serve-stop install-tools install-pyshacl test-contracts validate-shapes sqlc sqlc-generate sqlc-check migrate-up migrate-down migrate-river coverage-check docker-up docker-db docker-down docker-logs docker-rebuild docker-clean docker-compose-lint test-clean db-setup db-init db-check setup deploy-package test-local test-staging test-staging-smoke test-production-smoke test-remote agent-clean e2e e2e-pytest webfiles webfiles-bootstrap release release-check release-dry-run deploy-staging deploy-production rollback-staging rollback-production scrape-staging scrape-staging-t0 staging-reset-scrape remote-staging remote-production
 
+.PHONY: test-unit test-unit-coverage
+
+# Shared local/CI/release unit package contract. CLI regressions belong in every gate.
+UNIT_TEST_ROOTS := ./internal/... ./cmd/... ./tests/fixtures/
+UNIT_TEST_FLAGS ?=
+
 # Agent-aware command runner
 # Set AGENT=1 to capture verbose output to .agent-output/ and show only summaries.
 # Supports parallel sessions via AGENT_SESSION=<id>.
@@ -155,12 +161,22 @@ test:
 	@echo "Running tests..."
 	@go test ./...
 
+# Run all unit/CLI tests, including packages without coverage instrumentation.
+test-unit:
+	@$(RUN) go test -v $(UNIT_TEST_FLAGS) $(UNIT_TEST_ROOTS)
+
+# Only instrument packages that contain tests. No-test operator entrypoints can
+# trigger "go: no such tool covdata" on Go 1.25+; new tests opt in automatically.
+test-unit-coverage:
+	@set -e; PKGS=$$(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}' $(UNIT_TEST_ROOTS)); \
+	$(RUN) go test -v $(UNIT_TEST_FLAGS) -coverprofile=coverage.out -covermode=atomic $$PKGS
+
 # Run all test suites (fast, no race detector — use for local pre-push checks)
 test-ci:
 	@echo "Running all test suites..."
 	@echo ""
 	@echo "==> Running unit tests..."
-	@$(RUN) go test -v -coverprofile=coverage.out $(shell go list ./internal/... | grep -v 'internal/loadtest$$\|internal/telemetry$$') ./tests/fixtures/
+	@$(MAKE) test-unit-coverage
 	@echo ""
 	@$(MAKE) test-ci-parallel
 	@echo ""
@@ -232,7 +248,7 @@ test-ci-race:
 	@echo "Running tests exactly as CI does (with race detector)..."
 	@echo ""
 	@echo "==> Running unit tests..."
-	@$(RUN) go test -v -race -coverprofile=coverage.out $(shell go list ./internal/... | grep -v 'internal/loadtest$$\|internal/telemetry$$') ./tests/fixtures/
+	@$(MAKE) test-unit-coverage UNIT_TEST_FLAGS="$(UNIT_TEST_FLAGS) -race"
 	@echo ""
 	@echo "==> Running contract tests..."
 	@if ! command -v pyshacl > /dev/null 2>&1; then \
