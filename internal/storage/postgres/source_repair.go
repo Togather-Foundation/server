@@ -419,7 +419,7 @@ func registerAttributedRepairFeeds(ctx context.Context, repo *EventRepository, c
 					if policy != nil && repairPolicy(*policy) != repairPolicy(cfg) {
 						reason = "conflicting named config owner policies"
 					}
-					if !sourcePolicyMatches(owner.TrustLevel, owner.LicenseUrl, owner.LicenseType, candidate) && !(useConfigTrust && sourcePolicyMatches(int32(candidate.TrustLevel), owner.LicenseUrl, owner.LicenseType, candidate)) {
+					if !sourcePolicyMatches(owner.TrustLevel, owner.LicenseUrl, owner.LicenseType, candidate) && (!useConfigTrust || !sourcePolicyMatches(int32(candidate.TrustLevel), owner.LicenseUrl, owner.LicenseType, candidate)) {
 						reason = "named owner source policy differs from configured policy"
 					}
 					if policy == nil {
