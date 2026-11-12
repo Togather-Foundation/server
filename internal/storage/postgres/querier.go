@@ -495,6 +495,7 @@ type Querier interface {
 	// Insert or update a scraper source by name (used by 'server scrape sync').
 	UpsertScraperSource(ctx context.Context, arg UpsertScraperSourceParams) (UpsertScraperSourceRow, error)
 	UpsertSourceWithoutURL(ctx context.Context, arg UpsertSourceWithoutURLParams) (string, error)
+	UseConfiguredSourceTrust(ctx context.Context, arg UseConfiguredSourceTrustParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

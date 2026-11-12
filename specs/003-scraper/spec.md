@@ -68,9 +68,18 @@ The schema transition retains historical rows. Explicit reconciliation defaults 
 rolled-back preview and reports counts and SQL. Apply preserves payloads, event dates,
 configured trust/license and scraper suppression. Duplicate live attributions are
 consolidated only after archiving their complete attribution and source metadata;
-archive counts make history preservation accountable. Ambiguous/colliding field history
+archive counts make history preservation accountable. Attribution-only feeds,
+including sitemap detail URLs, register under their own existing URL when configured
+ownership or agreed historical trust/license establishes policy. Ambiguous operational
+settings and ownership conflicts remain explicit per-feed exceptions. Ambiguous/colliding field history
 and policy conflicts are retained and reported. A second run makes no further safe
-moves or archives. Orphan cleanup protects configured rows from YAML and DB inventories,
+moves or archives. An explicit `--use-config-trust` repair may adopt unambiguous configured trust only
+when the license agrees, reporting source id/feed/name and old/new trust. Default
+repair preserves policy conflicts. The opt-in must not change licenses or shared
+catch-all policy; preview rollback, metadata preservation and second-run no-op require
+tests. Retain a verified snapshot and the report before apply.
+
+Orphan cleanup protects configured rows from YAML and DB inventories,
 all references and all nondefault operator metadata; reports distinguish configured
 idle rows, orphans and metadata protection. Test fixtures must demonstrate these
 invariants before staging repair. Operational evidence belongs in the ticket handoff.

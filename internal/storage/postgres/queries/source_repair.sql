@@ -53,6 +53,12 @@ AND EXISTS (
 UPDATE event_sources SET source_id=sqlc.arg('target_source')
 WHERE id=sqlc.arg('attribution_id');
 
+-- name: UseConfiguredSourceTrust :execrows
+UPDATE sources SET trust_level=sqlc.arg('new_trust')
+WHERE id=sqlc.arg('source_id') AND feed_url=sqlc.arg('feed_url')::text
+  AND trust_level=sqlc.arg('old_trust')
+  AND license_url=sqlc.arg('license_url') AND license_type=sqlc.arg('license_type');
+
 -- name: MoveSourceRepairFields :execrows
 UPDATE field_provenance fp SET source_id=sqlc.arg('target_source')
 WHERE fp.event_id=sqlc.arg('event_id') AND fp.source_id=sqlc.arg('old_source')

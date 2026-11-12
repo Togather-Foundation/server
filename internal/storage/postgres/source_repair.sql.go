@@ -378,3 +378,34 @@ func (q *Queries) MoveSourceRepairFields(ctx context.Context, arg MoveSourceRepa
 	}
 	return result.RowsAffected(), nil
 }
+
+const useConfiguredSourceTrust = `-- name: UseConfiguredSourceTrust :execrows
+UPDATE sources SET trust_level=$1
+WHERE id=$2 AND feed_url=$3::text
+  AND trust_level=$4
+  AND license_url=$5 AND license_type=$6
+`
+
+type UseConfiguredSourceTrustParams struct {
+	NewTrust    int32       `json:"new_trust"`
+	SourceID    pgtype.UUID `json:"source_id"`
+	FeedUrl     string      `json:"feed_url"`
+	OldTrust    int32       `json:"old_trust"`
+	LicenseUrl  string      `json:"license_url"`
+	LicenseType string      `json:"license_type"`
+}
+
+func (q *Queries) UseConfiguredSourceTrust(ctx context.Context, arg UseConfiguredSourceTrustParams) (int64, error) {
+	result, err := q.db.Exec(ctx, useConfiguredSourceTrust,
+		arg.NewTrust,
+		arg.SourceID,
+		arg.FeedUrl,
+		arg.OldTrust,
+		arg.LicenseUrl,
+		arg.LicenseType,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}

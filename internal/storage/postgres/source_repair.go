@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
+	"strings"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -23,8 +25,17 @@ type SourceRepairConfig struct {
 }
 
 type SourceRepairOptions struct {
-	Apply   bool
-	Configs []SourceRepairConfig
+	Apply          bool
+	Configs        []SourceRepairConfig
+	UseConfigTrust bool
+}
+
+type SourceTrustChange struct {
+	SourceID string `json:"sourceId"`
+	Name     string `json:"name"`
+	Feed     string `json:"feed"`
+	OldTrust int32  `json:"oldTrust"`
+	NewTrust int32  `json:"newTrust"`
 }
 
 type SourceRepairCounts struct {
@@ -41,19 +52,21 @@ type SourceRepairCounts struct {
 }
 
 type SourceRepairReport struct {
-	AttributionsArchived int64              `json:"attributionsArchived"`
-	Applied              bool               `json:"applied"`
-	Before               SourceRepairCounts `json:"before"`
-	After                SourceRepairCounts `json:"after"`
-	AttributionsMoved    int64              `json:"attributionsMoved"`
-	FieldsMoved          int64              `json:"fieldsMoved"`
-	ChangesMoved         int64              `json:"changesMoved"`
-	ConfiguredIdle       int                `json:"configuredIdle"`
-	OrphanedIdle         int                `json:"orphanedIdle"`
-	MetadataProtected    int                `json:"metadataProtected"`
-	Deleted              int64              `json:"deleted"`
-	Issues               []string           `json:"issues"`
-	Query                string             `json:"query"`
+	TrustChanges         []SourceTrustChange `json:"trustChanges"`
+	TrustChangesCount    int                 `json:"trustChangesCount"`
+	AttributionsArchived int64               `json:"attributionsArchived"`
+	Applied              bool                `json:"applied"`
+	Before               SourceRepairCounts  `json:"before"`
+	After                SourceRepairCounts  `json:"after"`
+	AttributionsMoved    int64               `json:"attributionsMoved"`
+	FieldsMoved          int64               `json:"fieldsMoved"`
+	ChangesMoved         int64               `json:"changesMoved"`
+	ConfiguredIdle       int                 `json:"configuredIdle"`
+	OrphanedIdle         int                 `json:"orphanedIdle"`
+	MetadataProtected    int                 `json:"metadataProtected"`
+	Deleted              int64               `json:"deleted"`
+	Issues               []string            `json:"issues"`
+	Query                string              `json:"query"`
 }
 
 func sourceRepairConfigs(ctx context.Context, q *Queries, supplied []SourceRepairConfig) ([]SourceRepairConfig, error) {
@@ -162,9 +175,7 @@ func InspectSourceRegistry(ctx context.Context, pool *pgxpool.Pool, options Sour
 }
 
 func repairPolicy(cfg SourceRepairConfig) string {
-	warnings := append([]string{}, cfg.SuppressReviewWarnings...)
-	sort.Strings(warnings)
-	data, _ := json.Marshal([]any{cfg.TrustLevel, sourceLicenseKey(cfg.License), warnings})
+	data, _ := json.Marshal([]any{cfg.TrustLevel, sourceLicenseKey(cfg.License)})
 	return string(data)
 }
 
@@ -187,7 +198,7 @@ func ReconcileSources(ctx context.Context, pool *pgxpool.Pool, options SourceRep
 	if err != nil {
 		return nil, err
 	}
-	report := &SourceRepairReport{Applied: options.Apply, Issues: []string{}, Query: moveSourceRepairAttribution + "\n" + archiveSourceRepairAttribution + "\n" + deleteArchivedSourceRepairAttribution + "\n" + moveSourceRepairFields + "\n" + countSourceRepairRetainedFields + "\n" + moveSourceRepairChanges}
+	report := &SourceRepairReport{Applied: options.Apply, Issues: []string{}, TrustChanges: []SourceTrustChange{}, Query: useConfiguredSourceTrust + "\n" + moveSourceRepairAttribution + "\n" + archiveSourceRepairAttribution + "\n" + deleteArchivedSourceRepairAttribution + "\n" + moveSourceRepairFields + "\n" + countSourceRepairRetainedFields + "\n" + moveSourceRepairChanges}
 	report.Before, err = sourceRepairSnapshot(ctx, q, configs)
 	if err != nil {
 		return nil, err
@@ -238,9 +249,17 @@ func ReconcileSources(ctx context.Context, pool *pgxpool.Pool, options SourceRep
 		if row.Source.FeedUrl.Valid && !blockedFeeds[row.Source.FeedUrl.String] {
 			if group := byFeed[row.Source.FeedUrl.String]; len(group) > 0 {
 				params := events.SourceParamsForFeed(group[0].Name, row.Source.FeedUrl.String, group[0].License, group[0].TrustLevel)
-				if !sourcePolicyMatches(row.Source.TrustLevel, row.Source.LicenseUrl, row.Source.LicenseType, params) {
+				matches, change, trustErr := useConfiguredRepairTrust(ctx, q, row.Source, params, options.UseConfigTrust)
+				if trustErr != nil {
+					return nil, trustErr
+				}
+				if !matches {
 					report.Issues = append(report.Issues, "canonical policy differs from configured feed; retained unchanged: "+row.Source.FeedUrl.String)
 					continue
+				}
+				if change != nil {
+					report.TrustChanges = append(report.TrustChanges, *change)
+					report.TrustChangesCount++
 				}
 			}
 			targets[row.Source.FeedUrl.String] = row.Source.ID
@@ -249,6 +268,9 @@ func ReconcileSources(ctx context.Context, pool *pgxpool.Pool, options SourceRep
 	attrs, err := q.ListSourceRepairAttributions(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list repair attributions: %w", err)
+	}
+	if err = registerAttributedRepairFeeds(ctx, repo, configs, registry, attrs, targets, blockedFeeds, report, options.UseConfigTrust); err != nil {
+		return nil, err
 	}
 	// Compute event+old-source decisions before moving anything. Audit records
 	// have no feed URL: only an unambiguous single target can safely replace it.
@@ -343,6 +365,194 @@ func ReconcileSources(ctx context.Context, pool *pgxpool.Pool, options SourceRep
 		}
 	}
 	return report, nil
+}
+
+// Sitemap/detail scrapers attribute the fetched detail URL, which can differ
+// from the configured listing URL. Recover ownership from historical explicit
+// config labels or an exact full-feed row, never from a shared hostname.
+func registerAttributedRepairFeeds(ctx context.Context, repo *EventRepository, configs []SourceRepairConfig, registry []ListSourceRepairRegistryRow, attrs []ListSourceRepairAttributionsRow, targets map[string]pgtype.UUID, blocked map[string]bool, report *SourceRepairReport, useConfigTrust bool) error {
+	byName := map[string][]SourceRepairConfig{}
+	for _, cfg := range configs {
+		byName[cfg.Name] = append(byName[cfg.Name], cfg)
+	}
+	sources := map[pgtype.UUID]Source{}
+	for _, row := range registry {
+		sources[row.Source.ID] = row.Source
+	}
+	byFeed := map[string][]EventSource{}
+	feedsBySource := map[pgtype.UUID]map[string]bool{}
+	for _, item := range attrs {
+		a := item.EventSource
+		feed := events.NormalizeFeedURL(a.SourceUrl)
+		byFeed[feed] = append(byFeed[feed], a)
+		if feedsBySource[a.SourceID] == nil {
+			feedsBySource[a.SourceID] = map[string]bool{}
+		}
+		feedsBySource[a.SourceID][feed] = true
+	}
+	feeds := make([]string, 0, len(byFeed))
+	for feed := range byFeed {
+		feeds = append(feeds, feed)
+	}
+	sort.Strings(feeds)
+	for _, feed := range feeds {
+		parsed, parseErr := url.Parse(feed)
+		valid := parseErr == nil && parsed.Host != "" && (parsed.Scheme == "https" || parsed.Scheme == "http")
+		if _, ok := targets[feed]; ok && valid {
+			continue
+		}
+		reason := ""
+		var lookup *events.SourceLookupParams
+		switch {
+		case !valid:
+			delete(targets, feed)
+			reason = "invalid absolute HTTP(S) URL"
+		case blocked[feed]:
+			reason = "conflicting configured feed policies"
+		default:
+			var policy *SourceRepairConfig
+			for _, attribution := range byFeed[feed] {
+				owner := sources[attribution.SourceID]
+				for _, cfg := range byName[owner.Name] {
+					candidate := events.SourceParamsForFeed(cfg.Name, feed, cfg.License, cfg.TrustLevel)
+					candidate.SourceType = owner.SourceType
+					if policy != nil && repairPolicy(*policy) != repairPolicy(cfg) {
+						reason = "conflicting named config owner policies"
+					}
+					if !sourcePolicyMatches(owner.TrustLevel, owner.LicenseUrl, owner.LicenseType, candidate) && !(useConfigTrust && sourcePolicyMatches(int32(candidate.TrustLevel), owner.LicenseUrl, owner.LicenseType, candidate)) {
+						reason = "named owner source policy differs from configured policy"
+					}
+					if policy == nil {
+						copy := cfg
+						policy = &copy
+						lookup = &candidate
+					}
+				}
+			}
+			// An exact legacy feed URL is evidence only when it is a full path
+			// and the row has never attributed a different normalized feed.
+			if policy == nil && parsed.Path != "" && parsed.Path != "/" {
+				for _, row := range registry {
+					owner := row.Source
+					ownedFeeds := feedsBySource[owner.ID]
+					if owner.FeedUrl.Valid || events.NormalizeFeedURL(owner.BaseUrl.String) != feed || len(ownedFeeds) > 1 || (len(ownedFeeds) == 1 && !ownedFeeds[feed]) {
+						continue
+					}
+					candidate := events.SourceLookupParams{Name: owner.Name, SourceType: owner.SourceType, BaseURL: feed, FeedURL: feed, TrustLevel: int(owner.TrustLevel), LicenseURL: owner.LicenseUrl, LicenseType: owner.LicenseType}
+					if lookup != nil && !sourcePolicyMatches(owner.TrustLevel, owner.LicenseUrl, owner.LicenseType, *lookup) {
+						reason = "conflicting exact-feed legacy source policies"
+					}
+					if lookup == nil {
+						lookup = &candidate
+					}
+				}
+			}
+			if lookup == nil && reason == "" {
+				// Without config ownership, the exact attribution URL still supplies
+				// identity when every contributor agrees on policy. Shared operational
+				// settings cannot safely be assigned to one feed and require a decision.
+				contributors := map[pgtype.UUID]bool{}
+				for _, attribution := range byFeed[feed] {
+					contributors[attribution.SourceID] = true
+				}
+				for _, row := range registry {
+					owner := row.Source
+					if !contributors[owner.ID] {
+						continue
+					}
+					operational := strings.TrimSpace(string(owner.Config))
+					if (operational != "" && operational != "null" && operational != "{}") || owner.RequiresAuthentication.Bool || len(owner.ApiKeyEncrypted) > 0 || owner.RateLimitRequests.Valid || owner.RateLimitWindowSeconds.Valid || owner.ApiEndpoint.Valid {
+						reason = "unconfigured contributor has operational config/auth/rate-limit settings with no safe per-feed owner"
+					}
+					candidate := events.SourceLookupParams{Name: owner.Name, SourceType: owner.SourceType, BaseURL: feed, FeedURL: feed, TrustLevel: int(owner.TrustLevel), LicenseURL: owner.LicenseUrl, LicenseType: owner.LicenseType}
+					if lookup != nil && !sourcePolicyMatches(owner.TrustLevel, owner.LicenseUrl, owner.LicenseType, *lookup) {
+						reason = "conflicting unconfigured attribution source policies"
+					}
+					if lookup == nil {
+						lookup = &candidate
+					}
+					if row.MetadataProtected {
+						report.Issues = append(report.Issues, "original source metadata retained on "+owner.ID.String()+" while resolving feed "+feed)
+					}
+				}
+				if lookup == nil && reason == "" {
+					reason = "no attributed source row supplies an ownership policy"
+				}
+			}
+		}
+		if reason == "" && lookup != nil {
+			// A savepoint lets a conflicted legacy registry row remain explicitly
+			// unresolved without poisoning the surrounding repair transaction.
+			savepoint, err := repo.tx.Begin(ctx)
+			if err != nil {
+				return fmt.Errorf("begin detail feed registration: %w", err)
+			}
+			lookup.RequirePolicyMatch = !useConfigTrust
+			resolver := &EventRepository{pool: repo.pool, tx: savepoint, logger: repo.logger}
+			id, resolveErr := resolver.GetOrCreateSource(ctx, *lookup)
+			if resolveErr != nil {
+				if err = savepoint.Rollback(ctx); err != nil {
+					return fmt.Errorf("rollback detail feed registration: %w", err)
+				}
+				reason = "registry rejected explicit ownership: " + resolveErr.Error()
+			} else {
+				var target pgtype.UUID
+				if err = target.Scan(id); err != nil {
+					_ = savepoint.Rollback(ctx)
+					return fmt.Errorf("parse detail source ID: %w", err)
+				}
+				policy, policyErr := New(savepoint).GetCanonicalSourcePolicy(ctx, feed)
+				if policyErr != nil {
+					_ = savepoint.Rollback(ctx)
+					return fmt.Errorf("read detail source policy: %w", policyErr)
+				}
+				matches, change, trustErr := useConfiguredRepairTrust(ctx, New(savepoint), Source{ID: target, Name: lookup.Name, FeedUrl: pgtype.Text{String: feed, Valid: true}, TrustLevel: policy.TrustLevel, LicenseUrl: policy.LicenseUrl, LicenseType: policy.LicenseType}, *lookup, useConfigTrust && len(byName[lookup.Name]) > 0)
+				if trustErr != nil {
+					_ = savepoint.Rollback(ctx)
+					return trustErr
+				}
+				if !matches {
+					if err = savepoint.Rollback(ctx); err != nil {
+						return fmt.Errorf("rollback detail policy conflict: %w", err)
+					}
+					reason = "canonical source license or policy differs from the explicit owner"
+					report.Issues = append(report.Issues, fmt.Sprintf("unmapped feed %q (%d attribution(s)): %s", feed, len(byFeed[feed]), reason))
+					continue
+				}
+				if err = savepoint.Commit(ctx); err != nil {
+					return fmt.Errorf("commit detail feed registration: %w", err)
+				}
+				if change != nil {
+					report.TrustChanges = append(report.TrustChanges, *change)
+					report.TrustChangesCount++
+				}
+				targets[feed] = target
+			}
+		}
+		if reason != "" {
+			report.Issues = append(report.Issues, fmt.Sprintf("unmapped feed %q (%d attribution(s)): %s", feed, len(byFeed[feed]), strings.TrimSpace(reason)))
+		}
+	}
+	return nil
+}
+
+// Opt-in trust reconciliation touches a canonical row only, with an unchanged
+// license. Shared legacy catchalls never have their trust changed in place.
+func useConfiguredRepairTrust(ctx context.Context, q *Queries, source Source, desired events.SourceLookupParams, enabled bool) (bool, *SourceTrustChange, error) {
+	if sourcePolicyMatches(source.TrustLevel, source.LicenseUrl, source.LicenseType, desired) {
+		return true, nil, nil
+	}
+	if !enabled || !source.FeedUrl.Valid || source.FeedUrl.String != events.NormalizeFeedURL(desired.FeedURL) || !sourcePolicyMatches(int32(desired.TrustLevel), source.LicenseUrl, source.LicenseType, desired) {
+		return false, nil, nil
+	}
+	n, err := q.UseConfiguredSourceTrust(ctx, UseConfiguredSourceTrustParams{NewTrust: int32(desired.TrustLevel), SourceID: source.ID, FeedUrl: source.FeedUrl.String, OldTrust: source.TrustLevel, LicenseUrl: source.LicenseUrl, LicenseType: source.LicenseType})
+	if err != nil {
+		return false, nil, fmt.Errorf("use configured source trust: %w", err)
+	}
+	if n != 1 {
+		return false, nil, fmt.Errorf("use configured source trust for %s: canonical source policy changed", source.ID.String())
+	}
+	return true, &SourceTrustChange{SourceID: source.ID.String(), Name: source.Name, Feed: source.FeedUrl.String, OldTrust: source.TrustLevel, NewTrust: int32(desired.TrustLevel)}, nil
 }
 
 // PruneEmptySources protects configured feeds and every row with nondefault

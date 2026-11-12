@@ -3,8 +3,10 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"github.com/Togather-Foundation/server/internal/scraper"
 	"github.com/Togather-Foundation/server/internal/storage/postgres"
@@ -23,12 +25,38 @@ func init() {
 }
 
 type syncResult struct {
-	SourcesFound int `json:"sources_found"`
-	Created      int `json:"created"`
-	Updated      int `json:"updated"`
-	Total        int `json:"total"`
-	Warnings     int `json:"warnings"`
-	Errors       int `json:"errors"`
+	SourcesFound int               `json:"sources_found"`
+	Created      int               `json:"created"`
+	Updated      int               `json:"updated"`
+	Total        int               `json:"total"`
+	Warnings     int               `json:"warnings"`
+	Errors       int               `json:"errors"`
+	ErrorDetails []syncErrorDetail `json:"error_details,omitempty"`
+}
+
+type syncErrorDetail struct {
+	Name  string `json:"name"`
+	Error string `json:"error"`
+}
+
+var syncDiagnosticURL = regexp.MustCompile(`(?:https?|postgres(?:ql)?)://[^\s"'<>]+`)
+
+// Preserve the actionable cause while excluding URL credentials and query tokens
+// that can appear in a wrapped feed/connection error.
+func newSyncErrorDetail(name string, err error) syncErrorDetail {
+	message := syncDiagnosticURL.ReplaceAllStringFunc(err.Error(), func(raw string) string {
+		parsed, parseErr := url.Parse(raw)
+		if parseErr != nil {
+			return "[redacted URL]"
+		}
+		parsed.User = nil
+		parsed.RawQuery = ""
+		parsed.ForceQuery = false
+		parsed.Fragment = ""
+		parsed.RawFragment = ""
+		return parsed.String()
+	})
+	return syncErrorDetail{Name: name, Error: message}
 }
 
 // scrapeSyncCmd upserts all YAML source configs into the scraper_sources DB table.
@@ -46,6 +74,7 @@ Examples:
 		ctx := cmd.Context()
 		dir := scrapeSourceDir
 		var created, updated, warnings, errors int
+		var errorDetails []syncErrorDetail
 
 		configs, err := scraper.LoadSourceConfigs(dir, zerolog.Nop())
 		loadErr := err
@@ -97,6 +126,7 @@ Examples:
 			result, upsertErr := repo.SyncConfig(ctx, params)
 			if upsertErr != nil {
 				errors++
+				errorDetails = append(errorDetails, newSyncErrorDetail(cfg.Name, upsertErr))
 				if !syncJSON {
 					fmt.Fprintf(os.Stderr, "Warning: upsert %q: %v\n", cfg.Name, upsertErr)
 				}
@@ -119,6 +149,7 @@ Examples:
 				Total:        total,
 				Warnings:     warnings,
 				Errors:       errors,
+				ErrorDetails: errorDetails,
 			})
 			if jsonErr != nil {
 				return fmt.Errorf("marshal JSON output: %w", jsonErr)

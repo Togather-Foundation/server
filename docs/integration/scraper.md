@@ -579,6 +579,7 @@ server source audit --json
 server source reconcile --json-report                  # preview; transaction rolled back
 server source reconcile --json-report --confirm        # apply after inspecting preview
 server source reconcile --json-report                  # verify no further moves
+server source reconcile --json-report --use-config-trust # preview explicit trust-only repair
 server source prune-empty --json-report                # preview safe orphan cleanup
 server source prune-empty --json-report --confirm      # retire eligible orphans
 ```
@@ -588,8 +589,24 @@ attribution ids, URLs, source event ids and payloads. It reports before/after co
 and the SQL used. It registers configured feeds with their trust/license policy;
 conflicting policies among configs sharing one normalized feed are reported and
 left unchanged. Destination policy mismatches are also retained for operator review.
+`scrape sync --json` includes per-config `error_details` when registration fails,
+with URL credentials/query tokens redacted. A trust mismatch requires an explicit
+operator decision: `source reconcile --use-config-trust` previews adoption of the
+unambiguous configured trust value, and adding `--confirm` applies it. This option
+records source id, feed, name and old/new trust in the report and changes only trust;
+license disagreement remains unresolved. Take a verified full database snapshot and
+retain the report before applying. Shared host catch-alls are not changed in place.
+
 Scraper suppression settings are never rewritten. Field provenance and change records
 move only when the event/old-source pair identifies one destination.
+
+Sitemap attributions can identify individual detail-page feeds even when a config names
+a listing URL. Reconciliation registers the stored detail URL itself, using unambiguous
+configured ownership or exact legacy feed evidence. For unconfigured feeds, all
+contributing rows must agree on the stored trust/license policy. It never infers feed
+ownership from a shared host or copies catch-all credentials/config across feeds.
+Ambiguous operational settings or conflicting policies leave a per-feed unresolved
+report with attribution counts and a reason; original rows and metadata remain.
 
 When moving an attribution would collide with an existing
 `(event_id, source_id, source_url)` row, reconciliation archives the complete original

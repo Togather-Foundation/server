@@ -16,12 +16,14 @@ import (
 var sourceRepairDirectory string
 var sourceRepairApply bool
 var sourceRepairJSON bool
+var sourceRepairUseConfigTrust bool
 
 func init() {
 	sourceCmd.PersistentFlags().StringVar(&sourceRepairDirectory, "sources", "configs/sources", "YAML source directory (required for safe config protection)")
 	sourceCmd.PersistentFlags().BoolVar(&sourceRepairJSON, "json-report", false, "Output reconciliation or prune report as JSON, including SQL")
 	cmd := &cobra.Command{Use: "reconcile", Short: "Repoint historical source provenance to canonical feeds (dry run by default)", RunE: runSourceReconcile}
 	cmd.Flags().BoolVar(&sourceRepairApply, "confirm", false, "Commit reconciliation (without this flag all changes are rolled back)")
+	cmd.Flags().BoolVar(&sourceRepairUseConfigTrust, "use-config-trust", false, "Explicitly reconcile canonical trust to agreed config trust when licenses match; report each old/new value")
 	sourceCmd.AddCommand(cmd)
 }
 
@@ -54,7 +56,7 @@ func runSourceReconcile(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer pool.Close()
-	report, err := postgres.ReconcileSources(ctx, pool, postgres.SourceRepairOptions{Apply: sourceRepairApply, Configs: configs})
+	report, err := postgres.ReconcileSources(ctx, pool, postgres.SourceRepairOptions{Apply: sourceRepairApply, Configs: configs, UseConfigTrust: sourceRepairUseConfigTrust})
 	if err != nil {
 		return err
 	}
@@ -86,6 +88,14 @@ func printSourceRepairReport(cmd *cobra.Command, report *postgres.SourceRepairRe
 	}
 	for _, issue := range report.Issues {
 		if _, err = fmt.Fprintf(out, "Retained: %s\n", issue); err != nil {
+			return err
+		}
+	}
+	if _, err = fmt.Fprintf(out, "Configured trust changes: %d\n", report.TrustChangesCount); err != nil {
+		return err
+	}
+	for _, change := range report.TrustChanges {
+		if _, err = fmt.Fprintf(out, "Configured trust: %s (%s), feed %s: %d -> %d\n", change.Name, change.SourceID, change.Feed, change.OldTrust, change.NewTrust); err != nil {
 			return err
 		}
 	}
