@@ -125,9 +125,8 @@ test_health_endpoint() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 1/${TESTS_TOTAL}: Health endpoint - GET ${BASE_URL}/health"
     
-    local response=$(http_get "${BASE_URL}/health" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/health" 200); then
         # Validate JSON structure
         if echo "$response" | jq -e '.status' >/dev/null 2>&1; then
             local status=$(echo "$response" | jq -r '.status')
@@ -176,9 +175,8 @@ test_version_endpoint() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 2/${TESTS_TOTAL}: Version endpoint - GET ${BASE_URL}/version"
     
-    local response=$(http_get "${BASE_URL}/version" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/version" 200); then
         # Validate JSON structure
         if echo "$response" | jq -e '.version' >/dev/null 2>&1; then
             local version=$(echo "$response" | jq -r '.version')
@@ -193,9 +191,9 @@ test_version_endpoint() {
             return 1
         fi
     else
-        log "WARN" "Version endpoint not available (may not be implemented yet)"
-        ((TESTS_PASSED++)) || true
-        return 0
+        log "FAIL" "Version endpoint not available or returned an unexpected status"
+        ((TESTS_FAILED++)) || true
+        return 1
     fi
 }
 
@@ -203,9 +201,8 @@ test_database_connectivity() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 3/${TESTS_TOTAL}: Database connectivity check"
     
-    local response=$(http_get "${BASE_URL}/health" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/health" 200); then
         # Check database check status
         local db_status=$(echo "$response" | jq -r '.checks.database.status // "unknown"')
         if [[ "$db_status" == "pass" ]]; then
@@ -235,9 +232,8 @@ test_migration_status() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 4/${TESTS_TOTAL}: Database migration status check"
     
-    local response=$(http_get "${BASE_URL}/health" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/health" 200); then
         # Check migrations check status
         local migrations_status=$(echo "$response" | jq -r '.checks.migrations.status // "unknown"')
         if [[ "$migrations_status" == "pass" ]]; then
@@ -276,9 +272,8 @@ test_http_endpoint_check() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 5/${TESTS_TOTAL}: HTTP endpoint health check"
     
-    local response=$(http_get "${BASE_URL}/health" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/health" 200); then
         # Check http_endpoint check status
         local http_status=$(echo "$response" | jq -r '.checks.http_endpoint.status // "unknown"')
         if [[ "$http_status" == "pass" ]]; then
@@ -372,10 +367,9 @@ test_response_time() {
     log "INFO" "Test 8/${TESTS_TOTAL}: Response time check (threshold: ${MAX_RESPONSE_TIME_MS}ms)"
     
     local start_time=$(date +%s%N)
-    local response=$(http_get "${BASE_URL}/health" 200)
-    local end_time=$(date +%s%N)
-    
-    if [[ $? -eq 0 ]]; then
+    local response end_time
+    if response=$(http_get "${BASE_URL}/health" 200); then
+        end_time=$(date +%s%N)
         local duration_ms=$(( (end_time - start_time) / 1000000 ))
         
         if [[ $duration_ms -lt $MAX_RESPONSE_TIME_MS ]]; then
@@ -398,9 +392,8 @@ test_events_api() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 9/${TESTS_TOTAL}: Events API endpoint - GET ${BASE_URL}/api/v1/events"
     
-    local response=$(http_get "${BASE_URL}/api/v1/events" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/api/v1/events" 200); then
         # Validate response structure
         if echo "$response" | jq -e '.items' >/dev/null 2>&1; then
             local count=$(echo "$response" | jq '.items | length')
@@ -408,9 +401,9 @@ test_events_api() {
             ((TESTS_PASSED++)) || true
             return 0
         else
-            log "WARN" "Events API returned unexpected format (may be empty)"
-            ((TESTS_PASSED++)) || true
-            return 0
+            log "FAIL" "Events API returned unexpected format (expected 'items' array)"
+            ((TESTS_FAILED++)) || true
+            return 1
         fi
     else
         log "FAIL" "Events API not accessible"
@@ -423,9 +416,8 @@ test_places_api() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 10/${TESTS_TOTAL}: Places API endpoint - GET ${BASE_URL}/api/v1/places"
     
-    local response=$(http_get "${BASE_URL}/api/v1/places" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/api/v1/places" 200); then
         # Validate response structure (SEL APIs use 'items' not 'data')
         if echo "$response" | jq -e '.items' >/dev/null 2>&1; then
             local count=$(echo "$response" | jq '.items | length')
@@ -449,9 +441,8 @@ test_organizations_api() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 11/${TESTS_TOTAL}: Organizations API endpoint - GET ${BASE_URL}/api/v1/organizations"
     
-    local response=$(http_get "${BASE_URL}/api/v1/organizations" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/api/v1/organizations" 200); then
         # Validate response structure (SEL APIs use 'items' not 'data')
         if echo "$response" | jq -e '.items' >/dev/null 2>&1; then
             local count=$(echo "$response" | jq '.items | length')
@@ -475,9 +466,8 @@ test_openapi_schema() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 12/${TESTS_TOTAL}: OpenAPI schema endpoint - GET ${BASE_URL}/api/v1/openapi.json"
     
-    local response=$(http_get "${BASE_URL}/api/v1/openapi.json" 200 2>/dev/null || echo "")
-    
-    if [[ -n "$response" && $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/api/v1/openapi.json" 200) && [[ -n "$response" ]]; then
         # Validate it's valid JSON with openapi field
         if echo "$response" | jq -e '.openapi' >/dev/null 2>&1; then
             local openapi_version=$(echo "$response" | jq -r '.openapi')
@@ -505,9 +495,8 @@ test_admin_ui() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 13/${TESTS_TOTAL}: Admin UI login page - GET ${BASE_URL}/admin/login"
     
-    local response=$(http_get "${BASE_URL}/admin/login" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/admin/login" 200); then
         # Check if it's HTML
         if echo "$response" | grep -qi "<!DOCTYPE html>"; then
             log "SUCCESS" "Admin UI login page accessible and rendering HTML"
@@ -586,26 +575,36 @@ test_slot_header() {
 
 test_river_worker_health() {
     ((TESTS_RUN++)) || true
-    log "INFO" "Test 16/${TESTS_TOTAL}: River worker job processing - POST ${BASE_URL}/api/v1/events:batch"
-    
-    # Skip on production - don't create test data in production
-    if [[ "$ENVIRONMENT" == "production" ]]; then
-        log "WARN" "Skipping River worker test in production (read-only mode)"
+    log "INFO" "Test 16/${TESTS_TOTAL}: River worker job processing (optional write probe)"
+
+    # Credentials and a staging configuration alone must never opt into fixture writes.
+    if [[ "${SMOKE_WRITE_TESTS:-false}" != "true" ]]; then
+        log "INFO" "Skipping River write probe (requires explicit SMOKE_WRITE_TESTS=true)"
         ((TESTS_PASSED++)) || true
         return 0
+    fi
+
+    if [[ "$ENVIRONMENT" == "production" ]]; then
+        log "FAIL" "River write probes are forbidden in production"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+    if [[ "${ALLOW_DESTRUCTIVE:-false}" != "true" ]]; then
+        log "FAIL" "River write probe requires ALLOW_DESTRUCTIVE=true"
+        ((TESTS_FAILED++)) || true
+        return 1
     fi
     
     # Check if API_KEY is available (required for batch submission)
     if [[ -z "${API_KEY:-}" ]]; then
-        log "WARN" "Skipping River worker test (API_KEY not configured for ${ENVIRONMENT})"
-        log "INFO" "  Set API_KEY environment variable to enable this test"
-        ((TESTS_PASSED++)) || true
-        return 0
+        log "FAIL" "Explicit River write probe requires API_KEY"
+        ((TESTS_FAILED++)) || true
+        return 1
     fi
     
     # First check if the job_queue health check passes
-    local health_response=$(http_get "${BASE_URL}/health" 200)
-    if [[ $? -eq 0 ]]; then
+    local health_response
+    if health_response=$(http_get "${BASE_URL}/health" 200); then
         local job_queue_status=$(echo "$health_response" | jq -r '.checks.job_queue.status // "unknown"')
         if [[ "$job_queue_status" == "fail" ]]; then
             log "FAIL" "Job queue health check failed - River not initialized"
@@ -614,6 +613,10 @@ test_river_worker_health() {
             ((TESTS_FAILED++)) || true
             return 1
         fi
+    else
+        log "FAIL" "Health endpoint failed before the River write probe"
+        ((TESTS_FAILED++)) || true
+        return 1
     fi
     
     # Create a minimal test batch with one event
@@ -755,9 +758,8 @@ test_dev_portal_login() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 18/${TESTS_TOTAL}: Developer portal login page - GET ${BASE_URL}/dev/login"
     
-    local response=$(http_get "${BASE_URL}/dev/login" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/dev/login" 200); then
         # Check if it's HTML with developer portal content
         if echo "$response" | grep -qi "<!DOCTYPE html>"; then
             if echo "$response" | grep -qi "developer\|dev.*portal\|sign.*in"; then
@@ -788,9 +790,8 @@ test_dev_portal_accept_invitation() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 19/${TESTS_TOTAL}: Developer portal accept invitation page - GET ${BASE_URL}/dev/accept-invitation"
     
-    local response=$(http_get "${BASE_URL}/dev/accept-invitation?token=smoke-test" 200)
-    
-    if [[ $? -eq 0 ]]; then
+    local response
+    if response=$(http_get "${BASE_URL}/dev/accept-invitation?token=smoke-test" 200); then
         # Check if it's HTML with invitation content
         if echo "$response" | grep -qi "<!DOCTYPE html>"; then
             if echo "$response" | grep -qi "invitation\|accept\|activate"; then

@@ -132,6 +132,13 @@ Quick validation tests that verify basic functionality:
 
 **Safe for production**: Yes (read-only)
 
+Smoke checks default to read-only even when staging credentials are configured.
+The River batch-processing write probe requires explicit `SMOKE_WRITE_TESTS=true`,
+`ALLOW_DESTRUCTIVE=true` and `API_KEY`, and is refused in production. Verify fixture
+ownership and cleanup before opting in; the write probe creates an event. Routine
+post-deploy checks should leave it disabled. Failed HTTP status expectations fail
+the smoke command, including public events and version checks.
+
 ### Performance Tests
 
 Light load testing to verify performance under load:
