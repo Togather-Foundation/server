@@ -60,6 +60,57 @@ ssh deploy@server "cd togather-*/ && sudo ./install.sh"
 - Git repository will be auto-cloned to `/opt/togather/src/` on first deployment
 - Blue-green deployments will work automatically
 
+## Snapshot tooling and database-container fallback
+
+The deploy script's snapshot step is conditional. It can log `server binary not found,
+skipping automated snapshot` and continue. `server snapshot create` also needs
+`pg_dump` in the **same environment as that server command**. Running it in the
+application container fails if that image does not contain PostgreSQL client tools;
+installing a client on your workstation does not fix a remote host or container.
+
+Before a migration or data repair, verify the snapshot command's execution environment
+and retain a usable backup. Check the deployment log for the actual snapshot path and
+result, rather than treating a successful deployment as proof a backup exists.
+For host-based snapshots, provision the server CLI and a compatible PostgreSQL client
+as part of the host setup. For container deployments, the database container already
+has matching `pg_dump` and `pg_restore` tools and provides a fallback without modifying
+the running application image.
+
+Connect to the deployment host using `SSH_HOST`/`SSH_USER` from the appropriate local
+`.deploy.conf.<environment>`; do not guess a host. Run the following **on that host**
+after verifying the database container name against the deployed Compose configuration
+(`togather-db` in the standard deployment):
+
+```bash
+set -euo pipefail
+umask 077
+source_backup_dir="$HOME/.togather/snapshots"
+mkdir -p "$source_backup_dir"
+source_backup_path=$(mktemp "$source_backup_dir/pre-repair-XXXXXX.dump")
+
+# Use the database container's configured user/database, without printing secrets.
+docker exec togather-db sh -c \
+  'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$source_backup_path"
+
+# Inspect the catalog, then read the full archive into SQL output without executing it.
+docker exec -i togather-db pg_restore --list < "$source_backup_path" > /dev/null
+docker exec -i togather-db pg_restore --exit-on-error --file=/dev/null \
+  < "$source_backup_path"
+sha256sum "$source_backup_path"
+wc -c "$source_backup_path"
+```
+
+A failed dump or validation is not a usable backup. The full read checks archive
+readability; it does not replace a restore rehearsal. Record the host/path, byte count,
+checksum, validation result and repair's before/after report in the operational handoff.
+Keep the dump private and outside git. Do not install packages into a running app
+container as a persistent fix: rebuilding/replacing it loses those changes. If the
+application is intended to own snapshot execution, add its client dependency to the
+image build and validate that workflow separately.
+
+See [rollback](rollback.md#database-considerations) before restoring; restore is a
+separate operation from validation and can replace current data.
+
 ## Basic Usage
 
 ### Deploy Current Commit

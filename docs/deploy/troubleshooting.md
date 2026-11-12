@@ -1168,3 +1168,15 @@ For production incidents, follow the incident response process in your organizat
 ---
 
 **Last Updated:** 2026-06-01
+
+## Snapshot tooling unavailable
+
+`server binary not found, skipping automated snapshot` means the deploy script did
+not create its expected backup. `pg_dump not found in PATH` means the server snapshot
+command's execution environment lacks the PostgreSQL client; a client installed in a
+different host/container does not help that command.
+
+Use the [database-container fallback](remote-deployment.md#snapshot-tooling-and-database-container-fallback)
+to create and validate a private custom-format dump before a data repair. Provision
+host tools or update the image build for a persistent snapshot workflow; installing
+packages interactively into a replaceable application container is temporary.

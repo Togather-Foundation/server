@@ -2,7 +2,6 @@
 name: togather-server-ops
 description: Operate a Togather SEL server — authentication, REST API, MCP connectivity, admin endpoints, and data quality patterns. Use when configuring server access, debugging API issues, or understanding the architecture.
 license: MIT
-compatibility: Requires a running Togather SEL server. Requires curl and jq. Admin operations require admin-role API key.
 metadata:
   author: togather-foundation
   version: "2.0"
@@ -17,6 +16,9 @@ metadata:
 Operate and maintain a Togather Shared Events Library (SEL) instance —
 authentication, REST API reference, MCP connectivity, admin endpoints,
 and data quality patterns.
+
+Requires a running Togather SEL server, curl and jq. Admin operations require an
+admin-role API key.
 
 ## Quick Context
 
@@ -148,6 +150,21 @@ hermes mcp test togather
 ```
 
 The MCP server auto-discovers tools. API key is sent as a bearer token.
+
+## Database backups before repair
+
+Check the actual backup result before a data repair. Deployment can continue after
+`server binary not found, skipping automated snapshot`; `server snapshot create`
+inside the application container can also fail because `pg_dump` is absent there.
+Tools must exist where the command runs, not merely on the agent's workstation.
+
+When needed, use the database container's matching `pg_dump`/`pg_restore` tools via the
+[documented fallback](../../docs/deploy/remote-deployment.md#snapshot-tooling-and-database-container-fallback).
+Read that procedure for creation, full archive-read validation and private storage.
+Retain backup path, size, checksum and the repair's before/after report; never put the
+dump or credentials in git/tickets. A successful catalog listing alone does not prove
+all data blocks are readable. Treat client installation as host/image provisioning,
+not an interactive change to a running application container.
 
 ## Scraper Operations
 

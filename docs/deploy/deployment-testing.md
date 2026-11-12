@@ -70,6 +70,20 @@ See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
   ls -lh dist/togather-*.tar.gz
   ```
 
+### Database backup readiness
+
+Before migrations or a data repair, verify where the snapshot CLI will run and that
+both the server binary and `pg_dump` are available there. A deploy log saying
+`skipping automated snapshot` requires a separate backup; application health checks
+do not validate backup readiness. The application container may lack `pg_dump` even
+when the database container has it.
+
+Use the [database-container backup procedure](remote-deployment.md#snapshot-tooling-and-database-container-fallback)
+when host/application snapshot tooling is unavailable. Retain the private dump path,
+size, checksum and archive-validation result before applying the repair. An archive
+catalog listing alone does not read every data block; the procedure also reads the
+full archive without executing a restore.
+
 ### Environment Preparation
 
 - [ ] **Target environment configured on server**
