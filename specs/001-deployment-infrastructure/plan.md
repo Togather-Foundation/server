@@ -38,7 +38,7 @@ Create a DevOps infrastructure and workflow that enables easy deployment of the 
 
 | Requirement | Status | Notes |
 |-------------|--------|-------|
-| **Database Migrations** | ✅ PASS | Uses existing golang-migrate tool, automatic snapshots before migrations, 7-day retention |
+| **Database Migrations** | ✅ PASS | Uses golang-migrate; verified exact-target custom backup required before migrations; seven-day custom archive retention currently operator-managed (`t_f4f92c6f`) |
 | **Zero Downtime** | ✅ PASS | Blue-green deployment strategy ensures 99.9% availability during updates |
 | **Build Pipeline Integration** | ✅ PASS | Integrates with existing Makefile targets (`make ci`, `make build`), validates Git commit matches CI tests |
 | **Configuration Management** | ✅ PASS | Environment files (.env) for secrets, YAML for deployment config, version-controlled structure |
@@ -49,7 +49,7 @@ Create a DevOps infrastructure and workflow that enables easy deployment of the 
 |------------|--------|-------|
 | **Zero Budget** | ✅ PASS | No commercial services (Prometheus/Grafana for monitoring, self-hosted only) |
 | **Ease of Use** | ✅ PASS | Single-command deployment, automatic infrastructure provisioning, clear error messages |
-| **Low Maintenance** | ✅ PASS | Docker Compose requires minimal ongoing management, automatic cleanup of old snapshots, no complex orchestration |
+| **Low Maintenance** | ✅ PASS | Docker Compose requires minimal ongoing management; legacy gzip snapshot cleanup exists, custom archive lifecycle tracked in `t_f4f92c6f` |
 
 **Overall Status**: ✅ **ALL GATES PASSED** - Proceed to Phase 0
 
@@ -100,7 +100,7 @@ deploy/
     ├── deploy.sh                    # Main deployment orchestrator
     ├── rollback.sh                  # Rollback to previous version
     ├── health-check.sh              # Post-deployment validation
-    ├── snapshot-db.sh               # pg_dump with retention logic
+    ├── snapshot-db.sh               # Verified custom backup and private evidence
     └── cleanup.sh                   # Remove old deployments/snapshots
 
 # Existing project structure (unchanged)

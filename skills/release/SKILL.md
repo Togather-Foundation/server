@@ -201,14 +201,14 @@ https://github.com/Togather-Foundation/server/actions
 
 ## Step 7: Deploy to Staging
 
-Before deployment migrations, verify snapshot readiness in the environment that
-will run the server CLI: it needs both the server binary and `pg_dump`. Deployment
-can continue after a warning that automated snapshots were skipped. If that path is
-unavailable, create and validate a private dump using the database container's tools
-as described in [snapshot tooling and fallback](../../docs/deploy/remote-deployment.md#snapshot-tooling-and-database-container-fallback).
-Keep the backup path/checksum and verification result in the handoff. Do not assume
-a healthy app or successful deploy proves a snapshot exists, or install clients into
-a running app container as a permanent fix.
+Deployments that run migrations require a verified private backup of the migration
+target. The helper uses database-container clients for shared network targets and
+host clients for host-local targets; missing tools or failed full archive reads stop
+deployment. Verify the target and evidence as described in
+[snapshot tooling](../../docs/deploy/remote-deployment.md#snapshot-tooling-and-database-container-fallback).
+Keep the backup path/checksum and verification result in the handoff. Full archive
+readability is not a restore rehearsal. `--skip-migrations` deliberately bypasses this
+backup gate; it does not provide a backup for a separate data repair.
 
 
 ```bash
@@ -220,7 +220,7 @@ make test-staging
 ```
 
 Watch the deploy output. It will:
-- Attempt a database snapshot (verify its path/result; handle skipped snapshots as above)
+- Require a verified database backup before migrations (retain its evidence)
 - Run migrations
 - Blue-green deploy to the inactive slot
 - Health check

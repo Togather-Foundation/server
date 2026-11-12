@@ -41,6 +41,19 @@ server deploy rollback <environment> --dry-run
 
 Restore a snapshot if migrations ran after the target deployment.
 
+Current deployments record a private custom-format `.dump` backup path and adjacent
+`.dump.json` evidence in `$HOME/.togather/snapshots`. Verify its checksum and target,
+quiesce writers, and plan the restore before executing it. `server snapshot list`
+only lists legacy `.sql.gz` backups. To restore a current custom archive using
+compatible clients in the target database's network environment:
+
+```bash
+# Destructive recovery: DATABASE_URL must identify the intended recovery database.
+pg_restore --exit-on-error --clean --if-exists --dbname "$DATABASE_URL" < /path/to/verified-backup.dump
+```
+
+The following gzip/psql example applies only to legacy `.sql.gz` CLI snapshots:
+
 ```bash
 cd /opt/togather/src/deploy/docker
 docker compose -f /opt/togather/src/deploy/docker/docker-compose.blue-green.yml down

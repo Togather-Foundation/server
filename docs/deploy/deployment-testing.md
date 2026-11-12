@@ -72,17 +72,18 @@ See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
 
 ### Database backup readiness
 
-Before migrations or a data repair, verify where the snapshot CLI will run and that
-both the server binary and `pg_dump` are available there. A deploy log saying
-`skipping automated snapshot` requires a separate backup; application health checks
-do not validate backup readiness. The application container may lack `pg_dump` even
-when the database container has it.
+`deploy.sh` enforces a private, fully read custom-format backup before migrations.
+Check the `.dump.json` evidence: exact artifact path, size, SHA-256, client mode and
+`verification: pg_restore_full_read`. It uses the same resolved `DATABASE_URL` as
+migrations; loopback targets require host clients, while shared network targets use
+the configured database container. Failures stop before migrations/traffic switch.
+`--skip-migrations` is an explicit no-migration/no-automatic-backup path.
 
-Use the [database-container backup procedure](remote-deployment.md#snapshot-tooling-and-database-container-fallback)
-when host/application snapshot tooling is unavailable. Retain the private dump path,
-size, checksum and archive-validation result before applying the repair. An archive
-catalog listing alone does not read every data block; the procedure also reads the
-full archive without executing a restore.
+Standalone repairs still require the operator to run the
+[verified backup helper](remote-deployment.md#snapshot-tooling-and-database-container-fallback)
+first. Archive catalog listing alone is insufficient, and full archive reading does
+not prove an isolated restore succeeds. Routine readiness checks must not create
+fixtures or mutate the target database.
 
 ### Environment Preparation
 

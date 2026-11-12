@@ -760,9 +760,11 @@ migrate -path internal/storage/postgres/migrations -database "$DATABASE_URL" ver
 # 3. Determine how many migrations to rollback
 # If target version is 8, need to rollback 4 migrations (12 → 8)
 
-# 4. Restore snapshot from that time (SAFER)
+# 4. Legacy .sql.gz snapshots only; current custom .dump backups have adjacent
+# .dump.json evidence under $HOME/.togather/snapshots (restore with pg_restore).
+# Restore snapshot from that time (SAFER)
 cd deploy/scripts
-./snapshot-db.sh list | grep "20260128"  # Find snapshot near target date
+server snapshot list | grep "20260128"  # Find snapshot near target date
 
 gunzip -c /var/lib/togather/db-snapshots/togather_production_20260128_120000.sql.gz | psql "$DATABASE_URL"
 
@@ -1080,7 +1082,7 @@ error: file does not exist: migrations/20260128003_add_users.down.sql
 ```bash
 # Use snapshot restore instead
 cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 gunzip -c /var/lib/togather/db-snapshots/togather_production_<before_migration>.sql.gz | psql "$DATABASE_URL"
 
@@ -1099,7 +1101,7 @@ If rollback fails and leaves database in bad state:
 ```bash
 # 1. Restore from snapshot immediately
 cd deploy/scripts
-./snapshot-db.sh list
+server snapshot list
 
 # Find snapshot from before the original migration
 gunzip -c /var/lib/togather/db-snapshots/togather_production_<timestamp>.sql.gz | psql "$DATABASE_URL"

@@ -60,6 +60,7 @@ GIT_SHORT_COMMIT=""
 DEPLOYMENT_TIMESTAMP=""
 DEPLOYED_BY="${USER}@$(hostname)"
 SNAPSHOT_PATH=""  # Captured during create_db_snapshot for rollback history
+SNAPSHOT_DIR="${HOME}/.togather/snapshots"  # Private host artifacts
 COMPOSE_CMD="docker compose"  # Default to plugin mode, detected in validate_tool_versions()
 
 # ============================================================================
@@ -1164,89 +1165,67 @@ resolve_database_url() {
     printf 'postgresql://%s:%s@127.0.0.1:%s/%s?sslmode=disable' "$pg_user" "$pg_password" "$pg_port" "$pg_db"
 }
 
-# Create database snapshot before migrations (T017, T041)
+# Create a verified backup before migrations (T017, T041).
+# Resolve the deployed Compose service, never the application container or host CLI.
 create_db_snapshot() {
     local env="$1"
-    
-    log "INFO" "Creating database snapshot before migrations"
-    
-    # Enable snapshot validation by default for production safety
-    # This adds ~2-5s but catches corrupt snapshots early
-    export VALIDATE_SNAPSHOT="${VALIDATE_SNAPSHOT:-true}"
-    
-    # Use CLI for snapshot creation
-    local server_binary="${PROJECT_ROOT}/server"
-    
-    if [[ ! -f "${server_binary}" ]]; then
-        log "WARN" "server binary not found, skipping automated snapshot"
-        log "WARN" "Consider creating a manual database backup before migrations"
-        log "WARN" "  pg_dump -U togather -h localhost -p 5433 togather > backup.sql"
-        SNAPSHOT_PATH=""
-        return 0
-    fi
-    
-    # Capture deployment metadata BEFORE sourcing the env file — env files set
-    # GIT_COMMIT=unknown, which would clobber the real value validate_git_commit set.
-    local deploy_commit="${GIT_COMMIT:-}"
-    local deploy_id="${DEPLOYMENT_ID:-}"
-    
-    local env_file
+    local container snapshot_output env_file snapshot_database_url
     env_file=$(discover_env_file "$env")
     if [[ -z "$env_file" ]]; then
-        log "ERROR" "No environment configuration found for snapshot"
-        log "ERROR" "Cannot determine DATABASE_URL"
+        log "ERROR" "Missing migration environment; cannot establish backup target"
         return 1
     fi
-    
-    # For local/development only, source the env file with export and build a
-    # host-reachable DATABASE_URL. Remote envs keep their existing behaviour (no
-    # sourcing here — the snapshot child loads config on its own).
-    local snapshot_database_url=""
-    if [[ "$env" == "development" ]]; then
-        log "INFO" "Sourcing environment for snapshot from: ${env_file}"
-        set -a; source "${env_file}"; set +a
-        snapshot_database_url=$(resolve_database_url "$env")
-        if [[ -n "$snapshot_database_url" ]]; then
-            log "INFO" "Using host-reachable DATABASE_URL for local snapshot (127.0.0.1:${POSTGRES_PORT:-5433})"
-        else
-            log "WARN" "POSTGRES_PASSWORD not set in ${env_file}; falling back to sourced DATABASE_URL"
-        fi
-    fi
-    
-    # Create snapshot using CLI
-    log "INFO" "Creating database snapshot before deployment"
-    
-    local snapshot_output
-    local snapshot_status=0
-    
-    if [[ -n "${snapshot_database_url}" ]]; then
-        # Command-scoped overrides so the host-reachable URL and deployment
-        # metadata do not leak into the rest of the script or docker-compose.
-        snapshot_output=$(DATABASE_URL="${snapshot_database_url}" \
-            GIT_COMMIT="${deploy_commit}" \
-            DEPLOYMENT_ID="${deploy_id}" \
-            "${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1) || snapshot_status=$?
-    else
-        snapshot_output=$(GIT_COMMIT="${deploy_commit}" \
-            DEPLOYMENT_ID="${deploy_id}" \
-            "${server_binary}" snapshot create --reason "pre-deploy-${env}" --format json 2>&1) || snapshot_status=$?
-    fi
-    
-    if [[ $snapshot_status -ne 0 ]]; then
-        log "ERROR" "Database snapshot creation failed: ${snapshot_output}"
-        log "ERROR" "Aborting deployment to prevent data loss"
+    snapshot_database_url=$(
+        set -a; source "$env_file" || exit 1; set +a
+        local resolved_url
+        resolved_url=$(resolve_database_url "$env") || exit 1
+        printf '%s' "${resolved_url:-${DATABASE_URL:-}}"
+    ) || return 1
+    if [[ -z "$snapshot_database_url" ]]; then
+        log "ERROR" "Missing database URL; cannot establish backup target"
         return 1
     fi
-    
-    # Extract snapshot path from JSON output
-    SNAPSHOT_PATH=$(echo "${snapshot_output}" | jq -r '.snapshot_path // empty')
-    
-    if [[ -z "${SNAPSHOT_PATH}" ]]; then
-        log "WARN" "Could not extract snapshot path from output"
-        SNAPSHOT_PATH="unknown"
+    SNAPSHOT_PATH=""
+    log "INFO" "Creating and fully reading database backup before migrations"
+    container=$(${COMPOSE_CMD} -f "${DOCKER_DIR}/docker-compose.yml" ps -q togather-db) || {
+        log "ERROR" "Cannot resolve the configured database service; aborting deployment"
+        return 1
+    }
+    if [[ -z "$container" || "$container" == *$'\n'* ]]; then
+        log "ERROR" "Expected exactly one running database container; aborting deployment"
+        return 1
     fi
-    
-    log "SUCCESS" "Database snapshot created: ${SNAPSHOT_PATH}"
+    snapshot_output=$(DATABASE_URL="$snapshot_database_url" GIT_COMMIT="${GIT_COMMIT:-}" DEPLOYMENT_ID="${DEPLOYMENT_ID:-}" \
+        bash "${PROJECT_ROOT}/deploy/scripts/snapshot-db.sh" \
+        --container "$container" --output-dir "${SNAPSHOT_DIR}" \
+        --reason "pre-deploy-${env}") || {
+        log "ERROR" "Verified backup failed; aborting before migrations or traffic switch"
+        return 1
+    }
+    if ! jq -e '.verified == true and .verification == "pg_restore_full_read" and
+        .format == "postgres_custom" and (.snapshot_path | type == "string" and length > 0) and
+        (.size_bytes | type == "number" and . > 0) and
+        (.sha256 | type == "string" and test("^[a-f0-9]{64}$"))' \
+        <<< "$snapshot_output" > /dev/null; then
+        log "ERROR" "Backup evidence is missing or unverifiable; aborting deployment"
+        return 1
+    fi
+    SNAPSHOT_PATH=$(jq -r '.snapshot_path' <<< "$snapshot_output")
+    if [[ ! -s "$SNAPSHOT_PATH" ]]; then
+        SNAPSHOT_PATH=""
+        log "ERROR" "Verified backup artifact is unavailable; aborting deployment"
+        return 1
+    fi
+    local expected_size expected_checksum actual_checksum
+    expected_size=$(jq -r '.size_bytes' <<< "$snapshot_output")
+    expected_checksum=$(jq -r '.sha256' <<< "$snapshot_output")
+    actual_checksum=$(sha256sum "$SNAPSHOT_PATH") || return 1
+    if [[ "$(wc -c < "$SNAPSHOT_PATH")" != "$expected_size" || "${actual_checksum%% *}" != "$expected_checksum" ]]; then
+        SNAPSHOT_PATH=""
+        log "ERROR" "Backup artifact does not match verification evidence; aborting deployment"
+        return 1
+    fi
+    log "SUCCESS" "Verified backup path=${SNAPSHOT_PATH} size_bytes=${expected_size} sha256=${expected_checksum} verification=pg_restore_full_read"
     return 0
 }
 
@@ -1342,9 +1321,9 @@ run_migrations() {
         log "ERROR" "Option 1: Restore from automatic snapshot (RECOMMENDED)"
         log "ERROR" "  The most recent snapshot was created before this migration."
         log "ERROR" "  To restore:"
-        log "ERROR" "    server snapshot list  # Find the latest snapshot"
+        log "ERROR" "    # Verified custom backup: ${SNAPSHOT_PATH:-unavailable}; evidence: <backup>.dump.json"
         log "ERROR" "    # Restore snapshot (requires manual confirmation):"
-        log "ERROR" "    psql \$DATABASE_URL < /var/lib/togather/db-snapshots/<snapshot-file>"
+        log "ERROR" "    pg_restore --exit-on-error --clean --if-exists --dbname \$DATABASE_URL < ${SNAPSHOT_PATH:-<verified-snapshot.dump>}"
         log "ERROR" ""
         log "ERROR" "Option 2: Manual migration rollback"
         log "ERROR" "  1. Check migration status:"

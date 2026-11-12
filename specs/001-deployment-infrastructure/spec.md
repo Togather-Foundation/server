@@ -443,10 +443,26 @@ When operators need cloud-specific features (managed databases, auto-scaling, ge
 
 **MVP Implementation:**
 - Use existing `golang-migrate` tool from project dependencies
-- Run migrations in init container before app starts (blue-green ensures zero downtime)
-- Snapshot via `pg_dump` before migration runs
-- Store snapshots with naming: `{database}_{timestamp}_{git_commit}.sql.gz`
-- Retention: Keep 7 days (cron job or lifecycle policy deletes old snapshots)
+- Run migrations with the deployment host's migration client before starting the
+  inactive application slot; preserve compatibility with the active slot.
+- Require a backup of the exact resolved migration target before migration runs;
+  missing tools, dump failure, failed full archive read or mismatched evidence abort
+  deployment before migrations or traffic switch. Explicit `--skip-migrations`
+  skips both migrations and this backup gate.
+- Deployment backups use `pg_dump -Fc` and a full
+  `pg_restore --exit-on-error --file=/dev/null` read. Select host clients for
+  host-local targets and database-container clients for shared network targets;
+  never guess a database address across network namespaces.
+- Store private `{reason}-{UTC timestamp}-{unique suffix}.dump` files and adjacent
+  `.dump.json` evidence under the deployment user's `$HOME/.togather/snapshots`.
+  Evidence records byte count, SHA-256, verification mode and deployment refs,
+  without credentials. Artifacts survive redeployment; host loss requires a
+  separately provisioned backup copy. Corrupt or missing artifacts cannot satisfy
+  the gate. Full readability does not establish a successful isolated restore.
+- The older `server snapshot` CLI retains its `.sql.gz` format and inventory.
+- Retention policy: keep seven days and preserve required recovery points. Custom
+  archive retention is currently operator-managed; safe inventory and automated
+  lifecycle tooling are tracked in `t_f4f92c6f`, not provided by legacy CLI cleanup.
 - Rollback: Manual restore from snapshot if migration fails (provide clear instructions)
 
 **Forward Compatibility:**

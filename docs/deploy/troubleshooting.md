@@ -1171,12 +1171,19 @@ For production incidents, follow the incident response process in your organizat
 
 ## Snapshot tooling unavailable
 
-`server binary not found, skipping automated snapshot` means the deploy script did
-not create its expected backup. `pg_dump not found in PATH` means the server snapshot
-command's execution environment lacks the PostgreSQL client; a client installed in a
-different host/container does not help that command.
+Current deployments abort if a verified backup cannot be created; they no longer
+skip backup because the host server CLI is missing. If an older deployment logged
+`server binary not found, skipping automated snapshot`, it has no automatic recovery
+point from that step. Stop before any further mutation and create a verified backup.
 
-Use the [database-container fallback](remote-deployment.md#snapshot-tooling-and-database-container-fallback)
-to create and validate a private custom-format dump before a data repair. Provision
-host tools or update the image build for a persistent snapshot workflow; installing
-packages interactively into a replaceable application container is temporary.
+Check that the Compose database service resolves to exactly one container and that
+the resolved migration `DATABASE_URL` names the intended database. Loopback/socket
+targets need compatible host `pg_dump` and `pg_restore`; shared network URLs use the
+database container's clients. A host client installed on a workstation does not fix
+a remote host. No application-container package installation is needed.
+
+Use the [verified backup helper](remote-deployment.md#snapshot-tooling-and-database-container-fallback)
+and retain the private `.dump` plus `.dump.json` evidence. Failed or partial dumps
+are removed. `pg_restore_full_read` means full archive readability, not a completed
+restore rehearsal. Use `pg_restore` for these custom archives; the old server snapshot
+listing and gzip/psql instructions apply only to `.sql.gz` backups.

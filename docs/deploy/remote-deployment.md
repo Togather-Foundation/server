@@ -62,19 +62,50 @@ ssh deploy@server "cd togather-*/ && sudo ./install.sh"
 
 ## Snapshot tooling and database-container fallback
 
-The deploy script's snapshot step is conditional. It can log `server binary not found,
-skipping automated snapshot` and continue. `server snapshot create` also needs
-`pg_dump` in the **same environment as that server command**. Running it in the
-application container fails if that image does not contain PostgreSQL client tools;
-installing a client on your workstation does not fix a remote host or container.
+Before migrations, `deploy.sh` now requires a successful verified backup. Missing
+clients/container, dump failure, unreadable archive, missing evidence or a mismatched
+artifact aborts before migrations and traffic switch. Neither `--force` nor
+`VALIDATE_SNAPSHOT=false` bypasses this check. `--skip-migrations` deliberately skips
+both migrations and this automatic backup; it does not authorize an unbacked data repair.
 
-Before a migration or data repair, verify the snapshot command's execution environment
-and retain a usable backup. Check the deployment log for the actual snapshot path and
-result, rather than treating a successful deployment as proof a backup exists.
-For host-based snapshots, provision the server CLI and a compatible PostgreSQL client
-as part of the host setup. For container deployments, the database container already
-has matching `pg_dump` and `pg_restore` tools and provides a fallback without modifying
-the running application image.
+The supported `deploy/scripts/snapshot-db.sh` helper creates PostgreSQL custom-format
+`.dump` files with private `.dump.json` evidence, using the exact resolved migration
+`DATABASE_URL`. It selects host clients for loopback/socket/encoded/multi-host targets
+and database-container clients for ordinary shared network hostnames. Host client
+versions must support the server's dump format. Container selection comes from the
+configured Compose database service, not the application image. An unavailable client
+or unreachable target fails closed; localhost is never guessed or translated between
+network namespaces. No host server CLI or software installation inside the app is needed.
+
+Backups are written under the deployment user's `$HOME/.togather/snapshots`, outside
+application containers, with files mode `0600` and new directories mode `0700`. The
+JSON evidence contains path, byte count, SHA-256, format, client mode, deployment refs
+and `verification: pg_restore_full_read`. The helper reads every archive entry with
+`pg_restore --exit-on-error --file=/dev/null`; it does not execute a restore. A full
+isolated restore rehearsal remains a separate recovery check.
+
+`server snapshot list` and `cleanup` manage the older `.sql.gz` CLI snapshots, not
+these custom archives. Inspect `.dump.json` evidence in the private host directory
+and manage retention separately (the deployment policy is seven days; retain a
+required recovery point longer). The previous deprecated `snapshot-db.sh` wrapper's
+legacy arguments are no longer supported; use `server snapshot` for `.sql.gz` operations
+or the helper's explicit `--container`, `--output-dir`, `--reason` arguments.
+
+For a standalone data repair, source the same trusted database environment as the
+mutation command and run the helper immediately before the repair. The repair CLI
+itself does not enforce this gate. Retain the evidence and verify the target before
+confirming the repair:
+
+```bash
+# Run on the deployment host after sourcing its trusted DATABASE_URL.
+db_container_id=$(docker compose -f deploy/docker/docker-compose.yml ps -q togather-db)
+bash deploy/scripts/snapshot-db.sh --container "$db_container_id" \
+  --output-dir "$HOME/.togather/snapshots" --reason pre-repair
+```
+
+The manual database-container fallback below is also useful when debugging tooling;
+it backs up that container's configured database, so independently verify that it is
+the database the repair will mutate.
 
 Connect to the deployment host using `SSH_HOST`/`SSH_USER` from the appropriate local
 `.deploy.conf.<environment>`; do not guess a host. Run the following **on that host**

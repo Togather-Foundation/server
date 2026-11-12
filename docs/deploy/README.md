@@ -90,18 +90,23 @@ Togather SEL uses **blue-green zero-downtime deployments**:
 
 **Key Features:**
 - ✅ Zero-downtime deployments
-- ✅ Automatic database snapshots before migrations
+- ✅ Verified database backups required before migrations
 - ✅ Health check validation before traffic switch
 - ✅ One-command rollback
 - ✅ Multi-environment support (dev/staging/prod)
 
 ## CLI Commands
 
-Some deployment operations use the `server` CLI:
+Deployment backups use the database-container helper and record private `.dump.json`
+evidence. See [backup tooling](remote-deployment.md#snapshot-tooling-and-database-container-fallback)
+for target selection, verification and restore instructions. These custom-format
+archives are separate from the gzip snapshots listed by the `server` CLI.
+
+Some other deployment operations use the `server` CLI:
 
 ```bash
-# Database Snapshots
-server snapshot create --reason "pre-deploy"
+# Optional CLI gzip snapshots (requires host PostgreSQL clients)
+server snapshot create --reason "manual"
 server snapshot list
 server snapshot cleanup --retention-days 7
 
