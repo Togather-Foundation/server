@@ -12,14 +12,17 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/loadtest/fixture"
 	"github.com/Togather-Foundation/server/internal/testauth"
-	"github.com/Togather-Foundation/server/tests/fixtures"
+	"github.com/oklog/ulid/v2"
 )
 
 // LoadProfile defines different load testing scenarios.
@@ -92,27 +95,33 @@ var LoadProfiles = map[LoadProfile]ProfileConfig{
 
 // LoadTester orchestrates load testing operations.
 type LoadTester struct {
-	baseURL       string
-	httpClient    *http.Client
-	generator     *fixtures.Generator
-	stats         *Statistics
-	authenticator *testauth.TestAuthenticator
-	apiKeys       []string
-	apiKeyIndex   uint32
-	debugAuth     bool
+	baseURL         string
+	httpClient      *http.Client
+	fixtureRun      *fixture.Manifest
+	fixtureSequence uint64
+	stats           *Statistics
+	authenticator   *testauth.TestAuthenticator
+	apiKeys         []string
+	apiKeyIndex     uint32
+	debugAuth       bool
 }
 
 // NewLoadTester creates a new load tester targeting the specified base URL.
 func NewLoadTester(baseURL string) *LoadTester {
 	return &LoadTester{
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
 			Timeout:       30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
-		generator: fixtures.NewGenerator(time.Now().UnixNano()),
-		stats:     &Statistics{},
+		stats: &Statistics{},
 	}
+}
+
+// WithFixtureRun supplies the private ownership contract for all write fixtures.
+func (lt *LoadTester) WithFixtureRun(manifest fixture.Manifest) *LoadTester {
+	lt.fixtureRun = &manifest
+	return lt
 }
 
 // WithAuth sets a custom authenticator for this load tester.
@@ -146,8 +155,9 @@ func (lt *LoadTester) WithAPIKeys(keys []string) *LoadTester {
 
 // Statistics tracks load test metrics.
 type Statistics struct {
-	mu       sync.Mutex
-	failures []string
+	mu                    sync.Mutex
+	failures              []string
+	unconditionalFailures []string
 
 	totalRequests   int64
 	successRequests int64
@@ -207,6 +217,16 @@ func (lt *LoadTester) RunCustom(ctx context.Context, config ProfileConfig) (stat
 		return lt.stats, fmt.Errorf("invalid load configuration")
 	}
 	if config.ReadWriteRatio < 1 {
+		if lt.fixtureRun == nil {
+			return lt.stats, fmt.Errorf("write testing requires a private run manifest")
+		}
+		if err := lt.fixtureRun.Validate(); err != nil {
+			return lt.stats, fmt.Errorf("invalid fixture run: %w", err)
+		}
+		if lt.fixtureRun.TargetURL != lt.baseURL {
+			return lt.stats, fmt.Errorf("fixture run target does not match load target")
+		}
+		lt.fixtureSequence = 0
 		if len(lt.apiKeys) == 0 && lt.authenticator == nil {
 			return lt.stats, fmt.Errorf("write testing requires explicit credentials")
 		}
@@ -223,6 +243,16 @@ func (lt *LoadTester) RunCustom(ctx context.Context, config ProfileConfig) (stat
 				lt.stats.endTime = time.Now()
 				_ = lt.stats.validate(0)
 				return lt.stats, fmt.Errorf("authenticated write preflight failed; sustained traffic was not started")
+			}
+		}
+		// Verify stored attribution for one distinct fixture per credential before load.
+		for i := 0; i < attempts; i++ {
+			var key *string
+			if len(lt.apiKeys) > 0 {
+				key = &lt.apiKeys[i]
+			}
+			if err := lt.verifyFixtureOwnership(ctx, key); err != nil {
+				return lt.stats, err
 			}
 		}
 	}
@@ -266,12 +296,14 @@ func (lt *LoadTester) RunCustom(ctx context.Context, config ProfileConfig) (stat
 
 // workItem represents a single HTTP request to be executed.
 type workItem struct {
-	method         string
-	path           string
-	body           interface{}
-	endpoint       string // for stats tracking
-	rawBody        string // Used only for guaranteed non-decodable preflight JSON
-	expectedStatus int    // Zero means any 2xx
+	method            string
+	path              string
+	body              interface{}
+	endpoint          string // for stats tracking
+	rawBody           string // Used only for guaranteed non-decodable preflight JSON
+	expectedStatus    int    // Zero means any 2xx
+	strictExpectation bool
+	apiKeyOverride    *string
 }
 
 // generateWork produces work items according to the load profile.
@@ -321,8 +353,13 @@ func (lt *LoadTester) generateWork(ctx context.Context, config ProfileConfig, wo
 				}
 			} else {
 				// Write operation
+				work, err := lt.generateWriteRequest()
+				if err != nil {
+					lt.failExpectation("fixture generation failed")
+					return
+				}
 				select {
-				case workChan <- lt.generateWriteRequest():
+				case workChan <- work:
 				case <-ctx.Done():
 					return
 				}
@@ -381,16 +418,86 @@ func (lt *LoadTester) generateReadRequest() workItem {
 	return operations[rand.Intn(len(operations))]
 }
 
-// generateWriteRequest creates a random write operation.
-func (lt *LoadTester) generateWriteRequest() workItem {
-	eventInput := lt.generator.RandomEventInput()
-
-	return workItem{
-		method:   "POST",
-		path:     "/api/v1/events",
-		body:     eventInput,
-		endpoint: "create_event",
+// generateWriteRequest creates a uniquely owned, deterministic virtual fixture.
+func (lt *LoadTester) generateWriteRequest() (workItem, error) {
+	if lt.fixtureRun == nil || lt.fixtureSequence == math.MaxUint64 {
+		return workItem{}, fmt.Errorf("fixture sequence unavailable")
 	}
+	lt.fixtureSequence++
+	input, err := lt.fixtureRun.Event(lt.fixtureSequence)
+	if err != nil {
+		return workItem{}, err
+	}
+	return workItem{method: "POST", path: "/api/v1/events", body: input, endpoint: "create_event", expectedStatus: http.StatusCreated, strictExpectation: true}, nil
+}
+
+func (lt *LoadTester) failExpectation(message string) {
+	lt.stats.mu.Lock()
+	defer lt.stats.mu.Unlock()
+	lt.stats.unconditionalFailures = append(lt.stats.unconditionalFailures, message)
+}
+
+// verifyFixtureOwnership proves actual stored provenance, rather than key association.
+func (lt *LoadTester) verifyFixtureOwnership(ctx context.Context, key *string) error {
+	work, err := lt.generateWriteRequest()
+	if err != nil {
+		return err
+	}
+	input := work.body.(events.EventInput)
+	work.endpoint = "ownership_create"
+	work.apiKeyOverride = key
+	status, body := lt.executeRequest(ctx, work)
+	if status != http.StatusCreated {
+		return fmt.Errorf("fixture ownership preflight requires HTTP 201; sustained traffic was not started")
+	}
+	var created struct {
+		ID string `json:"@id"`
+	}
+	if json.Unmarshal(body, &created) != nil {
+		return fmt.Errorf("invalid fixture ownership create response")
+	}
+	eventID, err := responseEventULID(created.ID)
+	if err != nil {
+		return fmt.Errorf("invalid fixture ownership event identity")
+	}
+	status, body = lt.executeRequest(ctx, workItem{method: "GET", path: "/api/v1/events/" + eventID + "?include_provenance=true", endpoint: "ownership_verify", expectedStatus: http.StatusOK, strictExpectation: true, apiKeyOverride: key})
+	if status != http.StatusOK {
+		return fmt.Errorf("fixture ownership detail is not publicly readable")
+	}
+	var detail struct {
+		ID      string `json:"@id"`
+		Name    string `json:"name"`
+		URL     string `json:"url"`
+		Sources []struct {
+			URL     string `json:"url"`
+			EventID string `json:"sel:sourceEventId"`
+		} `json:"sources"`
+	}
+	if json.Unmarshal(body, &detail) != nil {
+		return fmt.Errorf("invalid fixture ownership detail JSON")
+	}
+	gotID, err := responseEventULID(detail.ID)
+	if err != nil || gotID != eventID || detail.Name != input.Name || detail.URL != input.URL || len(detail.Sources) != 1 || events.NormalizeFeedURL(detail.Sources[0].URL) != lt.fixtureRun.SourceURL || detail.Sources[0].EventID != input.Source.EventID {
+		return fmt.Errorf("stored fixture ownership does not match the run")
+	}
+	return nil
+}
+
+func responseEventULID(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.RawQuery != "" || u.Fragment != "" {
+		return "", fmt.Errorf("invalid event URI")
+	}
+	parts := strings.Split(strings.TrimRight(u.Path, "/"), "/")
+	if len(parts) < 2 || parts[len(parts)-2] != "events" {
+		return "", fmt.Errorf("invalid event URI path")
+	}
+	id := parts[len(parts)-1]
+	parsed, err := ulid.ParseStrict(id)
+	if err != nil || parsed.String() != id {
+		return "", fmt.Errorf("invalid event ULID")
+	}
+	return id, nil
 }
 
 // worker processes work items from the work channel.
@@ -409,7 +516,7 @@ func (lt *LoadTester) worker(ctx context.Context, workChan <-chan workItem) {
 }
 
 // executeRequest performs an HTTP request and records statistics.
-func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
+func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) (int, []byte) {
 	atomic.AddInt64(&lt.stats.totalRequests, 1)
 
 	start := time.Now()
@@ -422,7 +529,7 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 		jsonData, err := json.Marshal(work.body)
 		if err != nil {
 			lt.recordError(0, work.endpoint)
-			return
+			return 0, nil
 		}
 		reqBody = bytes.NewReader(jsonData)
 	}
@@ -430,7 +537,7 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 	req, err := http.NewRequestWithContext(ctx, work.method, lt.baseURL+work.path, reqBody)
 	if err != nil {
 		lt.recordError(0, work.endpoint)
-		return
+		return 0, nil
 	}
 
 	if work.body != nil || work.rawBody != "" {
@@ -439,7 +546,10 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 
 	// Add authentication if available
 	authMode := "none"
-	if len(lt.apiKeys) > 0 {
+	if work.apiKeyOverride != nil {
+		req.Header.Set("Authorization", "Bearer "+*work.apiKeyOverride)
+		authMode = "api_key"
+	} else if len(lt.apiKeys) > 0 {
 		idx := atomic.AddUint32(&lt.apiKeyIndex, 1)
 		key := lt.apiKeys[int(idx-1)%len(lt.apiKeys)]
 		if key != "" {
@@ -457,23 +567,28 @@ func (lt *LoadTester) executeRequest(ctx context.Context, work workItem) {
 
 	if err != nil {
 		lt.recordError(0, work.endpoint)
-		return
+		return 0, nil
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body (to ensure full response time is measured)
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024+1))
+	if err != nil || len(body) > 2*1024*1024 {
 		lt.recordError(0, work.endpoint)
-		return
+		return 0, nil
 	}
 
 	// Record statistics
 	lt.recordResponse(resp.StatusCode, duration, work.endpoint, work.expectedStatus)
+	if work.strictExpectation && resp.StatusCode != work.expectedStatus {
+		lt.failExpectation(fmt.Sprintf("%s expected HTTP %d, got %d", work.endpoint, work.expectedStatus, resp.StatusCode))
+	}
 	if lt.debugAuth && resp.StatusCode == http.StatusUnauthorized {
 		fmt.Fprintf(os.Stderr, "AUTH_DEBUG status=401 endpoint=%s method=%s path=%s auth=%s \n",
 			work.endpoint, work.method, work.path, authMode,
 		)
 	}
+	return resp.StatusCode, body
 }
 
 // recordResponse records a successful response.
@@ -669,7 +784,7 @@ type EndpointResult struct {
 }
 
 func (s *Statistics) failedExpectations(maxErrorRate float64) []string {
-	failures := []string{}
+	failures := append([]string{}, s.unconditionalFailures...)
 	if s.totalRequests == 0 {
 		failures = append(failures, "no requests completed")
 	}

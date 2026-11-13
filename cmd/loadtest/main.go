@@ -10,8 +10,10 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Togather-Foundation/server/internal/loadtest"
+	"github.com/Togather-Foundation/server/internal/loadtest/fixture"
 )
 
 func main() {
@@ -30,6 +32,7 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	readRatio := flags.Float64("read-ratio", 1, "Read fraction 0-1; below 1 explicitly enables writes")
 	budget := flags.Float64("max-error-rate", 0, "Allowed fraction of non-authentication 4xx failures (0-1)")
 	noRamp := flags.Bool("no-ramp", false, "Disable ramp-up/ramp-down")
+	runManifest := flags.String("run-manifest", "", "New private manifest file; required for writes and retained for cleanup")
 	apiKey := flags.String("api-key", "", "API keys, comma-separated; required for writes")
 	debugAuth := flags.Bool("debug-auth", false, "Log status and auth mode for 401 responses; never keys")
 	jsonOutput := flags.Bool("json", false, "Print structured endpoint/status results")
@@ -64,6 +67,17 @@ func run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	}
 	if len(keys) > 0 {
 		tester.WithAPIKeys(keys)
+	}
+	if config.ReadWriteRatio < 1 && *runManifest != "" {
+		manifest, err := fixture.New(*baseURL, time.Now())
+		if err == nil {
+			err = fixture.Create(*runManifest, manifest)
+		}
+		if err != nil {
+			_, _ = fmt.Fprintf(errOut, "prepare private run manifest: %v\n", err)
+			return 1
+		}
+		tester.WithFixtureRun(manifest)
 	}
 	stats, err := tester.RunCustom(ctx, config)
 	if stats != nil {

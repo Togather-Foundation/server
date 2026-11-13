@@ -174,9 +174,14 @@ Use the [source repair runbook](../../docs/integration/scraper.md#reconciling-hi
 and [retrospective](../../docs/operations/source-feed-reconciliation-retrospective.md)
 for the operating sequence and known limitations. Routine post-deploy load probes
 default to public read-only traffic and fail on unexpected authorization, server or
-transport errors. Inspect their structured endpoint/status results. Enable writes
-only after verifying isolation and cleanup ownership; an authenticated preflight
-does not establish fixture ownership. See the
+transport errors. Inspect their structured endpoint/status results. Explicit writes
+require a fresh private `--run-manifest` file. The runner verifies a published probe's
+stored provenance for each credential before sustained traffic; authentication alone
+does not establish ownership. Stop the run and drain requests before using
+`server cleanup loadtest --env=staging --run-manifest FILE --dry-run --json`, then
+`--confirm` after inspecting the exact IDs. Keep the manifest private and retain it
+through cleanup. A refusal must not trigger fallback to broader source/legacy deletion.
+Run cleanup retains source rows and refuses shared or modified events. See the
 [load-testing workflow](../../docs/operations/load-testing.md).
 
 ## Scraper Operations

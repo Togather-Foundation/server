@@ -2,23 +2,29 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/loadtest/fixture"
+	"github.com/Togather-Foundation/server/internal/storage/postgres"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/rs/zerolog"
 	"github.com/spf13/cobra"
 )
 
 var (
-	loadtestEnv      string
-	loadtestSourceID string
-	loadtestLegacy   bool
-	loadtestDryRun   bool
-	loadtestConfirm  bool
+	loadtestEnv         string
+	loadtestSourceID    string
+	loadtestLegacy      bool
+	loadtestDryRun      bool
+	loadtestConfirm     bool
+	loadtestRunManifest string
+	loadtestJSON        bool
 )
 
 // productionDBHostEnvVar is the env var operators set to the production DB
@@ -33,16 +39,22 @@ var cleanupLoadtestCmd = &cobra.Command{
 	Short: "Delete load-test fixture events from the database",
 	Long: `Delete events that were created by the load tester.
 
-Two deletion modes are supported:
+Three deletion modes are supported:
 
-  --source-id  Delete events linked to a specific source UUID (preferred;
-               requires that the load-test API key was created with --source-id).
+  --run-manifest  Verify a private run manifest and delete only its unmodified,
+                  exclusively owned fixtures in one transaction (preferred).
+                  Stop the run and drain its requests first. Source rows remain.
+
+  --source-id  Legacy operator mode: delete whole events linked to a source UUID.
+               A source-linked key alone does not prove exclusive ownership.
 
   --legacy     Delete events whose image_url or url contain example.com /
                images.example.com placeholder patterns injected by the fixture
                generator before source tagging was implemented.
 
-Both modes require --env=staging to prevent accidental production data loss.
+All modes require --env=staging to prevent accidental production data loss.
+Run-manifest mode cannot be combined with either legacy mode. --json is available
+only for run-manifest reports and never prints the private ownership key.
 The command also verifies that the DATABASE_URL hostname does not match the
 value of the PRODUCTION_DB_HOST environment variable.
 
@@ -50,6 +62,9 @@ Add --dry-run to preview what would be deleted without making any changes.
 Add --confirm to actually execute the deletion (required unless --dry-run).
 
 Examples:
+  server cleanup loadtest --env=staging --run-manifest=tmp/run.json --dry-run --json
+  server cleanup loadtest --env=staging --run-manifest=tmp/run.json --confirm --json
+
   # Preview events that would be deleted (source-id mode)
   server cleanup loadtest --env=staging --source-id=<uuid> --dry-run
 
@@ -72,6 +87,8 @@ func init() {
 	cleanupLoadtestCmd.Flags().BoolVar(&loadtestLegacy, "legacy", false, "delete events with example.com / images.example.com placeholder URLs")
 	cleanupLoadtestCmd.Flags().BoolVar(&loadtestDryRun, "dry-run", false, "show what would be deleted without deleting")
 	cleanupLoadtestCmd.Flags().BoolVar(&loadtestConfirm, "confirm", false, "actually execute the deletion (required unless --dry-run)")
+	cleanupLoadtestCmd.Flags().StringVar(&loadtestRunManifest, "run-manifest", "", "private manifest for strictly owned run cleanup; exclusive with legacy modes")
+	cleanupLoadtestCmd.Flags().BoolVar(&loadtestJSON, "json", false, "print structured run-manifest preview or cleanup report")
 
 }
 
@@ -85,8 +102,14 @@ func runCleanupLoadtest(cmd *cobra.Command, args []string) error {
 	}
 
 	// --- Guard 2: at least one deletion mode must be specified ---
-	if loadtestSourceID == "" && !loadtestLegacy {
-		return fmt.Errorf("specify --source-id=<uuid> or --legacy (or both)")
+	if loadtestSourceID == "" && !loadtestLegacy && loadtestRunManifest == "" {
+		return fmt.Errorf("specify --run-manifest=<file>, --source-id=<uuid> or --legacy")
+	}
+	if loadtestRunManifest != "" && (loadtestSourceID != "" || loadtestLegacy) {
+		return fmt.Errorf("--run-manifest cannot be combined with --source-id or --legacy")
+	}
+	if loadtestJSON && loadtestRunManifest == "" {
+		return fmt.Errorf("--json requires --run-manifest")
 	}
 
 	// --- Guard 2b: --source-id must be a valid UUID ---
@@ -99,6 +122,17 @@ func runCleanupLoadtest(cmd *cobra.Command, args []string) error {
 	// --- Guard 3: either --dry-run or --confirm required ---
 	if !loadtestDryRun && !loadtestConfirm {
 		return fmt.Errorf("specify --dry-run to preview, or --confirm to execute deletion")
+	}
+	if loadtestRunManifest != "" && loadtestDryRun && loadtestConfirm {
+		return fmt.Errorf("choose --dry-run or --confirm, not both")
+	}
+	var runManifest fixture.Manifest
+	if loadtestRunManifest != "" {
+		var err error
+		runManifest, err = fixture.Read(loadtestRunManifest)
+		if err != nil {
+			return fmt.Errorf("read private run manifest: %w", err)
+		}
 	}
 
 	// --- Connect to database ---
@@ -120,6 +154,17 @@ func runCleanupLoadtest(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("connect to database: %w", err)
 	}
 	defer pool.Close()
+	if loadtestRunManifest != "" {
+		report, err := postgres.NewEventRepository(pool, zerolog.Nop()).CleanupLoadtestRun(ctx, runManifest, loadtestConfirm)
+		if err != nil {
+			return err
+		}
+		if loadtestJSON {
+			return json.NewEncoder(cmd.OutOrStdout()).Encode(report)
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "[run] run=%s events=%d changes=%d reviews=%d applied=%t; source rows retained\n", report.RunID, report.EventCount, report.ChangeCount, report.ReviewCount, report.Applied)
+		return err
+	}
 
 	// --- Count + delete ---
 	if loadtestSourceID != "" {

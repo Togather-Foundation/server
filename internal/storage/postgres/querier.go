@@ -84,6 +84,8 @@ type Querier interface {
 	// Delete a specific entity identifier
 	DeleteEntityIdentifier(ctx context.Context, id int32) error
 	DeleteFederationNode(ctx context.Context, id pgtype.UUID) error
+	DeleteLoadtestRunChanges(ctx context.Context, eventIds []pgtype.UUID) (int64, error)
+	DeleteLoadtestRunEvents(ctx context.Context, eventIds []pgtype.UUID) (int64, error)
 	// Delete a single occurrence by its UUID, scoped to the given event. Returns the deleted ID
 	// so callers can detect when no row matched (event mismatch or already deleted).
 	DeleteOccurrenceByID(ctx context.Context, arg DeleteOccurrenceByIDParams) (pgtype.UUID, error)
@@ -195,6 +197,7 @@ type Querier interface {
 	GetLatestEventChange(ctx context.Context) (GetLatestEventChangeRow, error)
 	// Get the most recent scraper run for a given source_name.
 	GetLatestScraperRunBySource(ctx context.Context, sourceName string) (ScraperRun, error)
+	GetLoadtestRunLifecycle(ctx context.Context, eventID pgtype.UUID) (GetLoadtestRunLifecycleRow, error)
 	// Fetch a single occurrence row by its UUID, scoped to the given event.
 	GetOccurrenceByID(ctx context.Context, arg GetOccurrenceByIDParams) (GetOccurrenceByIDRow, error)
 	GetOrganizationByULID(ctx context.Context, ulid string) (GetOrganizationByULIDRow, error)
@@ -310,6 +313,10 @@ type Querier interface {
 	// never be touched by tidy.
 	ListIdentityGroups(ctx context.Context, entityType pgtype.Text) ([]ListIdentityGroupsRow, error)
 	ListLegacyFeedSources(ctx context.Context, feedUrl string) ([]ListLegacyFeedSourcesRow, error)
+	ListLoadtestRunCandidates(ctx context.Context, sourceUrl string) ([]ListLoadtestRunCandidatesRow, error)
+	ListLoadtestRunEventSources(ctx context.Context, eventID pgtype.UUID) ([]EventSource, error)
+	ListLoadtestRunOccurrences(ctx context.Context, eventID pgtype.UUID) ([]EventOccurrence, error)
+	ListLoadtestRunReviews(ctx context.Context, eventID pgtype.UUID) ([]EventReviewQueue, error)
 	// List all events that have been confirmed as NOT duplicates of a given event.
 	// Returns both sides of the pair (the given event could be event_id_a or event_id_b).
 	ListNotDuplicatesForEvent(ctx context.Context, eventID string) ([]EventNotDuplicate, error)
@@ -360,6 +367,8 @@ type Querier interface {
 	// Serialize concurrent elections on one (entity_type, entity_id, authority_code) group.
 	// pg_advisory_xact_lock is released automatically at transaction end.
 	LockIdentityGroup(ctx context.Context, key string) error
+	// Run cleanup takes the registry lock first, then parent tables before children.
+	LockLoadtestRunTables(ctx context.Context) error
 	LockSourceFeed(ctx context.Context, feedUrl string) error
 	LockSourceRegistry(ctx context.Context) error
 	// Source reconciliation uses the same snapshot for its dry run and apply.

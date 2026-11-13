@@ -39,6 +39,19 @@ assert '--rps' in args and args[args.index('--rps')+1]=='5', args
 assert '--duration' in args and args[args.index('--duration')+1]=='1m', args
 PY
 export PROBE_EXIT=7
+: > "$PROBE_ARGS"
+if bash "$probe_tmp/deploy/scripts/performance-test.sh" --read-ratio 0.8 > "$probe_tmp/output" 2>&1; then
+    echo 'FAIL: write mode accepted without manifest';exit 1
+fi
+[[ ! -s "$PROBE_ARGS" ]] || { echo 'FAIL: unowned write reached binary';exit 1; }
+rg -q 'requires --run-manifest' "$probe_tmp/output" || { echo 'FAIL: missing manifest diagnostic';exit 1; }
+PROBE_EXIT=0 bash "$probe_tmp/deploy/scripts/performance-test.sh" --read-ratio 0.8 --run-manifest "$probe_tmp/private-run.json" > "$probe_tmp/output" 2>&1
+python3 - "$PROBE_ARGS" "$probe_tmp/private-run.json" <<'PY'
+import sys
+args=open(sys.argv[1]).read().splitlines()
+assert args[args.index('--run-manifest')+1]==sys.argv[2], args
+assert args[args.index('--read-ratio')+1]=='0.8', args
+PY
 if bash "$probe_tmp/deploy/scripts/performance-test.sh" > "$probe_tmp/output" 2>&1; then
     echo 'FAIL: failure hidden';exit 1
 else

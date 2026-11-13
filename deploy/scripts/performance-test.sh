@@ -13,6 +13,7 @@ PROFILE="${PROFILE:-light}"
 DURATION=""
 RPS=""
 READ_RATIO=1
+RUN_MANIFEST=""
 MAX_ERROR_RATE=0
 JSON_OUTPUT=false
 NO_RAMP=false
@@ -40,6 +41,7 @@ OPTIONS:
     -s, --slot SLOT        Target specific slot: blue, green, or lb (load balanced)
     -k, --api-key KEY      API key for write endpoints (optional, repeatable)
     --max-error-rate NUM  Allowed non-authentication 4xx fraction (default: 0)
+    --run-manifest FILE    New private ownership manifest (required for writes)
     --json                 Print structured endpoint/status results
     --debug-auth           Log auth debug lines for 401 responses
     --no-ramp              Disable ramp-up/ramp-down (instant start/stop)
@@ -67,13 +69,13 @@ EXAMPLES:
     $0 --profile stress --url http://localhost
 
     # Custom read-heavy test (95% reads)
-    $0 --rps 50 --duration 2m --read-ratio 0.95
+    $0 --rps 50 --duration 2m --read-ratio 0.95 --run-manifest tmp/loadtest-runs/new-run.json
 
     # Use API key for authenticated writes
-    $0 --profile light --read-ratio 0.8 --api-key YOUR_API_KEY
+    $0 --profile light --read-ratio 0.8 --run-manifest tmp/loadtest-runs/new-run.json --api-key YOUR_API_KEY
 
     # Use multiple API keys
-    $0 --profile light --read-ratio 0.8 --api-key KEY_ONE --api-key KEY_TWO
+    $0 --profile light --read-ratio 0.8 --run-manifest tmp/loadtest-runs/new-run.json --api-key KEY_ONE --api-key KEY_TWO
 
     # Debug auth failures
     $0 --profile light --debug-auth
@@ -150,6 +152,10 @@ while [[ $# -gt 0 ]]; do
             MAX_ERROR_RATE="$2"
             shift 2
             ;;
+        --run-manifest)
+            RUN_MANIFEST="$2"
+            shift 2
+            ;;
         --json)
             JSON_OUTPUT=true
             shift
@@ -168,6 +174,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ -z "$RUN_MANIFEST" ]] && awk -v ratio="$READ_RATIO" 'BEGIN { exit !(ratio < 1) }'; then
+    echo "Error: write testing requires --run-manifest with a fresh private file" >&2
+    exit 1
+fi
 
 # Collect API keys from environment variables
 if [[ -n "${PERF_ADMIN_API_KEY:-}" ]]; then
@@ -199,7 +210,8 @@ LOADTEST_BIN="$PROJECT_ROOT/bin/loadtest"
 if [[ ! -f "$LOADTEST_BIN" ]] \
     || [[ "$PROJECT_ROOT/tests/performance/load_test.go" -nt "$LOADTEST_BIN" ]] \
     || [[ "$PROJECT_ROOT/cmd/loadtest/main.go" -nt "$LOADTEST_BIN" ]] \
-    || [[ "$PROJECT_ROOT/internal/loadtest/loadtest.go" -nt "$LOADTEST_BIN" ]]; then
+    || [[ "$PROJECT_ROOT/internal/loadtest/loadtest.go" -nt "$LOADTEST_BIN" ]] \
+    || [[ "$PROJECT_ROOT/internal/loadtest/fixture/run.go" -nt "$LOADTEST_BIN" ]]; then
     echo -e "${YELLOW}Building load test binary...${NC}"
     mkdir -p "$PROJECT_ROOT/bin"
     
@@ -221,6 +233,9 @@ cd "$PROJECT_ROOT"
 
 # Build command arguments
 ARGS=(--url "$TARGET_URL" --read-ratio "$READ_RATIO" --max-error-rate "$MAX_ERROR_RATE")
+if [[ -n "$RUN_MANIFEST" ]]; then
+    ARGS+=(--run-manifest "$RUN_MANIFEST")
+fi
 if [[ "$JSON_OUTPUT" == "true" ]]; then
     ARGS+=(--json)
 fi

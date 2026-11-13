@@ -51,6 +51,8 @@ func resetLoadtestFlags(t *testing.T) {
 	loadtestLegacy = false
 	loadtestDryRun = false
 	loadtestConfirm = false
+	loadtestRunManifest = ""
+	loadtestJSON = false
 	// Reset cobra's internal "help" flag so a prior --help invocation does not
 	// prevent RunE from being called in subsequent tests.
 	if hf := cleanupLoadtestCmd.Flags().Lookup("help"); hf != nil {
@@ -294,6 +296,32 @@ func TestGuardNotProductionDB(t *testing.T) {
 				if err != nil {
 					t.Errorf("unexpected error: %v", err)
 				}
+			}
+		})
+	}
+}
+
+func TestCleanupLoadtestCommand_RunManifestGuards(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"source mode cannot combine", []string{"--run-manifest=missing.json", "--source-id=00000000-0000-0000-0000-000000000000", "--dry-run"}, "cannot be combined"},
+		{"legacy mode cannot combine", []string{"--run-manifest=missing.json", "--legacy", "--confirm"}, "cannot be combined"},
+		{"json requires run ownership", []string{"--legacy", "--dry-run", "--json"}, "--json requires"},
+		{"ambiguous execution", []string{"--run-manifest=missing.json", "--dry-run", "--confirm"}, "not both"},
+		{"invalid manifest never falls back", []string{"--run-manifest=missing.json", "--confirm"}, "read private run manifest"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetLoadtestFlags(t)
+			t.Cleanup(func() { resetLoadtestFlags(t) })
+			cmd := newRootCommand()
+			cmd.SetOut(new(bytes.Buffer))
+			cmd.SetErr(new(bytes.Buffer))
+			cmd.SetArgs(append([]string{"cleanup", "loadtest", "--env=staging"}, tc.args...))
+			if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %q refusal before DB connection, got %v", tc.want, err)
 			}
 		})
 	}

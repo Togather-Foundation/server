@@ -4,10 +4,11 @@ This guide explains how to use the performance/load testing tools to validate th
 
 ## Overview
 
-The performance testing tool generates realistic traffic patterns using test fixtures from the codebase. It supports:
+The performance testing tool generates public read traffic and explicitly enabled,
+run-owned virtual fixture writes. It supports:
 
 - **Configurable load profiles** (light, medium, heavy, stress, burst, peak)
-- **Mix of read/write operations** using realistic event data
+- **Mix of read/write operations** with isolated, identifiable virtual fixture data
 - **Targeted testing** of blue/green slots or load-balanced endpoints
 - **Detailed metrics** including response times, throughput, errors, and per-endpoint statistics
 - **Gradual ramp-up/ramp-down** to simulate realistic traffic patterns
@@ -61,26 +62,37 @@ GET `/health`, `/api/v1/events`, `/api/v1/places`, and `/api/v1/organizations`.
 Protected `/metrics` is excluded from this public workload. `test-remote.sh` explicitly
 passes read-only mode and a zero error budget during routine post-deployment checks.
 
-Write traffic requires an explicit ratio below 1 and explicit credentials:
+Write traffic requires an explicit ratio below 1, credentials and a new private
+manifest file for each run:
 
 ```bash
-# Use only with a disposable database or positively verified fixture ownership.
-./deploy/scripts/performance-test.sh --profile light --read-ratio 0.8 --api-key "$LOADTEST_API_KEY"
+mkdir -p tmp/loadtest-runs
+chmod 700 tmp/loadtest-runs
+./deploy/scripts/performance-test.sh --profile light --read-ratio 0.8 \
+  --api-key "$LOADTEST_API_KEY" --run-manifest tmp/loadtest-runs/run-a.json
 ```
 
-Before sustained writes, each credential is checked with a POST containing malformed
-JSON (`{`) to the authenticated event-create route. The expected HTTP 400 is an explicit
-validation-only expectation: decoding fails before ingest, so this probe creates no
-event. HTTP 401/403 or any other status aborts the run before sustained traffic.
-This establishes authentication, not permission to ingest every generated fixture.
-Actual writes still need the isolation and cleanup precautions in
-[Load Testing Operations](../operations/load-testing.md).
+The manifest is exclusively created with mode `0600` before any event mutation;
+an existing path is refused. Keep it private and retain it after a crash or failed
+run so accepted fixtures can be recovered. Its ownership key is never sent to the
+server or printed in results.
+
+Before sustained writes, each credential must pass a malformed-JSON auth POST
+(expected HTTP 400, no event created), then create an owned fixture with HTTP 201.
+The runner reads that event's public detail with `include_provenance=true` and
+verifies its identity and exact stored source URL/event ID. HTTP 202 pending review
+fails closed because public detail hides it; the runner never auto-approves events.
+Mismatched/extra attribution and any other unexpected probe result stop sustained
+traffic, leaving identifiable probes for manifest-scoped cleanup. See
+[Load Testing Operations](../operations/load-testing.md) for recovery and cleanup.
 
 `--max-error-rate` sets the permitted fraction of ordinary non-authentication 4xx
 failures (default 0). HTTP 401/403, 5xx, transport/body failures, cancellation and empty
 runs always fail, even with a larger budget. Redirects are not followed. There is no
 implicit exemption for rate limiting or authentication failures. Negative-security
 checks belong in explicitly specified tests with their own expected status codes.
+Owned writes require HTTP 201; a larger ordinary error budget does not waive their
+creation/ownership expectations.
 
 Use `--json` with the Go CLI for a machine-readable result containing `passed`,
 `failed_expectations`, totals and per-endpoint `status_codes` (0 denotes transport/body
@@ -114,10 +126,12 @@ nonzero when expectations fail. Keys are omitted from result and debug output.
 ./deploy/scripts/performance-test.sh --rps 50 --duration 3m --slot blue
 
 # Read-heavy workload
-./deploy/scripts/performance-test.sh --rps 40 --duration 5m --read-ratio 0.95 --slot green
+./deploy/scripts/performance-test.sh --rps 40 --duration 5m --read-ratio 0.95 --slot green \
+  --api-key "$LOADTEST_API_KEY" --run-manifest tmp/loadtest-runs/read-heavy.json
 
 # Write-heavy workload (stress test writes)
-./deploy/scripts/performance-test.sh --rps 20 --duration 2m --read-ratio 0.3 --slot blue
+./deploy/scripts/performance-test.sh --rps 20 --duration 2m --read-ratio 0.3 --slot blue \
+  --api-key "$LOADTEST_API_KEY" --run-manifest tmp/loadtest-runs/write-heavy.json
 ```
 
 ### Custom Target URL
@@ -175,7 +189,8 @@ metrics                 49        1        4        0        5
 - **Duration**: Total test duration including ramp-up/ramp-down
 - **Total Requests**: All HTTP requests sent
 - **Successful**: Requests matching their expected status (normally 2xx; the
-  validation-only authentication preflight explicitly expects 400).
+  validation-only authentication preflight expects 400, owned creates expect 201
+  and ownership detail reads expect 200 plus matching attribution).
 - **Failed**: Requests that do not match their expected status, including transport
   or response-body failures.
 - **Requests/sec**: Average throughput
@@ -324,41 +339,36 @@ go build -o bin/loadtest ./cmd/loadtest
 
 ## Staging Cleanup
 
-Events ingested during a load test persist in the staging database. Clean them up after
-each run to avoid data contamination.
-
-A source-tagged key alone does not isolate the current generator: explicit payload
-source URLs override its fallback source. Verify actual attribution before relying on
-source-scoped cleanup (see
-[Load Testing Operations](../operations/load-testing.md) for one-time setup):
+Events accepted during a write run persist, including ownership probes. Stop the
+runner and wait for in-flight requests, then preview and clean the owning run:
 
 ```bash
-server cleanup loadtest --env=staging --source-id=<source-uuid> --confirm
+server cleanup loadtest --env=staging --run-manifest tmp/loadtest-runs/run-a.json --dry-run --json
+server cleanup loadtest --env=staging --run-manifest tmp/loadtest-runs/run-a.json --confirm --json
 ```
 
-**Legacy cleanup** — for events ingested before source tagging (matches `example.com`
-placeholder URLs injected by the fixture generator):
+Run cleanup lists exact IDs, verifies stored payload and canonical ownership, and
+deletes owned events and their related records atomically. Shared or modified events
+cause refusal; all source rows and their metadata remain intact. For remote DB-side
+execution, securely copy the manifest into the execution container first:
+`remote.sh` does not copy local files. See
+[Load Testing Operations](../operations/load-testing.md) for the complete lifecycle.
 
-```bash
-server cleanup loadtest --env=staging --legacy --confirm
-```
-
-Use `--dry-run` instead of `--confirm` to preview without deleting.
+Older `--source-id` and `--legacy` modes remain broad operator tools: they delete
+whole matching events and do not provide run-ownership or atomic lifecycle
+guarantees. Never use them as a fallback for refused run cleanup.
 
 > **Note:** Fixture inputs are subject to the server's normal validation. A valid API
 > key does not bypass reserved-domain checks or otherwise guarantee successful ingest.
 
 ## Performance Test Data
 
-The load tester uses realistic test fixtures from `tests/fixtures/`:
-
-- **10 Toronto venues** with real addresses and coordinates
-- **10 sample organizers** with URLs
-- **8 event sources** (Eventbrite, Meetup, Lu.ma, etc.)
-- **6 event categories** (music, arts, tech, social, education, games)
-- **Varied event types**: virtual, hybrid, in-person, recurring
-
-All generated events use these fixtures to create realistic traffic patterns.
+The load tester's write builder uses deterministic virtual events from
+`internal/loadtest/fixture`. Each has a unique run/sequence name, explicit run source
+URL, signed source event ID, public and virtual URLs, a run-local image marker URL
+and CC0 licensing. The image marker is not a hosted asset. No physical venue or
+organization is supplied, and pure virtual events enqueue no geocoding job. The
+general-purpose fixtures in `tests/fixtures/` remain available to other tests.
 
 ## Tips
 
@@ -371,4 +381,4 @@ All generated events use these fixtures to create realistic traffic patterns.
 
 ---
 
-**Last Updated:** 2026-11-12
+**Last Updated:** 2026-11-13

@@ -266,10 +266,11 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusAccepted
 	}
 
-	// Enqueue geocoding job for event if it was created successfully (srv-qq7o1)
+	// Enqueue geocoding only for a physical place. Virtual events have no venue
+	// to enrich and must not leave retrying jobs after fixture cleanup.
 	// Insert job synchronously - it's just a DB insert and should be fast.
 	// This ensures we know immediately if job insertion fails and prevents losing jobs on shutdown.
-	if result != nil && result.Event != nil && !result.IsDuplicate && h.RiverClient != nil {
+	if result != nil && result.Event != nil && result.PlaceULID != "" && !result.IsDuplicate && h.RiverClient != nil {
 		_, err := h.RiverClient.Insert(r.Context(), jobs.GeocodeEventArgs{EventID: result.Event.ULID}, &river.InsertOpts{
 			Queue:       "geocoding",
 			MaxAttempts: jobs.GeocodingMaxAttempts,

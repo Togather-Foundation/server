@@ -6,7 +6,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+
+	"github.com/Togather-Foundation/server/internal/loadtest/fixture"
 )
 
 func TestRunPropagatesFailuresAndReportsDistribution(t *testing.T) {
@@ -40,5 +45,42 @@ func TestCustomFlagsRetainSelectedProfile(t *testing.T) {
 	}
 	if exit := run(context.Background(), []string{"--rps", "0", "--no-ramp"}, &out, &errOut); exit == 0 {
 		t.Fatal("invalid explicit RPS accepted")
+	}
+}
+
+func TestWriteRunRequiresFreshPrivateManifestBeforeRequests(t *testing.T) {
+	var requests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	args := []string{"--url", server.URL, "--rps", "10", "--duration", "1ms", "--no-ramp", "--read-ratio", "0", "--api-key", "private-test-key", "--json"}
+	var out, errOut bytes.Buffer
+	if exit := run(context.Background(), args, &out, &errOut); exit == 0 || requests.Load() != 0 {
+		t.Fatal("missing manifest permitted requests")
+	}
+	path := filepath.Join(t.TempDir(), "run.json")
+	withManifest := append(append([]string{}, args...), "--run-manifest", path)
+	out.Reset()
+	errOut.Reset()
+	if exit := run(context.Background(), withManifest, &out, &errOut); exit == 0 {
+		t.Fatal("failed authentication accepted")
+	}
+	manifest, err := fixture.Read(path)
+	if err != nil || requests.Load() != 1 {
+		t.Fatalf("failed preflight did not preserve private capability: err=%v requests=%d", err, requests.Load())
+	}
+	if strings.Contains(out.String()+errOut.String(), manifest.OwnershipKey) || strings.Contains(out.String()+errOut.String(), "private-test-key") {
+		t.Fatal("credential or ownership key leaked")
+	}
+	out.Reset()
+	errOut.Reset()
+	if exit := run(context.Background(), withManifest, &out, &errOut); exit == 0 || requests.Load() != 1 {
+		t.Fatal("existing manifest reused or HTTP request sent")
+	}
+	retained, err := fixture.Read(path)
+	if err != nil || retained != manifest {
+		t.Fatal("existing capability was changed")
 	}
 }

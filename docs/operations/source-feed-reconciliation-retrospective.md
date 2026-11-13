@@ -114,8 +114,9 @@ cleanup as part of the load-test design rather than a follow-up operation.
 
 ## Remaining review concerns
 
-The native review approved the change with these nonblocking limitations. They are
-recorded here as candidate improvements, not claims of completed runtime fixes.
+The cleanup review recorded these nonblocking limitations. Follow-up status below
+distinguishes implemented safeguards from remaining operational work; feature-branch
+changes do not imply deployment.
 
 | Concern | Current behavior | Improvement to consider |
 |---|---|---|
@@ -123,11 +124,13 @@ recorded here as candidate improvements, not claims of completed runtime fixes.
 | In-flight writers | Locks protect the repair transaction, but a request that resolved an old source earlier can insert a legacy attribution after repair commits. Old-slot code can also mint host rows until stopped. | Quiesce and drain writers before repair; verify after the old slot stops. A stronger maintenance/barrier mechanism would need a separate design. |
 | Raw URL variants | Distinct stored trailing-slash spellings can survive as multiple observations on the same canonical source. Zero fragmentation does not establish that these variants are absent. | Measure their frequency first. If consolidating them, preserve complete originals in the archive and do not rewrite stored provenance URLs casually. |
 | Report precision | Ambiguous attribution choices produce history warnings even when no field/change rows exist; 65 such notices occurred here. | Distinguish ambiguous attribution pairs from actual retained history records in the report. |
-| CI coverage | The reviewer explicitly ran `go test ./cmd/...` in addition to fast CI. | Make critical CLI coverage visible in the standard gate so operators do not need to remember an extra invocation. |
+| CI coverage | Follow-up `t_d8a7acf4` includes command packages in shared local, CI and release unit/coverage gates. | Independent command factories remain `t_ee618493`; package-local sequencing currently protects shared Cobra test state. |
+| Write-test ownership | Follow-up `t_5f7ba8da` adds private run manifests, stored-provenance preflight and atomic cleanup that refuses shared or modified events. | Stop and drain the run before cleanup; retain its manifest. Source rows remain for separate preview-first pruning. |
 
-The highest-value next improvements are backup/preflight enforcement, deliberate
-write-test isolation and error thresholds, and label ownership. The operational
-writer-quiescence guidance can be applied immediately. URL-variant consolidation
+The first safeguard wave added verified migration backups, read-only probes with
+enforced failure status, and automated tooling/CLI checks. The second addresses
+label ownership and deliberate write-test isolation. Writer coordination, restore
+rehearsal and custom-backup retention remain separate work. URL-variant consolidation
 should follow measurement, not an assumption that every extra observation is wrong.
 
 ## Procedure to reuse
