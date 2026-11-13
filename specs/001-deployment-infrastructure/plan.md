@@ -6,7 +6,7 @@
 **Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
 
 **Operational safeguard follow-up (2026-11-13)**: [Load-test run isolation](loadtest-run-isolation-spec.md)
-is **In Progress**, tracked by `t_5f7ba8da`. It specifies private fixture ownership,
+is **Delivered** on the feature branch, tracked by `t_5f7ba8da`. It specifies private fixture ownership,
 stored-attribution preflight and transactional run cleanup; implementation follows
 the approved independent specification review.
 
