@@ -557,7 +557,12 @@ A provenance `sources` row represents **one normalized feed URL**. Its `feed_url
 is the unique registry key; `base_url` now stores that full normalized feed URL,
 including its path. The name is a human-readable label. Ingest and `server scrape
 sync` use the same resolver, so a config rename reuses the row even before its first
-event. Two paths on one host are separate feeds; query-filtered views of the same
+event. Ingest initializes labels only when creating a row; subsequent submissions
+preserve the existing label, including `unknown` and legacy labels. Only explicit
+config sync authorizes a rename, after validating existing trust and license. An
+initially unnamed feed therefore keeps `unknown` until config sync supplies its label.
+When same-policy configs share a feed, the most recently synced config supplies the
+label. Ordinary reconciliation preserves existing labels. Two paths on one host are separate feeds; query-filtered views of the same
 path share a row. Normalization strips query strings, fragments and trailing slashes,
 and preserves host spelling, matching the event identity rule below.
 

@@ -44,7 +44,7 @@ WHERE feed_url = sqlc.arg(feed_url)::text AND name <> sqlc.arg(name)::text;
 INSERT INTO sources (name, source_type, base_url, feed_url, license_url, license_type, trust_level)
 VALUES (sqlc.arg(name), sqlc.arg(source_type), sqlc.arg(feed_url)::text, sqlc.arg(feed_url)::text,
         sqlc.arg(license_url), sqlc.arg(license_type), sqlc.arg(trust_level))
-ON CONFLICT (feed_url) WHERE feed_url IS NOT NULL DO UPDATE SET name = EXCLUDED.name
+ON CONFLICT (feed_url) WHERE feed_url IS NOT NULL DO UPDATE SET name = sources.name
 RETURNING id::text;
 
 -- name: UpsertSourceWithoutURL :one

@@ -59,8 +59,11 @@ The SEL server has a mature ingestion pipeline (batch API, deduplication, reconc
 A provenance source is identified only by the normalized feed URL (query and fragment
 removed, trailing slashes ignored, paths significant, host spelling preserved).
 `base_url` on canonical rows contains the full normalized feed URL. Config sync and
-ingest share resolution; a changed name is a label update, including before the feed
-has produced events. Concurrent first observations must resolve one row. Different
+ingest share resolution. Ingest initializes a new row's label but preserves existing
+labels, including `unknown` and adopted legacy labels. Explicit config sync authorizes
+renames on the same row before or after its first event, after policy validation.
+Same-policy configs sharing a feed retain the most recently synced label. Ordinary
+reconciliation does not authorize renames. Concurrent first observations must resolve one row. Different
 feed paths on one host must resolve separate rows. Event identity remains scoped to
 feed URL plus source event id, never a registry row.
 

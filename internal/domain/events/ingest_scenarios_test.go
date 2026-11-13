@@ -3088,6 +3088,9 @@ func TestScenario_PerFeedProvenance(t *testing.T) {
 			t.Fatalf("Expected 2 source lookups, got %d", len(repo.sourceLookupParams))
 		}
 		for _, params := range repo.sourceLookupParams {
+			if params.AllowNameUpdate {
+				t.Error("ordinary ingest must not authorize source label updates")
+			}
 			if params.Name != "unknown" {
 				t.Errorf("Source name = %q, want %q (must not use per-event identity)", params.Name, "unknown")
 			}

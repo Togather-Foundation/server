@@ -1100,8 +1100,9 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	return event, nil
 }
 
-// GetOrCreateSource resolves solely by the normalized feed URL. Names are labels
-// and policy metadata on existing rows is preserved. Legacy host catch-alls are
+// GetOrCreateSource resolves solely by the normalized feed URL. Ingest initializes
+// new labels; existing labels change only with explicit AllowNameUpdate authority.
+// Policy metadata on existing rows is preserved. Legacy host catch-alls are
 // left to explicit reconciliation: adopting a row shared by several feeds would
 // copy the wrong policy and perpetuate attribution fragmentation.
 func (r *EventRepository) GetOrCreateSource(ctx context.Context, params events.SourceLookupParams) (string, error) {
@@ -1157,8 +1158,10 @@ func resolveFeedSource(ctx context.Context, q *Queries, feed string, params even
 		if params.RequirePolicyMatch && !sourcePolicyMatches(policy.TrustLevel, policy.LicenseUrl, policy.LicenseType, params) {
 			return "", fmt.Errorf("source policy conflict for feed %q: canonical trust/license differs from config; reconcile policy explicitly before syncing", feed)
 		}
-		if err := q.RelabelCanonicalSource(ctx, RelabelCanonicalSourceParams{Name: params.Name, FeedUrl: feed}); err != nil {
-			return "", sourceIdentityError(feed, err)
+		if params.AllowNameUpdate {
+			if err := q.RelabelCanonicalSource(ctx, RelabelCanonicalSourceParams{Name: params.Name, FeedUrl: feed}); err != nil {
+				return "", sourceIdentityError(feed, err)
+			}
 		}
 		return policy.ID, nil
 	}
@@ -1188,8 +1191,10 @@ func resolveFeedSource(ctx context.Context, q *Queries, feed string, params even
 	if err != nil {
 		return "", sourceIdentityError(feed, err)
 	}
-	if err := q.RelabelCanonicalSource(ctx, RelabelCanonicalSourceParams{Name: params.Name, FeedUrl: feed}); err != nil {
-		return "", sourceIdentityError(feed, err)
+	if params.AllowNameUpdate {
+		if err := q.RelabelCanonicalSource(ctx, RelabelCanonicalSourceParams{Name: params.Name, FeedUrl: feed}); err != nil {
+			return "", sourceIdentityError(feed, err)
+		}
 	}
 	return id, nil
 }

@@ -26,6 +26,7 @@ func (r *ScraperSourceRepository) SyncConfig(ctx context.Context, params scraper
 		lookup := events.SourceParamsForFeed(params.Name, feed, params.License, params.TrustLevel)
 		lookup.SourceType = "scraper"
 		lookup.RequirePolicyMatch = true
+		lookup.AllowNameUpdate = true
 		if _, err := registry.GetOrCreateSource(ctx, lookup); err != nil {
 			return nil, fmt.Errorf("register feed %q for config %q: %w", feed, params.Name, err)
 		}

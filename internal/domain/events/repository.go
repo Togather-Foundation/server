@@ -238,6 +238,9 @@ type IdempotencyKeyCreateParams struct {
 }
 
 type SourceLookupParams struct {
+	// AllowNameUpdate authorizes an explicit config sync to rename an existing
+	// canonical or adopted source. Ingest only initializes labels on new rows.
+	AllowNameUpdate bool
 	// RequirePolicyMatch makes config sync refuse conflicting canonical policy.
 	// Ingest leaves this false so new submissions cannot overwrite stored policy.
 	RequirePolicyMatch bool

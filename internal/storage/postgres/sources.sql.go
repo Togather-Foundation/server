@@ -71,7 +71,7 @@ const insertCanonicalSource = `-- name: InsertCanonicalSource :one
 INSERT INTO sources (name, source_type, base_url, feed_url, license_url, license_type, trust_level)
 VALUES ($1, $2, $3::text, $3::text,
         $4, $5, $6)
-ON CONFLICT (feed_url) WHERE feed_url IS NOT NULL DO UPDATE SET name = EXCLUDED.name
+ON CONFLICT (feed_url) WHERE feed_url IS NOT NULL DO UPDATE SET name = sources.name
 RETURNING id::text
 `
 
