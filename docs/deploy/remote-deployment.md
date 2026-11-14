@@ -93,19 +93,19 @@ Until board ticket `t_cbcebcc9` is fixed, backup service discovery can fail with
 Compose interpolation errors for `ADMIN_PASSWORD`, `JWT_SECRET`, or
 `POSTGRES_PASSWORD` even when the chosen staging env file contains those settings.
 The lookup currently omits an explicit `--env-file`. For a manual rollout, export
-the existing trusted env file in the deployment shell first:
+the existing trusted env file inside the deployment subshell. This diagnostic
+checks the chosen file and service discovery without exposing credentials:
 
 ```bash
-cd /opt/togather/src
-source deploy/scripts/deploy.sh
-rollout_env_file=$(discover_env_file staging)
-test -n "$rollout_env_file"
-set -a
-source "$rollout_env_file"
-set +a
-# Check service discovery without dumping interpolated config or credentials.
-docker compose --env-file "$rollout_env_file" \
-  -f deploy/docker/docker-compose.yml ps -q togather-db
+(
+  cd /opt/togather/src
+  rollout_env_file=deploy/config/environments/.env.staging
+  set -a
+  source "$rollout_env_file"
+  set +a
+  docker compose --env-file "$rollout_env_file" \
+    -f deploy/docker/docker-compose.yml ps -q togather-db
+)
 ```
 
 Do not enable shell tracing or print the env file/`docker compose config` output.
@@ -120,22 +120,31 @@ This is a manual transition for an already installed server, validated on stagin
 on 2026-11-14. Ordinary later rollouts use the updated active image directly.
 A new installation still requires the installation procedure above.
 
-Use the exact reviewed checkout on both machines. Prepare a static CLI locally
-with `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/togather-preflight ./cmd/server`
-(wrapped with `scripts/agent-run.sh` for agents). Confirm `uname -m` on the target
+Use the exact reviewed checkout on both machines. First run `make webfiles-bootstrap`
+locally: a clean checkout lacks the gitignored web files required by Go embeds.
+Then prepare a static CLI with
+`CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/togather-preflight ./cmd/server`
+(wrap both commands with `scripts/agent-run.sh` for agents). Confirm `uname -m` on the target
 first; the example architecture requires `x86_64`. Transfer the executable to an
 operator-owned temporary path on that host. Keep its checksum with the target
 commit in the handoff. Do not replace the running app's binary or install software
 inside its container.
 
-After checking out that reviewed commit on the host and preparing the environment
-as above, run the following in the same Bash shell. Set `rollout_cli` to the
-absolute path of the transferred executable:
+After checking out that reviewed commit on the host, run this block as a standalone
+Bash command. Set `rollout_cli` to the absolute path of the transferred executable:
 
 ```bash
-rollout_cli=/tmp/togather-preflight
-test -x "$rollout_cli"
-docker() {
+(
+  cd /opt/togather/src
+  source deploy/scripts/deploy.sh
+  rollout_env_file=$(discover_env_file staging)
+  test -n "$rollout_env_file"
+  set -a
+  source "$rollout_env_file"
+  set +a
+  rollout_cli=/tmp/togather-preflight
+  test -x "$rollout_cli"
+  docker() {
     if [[ "$1" == run && "$*" == *' source preflight '* ]]; then
         shift
         command docker run \
@@ -143,13 +152,19 @@ docker() {
     else
         command docker "$@"
     fi
-}
-init_logging staging
-deploy staging false false
-# After successful deployment, verify the ordinary gate needs no temporary CLI.
-unset -f docker
-preflight_sources staging
+  }
+  init_logging staging
+  deploy staging false false
+  # Verify the ordinary gate needs no temporary CLI after successful deployment.
+  unset -f docker
+  preflight_sources staging
+)
 ```
+
+The subshell confines `deploy.sh`'s `set -euo pipefail` and EXIT/INT/TERM traps.
+Its exit releases the deployment lock on success or failure. After a failure,
+resolve the cause and retry the whole block in a fresh subshell; do not retain a
+sourced deployment shell or forcibly clear another deployment's lock.
 
 The override adds only a read-only executable mount to the one-shot preflight
 container. It retains the active network/runtime database URL, incoming config
