@@ -148,6 +148,49 @@ func (q *Queries) ListSourceAuditFragments(ctx context.Context) ([]ListSourceAud
 	return items, nil
 }
 
+const listSourcePreflightRegistry = `-- name: ListSourcePreflightRegistry :many
+SELECT id, name, base_url, feed_url, trust_level, license_url, license_type
+FROM sources ORDER BY created_at, id
+`
+
+type ListSourcePreflightRegistryRow struct {
+	ID          pgtype.UUID `json:"id"`
+	Name        string      `json:"name"`
+	BaseUrl     pgtype.Text `json:"base_url"`
+	FeedUrl     pgtype.Text `json:"feed_url"`
+	TrustLevel  int32       `json:"trust_level"`
+	LicenseUrl  string      `json:"license_url"`
+	LicenseType string      `json:"license_type"`
+}
+
+func (q *Queries) ListSourcePreflightRegistry(ctx context.Context) ([]ListSourcePreflightRegistryRow, error) {
+	rows, err := q.db.Query(ctx, listSourcePreflightRegistry)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListSourcePreflightRegistryRow{}
+	for rows.Next() {
+		var i ListSourcePreflightRegistryRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.BaseUrl,
+			&i.FeedUrl,
+			&i.TrustLevel,
+			&i.LicenseUrl,
+			&i.LicenseType,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSourceRepairAttributions = `-- name: ListSourceRepairAttributions :many
 SELECT es.id, es.event_id, es.source_id, es.source_url, es.source_event_id, es.retrieved_at, es.payload, es.payload_hash, es.confidence FROM event_sources es ORDER BY es.id
 `

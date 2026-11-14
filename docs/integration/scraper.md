@@ -590,6 +590,7 @@ There is no automatic repair-wide pause/drain flag. See the
 
 ```bash
 server source audit --json
+server source preflight --sources configs/sources --json
 server source reconcile --json-report                  # preview; transaction rolled back
 server source reconcile --json-report --confirm        # apply after inspecting preview
 server source reconcile --json-report                  # verify no further moves
@@ -597,6 +598,21 @@ server source reconcile --json-report --use-config-trust # preview explicit trus
 server source prune-empty --json-report                # preview safe orphan cleanup
 server source prune-empty --json-report --confirm      # retire eligible orphans
 ```
+
+`source preflight` is a read-only inventory of incoming YAML policy versus the
+registry. Each entry reports the config label, normalized feed, resolved source
+UUID (when present), stored/configured trust and license, and typed conflicts:
+`trust_mismatch`, `license_mismatch`, `configured_policy_conflict`,
+`canonical_ownership_conflict`, or `invalid_feed`. Equivalent CC0 aliases match;
+license versions remain distinct. Different warning suppressions do not conflict.
+Persisted scraper configs supply legacy ownership evidence but their old policy
+does not override incoming YAML. New feeds without an existing owner are valid.
+The command uses a read-only database transaction, exits nonzero on any conflict,
+and changes no labels, registry rows, configs, keys or provenance. It has a
+one-minute timeout and strips credentials/query tokens from report URLs and errors.
+Resolve conflicts explicitly before sync; preflight never adopts configured trust
+or licenses automatically. This check describes its snapshot, not a writer barrier;
+sync still validates policy when it writes.
 
 Reconciliation maps `event_sources.source_url` to the canonical feed row, retaining
 attribution ids, URLs, source event ids and payloads. It reports before/after counts

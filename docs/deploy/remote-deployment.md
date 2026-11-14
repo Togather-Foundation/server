@@ -15,6 +15,20 @@ Remote deployment enables developers to deploy directly from their local machine
 
 ## Prerequisites
 
+Deployments check incoming source policy before cache pruning or image building.
+The gate runs `source preflight --json` using the existing active image and database
+network, with the current checkout's `configs/sources` mounted read-only. Any policy,
+ownership, connection or command failure stops deployment before the build. Resolve
+policy conflicts explicitly; deployment does not change stored trust or licenses.
+
+The active image must already support `source preflight`. **First rollout
+limitation:** older images cannot run this automatic gate. A current standalone
+`server source preflight --sources configs/sources --json` with database access can
+diagnose policy before that rollout; install a compatible image through the existing
+installation/manual rollout procedure before using this automatic deployment path.
+There is no automatic binary bootstrap or silent skip. A missing active container
+likewise requires the installation procedure first.
+
 ### On Local Machine
 - Git repository cloned
 - SSH access to target server

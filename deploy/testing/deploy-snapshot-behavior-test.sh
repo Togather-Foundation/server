@@ -84,6 +84,9 @@ validate_config() { :; }
 validate_tool_versions() { :; }
 validate_git_commit() { :; }
 acquire_lock() { :; }
+# This harness isolates backup/migration ordering; the independent source-policy
+# gate is covered by deploy-sync-behavior-test.sh.
+preflight_sources() { :; }
 check_disk_space() { :; }
 prune_docker_cache() { :; }
 build_docker_image() { :; }

@@ -288,6 +288,37 @@ test_container_not_running() {
 # Main
 # ============================================================================
 
+test_preflight_sources() {
+    local function_body
+    function_body=$(sed -n '/^preflight_sources()/,/^}/p' "$DEPLOY_SCRIPT")
+    [[ -n "$function_body" ]] || return 1
+    (
+        eval "$function_body"
+        PROJECT_ROOT='/checkout/current'
+        get_active_slot() { echo green; }
+        discover_env_file() { echo /private/staging.env; }
+        docker() {
+            case "$1" in
+                inspect) [[ "$*" == *'togather-server-green'* ]] && echo sha256:existing ;;
+                run)
+                    [[ "$*" == *'--rm --network container:togather-server-green --env-file /private/staging.env'* ]] &&
+                    [[ "$*" == *'type=bind,src=/checkout/current/configs/sources,dst=/app/configs/sources,readonly'* ]] &&
+                    [[ "$*" == *'sha256:existing source preflight --sources /app/configs/sources --json'* ]] &&
+                    return "${PREFLIGHT_TEST_STATUS:-0}"
+                    ;;
+                *) return 99 ;;
+            esac
+        }
+        preflight_sources staging || exit 1
+        PREFLIGHT_TEST_STATUS=1
+        if preflight_sources staging; then exit 1; fi
+    ) || return 1
+    # The call must precede image build and any cache pruning.
+    local deployment
+    deployment=$(sed -n '/^deploy()/,/^}/p' "$DEPLOY_SCRIPT")
+    [[ "$deployment" == *'preflight_sources "$env" || return 1'*'prune_docker_cache'*'build_docker_image'* ]]
+}
+
 main() {
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -325,6 +356,7 @@ main() {
     fi
 
     # Run tests
+    run_test "Preflight uses checkout configs and fails before build" test_preflight_sources
     run_test "Success in staging (exit 0)" test_success_staging
     run_test "Success in production (exit 0)" test_success_production
     run_test "Success in development (exit 0)" test_success_development

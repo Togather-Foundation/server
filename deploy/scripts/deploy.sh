@@ -1977,6 +1977,27 @@ EOF
 # MAIN DEPLOYMENT FUNCTION
 # ============================================================================
 
+# Check incoming checkout configs with the existing image, before building its
+# replacement. Unsupported old images fail explicitly rather than skipping policy.
+preflight_sources() {
+    local env="$1" container image env_file
+    container="togather-server-$(get_active_slot)"
+    env_file=$(discover_env_file "$env")
+    if [[ -z "$env_file" ]]; then
+        log "ERROR" "Missing environment file for source policy preflight"
+        return 1
+    fi
+    image=$(docker inspect --format '{{.Image}}' "$container") || return 1
+    log "INFO" "Checking incoming source policies before image build"
+    if ! docker run --rm --network "container:${container}" --env-file "$env_file" \
+        --mount "type=bind,src=${PROJECT_ROOT}/configs/sources,dst=/app/configs/sources,readonly" \
+        "$image" source preflight --sources /app/configs/sources --json; then
+        log "ERROR" "Source policy preflight failed; resolve reported policy/ownership conflicts before deployment"
+        log "ERROR" "The existing image must support 'source preflight'; older images require the documented first-rollout procedure"
+        return 1
+    fi
+}
+
 deploy() {
     local env="$1"
     local skip_migrations="${2:-false}"
@@ -2006,6 +2027,8 @@ deploy() {
         DEPLOYMENT_ID="forced_$(date +%s)_${GIT_SHORT_COMMIT}"
     fi
     
+    preflight_sources "$env" || return 1
+
     # Pre-deploy disk check and cache prune
     check_disk_space 5 || true
     prune_docker_cache "$env" || true

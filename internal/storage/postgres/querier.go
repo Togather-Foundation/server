@@ -355,6 +355,7 @@ type Querier interface {
 	// Paginated list of submissions, optionally filtered by status (for admin).
 	ListScraperSubmissions(ctx context.Context, arg ListScraperSubmissionsParams) ([]ScraperSubmission, error)
 	ListSourceAuditFragments(ctx context.Context) ([]ListSourceAuditFragmentsRow, error)
+	ListSourcePreflightRegistry(ctx context.Context) ([]ListSourcePreflightRegistryRow, error)
 	ListSourceRepairAttributions(ctx context.Context) ([]ListSourceRepairAttributionsRow, error)
 	ListSourceRepairConfigs(ctx context.Context) ([]ListSourceRepairConfigsRow, error)
 	ListSourceRepairRegistry(ctx context.Context) ([]ListSourceRepairRegistryRow, error)

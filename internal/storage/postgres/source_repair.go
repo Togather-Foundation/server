@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
@@ -28,6 +29,138 @@ type SourceRepairOptions struct {
 	Apply          bool
 	Configs        []SourceRepairConfig
 	UseConfigTrust bool
+}
+
+type SourcePreflightPolicy struct {
+	TrustLevel  int    `json:"trustLevel"`
+	LicenseURL  string `json:"licenseUrl"`
+	LicenseType string `json:"licenseType"`
+}
+
+type SourcePreflightEntry struct {
+	ConfigName string                 `json:"configName"`
+	Feed       string                 `json:"feed"`
+	SourceID   string                 `json:"sourceId,omitempty"`
+	Stored     *SourcePreflightPolicy `json:"stored,omitempty"`
+	Configured SourcePreflightPolicy  `json:"configured"`
+	Conflicts  []string               `json:"conflicts"`
+}
+
+type SourcePreflightReport struct {
+	Entries   []SourcePreflightEntry `json:"entries"`
+	Conflicts int                    `json:"conflicts"`
+}
+
+// PreflightSourcePolicies compares incoming YAML against the registry, without
+// registering feeds or changing labels. Persisted scraper configs are ownership
+// evidence for legacy selection, not desired policy: YAML may intentionally change.
+func PreflightSourcePolicies(ctx context.Context, pool *pgxpool.Pool, configs []SourceRepairConfig) (*SourcePreflightReport, error) {
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, fmt.Errorf("begin source preflight: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	q := New(tx)
+	registry, err := q.ListSourcePreflightRegistry(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list source preflight registry: %w", err)
+	}
+	byFeed := map[string][]SourceRepairConfig{}
+	for _, cfg := range configs {
+		for _, raw := range cfg.URLs {
+			feed := events.NormalizeFeedURL(raw)
+			byFeed[feed] = append(byFeed[feed], cfg)
+		}
+	}
+	feeds := make([]string, 0, len(byFeed))
+	for feed := range byFeed {
+		feeds = append(feeds, feed)
+	}
+	sort.Strings(feeds)
+	report := &SourcePreflightReport{Entries: []SourcePreflightEntry{}}
+	for _, feed := range feeds {
+		group := byFeed[feed]
+		sort.SliceStable(group, func(i, j int) bool { return group[i].Name < group[j].Name })
+		for _, cfg := range group {
+			params := events.SourceParamsForFeed(cfg.Name, feed, cfg.License, cfg.TrustLevel)
+			entry := SourcePreflightEntry{ConfigName: cfg.Name, Feed: feed, Configured: SourcePreflightPolicy{params.TrustLevel, params.LicenseURL, params.LicenseType}, Conflicts: []string{}}
+			parsed, parseErr := url.Parse(feed)
+			if parseErr != nil || parsed.Host == "" || (parsed.Scheme != "https" && parsed.Scheme != "http") {
+				entry.Conflicts = append(entry.Conflicts, "invalid_feed")
+			} else {
+				for _, other := range group {
+					if repairPolicy(other) != repairPolicy(cfg) {
+						entry.Conflicts = append(entry.Conflicts, "configured_policy_conflict")
+						break
+					}
+				}
+				var source *ListSourcePreflightRegistryRow
+				for _, row := range registry {
+					if row.FeedUrl.Valid && row.FeedUrl.String == feed {
+						copy := row
+						source = &copy
+						break
+					}
+				}
+				if source == nil {
+					candidate, selectErr := selectLegacyFeedSource(ctx, q, feed, params)
+					if selectErr != nil {
+						// Distinguish policy ambiguity from infrastructure/query failure.
+						if !strings.HasPrefix(selectErr.Error(), "source policy conflict") {
+							return nil, selectErr
+						}
+						entry.Conflicts = append(entry.Conflicts, "canonical_ownership_conflict")
+					} else if candidate != nil {
+						entry.SourceID = candidate.SID
+						entry.Stored = &SourcePreflightPolicy{int(candidate.TrustLevel), candidate.LicenseUrl, candidate.LicenseType}
+					}
+				} else {
+					entry.SourceID = source.ID.String()
+					entry.Stored = &SourcePreflightPolicy{int(source.TrustLevel), source.LicenseUrl, source.LicenseType}
+				}
+				if entry.Stored != nil {
+					if entry.Stored.TrustLevel != params.TrustLevel {
+						entry.Conflicts = append(entry.Conflicts, "trust_mismatch")
+					}
+					if !sourcePolicyMatches(int32(params.TrustLevel), entry.Stored.LicenseURL, entry.Stored.LicenseType, params) {
+						entry.Conflicts = append(entry.Conflicts, "license_mismatch")
+					}
+				}
+				// A label shared by another legacy row with the same exact base URL
+				// would reject the relabel/insert even when policy otherwise agrees.
+				for _, row := range registry {
+					if row.Name == cfg.Name && row.BaseUrl.Valid && row.BaseUrl.String == feed && row.ID.String() != entry.SourceID {
+						entry.Conflicts = append(entry.Conflicts, "canonical_ownership_conflict")
+						break
+					}
+				}
+			}
+			if len(entry.Conflicts) > 0 {
+				report.Conflicts++
+			}
+			entry.Feed = redactSourcePreflightURL(entry.Feed)
+			entry.Configured.LicenseURL = redactSourcePreflightURL(entry.Configured.LicenseURL)
+			if entry.Stored != nil {
+				entry.Stored.LicenseURL = redactSourcePreflightURL(entry.Stored.LicenseURL)
+			}
+			report.Entries = append(report.Entries, entry)
+		}
+	}
+	return report, nil
+}
+
+func redactSourcePreflightURL(value string) string {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "[invalid URL]"
+	}
+	if parsed.Scheme == "" {
+		return value
+	} // SPDX license aliases.
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 type SourceTrustChange struct {

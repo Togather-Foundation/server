@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -9,6 +10,78 @@ import (
 	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSourcePreflightPoliciesReadOnly(t *testing.T) {
+	ctx := context.Background()
+	pool, _ := setupPostgres(t, ctx)
+	configs := []SourceRepairConfig{}
+	ids := map[string]string{}
+	for i := 0; i < 7; i++ {
+		name := fmt.Sprintf("trust-%d", i)
+		feed := "https://preflight.example.org/" + name
+		var id string
+		require.NoError(t, pool.QueryRow(ctx, `INSERT INTO sources(name,source_type,base_url,feed_url,license_url,license_type,trust_level) VALUES ($1,'scraper',$2,$2,'CC0-1.0','CC0',5) RETURNING id`, name, feed).Scan(&id))
+		ids[name] = id
+		configs = append(configs, SourceRepairConfig{Name: name, URLs: []string{feed + "?view=all"}, TrustLevel: 6 + i%3, License: "https://creativecommons.org/publicdomain/zero/1.0/"})
+	}
+	// A stale persisted config does not conflict with its replacement YAML.
+	_, err := pool.Exec(ctx, `INSERT INTO scraper_sources(name,url,trust_level,license) VALUES ('trust-0','https://preflight.example.org/trust-0',5,'CC0')`)
+	require.NoError(t, err)
+	_, err = pool.Exec(ctx, `INSERT INTO sources(name,source_type,base_url,feed_url,license_url,license_type,trust_level) VALUES ('version','scraper','https://preflight.example.org/version','https://preflight.example.org/version','https://creativecommons.org/licenses/by/3.0/','CC-BY',5)`)
+	require.NoError(t, err)
+	configs = append(configs,
+		SourceRepairConfig{Name: "version", URLs: []string{"https://preflight.example.org/version"}, TrustLevel: 5, License: "CC-BY-4.0"},
+		SourceRepairConfig{Name: "view-a", URLs: []string{"https://preflight.example.org/views?one"}, TrustLevel: 5, License: "CC0"},
+		SourceRepairConfig{Name: "view-b", URLs: []string{"https://preflight.example.org/views?two"}, TrustLevel: 8, License: "CC0-1.0"},
+		SourceRepairConfig{Name: "suppression-a", URLs: []string{"https://preflight.example.org/new?one"}, TrustLevel: 5, License: "CC0", SuppressReviewWarnings: []string{"missing_image"}},
+		SourceRepairConfig{Name: "suppression-b", URLs: []string{"https://preflight.example.org/new?two"}, TrustLevel: 5, License: "CC0-1.0", SuppressReviewWarnings: []string{"missing_description"}},
+		SourceRepairConfig{Name: "ownership", URLs: []string{"https://preflight.example.org/ownership"}, TrustLevel: 7, License: "CC0"},
+		SourceRepairConfig{Name: "private", URLs: []string{"https://user:supersecret@preflight.example.org/private?token=secretquery"}, TrustLevel: 5, License: "CC0"},
+		SourceRepairConfig{Name: "label-collision", URLs: []string{"https://preflight.example.org/label"}, TrustLevel: 5, License: "CC0"},
+	)
+	_, err = pool.Exec(ctx, `INSERT INTO sources(name,source_type,base_url,feed_url,license_url,license_type,trust_level) VALUES ('canonical-label','scraper','https://preflight.example.org/label','https://preflight.example.org/label','CC0','CC0',5),('label-collision','scraper','https://preflight.example.org/label',NULL,'CC0','CC0',5)`)
+	require.NoError(t, err)
+	for i := 0; i < 2; i++ {
+		_, err := pool.Exec(ctx, `INSERT INTO sources(name,source_type,base_url,license_url,license_type,trust_level) VALUES ($1,'scraper','https://preflight.example.org/ownership','CC0','CC0',$2)`, fmt.Sprintf("legacy-owner-%d", i), 5+i)
+		require.NoError(t, err)
+		_, err = pool.Exec(ctx, `INSERT INTO scraper_sources(name,url,trust_level,license) VALUES ($1,'https://preflight.example.org/ownership',$2,'CC0')`, fmt.Sprintf("legacy-owner-%d", i), 5+i)
+		require.NoError(t, err)
+	}
+	snapshot := func() string {
+		var value string
+		require.NoError(t, pool.QueryRow(ctx, `SELECT jsonb_build_object('sources',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM sources s),'configs',(SELECT jsonb_agg(to_jsonb(s) ORDER BY id) FROM scraper_sources s),'keys',(SELECT jsonb_agg(to_jsonb(k) ORDER BY id) FROM api_keys k),'attrs',(SELECT jsonb_agg(to_jsonb(e) ORDER BY id) FROM event_sources e))::text`).Scan(&value))
+		return value
+	}
+	before := snapshot()
+	report, err := PreflightSourcePolicies(ctx, pool, configs)
+	require.NoError(t, err)
+	require.Equal(t, before, snapshot(), "inventory must not change any persisted data")
+	require.Equal(t, 12, report.Conflicts)
+	for _, entry := range report.Entries {
+		switch {
+		case strings.HasPrefix(entry.ConfigName, "trust-"):
+			require.Equal(t, []string{"trust_mismatch"}, entry.Conflicts)
+			require.Equal(t, ids[entry.ConfigName], entry.SourceID)
+			require.Equal(t, 5, entry.Stored.TrustLevel)
+			require.Contains(t, []int{6, 7, 8}, entry.Configured.TrustLevel)
+			require.NotContains(t, entry.Feed, "?")
+		case entry.ConfigName == "version":
+			require.Equal(t, []string{"license_mismatch"}, entry.Conflicts)
+		case strings.HasPrefix(entry.ConfigName, "view-"):
+			require.Equal(t, []string{"configured_policy_conflict"}, entry.Conflicts)
+		case entry.ConfigName == "ownership":
+			require.Equal(t, []string{"canonical_ownership_conflict"}, entry.Conflicts)
+		case entry.ConfigName == "label-collision":
+			require.Equal(t, []string{"canonical_ownership_conflict"}, entry.Conflicts)
+		default:
+			require.Empty(t, entry.Conflicts)
+		}
+	}
+	encoded, err := json.Marshal(report)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "supersecret")
+	require.NotContains(t, string(encoded), "secretquery")
+}
 
 func TestSourceReconcileDryRunAndIdempotency(t *testing.T) {
 	ctx := context.Background()

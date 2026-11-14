@@ -25,6 +25,51 @@ func init() {
 	cmd.Flags().BoolVar(&sourceRepairApply, "confirm", false, "Commit reconciliation (without this flag all changes are rolled back)")
 	cmd.Flags().BoolVar(&sourceRepairUseConfigTrust, "use-config-trust", false, "Explicitly reconcile canonical trust to agreed config trust when licenses match; report each old/new value")
 	sourceCmd.AddCommand(cmd)
+	preflight := &cobra.Command{Use: "preflight", Short: "Read-only check of incoming source policy against the registry", RunE: runSourcePreflight}
+	preflight.Flags().Bool("json", false, "Output policy inventory as JSON")
+	sourceCmd.AddCommand(preflight)
+}
+
+func runSourcePreflight(cmd *cobra.Command, args []string) (resultErr error) {
+	defer func() {
+		if resultErr != nil {
+			resultErr = fmt.Errorf("%s", newSyncErrorDetail("", resultErr).Error)
+		}
+	}()
+	ctx, cancel := context.WithTimeout(cmd.Context(), time.Minute)
+	defer cancel()
+	configs, err := loadSourceRepairConfigs()
+	if err != nil {
+		return err
+	}
+	if len(configs) == 0 {
+		return fmt.Errorf("source preflight: no source configs found; supply the incoming YAML directory")
+	}
+	pool, err := sourceAuditPool(ctx)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	report, err := postgres.PreflightSourcePolicies(ctx, pool, configs)
+	if err != nil {
+		return err
+	}
+	jsonOutput, _ := cmd.Flags().GetBool("json")
+	if jsonOutput {
+		if err = json.NewEncoder(cmd.OutOrStdout()).Encode(report); err != nil {
+			return err
+		}
+	} else {
+		for _, entry := range report.Entries {
+			if _, err = fmt.Fprintf(cmd.OutOrStdout(), "%s %s source=%s stored=%+v configured=%+v conflicts=%v\n", entry.ConfigName, entry.Feed, entry.SourceID, entry.Stored, entry.Configured, entry.Conflicts); err != nil {
+				return err
+			}
+		}
+	}
+	if report.Conflicts > 0 {
+		return fmt.Errorf("source preflight: %d config/feed entries have conflicts; reconcile policy or ownership explicitly before deploying", report.Conflicts)
+	}
+	return nil
 }
 
 func loadSourceRepairConfigs() ([]postgres.SourceRepairConfig, error) {

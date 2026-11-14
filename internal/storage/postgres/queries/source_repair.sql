@@ -1,3 +1,7 @@
+-- name: ListSourcePreflightRegistry :many
+SELECT id, name, base_url, feed_url, trust_level, license_url, license_type
+FROM sources ORDER BY created_at, id;
+
 -- Source reconciliation uses the same snapshot for its dry run and apply.
 -- Locks prevent concurrent ingest/config writes from invalidating that snapshot.
 -- name: LockSourceRegistryExclusive :exec
