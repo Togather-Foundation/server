@@ -579,13 +579,20 @@ These commands use `DATABASE_URL` directly and require the complete YAML invento
 (default `configs/sources`; override with `--sources`). The database config inventory
 also protects configured sources. A missing or invalid YAML inventory fails closed.
 
-Before applying a repair, pause new scraping/submission work and drain in-flight
-writers using the environment's maintenance controls. The repair's locks protect its
-transaction; they do not invalidate a source id resolved by an earlier request. That
-request can write a legacy attribution after commit. During blue/green cutover the old
-binary can also recreate host-level rows until it is stopped. Verify a second preview
-and audit again after old writers stop; repeat reconciliation if stale writes appeared.
-There is no automatic repair-wide pause/drain flag. See the
+Reconciliation is an offline maintenance operation. Stop new scraping/submission
+work, drain in-flight jobs and requests, then stop all application slots and other
+writer processes, including scheduled and manual CLI jobs. Keep PostgreSQL running.
+Use an updated standalone or one-shot repair CLI with the complete config inventory;
+`remote.sh` cannot exec into an application container that has been stopped.
+
+Take the verified pre-repair backup, preview and apply the repair, then require a
+second preview with no further moves and a clean audit **before** restarting updated
+writers. If verification fails, keep writers stopped and investigate. Planned downtime
+is acceptable for this rare operation; online repair is not supported. The repair's
+transaction locks alone do not invalidate a previously resolved source ID, so merely
+pausing the scheduler or leaving an old blue/green slot running is insufficient.
+There is no automatic stop/drain flag. See the
+[maintenance procedure](../../specs/003-scraper/source-repair-coordination.md) and
 [cleanup retrospective](../operations/source-feed-reconciliation-retrospective.md).
 
 ```bash
