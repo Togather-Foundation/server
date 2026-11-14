@@ -13,7 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -24,8 +23,6 @@ var (
 	sharedPool      *pgxpool.Pool
 	sharedDBURL     string
 )
-
-const sharedContainerName = "togather-storage-db"
 
 type seededEntity struct {
 	ID   string
@@ -50,19 +47,18 @@ func setupPostgres(t *testing.T, ctx context.Context) (*pgxpool.Pool, string) {
 func initShared(t *testing.T) {
 	t.Helper()
 	sharedOnce.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 		defer cancel()
 
-		// Disable ryuk (resource reaper) to prevent premature container cleanup
-		_ = os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true")
-
+		// Share only inside this test binary. Fixed-name reuse lets another
+		// process reset or terminate our database. Keep the default reaper for
+		// abnormal exits as well as explicit TestMain teardown below.
 		container, err := postgres.Run(
 			ctx,
 			"postgis/postgis:16-3.4",
 			postgres.WithDatabase("sel"),
 			postgres.WithUsername("sel"),
 			postgres.WithPassword("sel_dev"),
-			testcontainers.WithReuseByName(sharedContainerName),
 		)
 		if err != nil {
 			sharedInitErr = err
@@ -100,7 +96,9 @@ func cleanupShared() {
 		sharedPool.Close()
 	}
 	if sharedContainer != nil {
-		_ = sharedContainer.Terminate(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_ = sharedContainer.Terminate(ctx)
 	}
 }
 

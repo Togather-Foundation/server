@@ -9,6 +9,19 @@ make e2e                               # browser E2E tests; requires running ser
 
 Run targeted package tests first; expand to `make ci-fast` for quick CI feedback, or `make ci` for full verification.
 
+Storage tests share one disposable, automatically named PostGIS container per
+test process. Independent processes can run without sharing resets or teardown;
+tests using `setupPostgres`/`resetDatabase` inside one process must stay serial
+(no `t.Parallel`). Do not restore fixed-name container reuse. The explicit
+two-process regression is:
+
+```bash
+scripts/agent-run.sh env RUN_STORAGE_PROCESS_ISOLATION=1 go test ./internal/storage/postgres -run '^TestStorageProcessIsolation$' -count=1
+```
+
+Both child processes must exit zero. Startup/coordination and teardown are bounded;
+cleanup must only remove owned resources. See `docs/contributors/testing.md`.
+
 For E2E details see `tests/e2e/AGENTS.md`.
 
 ## Package Layout — never put a Go package under `testdata/`

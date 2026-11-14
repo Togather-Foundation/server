@@ -576,7 +576,36 @@ Tests must therefore:
 
 ### Test Environment Setup
 
-**Shared Container Pattern**: Reuse Postgres container across tests for speed.
+**Shared Container Pattern**: Share a Postgres container within one test process
+for speed. Never reuse a fixed Docker name across independent test processes:
+one process can otherwise truncate or stop another process's database. Storage
+tests use a fresh, automatically named container per process, with bounded
+startup and teardown; Testcontainers' resource reaper remains available for
+abnormal exits unless explicitly disabled by the environment.
+
+Tests that call `setupPostgres`/`resetDatabase` must remain serial within the
+package. Process isolation does not make concurrent truncation inside one binary
+safe. Do not add `t.Parallel` to these tests.
+
+Run the deterministic two-process storage regression explicitly (it starts two
+additional PostGIS containers):
+
+```bash
+scripts/agent-run.sh env RUN_STORAGE_PROCESS_ISOLATION=1 go test ./internal/storage/postgres -run '^TestStorageProcessIsolation$' -count=1
+```
+
+Expected: PASS, with both subprocesses exiting zero. The regression holds one
+process's row while the other initializes/resets its database, then checks that
+the second process's row survives the first process's container teardown. Normal
+package runs skip this extra regression. Cleanup only removes containers owned
+by the corresponding process; never use global Docker pruning to resolve test
+failures.
+
+On a crash, reaping depends on Ryuk being enabled and Docker remaining reachable.
+If the environment disables Ryuk or the daemon is unavailable during cleanup,
+inspect the failed run's Testcontainers session labels and remove only its
+confirmed leftover containers; cleanup cannot guarantee removal while Docker is
+unreachable.
 
 ```go
 // helpers_test.go
@@ -617,7 +646,6 @@ func initShared(t *testing.T) {
             tcpostgres.WithDatabase("sel_test"),
             tcpostgres.WithUsername("sel"),
             tcpostgres.WithPassword("sel_test"),
-            testcontainers.WithReuseByName("togather-integration-db"),
         )
         require.NoError(t, err)
         sharedContainer = container
