@@ -40,6 +40,9 @@ approval_mode = "approve"
 [mcp_servers.hermes-kanban.tools.ticket_complete]
 approval_mode = "approve"
 
+[mcp_servers.hermes-kanban.tools.ticket_list]
+approval_mode = "approve"
+
 [mcp_servers.togather]
 url = "https://staging.toronto.togather.foundation/mcp"
 bearer_token_env_var = "TOGATHER_MCP_API_KEY"
