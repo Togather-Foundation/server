@@ -17,7 +17,10 @@ Remote deployment enables developers to deploy directly from their local machine
 
 Deployments check incoming source policy before cache pruning or image building.
 The gate runs `source preflight --json` using the existing active image and database
-network, with the current checkout's `configs/sources` mounted read-only. Any policy,
+network, with the current checkout's `configs/sources` mounted read-only. The gate
+uses the active container's runtime `DATABASE_URL`, since Compose can override the
+host-facing URL in the env file; a missing runtime URL stops deployment. The URL
+is passed through the environment without logging its value. Any policy,
 ownership, connection or command failure stops deployment before the build. Resolve
 policy conflicts explicitly; deployment does not change stored trust or licenses.
 

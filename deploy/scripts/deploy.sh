@@ -1980,7 +1980,7 @@ EOF
 # Check incoming checkout configs with the existing image, before building its
 # replacement. Unsupported old images fail explicitly rather than skipping policy.
 preflight_sources() {
-    local env="$1" container image env_file
+    local env="$1" container image env_file database_url
     container="togather-server-$(get_active_slot)"
     env_file=$(discover_env_file "$env")
     if [[ -z "$env_file" ]]; then
@@ -1988,8 +1988,20 @@ preflight_sources() {
         return 1
     fi
     image=$(docker inspect --format '{{.Image}}' "$container") || return 1
+    # Compose overrides the host-facing URL in the env file. Use the active
+    # app's URL on its network; pass the secret by environment, not CLI value.
+    if ! database_url=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$container" |
+        sed -n 's/^DATABASE_URL=//p'); then
+        log "ERROR" "Cannot read database configuration from ${container}"
+        return 1
+    fi
+    if [[ -z "$database_url" ]]; then
+        log "ERROR" "Missing runtime DATABASE_URL in ${container}; source policy preflight cannot proceed"
+        return 1
+    fi
     log "INFO" "Checking incoming source policies before image build"
-    if ! docker run --rm --network "container:${container}" --env-file "$env_file" \
+    if ! DATABASE_URL="$database_url" docker run --rm --network "container:${container}" --env-file "$env_file" \
+        --env DATABASE_URL \
         --mount "type=bind,src=${PROJECT_ROOT}/configs/sources,dst=/app/configs/sources,readonly" \
         "$image" source preflight --sources /app/configs/sources --json; then
         log "ERROR" "Source policy preflight failed; resolve reported policy/ownership conflicts before deployment"

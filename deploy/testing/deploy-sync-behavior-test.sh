@@ -299,9 +299,23 @@ test_preflight_sources() {
         discover_env_file() { echo /private/staging.env; }
         docker() {
             case "$1" in
-                inspect) [[ "$*" == *'togather-server-green'* ]] && echo sha256:existing ;;
+                inspect)
+                    [[ "$*" == *'togather-server-green'* ]] || return 99
+                    if [[ "$*" == *'.Image'* ]]; then
+                        echo sha256:existing
+                    else
+                        [[ "${PREFLIGHT_INSPECT_FAIL:-0}" == 0 ]] || return 1
+                        echo 'OTHER=value'
+                        [[ "${PREFLIGHT_NO_DATABASE:-0}" == 0 ]] && echo 'DATABASE_URL=postgres://private-secret@togather-db:5432/togather'
+                        return 0
+                    fi
+                    ;;
                 run)
+                    [[ "${PREFLIGHT_NO_DATABASE:-0}" == 0 && "${PREFLIGHT_INSPECT_FAIL:-0}" == 0 ]] || exit 99
+                    [[ "${DATABASE_URL:-}" == 'postgres://private-secret@togather-db:5432/togather' ]] || return 98
                     [[ "$*" == *'--rm --network container:togather-server-green --env-file /private/staging.env'* ]] &&
+                    [[ "$*" == *'--env DATABASE_URL'* ]] &&
+                    [[ "$*" != *'private-secret'* ]] &&
                     [[ "$*" == *'type=bind,src=/checkout/current/configs/sources,dst=/app/configs/sources,readonly'* ]] &&
                     [[ "$*" == *'sha256:existing source preflight --sources /app/configs/sources --json'* ]] &&
                     return "${PREFLIGHT_TEST_STATUS:-0}"
@@ -311,6 +325,12 @@ test_preflight_sources() {
         }
         preflight_sources staging || exit 1
         PREFLIGHT_TEST_STATUS=1
+        if preflight_sources staging; then exit 1; fi
+        PREFLIGHT_TEST_STATUS=0
+        PREFLIGHT_NO_DATABASE=1
+        if preflight_sources staging; then exit 1; fi
+        PREFLIGHT_NO_DATABASE=0
+        PREFLIGHT_INSPECT_FAIL=1
         if preflight_sources staging; then exit 1; fi
     ) || return 1
     # The call must precede image build and any cache pruning.
