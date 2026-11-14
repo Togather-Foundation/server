@@ -20,14 +20,34 @@ if [ -f .deploy.conf.staging ]; then
     echo "Deploying to: $NODE_DOMAIN via $SSH_HOST"
 fi
 
-# 2. Deploy (auto-loads .deploy.conf if available)
-./deploy/scripts/deploy.sh staging
+# 2. Validate the reviewed tree before pushing/merging
+scripts/agent-run.sh make ci
+scripts/agent-run.sh make test-ci-race
 
-# 3. Run automated tests (auto-uses NODE_DOMAIN from .deploy.conf)
-./deploy/testing/smoke-tests.sh staging
+# 3. Deploy the exact commit (auto-loads .deploy.conf if available)
+scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD
+
+# 4. Run post-deploy smoke and read-only performance checks
+scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
+scripts/agent-run.sh scripts/remote.sh staging source audit --json
 ```
 
 See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
+
+Before building, check host disk/inode capacity and confirm the active image can
+run `source preflight`. For an older image or Compose credential-interpolation
+failure, use the [manual rollout instructions](remote-deployment.md#environment-preparation-for-a-manual-rollout)
+instead of bypassing a gate. The app's runtime database URL and the host migration
+URL can legitimately differ.
+
+Record the pushed commit and served commit/slot, CI/review results, private backup
+path/size/SHA-256/full-read result, migration version, source-sync result, final
+source-audit counts, post-deploy test exit status, and remaining disk space in the
+ticket handoff. Distinguish a verified archive read from an actual restore rehearsal.
+Stop old writers/slots as required by the deployment or repair procedure, remove
+temporary rollout files, and report unfinished checks or background tasks explicitly.
+Do not redeploy solely to land documentation changes after a verified code rollout;
+record that the served code commit precedes the documentation commit.
 
 ---
 
@@ -39,7 +59,8 @@ See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
   ```bash
   # Check if .deploy.conf.{environment} exists
   ls -l .deploy.conf.staging
-  cat .deploy.conf.staging  # Verify NODE_DOMAIN, SSH_HOST, etc.
+  source .deploy.conf.staging
+  printf 'Domain: %s; SSH: %s@%s\n' "$NODE_DOMAIN" "$SSH_USER" "$SSH_HOST"
   ```
   - If missing, copy from `.deploy.conf.example` and customize
   - Contains: NODE_DOMAIN, SSH_HOST, SSH_USER, CITY, REGION

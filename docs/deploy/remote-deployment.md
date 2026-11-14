@@ -25,10 +25,9 @@ ownership, connection or command failure stops deployment before the build. Reso
 policy conflicts explicitly; deployment does not change stored trust or licenses.
 
 The active image must already support `source preflight`. **First rollout
-limitation:** older images cannot run this automatic gate. A current standalone
-`server source preflight --sources configs/sources --json` with database access can
-diagnose policy before that rollout; install a compatible image through the existing
-installation/manual rollout procedure before using this automatic deployment path.
+limitation:** older images cannot run this automatic gate. Use the
+[one-time manual rollout](#one-time-rollout-from-an-image-without-preflight) below
+to run the real check with a current standalone CLI before replacing the old image.
 There is no automatic binary bootstrap or silent skip. A missing active container
 likewise requires the installation procedure first.
 
@@ -76,6 +75,94 @@ ssh deploy@server "cd togather-*/ && sudo ./install.sh"
 - `deploy.sh --remote` can be used for all subsequent deployments
 - Git repository will be auto-cloned to `/opt/togather/src/` on first deployment
 - Blue-green deployments will work automatically
+
+## Environment preparation for a manual rollout
+
+Run host-side commands from the target checkout on the deployment host. Read the
+SSH destination from the local `.deploy.conf.<environment>`; the examples below
+use staging. Check capacity with `df -h / /opt/togather`, `df -i /`, and
+`docker system df` before building. Measure available space before deciding on
+cleanup; do not remove unrelated containers or volumes.
+
+There are two database connection contexts: host migrations/backups use the
+selected env file's `DATABASE_URL` (often `localhost:5433`); the app and preflight
+use the active container's runtime URL (normally `togather-db:5432`). Keep each URL
+in its own network context. Do not rewrite the host env file to make preflight work.
+
+Until board ticket `t_cbcebcc9` is fixed, backup service discovery can fail with
+Compose interpolation errors for `ADMIN_PASSWORD`, `JWT_SECRET`, or
+`POSTGRES_PASSWORD` even when the chosen staging env file contains those settings.
+The lookup currently omits an explicit `--env-file`. For a manual rollout, export
+the existing trusted env file in the deployment shell first:
+
+```bash
+cd /opt/togather/src
+source deploy/scripts/deploy.sh
+rollout_env_file=$(discover_env_file staging)
+test -n "$rollout_env_file"
+set -a
+source "$rollout_env_file"
+set +a
+# Check service discovery without dumping interpolated config or credentials.
+docker compose --env-file "$rollout_env_file" \
+  -f deploy/docker/docker-compose.yml ps -q togather-db
+```
+
+Do not enable shell tracing or print the env file/`docker compose config` output.
+This workaround loads existing settings; it does not fix the automatic deployment
+path. If service discovery or backup verification fails, keep traffic on the old
+slot and resolve that failure before retrying. Build timestamps can cause a retry
+to compile again even at the same commit; budget for another build.
+
+## One-time rollout from an image without preflight
+
+This is a manual transition for an already installed server, validated on staging
+on 2026-11-14. Ordinary later rollouts use the updated active image directly.
+A new installation still requires the installation procedure above.
+
+Use the exact reviewed checkout on both machines. Prepare a static CLI locally
+with `CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /tmp/togather-preflight ./cmd/server`
+(wrapped with `scripts/agent-run.sh` for agents). Confirm `uname -m` on the target
+first; the example architecture requires `x86_64`. Transfer the executable to an
+operator-owned temporary path on that host. Keep its checksum with the target
+commit in the handoff. Do not replace the running app's binary or install software
+inside its container.
+
+After checking out that reviewed commit on the host and preparing the environment
+as above, run the following in the same Bash shell. Set `rollout_cli` to the
+absolute path of the transferred executable:
+
+```bash
+rollout_cli=/tmp/togather-preflight
+test -x "$rollout_cli"
+docker() {
+    if [[ "$1" == run && "$*" == *' source preflight '* ]]; then
+        shift
+        command docker run \
+          --mount "type=bind,src=${rollout_cli},dst=/app/server,readonly" "$@"
+    else
+        command docker "$@"
+    fi
+}
+init_logging staging
+deploy staging false false
+# After successful deployment, verify the ordinary gate needs no temporary CLI.
+unset -f docker
+preflight_sources staging
+```
+
+The override adds only a read-only executable mount to the one-shot preflight
+container. It retains the active network/runtime database URL, incoming config
+mount, real policy check, and failure status. The rest of `deploy` still runs its
+lock, build, verified backup, migrations, sync, health and traffic checks. Do not
+replace the gate with a successful no-op or use `--force`/`--skip-migrations` to get
+past a failure. Remove the temporary executable after the ordinary gate passes.
+
+Finish with the [post-deployment checks and handoff](deployment-testing.md#quick-reference-for-agents).
+For rare source reconciliation, follow the separate
+[offline maintenance procedure](../../specs/003-scraper/source-repair-coordination.md):
+all writers must stop/drain while PostgreSQL stays running. Deployment alone does
+not require that repair outage.
 
 ## Snapshot tooling and database-container fallback
 

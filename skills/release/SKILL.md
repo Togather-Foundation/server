@@ -201,6 +201,12 @@ https://github.com/Togather-Foundation/server/actions
 
 ## Step 7: Deploy to Staging
 
+Before building, check target disk capacity and active-image preflight support.
+Read [manual rollout preparation](../../docs/deploy/remote-deployment.md#environment-preparation-for-a-manual-rollout)
+if the old image lacks the command or Compose cannot see the chosen env file.
+That guide contains the bounded one-time CLI mount and trusted-env workaround;
+preserve the real gate and keep host/container database URLs in their own networks.
+
 Deployments that run migrations require a verified private backup of the migration
 target. The helper uses database-container clients for shared network targets and
 host clients for host-local targets; missing tools or failed full archive reads stop
@@ -230,6 +236,10 @@ Watch the deploy output. It will:
 ---
 
 ## Step 8: Staging Verification
+
+Use the [agent checklist and evidence handoff](../../docs/deploy/deployment-testing.md#quick-reference-for-agents)
+to verify the exact served commit, source sync/audit, backup evidence and remaining
+capacity. Record any temporary manual workaround and remove its files after use.
 
 Verify manually at `https://staging.toronto.togather.foundation`:
 
