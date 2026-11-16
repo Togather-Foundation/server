@@ -2,6 +2,7 @@ package developers
 
 import (
 	"context"
+	"fmt"
 	"net/netip"
 	"sync"
 	"testing"
@@ -27,9 +28,11 @@ type usageCall struct {
 	date         time.Time
 	requestCount int64
 	errorCount   int64
+	clientErrors int64
+	serverErrors int64
 }
 
-func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount int64) error {
+func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount, clientErrorCount, serverErrorCount int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -42,11 +45,13 @@ func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.U
 		date:         date,
 		requestCount: requestCount,
 		errorCount:   errorCount,
+		clientErrors: clientErrorCount,
+		serverErrors: serverErrorCount,
 	})
 	return nil
 }
 
-func (m *mockUsageRepo) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error {
+func (m *mockUsageRepo) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount, clientErrorCount, serverErrorCount int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -70,9 +75,9 @@ func TestUsageRecorder_RecordRequest(t *testing.T) {
 	apiKeyID := uuid.New()
 
 	// Record several requests
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // success
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // success
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", true)  // error
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 200) // success
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 200) // success
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 500) // error
 
 	// Check in-memory buffer
 	size, requests, errors := recorder.Stats()
@@ -89,8 +94,8 @@ func TestUsageRecorder_ManualFlush(t *testing.T) {
 	apiKeyID := uuid.New()
 
 	// Record some usage
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", false)
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", true)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 200)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 500)
 
 	// Flush manually
 	recorder.flush()
@@ -129,8 +134,8 @@ func TestUsageRecorder_PeriodicFlush(t *testing.T) {
 	}()
 
 	// Record some usage
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", false)
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", true)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 200)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 500)
 
 	// Wait for periodic flush (30 seconds is too long for tests, so we manually flush)
 	recorder.flush()
@@ -150,7 +155,7 @@ func TestUsageRecorder_SizeBasedFlush(t *testing.T) {
 	// Record usage for multiple keys to exceed buffer size
 	for i := 0; i < 5; i++ {
 		apiKeyID := uuid.New()
-		recorder.RecordRequest(apiKeyID, "1.2.3.4", false)
+		recorder.RecordRequest(apiKeyID, "1.2.3.4", 200)
 	}
 
 	// Give the async flush a moment to complete
@@ -179,8 +184,11 @@ func TestUsageRecorder_ConcurrentAccess(t *testing.T) {
 			if n%2 == 0 {
 				keyID = apiKeyID2
 			}
-			isError := n%10 == 0
-			recorder.RecordRequest(keyID, "1.2.3.4", isError)
+			statusCode := 200
+			if n%10 == 0 {
+				statusCode = 500
+			}
+			recorder.RecordRequest(keyID, "1.2.3.4", statusCode)
 		}(i)
 	}
 
@@ -202,8 +210,8 @@ func TestUsageRecorder_GracefulShutdown(t *testing.T) {
 	apiKeyID := uuid.New()
 
 	// Record some usage
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", false)
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", true)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 200)
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 500)
 
 	// Close should flush remaining buffer and block until complete
 	err := recorder.Close()
@@ -259,8 +267,8 @@ func TestUsageRecorder_MultipleAPIKeys(t *testing.T) {
 
 	// Record usage for each key
 	for _, key := range keys {
-		recorder.RecordRequest(key, "1.2.3.4", false)
-		recorder.RecordRequest(key, "1.2.3.4", true)
+		recorder.RecordRequest(key, "1.2.3.4", 200)
+		recorder.RecordRequest(key, "1.2.3.4", 500)
 	}
 
 	// Flush
@@ -298,19 +306,18 @@ func TestUsageRecorder_ErrorCategorization(t *testing.T) {
 
 	apiKeyID := uuid.New()
 
-	// Test various status codes through error flag
-	// 2xx/3xx → isError=false
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // 200
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // 201
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", false) // 204
+	// Test successful status codes.
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 200) // 200
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 201) // 201
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 204) // 204
 
-	// 4xx → isError=true
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", true) // 400
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", true) // 404
+	// 4xx are client errors.
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 400) // 400
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 404) // 404
 
-	// 5xx → isError=true
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", true) // 500
-	recorder.RecordRequest(apiKeyID, "1.2.3.4", true) // 503
+	// 5xx are server errors.
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 500) // 500
+	recorder.RecordRequest(apiKeyID, "1.2.3.4", 503) // 503
 
 	// Check stats
 	size, requests, errors := recorder.Stats()
@@ -326,4 +333,24 @@ func TestUsageRecorder_ErrorCategorization(t *testing.T) {
 	require.Len(t, calls, 1)
 	assert.Equal(t, int64(7), calls[0].requestCount)
 	assert.Equal(t, int64(4), calls[0].errorCount)
+}
+
+func TestUsageRecorder_StatusClassBoundaries(t *testing.T) {
+	for _, tt := range []struct {
+		code           int
+		client, server int64
+	}{{200, 0, 0}, {302, 0, 0}, {400, 1, 0}, {429, 1, 0}, {499, 1, 0}, {500, 0, 1}, {599, 0, 1}} {
+		t.Run(fmt.Sprint(tt.code), func(t *testing.T) {
+			repo := &mockUsageRepo{}
+			r := NewUsageRecorder(repo, zerolog.Nop(), config.DeveloperConfig{})
+			key := uuid.New()
+			r.RecordRequest(key, "1.2.3.4", tt.code)
+			r.flush()
+			calls := repo.getCalls()
+			require.Len(t, calls, 1)
+			assert.Equal(t, tt.client, calls[0].clientErrors)
+			assert.Equal(t, tt.server, calls[0].serverErrors)
+			assert.Equal(t, tt.client+tt.server, calls[0].errorCount)
+		})
+	}
 }

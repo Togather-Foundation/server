@@ -68,8 +68,9 @@ func UsageTracking(recorder *developers.UsageRecorder, logger zerolog.Logger, tr
 			clientIP := clientKey(r, trustedProxyCIDRs)
 
 			// Record usage after the handler completes
-			isError := wrapped.statusCode >= 400
-			recorder.RecordRequest(apiKeyID, clientIP, isError)
+			// Pass the status through: 2xx/3xx are successes; 4xx, including 429,
+			// are client errors and 5xx are server errors.
+			recorder.RecordRequest(apiKeyID, clientIP, wrapped.statusCode)
 		})
 	}
 }

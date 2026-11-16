@@ -19,8 +19,8 @@ const (
 )
 
 type UsageRepository interface {
-	UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount int64) error
-	UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error
+	UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount, clientErrorCount, serverErrorCount int64) error
+	UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount, clientErrorCount, serverErrorCount int64) error
 }
 
 type usageKey struct {
@@ -29,8 +29,10 @@ type usageKey struct {
 }
 
 type usageDelta struct {
-	requests int64
-	errors   int64
+	requests     int64
+	errors       int64
+	clientErrors int64
+	serverErrors int64
 }
 
 type UsageRecorder struct {
@@ -88,7 +90,7 @@ func (r *UsageRecorder) flushLoop() {
 	}
 }
 
-func (r *UsageRecorder) RecordRequest(apiKeyID uuid.UUID, clientIP string, isError bool) {
+func (r *UsageRecorder) RecordRequest(apiKeyID uuid.UUID, clientIP string, statusCode int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -100,8 +102,17 @@ func (r *UsageRecorder) RecordRequest(apiKeyID uuid.UUID, clientIP string, isErr
 	}
 
 	delta.requests++
-	if isError {
+	// 2xx and 3xx are not errors. All 4xx (including 429) are client errors;
+	// 5xx are server errors. Keep the historical >=400 total unchanged.
+	if statusCode >= 400 {
 		delta.errors++
+	}
+
+	if statusCode >= 400 && statusCode < 500 {
+		delta.clientErrors++
+	}
+	if statusCode >= 500 && statusCode < 600 {
+		delta.serverErrors++
 	}
 
 	if len(r.counts) >= r.maxSize {
@@ -158,7 +169,7 @@ func (r *UsageRecorder) flushSnapshot(snapshot map[usageKey]*usageDelta) {
 					Str("ip", k.ip).
 					Msg("skipping invalid IP for per-IP usage upsert")
 			} else {
-				if err := r.repo.UpsertAPIKeyUsageIP(ctx, pgUUID, now, ip, delta.requests, delta.errors); err != nil {
+				if err := r.repo.UpsertAPIKeyUsageIP(ctx, pgUUID, now, ip, delta.requests, delta.errors, delta.clientErrors, delta.serverErrors); err != nil {
 					r.logger.Error().
 						Err(err).
 						Str("api_key_id", k.apiKeyID.String()).
@@ -179,6 +190,8 @@ func (r *UsageRecorder) flushSnapshot(snapshot map[usageKey]*usageDelta) {
 		}
 		agg.requests += delta.requests
 		agg.errors += delta.errors
+		agg.clientErrors += delta.clientErrors
+		agg.serverErrors += delta.serverErrors
 
 		flushed++
 	}
@@ -190,7 +203,7 @@ func (r *UsageRecorder) flushSnapshot(snapshot map[usageKey]*usageDelta) {
 			continue
 		}
 
-		if err := r.repo.UpsertAPIKeyUsage(ctx, pgUUID, now, delta.requests, delta.errors); err != nil {
+		if err := r.repo.UpsertAPIKeyUsage(ctx, pgUUID, now, delta.requests, delta.errors, delta.clientErrors, delta.serverErrors); err != nil {
 			r.logger.Error().
 				Err(err).
 				Str("api_key_id", keyID.String()).

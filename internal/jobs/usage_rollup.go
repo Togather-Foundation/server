@@ -131,6 +131,9 @@ func (w UsageRollupWorker) reconcileUsageData(ctx context.Context) (int64, error
 	// 2. Reprocess data from a backup source if available
 	// 3. Send alerts for data inconsistencies
 	//
+	// Request, total-error, client-error and server-error counters are all
+	// incremented together by UsageRecorder in both usage tables. There is no
+	// separate rollup copy to update or historical status data to reconstruct.
 	// The current implementation relies on:
 	// - UsageRecorder's periodic flush (every 30s)
 	// - UsageRecorder's shutdown flush (on server stop)

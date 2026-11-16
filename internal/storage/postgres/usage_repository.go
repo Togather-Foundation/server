@@ -32,14 +32,16 @@ func (r *UsageRepository) queryer() Querier {
 
 // UpsertAPIKeyUsage upserts usage stats for an API key on a given date
 // This increments counters if a row already exists for the date
-func (r *UsageRepository) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount int64) error {
+func (r *UsageRepository) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount, clientErrorCount, serverErrorCount int64) error {
 	q := r.queryer()
 
 	params := UpsertAPIKeyUsageParams{
-		ApiKeyID:     apiKeyID,
-		Date:         pgtype.Date{Time: date, Valid: true},
-		RequestCount: requestCount,
-		ErrorCount:   errorCount,
+		ApiKeyID:         apiKeyID,
+		Date:             pgtype.Date{Time: date, Valid: true},
+		RequestCount:     requestCount,
+		ErrorCount:       errorCount,
+		ClientErrorCount: clientErrorCount,
+		ServerErrorCount: serverErrorCount,
 	}
 
 	if err := q.UpsertAPIKeyUsage(ctx, params); err != nil {
@@ -100,15 +102,17 @@ func (r *UsageRepository) GetDeveloperUsageTotal(ctx context.Context, developerI
 }
 
 // UpsertAPIKeyUsageIP upserts per-IP usage stats for an API key on a given date
-func (r *UsageRepository) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error {
+func (r *UsageRepository) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount, clientErrorCount, serverErrorCount int64) error {
 	q := r.queryer()
 
 	params := UpsertAPIKeyUsageIPParams{
-		ApiKeyID:     apiKeyID,
-		Date:         pgtype.Date{Time: date, Valid: true},
-		Ip:           ip,
-		RequestCount: requestCount,
-		ErrorCount:   errorCount,
+		ApiKeyID:         apiKeyID,
+		Date:             pgtype.Date{Time: date, Valid: true},
+		Ip:               ip,
+		RequestCount:     requestCount,
+		ErrorCount:       errorCount,
+		ClientErrorCount: clientErrorCount,
+		ServerErrorCount: serverErrorCount,
 	}
 
 	if err := q.UpsertAPIKeyUsageIP(ctx, params); err != nil {

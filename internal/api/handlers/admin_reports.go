@@ -45,12 +45,18 @@ type dailyUsageResponse struct {
 	Trouble      troubleSection         `json:"trouble"`
 }
 
+type errorsByClass struct {
+	Client int64 `json:"client"`
+	Server int64 `json:"server"`
+}
+
 type dailyUsageTotals struct {
-	Requests         int64   `json:"requests"`
-	Errors           int64   `json:"errors"`
-	ErrorRatePct     float64 `json:"error_rate_pct"`
-	ActiveAPIKeys    int     `json:"active_api_keys"`
-	ActiveDevelopers int     `json:"active_developers"`
+	ErrorsByClass    errorsByClass `json:"errors_by_class"`
+	Requests         int64         `json:"requests"`
+	Errors           int64         `json:"errors"`
+	ErrorRatePct     float64       `json:"error_rate_pct"`
+	ActiveAPIKeys    int           `json:"active_api_keys"`
+	ActiveDevelopers int           `json:"active_developers"`
 }
 
 type dailyUsageDistribution struct {
@@ -59,12 +65,14 @@ type dailyUsageDistribution struct {
 }
 
 type topKeyEntry struct {
-	KeyName        string `json:"key_name"`
-	KeyPrefix      string `json:"key_prefix"`
-	DeveloperName  string `json:"developer_name"`
-	DeveloperEmail string `json:"developer_email"`
-	Requests       int64  `json:"requests"`
-	Errors         int64  `json:"errors"`
+	ErrorsByClass  errorsByClass `json:"errors_by_class"`
+	TopIPs         []topIPEntry  `json:"top_ips"`
+	KeyName        string        `json:"key_name"`
+	KeyPrefix      string        `json:"key_prefix"`
+	DeveloperName  string        `json:"developer_name"`
+	DeveloperEmail string        `json:"developer_email"`
+	Requests       int64         `json:"requests"`
+	Errors         int64         `json:"errors"`
 }
 
 type topIPEntry struct {
@@ -197,6 +205,8 @@ type rowAgg struct {
 	date           string
 	requests       int64
 	errors         int64
+	clientErrors   int64
+	serverErrors   int64
 }
 
 func filterRows(rows []postgres.GetDailyUsageReportDataRow, excludeSet map[string]bool) []rowAgg {
@@ -226,6 +236,8 @@ func filterRows(rows []postgres.GetDailyUsageReportDataRow, excludeSet map[strin
 			date:           dateStr,
 			requests:       row.RequestCount,
 			errors:         row.ErrorCount,
+			clientErrors:   row.ClientErrorCount,
+			serverErrors:   row.ServerErrorCount,
 		})
 	}
 	return out
@@ -255,12 +267,16 @@ func buildReport(rows []rowAgg, from, to time.Time, topN int) dailyUsageResponse
 	keyRequests := make(map[uuid.UUID]int64)
 	keyErrors := make(map[uuid.UUID]int64)
 	keyMeta := make(map[uuid.UUID]rowAgg)
+	keyClasses := make(map[uuid.UUID]errorsByClass)
+	keyIPs := make(map[uuid.UUID]map[string]int64)
 	ipRequests := make(map[string]int64)
 	dateAgg := make(map[string][2]int64)
 
 	for _, row := range rows {
 		totalRequests += row.requests
 		totalErrors += row.errors
+		resp.Totals.ErrorsByClass.Client += row.clientErrors
+		resp.Totals.ErrorsByClass.Server += row.serverErrors
 
 		if row.apiKeyID != uuid.Nil {
 			keySet[row.apiKeyID] = true
@@ -272,6 +288,14 @@ func buildReport(rows []rowAgg, from, to time.Time, topN int) dailyUsageResponse
 		if row.apiKeyID != uuid.Nil {
 			keyRequests[row.apiKeyID] += row.requests
 			keyErrors[row.apiKeyID] += row.errors
+			c := keyClasses[row.apiKeyID]
+			c.Client += row.clientErrors
+			c.Server += row.serverErrors
+			keyClasses[row.apiKeyID] = c
+			if keyIPs[row.apiKeyID] == nil {
+				keyIPs[row.apiKeyID] = make(map[string]int64)
+			}
+			keyIPs[row.apiKeyID][row.ipStr] += row.requests
 			if _, ok := keyMeta[row.apiKeyID]; !ok {
 				keyMeta[row.apiKeyID] = row
 			}
@@ -294,6 +318,7 @@ func buildReport(rows []rowAgg, from, to time.Time, topN int) dailyUsageResponse
 	}
 
 	resp.Totals = dailyUsageTotals{
+		ErrorsByClass:    resp.Totals.ErrorsByClass,
 		Requests:         totalRequests,
 		Errors:           totalErrors,
 		ErrorRatePct:     errorRate,
@@ -308,11 +333,12 @@ func buildReport(rows []rowAgg, from, to time.Time, topN int) dailyUsageResponse
 	}
 	resp.Distribution.RequestsPerKeyMedian = calcMedian(keyRequests)
 
-	resp.TopKeys = buildTopKeys(keyRequests, keyErrors, keyMeta, topN)
+	resp.TopKeys = buildTopKeys(keyRequests, keyErrors, keyMeta, keyClasses, keyIPs, topN)
+
 	resp.TopIPs = buildTopIPs(ipRequests, topN)
 	resp.Daily = buildDaily(dateAgg)
 
-	resp.Trouble.TopErrorKeys = buildTopErrorKeys(keyErrors, keyRequests, keyMeta, 3)
+	resp.Trouble.TopErrorKeys = buildTopErrorKeys(keyErrors, keyRequests, keyMeta, keyClasses, keyIPs, 3, topN)
 	if errorRate > 5.0 {
 		resp.Trouble.Flag = "error_rate_above_5pct"
 	}
@@ -336,7 +362,7 @@ func calcMedian(perKey map[uuid.UUID]int64) int64 {
 	return int64(math.Round(float64(counts[n/2-1]+counts[n/2]) / 2.0))
 }
 
-func buildTopKeys(keyRequests, keyErrors map[uuid.UUID]int64, keyMeta map[uuid.UUID]rowAgg, topN int) []topKeyEntry {
+func buildTopKeys(keyRequests, keyErrors map[uuid.UUID]int64, keyMeta map[uuid.UUID]rowAgg, keyClasses map[uuid.UUID]errorsByClass, keyIPs map[uuid.UUID]map[string]int64, topN int) []topKeyEntry {
 	type kv struct {
 		id uuid.UUID
 		r  int64
@@ -352,6 +378,8 @@ func buildTopKeys(keyRequests, keyErrors map[uuid.UUID]int64, keyMeta map[uuid.U
 		id := entries[i].id
 		meta := keyMeta[id]
 		result = append(result, topKeyEntry{
+			ErrorsByClass:  keyClasses[id],
+			TopIPs:         buildTopIPs(keyIPs[id], topN),
 			KeyName:        meta.keyName,
 			KeyPrefix:      meta.keyPrefix,
 			DeveloperName:  meta.developerName,
@@ -372,7 +400,12 @@ func buildTopIPs(ipRequests map[string]int64, topN int) []topIPEntry {
 	for ip, r := range ipRequests {
 		entries = append(entries, kv{ip, r})
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].r > entries[j].r })
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].r == entries[j].r {
+			return entries[i].ip < entries[j].ip
+		}
+		return entries[i].r > entries[j].r
+	})
 
 	result := make([]topIPEntry, 0, topN)
 	for i := 0; i < topN && i < len(entries); i++ {
@@ -407,7 +440,7 @@ func buildDaily(dateAgg map[string][2]int64) []dailyRollup {
 	return result
 }
 
-func buildTopErrorKeys(keyErrors, keyRequests map[uuid.UUID]int64, keyMeta map[uuid.UUID]rowAgg, topN int) []topKeyEntry {
+func buildTopErrorKeys(keyErrors, keyRequests map[uuid.UUID]int64, keyMeta map[uuid.UUID]rowAgg, keyClasses map[uuid.UUID]errorsByClass, keyIPs map[uuid.UUID]map[string]int64, topN, ipTopN int) []topKeyEntry {
 	type kv struct {
 		id uuid.UUID
 		e  int64
@@ -425,6 +458,8 @@ func buildTopErrorKeys(keyErrors, keyRequests map[uuid.UUID]int64, keyMeta map[u
 		id := entries[i].id
 		meta := keyMeta[id]
 		result = append(result, topKeyEntry{
+			ErrorsByClass:  keyClasses[id],
+			TopIPs:         buildTopIPs(keyIPs[id], ipTopN),
 			KeyName:        meta.keyName,
 			KeyPrefix:      meta.keyPrefix,
 			DeveloperName:  meta.developerName,

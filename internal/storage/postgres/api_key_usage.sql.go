@@ -13,7 +13,7 @@ import (
 )
 
 const getAPIKeyUsage = `-- name: GetAPIKeyUsage :many
-SELECT api_key_id, date, request_count, error_count FROM api_key_usage 
+SELECT api_key_id, date, request_count, error_count, client_error_count, server_error_count FROM api_key_usage
 WHERE api_key_id = $1 AND date >= $2 AND date <= $3
 ORDER BY date DESC
 `
@@ -38,6 +38,8 @@ func (q *Queries) GetAPIKeyUsage(ctx context.Context, arg GetAPIKeyUsageParams) 
 			&i.Date,
 			&i.RequestCount,
 			&i.ErrorCount,
+			&i.ClientErrorCount,
+			&i.ServerErrorCount,
 		); err != nil {
 			return nil, err
 		}
@@ -52,7 +54,7 @@ func (q *Queries) GetAPIKeyUsage(ctx context.Context, arg GetAPIKeyUsageParams) 
 const getAPIKeyUsageTotal = `-- name: GetAPIKeyUsageTotal :one
 SELECT COALESCE(SUM(request_count), 0)::bigint AS total_requests,
        COALESCE(SUM(error_count), 0)::bigint AS total_errors
-FROM api_key_usage 
+FROM api_key_usage
 WHERE api_key_id = $1 AND date >= $2 AND date <= $3
 `
 
@@ -77,7 +79,7 @@ func (q *Queries) GetAPIKeyUsageTotal(ctx context.Context, arg GetAPIKeyUsageTot
 const getDailyUsageReportData = `-- name: GetDailyUsageReportData :many
 SELECT k.id AS api_key_id, k.name AS key_name, k.prefix AS key_prefix,
        d.id AS developer_id, d.name AS developer_name, d.email AS developer_email,
-       u.date, u.ip, u.request_count, u.error_count
+       u.date, u.ip, u.request_count, u.error_count, u.client_error_count, u.server_error_count
 FROM api_key_usage_ips u
 JOIN api_keys k ON k.id = u.api_key_id
 JOIN developers d ON d.id = k.developer_id
@@ -92,16 +94,18 @@ type GetDailyUsageReportDataParams struct {
 }
 
 type GetDailyUsageReportDataRow struct {
-	ApiKeyID       pgtype.UUID `json:"api_key_id"`
-	KeyName        string      `json:"key_name"`
-	KeyPrefix      string      `json:"key_prefix"`
-	DeveloperID    pgtype.UUID `json:"developer_id"`
-	DeveloperName  string      `json:"developer_name"`
-	DeveloperEmail string      `json:"developer_email"`
-	Date           pgtype.Date `json:"date"`
-	Ip             netip.Addr  `json:"ip"`
-	RequestCount   int64       `json:"request_count"`
-	ErrorCount     int64       `json:"error_count"`
+	ApiKeyID         pgtype.UUID `json:"api_key_id"`
+	KeyName          string      `json:"key_name"`
+	KeyPrefix        string      `json:"key_prefix"`
+	DeveloperID      pgtype.UUID `json:"developer_id"`
+	DeveloperName    string      `json:"developer_name"`
+	DeveloperEmail   string      `json:"developer_email"`
+	Date             pgtype.Date `json:"date"`
+	Ip               netip.Addr  `json:"ip"`
+	RequestCount     int64       `json:"request_count"`
+	ErrorCount       int64       `json:"error_count"`
+	ClientErrorCount int64       `json:"client_error_count"`
+	ServerErrorCount int64       `json:"server_error_count"`
 }
 
 func (q *Queries) GetDailyUsageReportData(ctx context.Context, arg GetDailyUsageReportDataParams) ([]GetDailyUsageReportDataRow, error) {
@@ -124,6 +128,8 @@ func (q *Queries) GetDailyUsageReportData(ctx context.Context, arg GetDailyUsage
 			&i.Ip,
 			&i.RequestCount,
 			&i.ErrorCount,
+			&i.ClientErrorCount,
+			&i.ServerErrorCount,
 		); err != nil {
 			return nil, err
 		}
@@ -163,18 +169,22 @@ func (q *Queries) GetDeveloperUsageTotal(ctx context.Context, arg GetDeveloperUs
 
 const upsertAPIKeyUsage = `-- name: UpsertAPIKeyUsage :exec
 
-INSERT INTO api_key_usage (api_key_id, date, request_count, error_count)
-VALUES ($1, $2, $3, $4)
+INSERT INTO api_key_usage (api_key_id, date, request_count, error_count, client_error_count, server_error_count)
+VALUES ($1, $2, $3, $4, $5, $6)
 ON CONFLICT (api_key_id, date) DO UPDATE SET
     request_count = api_key_usage.request_count + EXCLUDED.request_count,
-    error_count = api_key_usage.error_count + EXCLUDED.error_count
+    error_count = api_key_usage.error_count + EXCLUDED.error_count,
+    client_error_count = api_key_usage.client_error_count + EXCLUDED.client_error_count,
+    server_error_count = api_key_usage.server_error_count + EXCLUDED.server_error_count
 `
 
 type UpsertAPIKeyUsageParams struct {
-	ApiKeyID     pgtype.UUID `json:"api_key_id"`
-	Date         pgtype.Date `json:"date"`
-	RequestCount int64       `json:"request_count"`
-	ErrorCount   int64       `json:"error_count"`
+	ApiKeyID         pgtype.UUID `json:"api_key_id"`
+	Date             pgtype.Date `json:"date"`
+	RequestCount     int64       `json:"request_count"`
+	ErrorCount       int64       `json:"error_count"`
+	ClientErrorCount int64       `json:"client_error_count"`
+	ServerErrorCount int64       `json:"server_error_count"`
 }
 
 // SQLc queries for API key usage tracking.
@@ -184,24 +194,30 @@ func (q *Queries) UpsertAPIKeyUsage(ctx context.Context, arg UpsertAPIKeyUsagePa
 		arg.Date,
 		arg.RequestCount,
 		arg.ErrorCount,
+		arg.ClientErrorCount,
+		arg.ServerErrorCount,
 	)
 	return err
 }
 
 const upsertAPIKeyUsageIP = `-- name: UpsertAPIKeyUsageIP :exec
-INSERT INTO api_key_usage_ips (api_key_id, date, ip, request_count, error_count)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO api_key_usage_ips (api_key_id, date, ip, request_count, error_count, client_error_count, server_error_count)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 ON CONFLICT (api_key_id, date, ip) DO UPDATE SET
     request_count = api_key_usage_ips.request_count + EXCLUDED.request_count,
-    error_count = api_key_usage_ips.error_count + EXCLUDED.error_count
+    error_count = api_key_usage_ips.error_count + EXCLUDED.error_count,
+    client_error_count = api_key_usage_ips.client_error_count + EXCLUDED.client_error_count,
+    server_error_count = api_key_usage_ips.server_error_count + EXCLUDED.server_error_count
 `
 
 type UpsertAPIKeyUsageIPParams struct {
-	ApiKeyID     pgtype.UUID `json:"api_key_id"`
-	Date         pgtype.Date `json:"date"`
-	Ip           netip.Addr  `json:"ip"`
-	RequestCount int64       `json:"request_count"`
-	ErrorCount   int64       `json:"error_count"`
+	ApiKeyID         pgtype.UUID `json:"api_key_id"`
+	Date             pgtype.Date `json:"date"`
+	Ip               netip.Addr  `json:"ip"`
+	RequestCount     int64       `json:"request_count"`
+	ErrorCount       int64       `json:"error_count"`
+	ClientErrorCount int64       `json:"client_error_count"`
+	ServerErrorCount int64       `json:"server_error_count"`
 }
 
 func (q *Queries) UpsertAPIKeyUsageIP(ctx context.Context, arg UpsertAPIKeyUsageIPParams) error {
@@ -211,6 +227,8 @@ func (q *Queries) UpsertAPIKeyUsageIP(ctx context.Context, arg UpsertAPIKeyUsage
 		arg.Ip,
 		arg.RequestCount,
 		arg.ErrorCount,
+		arg.ClientErrorCount,
+		arg.ServerErrorCount,
 	)
 	return err
 }

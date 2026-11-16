@@ -31,6 +31,8 @@ type usageIPCall struct {
 	ip           netip.Addr
 	requestCount int64
 	errorCount   int64
+	clientErrors int64
+	serverErrors int64
 }
 
 type usageCall struct {
@@ -38,9 +40,11 @@ type usageCall struct {
 	date         time.Time
 	requestCount int64
 	errorCount   int64
+	clientErrors int64
+	serverErrors int64
 }
 
-func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount int64) error {
+func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, requestCount, errorCount, clientErrorCount, serverErrorCount int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -53,11 +57,13 @@ func (m *mockUsageRepo) UpsertAPIKeyUsage(ctx context.Context, apiKeyID pgtype.U
 		date:         date,
 		requestCount: requestCount,
 		errorCount:   errorCount,
+		clientErrors: clientErrorCount,
+		serverErrors: serverErrorCount,
 	})
 	return nil
 }
 
-func (m *mockUsageRepo) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount int64) error {
+func (m *mockUsageRepo) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype.UUID, date time.Time, ip netip.Addr, requestCount, errorCount, clientErrorCount, serverErrorCount int64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -70,6 +76,8 @@ func (m *mockUsageRepo) UpsertAPIKeyUsageIP(ctx context.Context, apiKeyID pgtype
 		ip:           ip,
 		requestCount: requestCount,
 		errorCount:   errorCount,
+		clientErrors: clientErrorCount,
+		serverErrors: serverErrorCount,
 	})
 	return nil
 }
@@ -403,4 +411,32 @@ func TestUsageResponseWriter_Flush_WithFlusher(t *testing.T) {
 	w := &usageResponseWriter{ResponseWriter: fr}
 	w.Flush()
 	assert.True(t, fr.flushed, "Flush should delegate to underlying http.Flusher")
+}
+
+func TestUsageTracking_StatusClasses(t *testing.T) {
+	for _, code := range []int{200, 302, 400, 429, 499, 500} {
+		t.Run(http.StatusText(code), func(t *testing.T) {
+			repo := &mockUsageRepo{}
+			recorder := developers.NewUsageRecorder(repo, zerolog.Nop(), config.DeveloperConfig{})
+			h := UsageTracking(recorder, zerolog.Nop(), nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(code) }))
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.RemoteAddr = "1.2.3.4:1234"
+			req = req.WithContext(contextWithAgentKey(req.Context(), &auth.APIKey{ID: uuid.NewString()}))
+			h.ServeHTTP(httptest.NewRecorder(), req)
+			assert.NoError(t, recorder.Close())
+			assert.Len(t, repo.calls, 1)
+			assert.Len(t, repo.ipCalls, 1)
+			var client, server int64
+			if code >= 400 && code < 500 {
+				client = 1
+			}
+			if code >= 500 {
+				server = 1
+			}
+			assert.Equal(t, client, repo.calls[0].clientErrors)
+			assert.Equal(t, server, repo.calls[0].serverErrors)
+			assert.Equal(t, client, repo.ipCalls[0].clientErrors)
+			assert.Equal(t, server, repo.ipCalls[0].serverErrors)
+		})
+	}
 }

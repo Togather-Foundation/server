@@ -727,3 +727,55 @@ func TestAdminReports_DailyUsage_MultipleDates(t *testing.T) {
 	assert.Equal(t, "2026-08-01", resp.From)
 	assert.Equal(t, "2026-08-03", resp.To)
 }
+
+func TestAdminReports_DailyUsage_ErrorClassesAndKeyIPs(t *testing.T) {
+	key := testUUID("00000000-0000-0000-0000-000000000001")
+	rows := []postgres.GetDailyUsageReportDataRow{
+		{ApiKeyID: key, Date: testDate(2026, 11, 16), Ip: parseIP("1.2.3.4"), RequestCount: 10, ErrorCount: 3, ClientErrorCount: 2, ServerErrorCount: 1},
+	}
+	h := NewAdminReportHandler(&mockReportQuerier{rows: rows}, config.ReportingConfig{}, time.UTC, "test", zerolog.Nop())
+	w := httptest.NewRecorder()
+	h.DailyUsage(w, httptest.NewRequest(http.MethodGet, "/api/v1/admin/reports/daily-usage?from=2026-11-16&to=2026-11-16&top=5", nil))
+	var body map[string]any
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Contains(t, body["totals"], "errors_by_class")
+	keys := body["top_keys"].([]any)
+	assert.Contains(t, keys[0], "errors_by_class")
+	assert.Contains(t, keys[0], "top_ips")
+	totals := body["totals"].(map[string]any)
+	assert.Equal(t, map[string]any{"client": float64(2), "server": float64(1)}, totals["errors_by_class"])
+	entry := keys[0].(map[string]any)
+	assert.Equal(t, totals["errors_by_class"], entry["errors_by_class"])
+	assert.Equal(t, []any{map[string]any{"ip": "1.2.3.4", "requests": float64(10)}}, entry["top_ips"])
+}
+
+func TestAdminReports_DailyUsage_KeyIPGrouping(t *testing.T) {
+	key1 := testUUID("00000000-0000-0000-0000-000000000001")
+	key2 := testUUID("00000000-0000-0000-0000-000000000002")
+	rows := []postgres.GetDailyUsageReportDataRow{
+		{ApiKeyID: key1, KeyName: "same", Date: testDate(2026, 11, 15), Ip: parseIP("1.2.3.4"), RequestCount: 20, ErrorCount: 2, ClientErrorCount: 2},
+		{ApiKeyID: key1, KeyName: "same", Date: testDate(2026, 11, 16), Ip: parseIP("1.2.3.4"), RequestCount: 30, ErrorCount: 3, ServerErrorCount: 3},
+		{ApiKeyID: key1, KeyName: "same", Date: testDate(2026, 11, 16), Ip: parseIP("1.2.3.5"), RequestCount: 10},
+		{ApiKeyID: key2, KeyName: "same", Date: testDate(2026, 11, 16), Ip: parseIP("1.2.3.5"), RequestCount: 100, ErrorCount: 1, ClientErrorCount: 1},
+		{ApiKeyID: key2, KeyName: "same", Date: testDate(2026, 11, 16), Ip: parseIP("1.2.3.6"), RequestCount: 1000, ErrorCount: 99, ServerErrorCount: 99},
+	}
+	h := NewAdminReportHandler(&mockReportQuerier{rows: rows}, config.ReportingConfig{DailyReportExcludeIPs: "1.2.3.6"}, time.UTC, "test", zerolog.Nop())
+	w := httptest.NewRecorder()
+	h.DailyUsage(w, httptest.NewRequest(http.MethodGet, "/api/v1/admin/reports/daily-usage?from=2026-11-15&to=2026-11-16&top=2", nil))
+	var body dailyUsageResponse
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, errorsByClass{Client: 3, Server: 3}, body.Totals.ErrorsByClass)
+	assert.Equal(t, int64(160), body.Totals.Requests)
+	assert.Equal(t, []topIPEntry{{IP: "1.2.3.5", Requests: 100}}, body.TopKeys[0].TopIPs)
+	assert.Equal(t, errorsByClass{Client: 1}, body.TopKeys[0].ErrorsByClass)
+	assert.Equal(t, []topIPEntry{{IP: "1.2.3.4", Requests: 50}, {IP: "1.2.3.5", Requests: 10}}, body.TopKeys[1].TopIPs)
+	assert.Equal(t, errorsByClass{Client: 2, Server: 3}, body.TopKeys[1].ErrorsByClass)
+	assert.Equal(t, []topIPEntry{{IP: "1.2.3.5", Requests: 110}, {IP: "1.2.3.4", Requests: 50}}, body.TopIPs)
+	// A limit of one applies to the per-key list too, after date aggregation.
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/reports/daily-usage?from=2026-11-15&to=2026-11-16&top=1&exclude_ips=1.2.3.6,1.2.3.5", nil)
+	w = httptest.NewRecorder()
+	h.DailyUsage(w, req)
+	assert.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Len(t, body.TopKeys, 1)
+	assert.Equal(t, []topIPEntry{{IP: "1.2.3.4", Requests: 50}}, body.TopKeys[0].TopIPs)
+}

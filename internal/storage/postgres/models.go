@@ -28,18 +28,22 @@ type ApiKey struct {
 }
 
 type ApiKeyUsage struct {
-	ApiKeyID     pgtype.UUID `json:"api_key_id"`
-	Date         pgtype.Date `json:"date"`
-	RequestCount int64       `json:"request_count"`
-	ErrorCount   int64       `json:"error_count"`
+	ApiKeyID         pgtype.UUID `json:"api_key_id"`
+	Date             pgtype.Date `json:"date"`
+	RequestCount     int64       `json:"request_count"`
+	ErrorCount       int64       `json:"error_count"`
+	ClientErrorCount int64       `json:"client_error_count"`
+	ServerErrorCount int64       `json:"server_error_count"`
 }
 
 type ApiKeyUsageIp struct {
-	ApiKeyID     pgtype.UUID `json:"api_key_id"`
-	Date         pgtype.Date `json:"date"`
-	Ip           netip.Addr  `json:"ip"`
-	RequestCount int64       `json:"request_count"`
-	ErrorCount   int64       `json:"error_count"`
+	ApiKeyID         pgtype.UUID `json:"api_key_id"`
+	Date             pgtype.Date `json:"date"`
+	Ip               netip.Addr  `json:"ip"`
+	RequestCount     int64       `json:"request_count"`
+	ErrorCount       int64       `json:"error_count"`
+	ClientErrorCount int64       `json:"client_error_count"`
+	ServerErrorCount int64       `json:"server_error_count"`
 }
 
 // Stores results of batch event ingestion jobs

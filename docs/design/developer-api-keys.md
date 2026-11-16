@@ -412,3 +412,22 @@ The OAuth state parameter is a 32-byte random value stored in a short-lived `oau
 - Existing API keys continue to work (`developer_id = NULL`)
 - Existing admin users are unaffected
 - Existing rate limiting is unchanged
+
+### Usage error classes and daily report
+
+Migration 000063 adds `client_error_count` and `server_error_count` to both
+`api_key_usage` and `api_key_usage_ips`, retaining the existing request/error
+counters. The recorder receives the HTTP status: 2xx/3xx increment neither
+class, 400–499 (including 429 and 499) increment client errors, and 500–599
+increment server errors. Existing historical totals remain intact; historical
+errors have no status information and cannot be backfilled into classes.
+
+`GET /api/v1/admin/reports/daily-usage` adds `errors_by_class` with `client` and
+`server` counters to totals and key entries, and `top_ips` (`ip`, `requests`)
+to key entries. Per-key IPs aggregate across the requested dates and use the
+same `top` limit and exclusions as the existing global IP list. New counters
+can sum to less than `errors` for ranges containing pre-migration history.
+The maintenance job does not rebuild aggregates: recorder flushes increment all
+four counters in both tables. Deployment must apply migration 000063 before
+starting the new binary. Rolling it back drops only the new class counters;
+class history would be lost, while original request/error totals remain.

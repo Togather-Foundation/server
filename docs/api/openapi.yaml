@@ -2364,7 +2364,10 @@ paths:
         via the DAILY_REPORT_EXCLUDE_IPS env var (configurable via DAILY_REPORT_EXCLUDE_IPS, default empty)
         or the optional exclude_ips query parameter. Only data recorded since the
         deployment of per-IP tracking (api_key_usage_ips table) is included; this
-        report is forward-looking.
+        report is forward-looking. Error classes count HTTP 400–499 as client errors
+        (including 429), and 500–599 as server errors. Historical error totals cannot
+        be classified retroactively, so class totals can be lower than total errors.
+        Per-key top_ips applies the same exclusions and top limit as the global list.
       security:
         - bearerAuth: []
       parameters:
@@ -2399,6 +2402,11 @@ paths:
                     properties:
                       requests: { type: integer, format: int64 }
                       errors: { type: integer, format: int64 }
+                      errors_by_class:
+                        type: object
+                        properties:
+                          client: { type: integer, format: int64 }
+                          server: { type: integer, format: int64 }
                       error_rate_pct: { type: number }
                       active_api_keys: { type: integer }
                       active_developers: { type: integer }
@@ -2418,6 +2426,18 @@ paths:
                         developer_email: { type: string }
                         requests: { type: integer, format: int64 }
                         errors: { type: integer, format: int64 }
+                        errors_by_class:
+                          type: object
+                          properties:
+                            client: { type: integer, format: int64 }
+                            server: { type: integer, format: int64 }
+                        top_ips:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              ip: { type: string }
+                              requests: { type: integer, format: int64 }
                   top_ips:
                     type: array
                     items:
@@ -2447,6 +2467,18 @@ paths:
                             developer_email: { type: string }
                             requests: { type: integer, format: int64 }
                             errors: { type: integer, format: int64 }
+                            errors_by_class:
+                              type: object
+                              properties:
+                                client: { type: integer, format: int64 }
+                                server: { type: integer, format: int64 }
+                            top_ips:
+                              type: array
+                              items:
+                                type: object
+                                properties:
+                                  ip: { type: string }
+                                  requests: { type: integer, format: int64 }
                       flag:
                         type: [string, 'null']
         '401':
@@ -3874,8 +3906,8 @@ paths:
         Model Context Protocol endpoint (streamable HTTP transport, JSON-RPC 2.0).
         Read-only tools (`events`, `search`, `places`, `organizations`,
         `geocode_address`, `reverse_geocode`) are public; write/account tools
-        require an API key. Sessions are established with `initialize`; the
-        response `Mcp-Session-Id` header must be echoed on later calls.
+        require an API key. The transport is stateless: `Mcp-Session-Id` is optional
+        and ignored. Manual requests may call tools directly without `initialize`.
       tags: [MCP]
       security: []
       requestBody:
