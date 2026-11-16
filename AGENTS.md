@@ -181,10 +181,12 @@ Project work is tracked on the Hermes kanban board `togather` via the kanban MCP
 tools (`hermes-kanban-*`).
 
 - **Always pass `board: "togather"` on every kanban MCP call.** The server default is
-  `hermes-agent`; omitting the board silently lands tickets in the wrong queue.
+  not this project; never depend on an implicit board. The current bridge rejects
+  missing board arguments.
 - **Capture the ticket `id` from the `ticket_create` response (`t_<hex>`) and reuse it
   verbatim on every subsequent call.** Every per-ticket call — `ticket_claim`,
-  `ticket_comment`, `ticket_get`, `ticket_complete`, `ticket_block` — requires BOTH
+  `ticket_comment`, `ticket_get`, `ticket_events`, `ticket_request_review`,
+  `ticket_complete`, `ticket_block` — requires BOTH
   `board` and `id`. Omitting `id` fails the call with `invalid ticket id`; do not guess,
   truncate, or reconstruct it. If a call errors, `ticket_list`/`ticket_get` to recover the
   id before retrying.
@@ -195,21 +197,38 @@ tools (`hermes-kanban-*`).
   **Source** (repo, who asked, when, requirement verbatim — never a pointer to a file outside the repo).
 - Work on a **feature branch**, never `main`: `git checkout -b <type>/<ticket-id>-<desc>`.
   The agent merges to main once kanban review has passed (see below); no human merge step.
-- Workflow: `ticket_create` (lands `ready`; `triage: true` for triage) → `ticket_claim`
-  right before editing (ready→running) → `ticket_comment` as you work → push → record the
-  commit SHA in a ticket comment → `ticket_complete`. Completion is review-gated: the
-  ticket lands `blocked` (review-required) for review, not `done`.
-- **Wait for the review** — completing review-gated work leaves the ticket `blocked`. Poll
-  `ticket_events` (long-poll: pass the last seen event id, returns on new events) or
-  `ticket_get` until it leaves `blocked`: `done` → the review passed → merge your branch to
-  main (the reviewer never merges, and the agent merges once the branch is cleared);
-  `ready` → REQUEST CHANGES → re-claim, fix, re-complete;
-  still `blocked` → ESCALATED → surface to the human; do not re-loop.
-- **Push BEFORE `ticket_complete`.** The review gate reads the pushed commit. After
-  pushing, comment the repo + branch + commit SHA + changed files on the ticket so the
-  reviewer can resolve it. A ticket in review with no commit ref is unreviewable.
-- **Claims TTL ~15 min.** Re-claim before `ticket_complete` if yours expired — completion
-  refuses an unclaimed ticket.
+- Workflow: `ticket_create` (lands `ready`, or `todo` behind parents) → `ticket_claim`
+  immediately before editing → work and verification → push → record repo, branch,
+  commit SHA, changed files and check evidence → `ticket_request_review`.
+  `triage` is internal intake; do not pass the unsupported `triage: true` argument.
+- **Native review lifecycle:** handoff enters `review`; the dispatcher may move it
+  to `running` while the reviewer works. Neither state is a verdict or permission
+  to re-claim. `done` after approval authorizes the implementer to merge; a changes
+  request returns the ticket to the implementer for correction and re-review.
+  Read the verdict when it returns to `ready`/`todo`. `blocked` means an actual
+  blocker/escalation, not the old review-required waiting convention.
+- **Push before requesting review.** Supply an explicit `worker` implementer label
+  that is not an installed dispatchable profile, a `reviewer` installed profile,
+  and a summary with pushed repo/branch/SHA and verification evidence. Use
+  `force: true` only to hand off your own running claim. `ticket_complete` can use
+  server defaults, but missing implementer/reviewer configuration can refuse it;
+  use the explicit handoff rather than repeating the failing call.
+- **Quiet review waits:** announce the handoff once. Do not send repeated
+  "still waiting", heartbeat, timeout, unchanged-status or ready-to-merge updates.
+  Report actionable verdicts/blockers, meaningful new evidence, or requested
+  status. Prefer a supported durable verdict subscription/continuation; otherwise
+  use cursored long-polling and treat non-verdict events as bookkeeping. A quiet
+  fallback still uses model turns; do not claim it implements zero-turn waiting.
+  Follow higher-priority runtime requirements where they constrain silence, and
+  explain the limitation once rather than promise capabilities the host lacks.
+- Preserve the review epoch, pushed SHA, event cursor and pending merge/cleanup
+  responsibilities across suspension. Merge only the approved revision after all
+  tickets sharing the branch clear; review waiting is not completed delivery.
+  See [review handoff and waiting](docs/integration/kanban-review.md).
+- **Claim lifetime:** use the TTL/expiry reported by `ticket_claim` and current
+  `kanban_help` (currently default 14400 seconds / four hours). Re-claim only an
+  expired claim that has returned to a claimable state. Reviewers' heartbeats are
+  not your claim renewal mechanism.
 - Never put credentials in ticket bodies — write `***`.
 
 ## Session Close Protocol
@@ -223,9 +242,10 @@ scripts/agent-run.sh make ci-fast     # quality gate (if code changed)
 git pull --rebase
 git push
 git status                            # must show "up to date with origin"
-# 2. then close finished kanban tickets, recording repo+branch+commit SHA:
+# 2. request native review, recording repo+branch+commit SHA:
 #    hermes-kanban_ticket_comment board=togather id=<id> body="repo+branch+commit"
-#    hermes-kanban_ticket_complete board=togather id=<id>
+#    hermes-kanban_ticket_request_review board=togather id=<id> ...
+# 3. after approval: merge/push main, remove the merged work branch, then clean up
 scripts/agent-cleanup.sh              # remove agent output files
 ```
 

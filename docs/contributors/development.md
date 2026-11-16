@@ -2,6 +2,10 @@
 
 This document provides guidelines and best practices for developing the Togather SEL backend server.
 
+For agent task handoffs, native kanban review and quiet verdict waiting, see
+[review handoff and waiting](../integration/kanban-review.md) and the repository
+[agent instructions](../../AGENTS.md). Live `kanban_help` defines the tool contract.
+
 ## Building the Server
 
 The SEL server can be built using either Make or Go directly. Both methods produce the same output location.
