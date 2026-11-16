@@ -55,6 +55,9 @@ EVENT_PARAMS = {
     "domain",
     "q",
     "keywords",
+    "near_lat",
+    "near_lon",
+    "radius",
     "limit",
     "context",
 }

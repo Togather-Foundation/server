@@ -21,6 +21,8 @@ var openapiConfigEntries = []struct {
 	envVar     string
 	wantSubstr string
 }{
+	{envVar: "EVENTS_DEFAULT_RADIUS_KM", wantSubstr: "EVENTS_DEFAULT_RADIUS_KM"},
+	{envVar: "EVENTS_MAX_RADIUS_KM", wantSubstr: "EVENTS_MAX_RADIUS_KM"},
 	{
 		envVar:     "RATE_LIMIT_PUBLIC",
 		wantSubstr: "RATE_LIMIT_PUBLIC",

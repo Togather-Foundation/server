@@ -132,6 +132,41 @@ Examples:
 {"id": "01KGSV7H8ZDHTYTV6QKFGMFFMZ"}
 ```
 
+### Event proximity filters
+
+The MCP `events` list tool supports proximity filters with the same behavior as
+`GET /api/v1/events`:
+
+```json
+{"near_lat":43.6532,"near_lon":-79.3832,"radius":5,"limit":20}
+```
+
+Supply both finite WGS84 coordinates (latitude [-90, 90], longitude [-180,
+180]); zero is valid. `radius` is optional, finite, positive, and measured in
+kilometres. It defaults to `EVENTS_DEFAULT_RADIUS_KM` (10) and is capped by
+`EVENTS_MAX_RADIUS_KM` (100). Supplying radius without both coordinates is an
+invalid filter. Event proximity does not accept `near_place` or a combined
+`near` parameter. The camelCase aliases `nearLat`, `nearLon`, and `radiusKm`
+are the only documented MCP aliases; the REST API uses the snake_case names.
+
+Each Togather node serves its configured geographic scope. Proximity narrows
+the inventory on that node; it does not search other nodes or provide
+cross-node discovery. A `city`/`region` request is checked against the node's
+configured boundary, which can span multiple municipalities, and does not
+filter events by their individual venue locality. If the node has no configured
+boundary for a requested dimension, that dimension is not filtered.
+
+Results stay chronological by the earliest occurrence matching both the date
+and proximity filters, and use the existing cursor. No distance field is added
+or used for sorting. Only occurrences with coordinates on their effective
+venue can match. An occurrence venue overrides the primary venue; when no
+occurrence venue is set, the primary venue is used. A virtual URL does not
+prevent a match when that effective venue has coordinates. Venue coordinate
+coverage is incomplete, so nearby events without geocoded venues cannot be
+found by this filter. REST clients should inspect response `warnings`
+and verify the node's OpenAPI spec before relying on these filters against an
+older server.
+
 ### REST-style parameter aliases
 
 MCP tools use snake_case parameter names, while the REST API uses camelCase.

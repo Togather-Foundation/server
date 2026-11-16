@@ -156,6 +156,10 @@ services:
       FEDERATION_NODE_NAME: ${FEDERATION_NODE_NAME:-node-1}
       FEDERATION_SYNC_ENABLED: ${FEDERATION_SYNC_ENABLED:-false}
 
+      # Event proximity search
+      EVENTS_DEFAULT_RADIUS_KM: ${EVENTS_DEFAULT_RADIUS_KM:-10}
+      EVENTS_MAX_RADIUS_KM: ${EVENTS_MAX_RADIUS_KM:-100}
+
       # Nominatim / Geocoding
       NOMINATIM_USER_EMAIL: ${NOMINATIM_USER_EMAIL:-nominatim@togather.foundation}
       NOMINATIM_BASE_URL: ${NOMINATIM_BASE_URL:-https://nominatim.openstreetmap.org}

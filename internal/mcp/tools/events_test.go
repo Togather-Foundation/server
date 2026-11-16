@@ -5,10 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/internal/domain/organizations"
 	"github.com/Togather-Foundation/server/internal/domain/places"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 // Test buildEventURI
@@ -715,7 +717,7 @@ func TestListEventsEnvelopeTimeZone(t *testing.T) {
 	svc := events.NewService(listStubRepo{})
 	et := NewEventTools(svc, nil, "https://test.example.com").WithLoc(loc).WithLogger(zerolog.Nop())
 
-	res, err := et.listEvents(context.Background(), "", "", "", "", "", "", 50, "", "document")
+	res, err := et.listEvents(context.Background(), "", "", "", "", "", "", 50, "", "document", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("listEvents returned error: %v", err)
 	}
@@ -739,4 +741,91 @@ func TestListEventsEnvelopeTimeZone(t *testing.T) {
 	if item0["startDate"] != "2026-07-10T19:00:00-04:00" {
 		t.Errorf("expected item startDate %q, got %v", "2026-07-10T19:00:00-04:00", item0["startDate"])
 	}
+}
+
+func TestEventsHandlerProximityInvalidInput(t *testing.T) {
+	for _, args := range []map[string]any{
+		{"near_lat": 0.0}, {"radius": 5.0}, {"near_lat": 0.0, "near_lon": 0.0, "radius": 101.0},
+		{"nearLat": 0.0, "nearLon": 0.0, "radiusKm": "bad"}, {"near_lat": 0.0, "near_lon": 0.0, "radius": nil},
+	} {
+		et := NewEventTools(events.NewService(listStubRepo{}), nil, "https://example.org")
+		res, err := callTool(context.Background(), et.EventsHandler, args)
+		if err != nil || res == nil || !res.IsError {
+			t.Errorf("arguments %v: expected tool error, got %#v, %v", args, res, err)
+		}
+	}
+}
+
+type proximityEventsRepo struct {
+	events.Repository
+	listFn func(events.Filters, events.Pagination) (events.ListResult, error)
+}
+
+func (r proximityEventsRepo) List(_ context.Context, filters events.Filters, pagination events.Pagination) (events.ListResult, error) {
+	return r.listFn(filters, pagination)
+}
+
+func TestEventsHandlerProximityConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		args       map[string]any
+		wantRadius float64
+		wantError  bool
+		max        float64
+	}{
+		{"zero coordinates", map[string]any{"near_lat": 0.0, "near_lon": 0.0}, 2.5, false, 7},
+		{"explicit radius", map[string]any{"near_lat": 0.0, "near_lon": 0.0, "radius": 7.0}, 7, false, 7},
+		{"aliases", map[string]any{"nearLat": 0.0, "nearLon": 0.0, "radiusKm": 6.0}, 6, false, 7},
+		{"configured cap", map[string]any{"near_lat": 0.0, "near_lon": 0.0, "radius": 7.01}, 0, true, 7},
+		{"malformed alias alongside canonical", map[string]any{"near_lat": 0.0, "near_lon": 0.0, "radius": 5.0, "radiusKm": "bad"}, 0, true, 7},
+		{"null coordinate", map[string]any{"near_lat": nil, "near_lon": 0.0}, 0, true, 7},
+		{"null alias alongside canonical", map[string]any{"near_lat": 0.0, "near_lon": 0.0, "radius": 5.0, "radiusKm": nil}, 0, true, 7},
+		{"raised maximum", map[string]any{"near_lat": 0.0, "near_lon": 0.0, "radius": 200.0}, 200, false, 250},
+		{"raised cap enforced", map[string]any{"near_lat": 0.0, "near_lon": 0.0, "radius": 251.0}, 0, true, 250},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			repo := proximityEventsRepo{listFn: func(filters events.Filters, _ events.Pagination) (events.ListResult, error) {
+				called = true
+				require.True(t, filters.PublicOnly)
+				require.NotNil(t, filters.Latitude)
+				require.NotNil(t, filters.Longitude)
+				require.Equal(t, 0.0, *filters.Latitude)
+				require.Equal(t, 0.0, *filters.Longitude)
+				require.Equal(t, tc.wantRadius, *filters.RadiusKm)
+				return events.ListResult{}, nil
+			}}
+			svc := events.NewService(repo).WithEventSearchConfig(config.EventSearchConfig{DefaultRadiusKM: 2.5, MaxRadiusKM: tc.max})
+			et := NewEventTools(svc, nil, "https://example.org")
+			result, err := callTool(context.Background(), et.EventsHandler, tc.args)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, tc.wantError, result.IsError)
+			require.Equal(t, !tc.wantError, called)
+		})
+	}
+}
+
+func TestEventsToolProximitySchema(t *testing.T) {
+	tool := NewEventTools(nil, nil, "").EventsTool()
+	for _, name := range []string{"near_lat", "near_lon", "radius"} {
+		property, ok := tool.InputSchema.Properties[name].(map[string]interface{})
+		require.True(t, ok)
+		require.Equal(t, "number", property["type"])
+		require.NotContains(t, tool.InputSchema.Required, name)
+	}
+}
+
+type proximityGetEventsRepo struct{ events.Repository }
+
+func (proximityGetEventsRepo) GetPublicByULID(_ context.Context, id string) (*events.Event, error) {
+	return &events.Event{ULID: id, Name: "Public event", LifecycleState: "published"}, nil
+}
+
+func TestEventsHandlerIDIgnoresProximityFilters(t *testing.T) {
+	et := NewEventTools(events.NewService(proximityGetEventsRepo{}), nil, "https://example.org")
+	result, err := callTool(context.Background(), et.EventsHandler, map[string]any{"id": "01HYX3KQW7ERTV9XNBM2P8QJZF", "near_lat": "invalid", "radius": nil})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.False(t, result.IsError)
 }

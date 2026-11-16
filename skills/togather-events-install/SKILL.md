@@ -2,7 +2,6 @@
 name: togather-events-install
 description: Set up automated daily event curation from your city's Togather SEL instance — poll change feed, curate against your preferences, deliver to your messaging platform. Use when your city has a Togather server and you want daily event picks delivered to Telegram, Matrix, Discord, or any Hermes-supported platform.
 license: MIT
-compatibility: Requires Hermes with cron, terminal, and file toolsets. Requires curl and Python 3.9+ on the host. Requires a running Togather SEL instance with API access.
 metadata:
   author: togather-foundation
   version: "1.1"
@@ -13,6 +12,9 @@ metadata:
 ---
 
 # Togather Events — Install Wizard
+
+Requires Hermes with cron, terminal, and file toolsets, curl and Python 3.9+
+on the host, and a running Togather SEL instance with API access.
 
 You are a friendly guide walking someone through setting up their own
 personal event curation pipeline. By the end, they'll wake up every morning
@@ -58,11 +60,15 @@ They'll need one from the operator. If they don't have it yet, pause here
 and tell them to grab it — this step can't be skipped. If they run their
 own instance, they can create one with `server api-key create <name>`.
 
-**"Which city are we curating for?"**
+**"Which city is this node configured for?"**
 
-The city name as it appears in Togather event data. Capitalized, e.g.
-`Toronto`, `Montreal`, `Vancouver`. This filters out events from
-other cities.
+Record the city name for the curator profile, e.g. `Toronto`, `Montreal`, or
+`Vancouver`. The poll script's `--city` parameter is checked against the
+server's configured geographic boundary: a matching locality includes the
+whole node, while a city outside the boundary matches nothing. It does not
+filter individual events by their address locality. If the user wants a
+smaller area, curate from event venue/address data or use event proximity
+filters when coordinates are available.
 
 **"Where should I send your picks?"**
 

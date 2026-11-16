@@ -1,8 +1,7 @@
 ---
 name: togather-events-search
-description: Search events from a Togather SEL instance — query the public API with domain, keyword, city, and date filters. Use when looking for events in a specific city or when the user asks "what's happening" and has a Togather instance configured.
+description: Search events from a Togather SEL instance — query the public API with domain, keyword, node locality, date, or coordinate-radius filters. Use when looking for events in a specific area or when the user asks "what's happening" and has a Togather instance configured.
 license: MIT
-compatibility: Requires curl and Python 3.9+. Requires a Togather SEL instance with public API access. Set TOGATHER_API_KEY and TOGATHER_BASE_URL environment variables.
 metadata:
   author: togather-foundation
   version: "2.0"
@@ -15,8 +14,14 @@ metadata:
 # Togather Events Search
 
 Query events from a Togather Shared Events Library instance. Use the
-public REST API with domain, keyword, date, and city filters. Also
+public REST API with domain, keyword, date, node-boundary locality, and
+coordinate-radius filters. Each node serves only its configured geographic
+scope; proximity narrows that node's inventory and does not discover events
+from other nodes. Also
 covers the MCP endpoint for simpler queries.
+
+Requires `curl`, Python 3.9+, public API access, and `TOGATHER_BASE_URL` plus
+`TOGATHER_API_KEY` (the key is needed only for authenticated operations).
 
 ## When to Use
 
@@ -34,7 +39,8 @@ For automated daily curation, use `togather-events-install` instead.
 | List today's events | `GET /api/v1/events?startDate=YYYY-MM-DD&limit=50` |
 | Search by keyword | `GET /api/v1/events?q=dance+workshop&limit=50` |
 | Filter by domain | `GET /api/v1/events?domain=arts&startDate=...` |
-| City-specific | `GET /api/v1/events?city=Toronto&limit=200` |
+| Node locality | `GET /api/v1/events?city=Toronto&limit=200` (checks configured node boundary; not an event-address filter) |
+| Nearby events | `GET /api/v1/events?near_lat=43.6532&near_lon=-79.3832&radius=5&limit=50` (within this node only) |
 | Get single event | `GET /api/v1/events/{ulid}` |
 | MCP (sparse fields) | Connect to `/mcp` endpoint with API key |
 
@@ -60,7 +66,9 @@ Ask the user what they're looking for, or infer from the conversation:
 - **Date**: today, tomorrow, this weekend, a specific date
 - **Domain**: arts, music, culture, community, education, sports, general
 - **Keywords**: free-text search across name and description
-- **City**: city name filter
+- **City/region**: locality request checked against this node's configured geographic boundary; it does not filter each event's address, and an unconfigured dimension is not filtered
+- **Node scope**: each node serves its configured city/region boundary, which may span multiple municipalities; the query cannot search across nodes
+- **Nearby**: when coordinates are available, finite latitude and longitude plus an optional radius in kilometres
 - **Limit**: how many results (max 200 per request)
 
 If the user doesn't specify, default to today, all domains, limit 50.
@@ -104,10 +112,32 @@ for event in data.get('items', []):
 | `q` | `search` | `free text` | Searches name + description |
 | `domain` | `event_domain` | `arts`, `music`, `culture`, `community`, `education`, `sports`, `general` | Single value |
 | `keywords` | — | `kids,family,workshop` | Comma-separated |
-| `city` | — | `Toronto` | City name |
-| `state` | `lifecycle_state` | `published`, `draft`, `postponed` | Default: published |
+| `city` | — | `Toronto` | Checks against the node's configured locality boundary; matching city includes the node inventory, not just events whose address says Toronto |
+| `region` | — | `Ontario` | Checks against the node's configured region boundary; matching region includes the node inventory; an unconfigured region dimension is not filtered |
+| `near_lat` | — | `43.6532` | WGS84 latitude; requires `near_lon`, finite and within [-90, 90] |
+| `near_lon` | — | `-79.3832` | WGS84 longitude; requires `near_lat`, finite and within [-180, 180] |
+| `radius` | — | `5` | Positive finite kilometres; default `EVENTS_DEFAULT_RADIUS_KM` (10), maximum `EVENTS_MAX_RADIUS_KM` (100) |
+| `state` | `lifecycle_state` | public lifecycle state | Public endpoints return only their public-state allowlist; `draft` gives no results and `pending_review` is rejected |
 | `limit` | — | `200` | Max results per page |
 | `after` | — | pagination cursor | For fetching next page |
+
+Event proximity applies to the effective venue of an occurrence. Occurrences
+without coordinates on that effective venue are excluded. An occurrence venue
+overrides the primary venue; when no occurrence venue is set, the primary venue
+is used. A virtual URL does not prevent a match when that effective venue has
+coordinates. Venue coordinate coverage is incomplete. If an event has
+multiple occurrences, the same occurrence must satisfy both the date and radius
+filters. Matching events remain in chronological order by their earliest
+matching occurrence and use the existing cursor. Responses include no distance
+field and are not sorted by distance. `near_place` and a combined `near=`
+parameter are not supported for event searches. Supply both coordinates; a
+radius without both coordinates is invalid.
+
+Check the REST response `warnings` after each filtered request; a filter named
+there was not applied. Against an older node, verify support in that node's
+OpenAPI document before relying on proximity. If the node does not advertise
+these filters, do not claim its results are proximity-filtered; use a newer
+node or filter locally only when returned venue coordinates are available.
 
 **Event detail:**
 ```
@@ -213,7 +243,9 @@ for e in events:
 | MCP `events` missing description/URL | MCP intentionally returns sparse fields | Use REST API for rich queries |
 | `curl` command gets API key redacted | Hermes secret redaction in tool output | Use `execute_code` or reference env var indirectly |
 | Too many results to process | Default limit is small, increase to 200 | Always set `limit=200` for broad queries |
-| Wrong-city events in results | API may not filter by city without explicit param | Add `city=YourCity` parameter |
+| City name appears not to narrow event addresses | `city` checks the requested locality against the node's configured boundary; a matching locality includes the whole node | Use proximity filters for a coordinate radius, or inspect returned event addresses |
+| Nearby results omit known venues | Venues without stored coordinates cannot match | Explain the coordinate coverage limit; check venue data |
+| Proximity request returns ordinary unfiltered events | Node may not support the filter, or a request parameter may be unrecognized | Check `warnings` and that node's OpenAPI spec; do not trust the results as proximity-filtered |
 
 ### Env Var Access
 

@@ -103,7 +103,7 @@ func NewRouter(cfg config.Config, logger zerolog.Logger, pool *pgxpool.Pool, ver
 		}
 	}
 
-	eventsService := events.NewService(repo.Events()).WithGeographicBoundaryConfig(cfg.GeographicBoundary)
+	eventsService := events.NewService(repo.Events()).WithGeographicBoundaryConfig(cfg.GeographicBoundary).WithEventSearchConfig(cfg.EventSearch)
 	ingestService := events.NewIngestService(repo.Events(), cfg.Server.BaseURL, cfg.DefaultTimezone, cfg.Validation, logger).WithDedupConfig(cfg.Dedup).WithGeographicBoundaryConfig(cfg.GeographicBoundary).WithLocationConflictRadiusKM(cfg.Geocoding.BoundaryConflictRadiusKM)
 	placesService := places.NewService(repo.Places())
 	orgService := organizations.NewService(repo.Organizations())

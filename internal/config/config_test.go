@@ -674,3 +674,50 @@ func TestLoad_CORSPublicReadsOpen(t *testing.T) {
 		t.Error("CORS_PUBLIC_READS_OPEN=false should disable public reads")
 	}
 }
+
+func TestLoadRejectsInvalidEventSearchConfig(t *testing.T) {
+	for _, tc := range []struct{ key, value string }{
+		{"EVENTS_DEFAULT_RADIUS_KM", "0"}, {"EVENTS_DEFAULT_RADIUS_KM", "-1"}, {"EVENTS_DEFAULT_RADIUS_KM", "101"},
+		{"EVENTS_DEFAULT_RADIUS_KM", "NaN"}, {"EVENTS_DEFAULT_RADIUS_KM", "+Inf"}, {"EVENTS_DEFAULT_RADIUS_KM", "bad"},
+		{"EVENTS_MAX_RADIUS_KM", "0"}, {"EVENTS_MAX_RADIUS_KM", "-1"}, {"EVENTS_MAX_RADIUS_KM", "9"},
+		{"EVENTS_MAX_RADIUS_KM", "NaN"}, {"EVENTS_MAX_RADIUS_KM", "-Inf"}, {"EVENTS_MAX_RADIUS_KM", "bad"},
+	} {
+		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+			t.Setenv("ENVIRONMENT", "test")
+			t.Setenv("DATABASE_URL", "postgres://test:test@localhost/test")
+			t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+			t.Setenv("EVENTS_DEFAULT_RADIUS_KM", "10")
+			t.Setenv("EVENTS_MAX_RADIUS_KM", "100")
+			t.Setenv(tc.key, tc.value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), "EVENTS_") {
+				t.Fatalf("expected event search config error, got %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadEventSearchConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name, defaultRadius, maxRadius string
+		wantDefault, wantMax           float64
+	}{
+		{"defaults", "", "", 10, 100}, {"configured", "2.5", "7", 2.5, 7}, {"equal limits", "3", "3", 3, 3},
+		{"raised maximum", "150", "250", 150, 250},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ENVIRONMENT", "test")
+			t.Setenv("DATABASE_URL", "postgres://test:test@localhost/test")
+			t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+			t.Setenv("EVENTS_DEFAULT_RADIUS_KM", tc.defaultRadius)
+			t.Setenv("EVENTS_MAX_RADIUS_KM", tc.maxRadius)
+			cfg, err := Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.EventSearch.DefaultRadiusKM != tc.wantDefault || cfg.EventSearch.MaxRadiusKM != tc.wantMax {
+				t.Fatalf("unexpected config: %#v", cfg.EventSearch)
+			}
+		})
+	}
+}

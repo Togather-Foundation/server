@@ -1,10 +1,10 @@
 # Geocoding Architecture
 
 **Version:** 0.1.0
-**Date:** 2026-02-13
-**Status:** Design (Pre-Implementation)
+**Date:** 2026-11-16
+**Status:** Current architecture and capability reference
 
-This document describes the geocoding architecture for the Togather server, covering proximity search, forward/reverse geocoding via Nominatim, caching strategy, and background enrichment.
+This document describes the geocoding architecture for the Togather server, covering place and event proximity search, forward/reverse geocoding via Nominatim, caching strategy, and background enrichment. It is a capability reference; its old ticket roadmap was removed because its tickets and estimates are obsolete.
 
 For the Nominatim client design and usage policies, see [nominatim.md](nominatim.md).
 
@@ -21,7 +21,7 @@ For the Nominatim client design and usage policies, see [nominatim.md](nominatim
 7. [Reverse Geocoding](#reverse-geocoding)
 8. [API Endpoints](#api-endpoints)
 9. [Configuration](#configuration)
-10. [Implementation Phases](#implementation-phases)
+10. [Event Proximity Filtering](#event-proximity-filtering)
 
 ---
 
@@ -29,7 +29,7 @@ For the Nominatim client design and usage policies, see [nominatim.md](nominatim
 
 The geocoding system enables three core capabilities:
 
-1. **Proximity Search**: Find places within a radius of coordinates (`near_lat`, `near_lon`, `radius`). The events list endpoint does not implement proximity search yet — a `near_*`/`radius` parameter sent to `/api/v1/events` is ignored and reported in the response `warnings` array.
+1. **Place Proximity Search**: Find places within a radius of coordinates (`near_lat`, `near_lon`, `radius`), or geocode a place name with `near_place`.
 2. **Search-Time Geocoding**: Convert place names to coordinates for proximity search (`near_place=Toronto City Hall`)
 3. **Background Enrichment**: Automatically geocode events/places missing coordinates on creation
 
@@ -100,6 +100,10 @@ All geocoding uses [Nominatim](https://nominatim.org/), OpenStreetMap's geocodin
 ---
 
 ## Proximity Search
+
+This section describes the existing **places** proximity API. Event proximity
+has a separate filter contract below; its defaults and maximum are independently
+configured and do not change place search.
 
 ### Query Parameters
 
@@ -585,30 +589,30 @@ log.Info().
 
 ---
 
-## Implementation Phases
+## Event Proximity Filtering
 
-### Phase 1: Core Proximity + Geocoding (Branch: `feature/proximity-geocoding`)
+Event-list proximity filtering is tracked in `t_dbb163bc`. The REST list
+endpoint and MCP `events` tool accept `near_lat` and `near_lon` together and
+optional `radius` in kilometres. Coordinates must be finite and within latitude
+[-90, 90] and longitude [-180, 180]; zero is valid. Radius must be finite and
+positive. If radius is omitted, `EVENTS_DEFAULT_RADIUS_KM` is used (default
+10); `EVENTS_MAX_RADIUS_KM` caps it (default 100). A radius without both
+coordinates is invalid. Event proximity does not support `near_place`, `near=`
+or inferred aliases.
 
-| Bead | Title | Priority | Estimate |
-|------|-------|----------|----------|
-| srv-hsnt3 | Core proximity search (near_lat, near_lon, radius) | P2 | 4.5h |
-| srv-hsnt4 | Nominatim client + PostgreSQL cache infrastructure | P2 | 6.5h |
-| srv-hsnt5 | Search-time geocoding with `near_place` parameter | P2 | 4h |
-
-**Dependency chain:** srv-hsnt5 depends on srv-hsnt3 and srv-hsnt4.
-
-### Phase 2: Background Enrichment (After Phase 1 merged)
-
-| Bead | Title | Priority | Estimate |
-|------|-------|----------|----------|
-| srv-hsnt6 | Background geocoding enrichment via River jobs | P3 | 5h |
-| srv-hsnt7 | Reverse geocoding for map UI | P4 | 1.5h |
-
-### Phase 3: Optimization (As needed)
-
-| Bead | Title | Priority | Estimate |
-|------|-------|----------|----------|
-| srv-hsnt8 | OSM venue pre-seed via Overpass API | P4 | 2h |
+The event results retain the existing cursor and chronological ordering by the
+earliest matching occurrence (`start_time ASC, ulid ASC`). Proximity and date
+conditions apply to that same occurrence. An occurrence matches only when its
+effective venue has coordinates. An occurrence venue overrides the primary
+venue; when no occurrence venue is set, the primary venue is used. A virtual
+URL does not prevent a match when that effective venue has coordinates. An
+explicit occurrence venue without coordinates does not inherit coordinates
+from the event's primary venue. No distance field
+is returned and results are not sorted by distance. Coordinate coverage depends
+on venue data and is not complete; a proximity search can omit otherwise nearby
+events whose venues have not been geocoded. Check REST `warnings` for filters
+the server did not recognize, and consult the endpoint OpenAPI document when
+using an older node version.
 
 ---
 
@@ -624,4 +628,4 @@ log.Info().
 
 ---
 
-**Last Updated:** 2026-02-20
+**Last Updated:** 2026-11-16

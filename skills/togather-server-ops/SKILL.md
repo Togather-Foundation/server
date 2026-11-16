@@ -94,10 +94,22 @@ The `./server review` CLI does this automatically when given `--key`.
 | `q` | `search` | free text | Searches name + description |
 | `domain` | `event_domain` | arts, music, culture, community, education, sports, general | Single value |
 | `keywords` | — | comma-separated | Exact tag match |
-| `city` | — | city name | City filter |
-| `state` | `lifecycle_state` | published, draft, postponed | Default: published |
+| `city` | — | city name | Checks locality against the node's configured boundary; a matching locality includes the whole node, not only events with that address locality; an unconfigured dimension is not filtered |
+| `region` | — | region name | Same node-boundary behavior as city |
+| `near_lat` | — | finite latitude [-90, 90] | Requires `near_lon`; zero is valid; narrows this node's inventory only |
+| `near_lon` | — | finite longitude [-180, 180] | Requires `near_lat`; zero is valid |
+| `radius` | — | positive finite kilometres | Optional; defaults to `EVENTS_DEFAULT_RADIUS_KM` (10), capped by `EVENTS_MAX_RADIUS_KM` (100) |
+| `state` | `lifecycle_state` | public lifecycle state | Public endpoints return only the public-state allowlist; `draft` gives no results and `pending_review` is rejected |
 | `limit` | — | 200 max | Results per page |
 | `after` | — | cursor | Pagination |
+
+Proximity results remain chronological by earliest matching occurrence and use
+the existing cursor; date and radius conditions must match the same occurrence.
+Occurrences without coordinates on their effective venue are excluded. Venue
+coordinate coverage is incomplete. No distance field or distance sorting is
+provided, and event proximity does not accept `near_place` or a combined
+`near=` parameter. Check REST warnings and the node's OpenAPI document before
+relying on proximity filters, especially on older nodes.
 
 **Change feed parameters:**
 

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1417,4 +1418,68 @@ func anchorAllDayForHandlerTest(start time.Time, end *time.Time, timezone string
 		endOut = &e
 	}
 	return startOut, endOut, nil
+}
+
+func TestEventsHandlerProximityInvalidInput(t *testing.T) {
+	for _, query := range []string{"near_lat=0", "radius=5", "near_lat=NaN&near_lon=0", "near_lat=0&near_lon=0&radius=101"} {
+		t.Run(query, func(t *testing.T) {
+			repo := stubEventsRepo{listFn: func(events.Filters, events.Pagination) (events.ListResult, error) {
+				t.Error("invalid proximity reached repository")
+				return events.ListResult{}, nil
+			}}
+			h := NewEventsHandler(events.NewService(repo), nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/events?"+query, nil)
+			res := httptest.NewRecorder()
+			h.List(res, req)
+			require.Equal(t, http.StatusBadRequest, res.Code)
+			require.Equal(t, "application/problem+json", res.Header().Get("Content-Type"))
+			var problem map[string]any
+			require.NoError(t, json.Unmarshal(res.Body.Bytes(), &problem))
+			for _, key := range []string{"type", "title", "status", "detail", "instance"} {
+				require.Contains(t, problem, key)
+			}
+		})
+	}
+}
+
+func TestEventsHandlerProximityConfiguration(t *testing.T) {
+	for _, tc := range []struct {
+		query  string
+		status int
+		radius float64
+		max    float64
+	}{
+		{"near_lat=0&near_lon=0", http.StatusOK, 2.5, 7},
+		{"near_lat=0&near_lon=0&radius=7", http.StatusOK, 7, 7},
+		{"near_lat=0&near_lon=0&radius=7.01", http.StatusBadRequest, 0, 7},
+		{"near_lat=0&near_lon=0&radius=200", http.StatusOK, 200, 250},
+		{"near_lat=0&near_lon=0&radius=251", http.StatusBadRequest, 0, 250},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			called := false
+			repo := stubEventsRepo{listFn: func(filters events.Filters, _ events.Pagination) (events.ListResult, error) {
+				called = true
+				require.True(t, filters.PublicOnly)
+				require.NotNil(t, filters.Latitude)
+				require.NotNil(t, filters.Longitude)
+				require.Equal(t, 0.0, *filters.Latitude)
+				require.Equal(t, 0.0, *filters.Longitude)
+				require.Equal(t, tc.radius, *filters.RadiusKm)
+				return events.ListResult{}, nil
+			}}
+			svc := events.NewService(repo).WithEventSearchConfig(config.EventSearchConfig{DefaultRadiusKM: 2.5, MaxRadiusKM: tc.max})
+			h := NewEventsHandler(svc, nil, nil, nil, nil, "test", "https://example.org", zerolog.Nop())
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/events?"+tc.query, nil)
+			req.Header.Set("Accept", "application/ld+json")
+			res := httptest.NewRecorder()
+			h.List(res, req)
+			require.Equal(t, tc.status, res.Code)
+			require.Equal(t, tc.status == http.StatusOK, called)
+			if tc.status == http.StatusBadRequest {
+				require.Contains(t, res.Body.String(), strconv.FormatFloat(tc.max, 'g', -1, 64)+" km")
+			} else {
+				require.Contains(t, res.Header().Get("Content-Type"), "application/ld+json")
+			}
+		})
+	}
 }

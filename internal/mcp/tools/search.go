@@ -184,7 +184,7 @@ func (t *SearchTools) searchEvents(ctx context.Context, query string, limit int)
 	values := url.Values{}
 	values.Set("q", query)
 	values.Set("limit", strconv.Itoa(limit))
-	filters, pagination, _, err := events.ParseFilters(values, t.loc)
+	filters, pagination, _, err := t.eventsService.ParseFilters(values, t.loc)
 	if err != nil {
 		return nil, err
 	}

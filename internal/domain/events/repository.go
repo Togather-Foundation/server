@@ -256,6 +256,9 @@ type SourceLookupParams struct {
 }
 
 type Filters struct {
+	Latitude       *float64
+	Longitude      *float64
+	RadiusKm       *float64
 	StartDate      *time.Time
 	EndDate        *time.Time
 	City           string

@@ -416,7 +416,18 @@ GET /api/v1/events
 | `q` | string | Full-text search query (searches name and description); `search` is accepted as an alias |
 | `keywords` | string | Comma-separated keywords |
 | `domain` | string | Event domain: `arts`, `music`, `culture`, `sports`, `community`, `education`, `general` |
+| `near_lat` | number | Finite WGS84 latitude [-90, 90]; requires `near_lon`; zero is valid |
+| `near_lon` | number | Finite WGS84 longitude [-180, 180]; requires `near_lat`; zero is valid |
+| `radius` | number | Optional positive finite radius in kilometres; defaults to `EVENTS_DEFAULT_RADIUS_KM` (10), capped at `EVENTS_MAX_RADIUS_KM` (100) |
 | `context` | string | JSON-LD context emission mode: `item` (default) or `document`. Use `context=document` to emit a single top-level `@context` scoping all items instead of a full `@context` block per item — roughly halves list response size for clients with fixed output budgets. |
+
+Proximity narrows the event inventory of this node; it does not search other
+nodes. Supply both coordinates; a radius without both coordinates is invalid.
+Results remain chronological by the earliest occurrence matching both
+date and proximity filters and use the existing cursor. An occurrence without
+coordinates on its effective venue cannot match. An occurrence venue overrides
+the primary venue; when none is set, the primary venue is used. Venue
+coordinate coverage is incomplete. No distance is returned or used for sorting.
 
 > Parameter names above are the canonical camelCase forms. Snake_case aliases
 > (`start_date`, `end_date`, `venue_id`, `organizer_id`, `lifecycle_state`,

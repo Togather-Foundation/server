@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -31,9 +32,57 @@ type Config struct {
 	Reporting          ReportingConfig
 	Users              UsersConfig
 	GeographicBoundary GeographicBoundaryConfig
+	EventSearch        EventSearchConfig
 	Identity           IdentityConfig
 	DefaultTimezone    string
 	Environment        string
+}
+
+// EventSearchConfig controls event proximity search radii in kilometres.
+type EventSearchConfig struct {
+	// DefaultRadiusKM is used when coordinates are supplied without a radius.
+	// Environment variable: EVENTS_DEFAULT_RADIUS_KM (default: 10).
+	DefaultRadiusKM float64
+	// MaxRadiusKM caps caller-supplied radii.
+	// Environment variable: EVENTS_MAX_RADIUS_KM (default: 100).
+	MaxRadiusKM float64
+}
+
+// WithDefaults preserves compatibility for callers using zero-value config.
+func (c EventSearchConfig) WithDefaults() EventSearchConfig {
+	if c.DefaultRadiusKM == 0 {
+		c.DefaultRadiusKM = 10
+	}
+	if c.MaxRadiusKM == 0 {
+		c.MaxRadiusKM = 100
+	}
+	return c
+}
+
+func loadEventSearchConfig() (EventSearchConfig, error) {
+	c := (EventSearchConfig{}).WithDefaults()
+	for _, setting := range []struct {
+		key   string
+		value *float64
+	}{
+		{"EVENTS_DEFAULT_RADIUS_KM", &c.DefaultRadiusKM},
+		{"EVENTS_MAX_RADIUS_KM", &c.MaxRadiusKM},
+	} {
+		if raw := os.Getenv(setting.key); raw != "" {
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+			if err != nil {
+				return EventSearchConfig{}, fmt.Errorf("%s must be a finite positive number: %w", setting.key, err)
+			}
+			*setting.value = parsed
+		}
+		if math.IsNaN(*setting.value) || math.IsInf(*setting.value, 0) || *setting.value <= 0 {
+			return EventSearchConfig{}, fmt.Errorf("%s must be a finite positive number", setting.key)
+		}
+	}
+	if c.DefaultRadiusKM > c.MaxRadiusKM {
+		return EventSearchConfig{}, fmt.Errorf("EVENTS_DEFAULT_RADIUS_KM must not exceed EVENTS_MAX_RADIUS_KM")
+	}
+	return c, nil
 }
 
 // ScraperConfig holds configuration for the event scraper, including optional
@@ -527,7 +576,12 @@ func Load() (Config, error) {
 		}
 	}
 
+	eventSearch, err := loadEventSearchConfig()
+	if err != nil {
+		return Config{}, err
+	}
 	cfg := Config{
+		EventSearch: eventSearch,
 		Server: ServerConfig{
 			Host:                     getEnv("SERVER_HOST", "0.0.0.0"),
 			Port:                     getEnvInt("SERVER_PORT", 8080),

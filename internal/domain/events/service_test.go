@@ -895,3 +895,83 @@ func TestParseFilters_NilLocAliasWarning(t *testing.T) {
 	require.Contains(t, warnings[0], "start_date")
 	require.Contains(t, warnings[0], "startDate")
 }
+
+func TestParseFiltersProximityValidation(t *testing.T) {
+	for _, query := range []string{
+		"near_lat=43", "near_lon=-79", "radius=5", "near_lat=&near_lon=0", "near_lat=0&near_lon=",
+		"near_lat=abc&near_lon=0", "near_lat=NaN&near_lon=0", "near_lat=Inf&near_lon=0",
+		"near_lat=90.1&near_lon=0", "near_lat=-90.1&near_lon=0", "near_lat=0&near_lon=180.1",
+		"near_lat=0&near_lon=-180.1", "near_lat=0&near_lon=NaN", "near_lat=0&near_lon=Inf",
+		"near_lat=0&near_lon=0&radius=0", "near_lat=0&near_lon=0&radius=-1", "near_lat=0&near_lon=0&radius=101",
+		"near_lat=0&near_lon=0&radius=NaN", "near_lat=0&near_lon=0&radius=Inf", "near_lat=0&near_lon=0&radius=abc", "near_lat=0&near_lon=0&radius=", "near_lat=1e999&near_lon=0", "near_lat=0&near_lon=0&radius=1e999", "near_lat=0&near_lon=1e999",
+	} {
+		t.Run(query, func(t *testing.T) {
+			values, err := url.ParseQuery(query)
+			require.NoError(t, err)
+			_, _, _, err = ParseFilters(values, nil)
+			var filterErr FilterError
+			require.ErrorAs(t, err, &filterErr)
+		})
+	}
+}
+
+func TestParseFiltersProximityValues(t *testing.T) {
+	for _, tc := range []struct {
+		query            string
+		lat, lon, radius float64
+	}{
+		{"near_lat=0&near_lon=-0", 0, 0, 10},
+		{"near_lat=-90&near_lon=-180&radius=100", -90, -180, 100},
+		{"near_lat=90&near_lon=180&radius=0.01", 90, 180, 0.01},
+		{"near_lat=+43.6532+&near_lon=-79.3832&radius=5", 43.6532, -79.3832, 5},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			values, err := url.ParseQuery(tc.query)
+			require.NoError(t, err)
+			filters, _, warnings, err := ParseFilters(values, nil)
+			require.NoError(t, err)
+			require.Equal(t, tc.lat, *filters.Latitude)
+			require.Equal(t, tc.lon, *filters.Longitude)
+			require.Equal(t, tc.radius, *filters.RadiusKm)
+			require.Empty(t, warnings)
+		})
+	}
+	filters, _, _, err := ParseFilters(url.Values{}, nil)
+	require.NoError(t, err)
+	require.Nil(t, filters.Latitude)
+	require.Nil(t, filters.Longitude)
+	require.Nil(t, filters.RadiusKm)
+}
+
+func TestServiceParseFiltersProximityConfiguration(t *testing.T) {
+	values := url.Values{"near_lat": {"0"}, "near_lon": {"0"}}
+	svc := NewService(nil).WithEventSearchConfig(config.EventSearchConfig{DefaultRadiusKM: 2.5, MaxRadiusKM: 7})
+	filters, _, _, err := svc.ParseFilters(values, nil)
+	require.NoError(t, err)
+	require.Equal(t, 2.5, *filters.RadiusKm)
+	values.Set("radius", "7")
+	filters, _, _, err = svc.ParseFilters(values, nil)
+	require.NoError(t, err)
+	require.Equal(t, 7.0, *filters.RadiusKm)
+	values.Set("radius", "7.01")
+	_, _, _, err = svc.ParseFilters(values, nil)
+	assertFilterError(t, err, "radius", "must be a finite positive number no greater than 7 km")
+	values.Del("radius")
+	for _, svc := range []*Service{NewService(nil), NewService(nil).WithEventSearchConfig(config.EventSearchConfig{})} {
+		filters, _, _, err = svc.ParseFilters(values, nil)
+		require.NoError(t, err)
+		require.Equal(t, 10.0, *filters.RadiusKm)
+	}
+}
+
+func TestServiceParseFiltersProximityRaisedMaximum(t *testing.T) {
+	svc := NewService(nil).WithEventSearchConfig(config.EventSearchConfig{DefaultRadiusKM: 150, MaxRadiusKM: 250})
+	values := url.Values{"near_lat": {"0"}, "near_lon": {"0"}}
+	filters, _, _, err := svc.ParseFilters(values, nil)
+	require.NoError(t, err)
+	require.Equal(t, 150.0, *filters.RadiusKm)
+	values.Set("radius", "200")
+	filters, _, _, err = svc.ParseFilters(values, nil)
+	require.NoError(t, err)
+	require.Equal(t, 200.0, *filters.RadiusKm)
+}

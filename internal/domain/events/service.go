@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -17,10 +18,22 @@ import (
 type Service struct {
 	repo              Repository
 	geoBoundaryConfig config.GeographicBoundaryConfig
+	eventSearchConfig config.EventSearchConfig
 }
 
 func NewService(repo Repository) *Service {
 	return &Service{repo: repo}
+}
+
+// WithEventSearchConfig sets the event proximity defaults and maximum radius.
+func (s *Service) WithEventSearchConfig(cfg config.EventSearchConfig) *Service {
+	s.eventSearchConfig = cfg.WithDefaults()
+	return s
+}
+
+// ParseFilters parses event filters using the service's configured radius limits.
+func (s *Service) ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, []string, error) {
+	return parseFilters(values, loc, s.eventSearchConfig.WithDefaults())
 }
 
 // WithGeographicBoundaryConfig sets the node's configured geographic scope and
@@ -148,7 +161,12 @@ func (e FilterError) Error() string {
 	return fmt.Sprintf("invalid %s: %s", e.Field, e.Message)
 }
 
+// ParseFilters parses event filters with the default search configuration.
 func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, []string, error) {
+	return parseFilters(values, loc, (config.EventSearchConfig{}).WithDefaults())
+}
+
+func parseFilters(values url.Values, loc *time.Location, searchConfig config.EventSearchConfig) (Filters, Pagination, []string, error) {
 	if loc == nil {
 		loc = time.UTC
 	}
@@ -229,6 +247,11 @@ func ParseFilters(values url.Values, loc *time.Location) (Filters, Pagination, [
 		}
 	}
 
+	filters.Latitude, filters.Longitude, filters.RadiusKm, err = parseProximityFilters(values, searchConfig)
+	if err != nil {
+		return filters, pagination, nil, err
+	}
+
 	filters.Keywords = parseKeywords(values.Get("keywords"))
 
 	limit, err := parseLimit(values)
@@ -264,6 +287,7 @@ var knownFilterParams = map[string]bool{
 	"state": true, "lifecycle_state": true,
 	"domain": true, "event_domain": true,
 	"city": true, "region": true,
+	"near_lat": true, "near_lon": true, "radius": true,
 	"q": true, "search": true,
 	"keywords": true, "limit": true, "after": true, "cursor": true,
 	// "context" is a pure serialization hint (list @context emission mode) consumed
@@ -275,7 +299,7 @@ var knownFilterParams = map[string]bool{
 // appendUnknownParamWarnings adds a warning for every query parameter that is
 // not recognised by the events list endpoint. Recognised parameters are still
 // processed as before; this only surfaces typos and unsupported params (like
-// proximity search) instead of silently dropping them.
+// lat/lng) instead of silently dropping them.
 func appendUnknownParamWarnings(values url.Values, warnings *[]string) {
 	for key := range values {
 		if knownFilterParams[key] {
@@ -284,6 +308,39 @@ func appendUnknownParamWarnings(values url.Values, warnings *[]string) {
 		*warnings = append(*warnings,
 			fmt.Sprintf("Unrecognised query parameter %q — it was ignored. See /api/v1/openapi.json for supported parameters.", key))
 	}
+}
+
+func parseProximityFilters(values url.Values, cfg config.EventSearchConfig) (*float64, *float64, *float64, error) {
+	hasLat, hasLon, hasRadius := values.Has("near_lat"), values.Has("near_lon"), values.Has("radius")
+	if !hasLat && !hasLon && !hasRadius {
+		return nil, nil, nil, nil
+	}
+	if !hasLat || !hasLon {
+		return nil, nil, nil, FilterError{Field: "near_lat/near_lon", Message: "both coordinates are required for proximity search"}
+	}
+	parseCoordinate := func(field string, minimum, maximum float64) (float64, error) {
+		value, err := strconv.ParseFloat(strings.TrimSpace(values.Get(field)), 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value < minimum || value > maximum {
+			return 0, FilterError{Field: field, Message: fmt.Sprintf("must be a finite number between %g and %g", minimum, maximum)}
+		}
+		return value, nil
+	}
+	latitude, err := parseCoordinate("near_lat", -90, 90)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	longitude, err := parseCoordinate("near_lon", -180, 180)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	radius := cfg.DefaultRadiusKM
+	if hasRadius {
+		radius, err = strconv.ParseFloat(strings.TrimSpace(values.Get("radius")), 64)
+		if err != nil || math.IsNaN(radius) || math.IsInf(radius, 0) || radius <= 0 || radius > cfg.MaxRadiusKM {
+			return nil, nil, nil, FilterError{Field: "radius", Message: fmt.Sprintf("must be a finite positive number no greater than %g km", cfg.MaxRadiusKM)}
+		}
+	}
+	return &latitude, &longitude, &radius, nil
 }
 
 func parseDate(field string, value string, loc *time.Location) (*time.Time, error) {

@@ -115,6 +115,18 @@ func (t *EventTools) EventsTool() mcp.Tool {
 					"type":        "string",
 					"description": "Requested region name. Interpreted against the node's configured regions: within them matches the whole node, outside them matches nothing. Ignored when the node configures no regions.",
 				},
+				"near_lat": map[string]interface{}{
+					"type":        "number",
+					"description": "Latitude for proximity search. Requires near_lon; finite and between -90 and 90. Alias: nearLat",
+				},
+				"near_lon": map[string]interface{}{
+					"type":        "number",
+					"description": "Longitude for proximity search. Requires near_lat; finite and between -180 and 180. Alias: nearLon",
+				},
+				"radius": map[string]interface{}{
+					"type":        "number",
+					"description": "Proximity radius in kilometres. Requires both coordinates; finite and positive. Default 10 (EVENTS_DEFAULT_RADIUS_KM), maximum 100 (EVENTS_MAX_RADIUS_KM). Alias: radiusKm. Results remain chronological.",
+				},
 				"limit": map[string]interface{}{
 					"type":        "integer",
 					"description": "Maximum number of events to return (default: 50, max: 200)",
@@ -142,18 +154,41 @@ func (t *EventTools) EventsHandler(ctx context.Context, request mcp.CallToolRequ
 		return mcp.NewToolResultError("events service not configured"), nil
 	}
 
-	// Parse arguments - check for id first
+	// Decode the argument object first so id dispatch ignores list-only filters.
+	var rawArgs map[string]any
+	if err := unmarshalArgs(request, &rawArgs); err != nil {
+		return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
+	}
+
+	if id, ok := rawArgs["id"].(string); ok && strings.TrimSpace(id) != "" {
+		return t.getEventByID(ctx, strings.TrimSpace(id))
+	}
+
+	// Explicit null must not silently disable proximity. Validate aliases too,
+	// even when a canonical value was also supplied.
+	for _, key := range []string{"near_lat", "near_lon", "radius", "nearLat", "nearLon", "radiusKm"} {
+		if value, present := rawArgs[key]; present {
+			if _, numeric := value.(float64); !numeric {
+				return mcp.NewToolResultErrorf("invalid filters: %s must be a number", key), nil
+			}
+		}
+	}
+
+	// Decode list arguments, preserving zero-valued coordinates.
 	args := struct {
-		ID        string `json:"id"`
-		Query     string `json:"query"`
-		StartDate string `json:"start_date"`
-		EndDate   string `json:"end_date"`
-		Location  string `json:"location"`
-		City      string `json:"city"`
-		Region    string `json:"region"`
-		Limit     int    `json:"limit"`
-		Cursor    string `json:"cursor"`
-		Context   string `json:"context"`
+		ID        string   `json:"id"`
+		Query     string   `json:"query"`
+		StartDate string   `json:"start_date"`
+		EndDate   string   `json:"end_date"`
+		Location  string   `json:"location"`
+		City      string   `json:"city"`
+		Region    string   `json:"region"`
+		Limit     int      `json:"limit"`
+		Cursor    string   `json:"cursor"`
+		Context   string   `json:"context"`
+		NearLat   *float64 `json:"near_lat"`
+		NearLon   *float64 `json:"near_lon"`
+		Radius    *float64 `json:"radius"`
 	}{
 		Limit: 50,
 	}
@@ -162,13 +197,8 @@ func (t *EventTools) EventsHandler(ctx context.Context, request mcp.CallToolRequ
 		return mcp.NewToolResultErrorFromErr("invalid arguments", err), nil
 	}
 
-	// If id is provided, get single event
-	if strings.TrimSpace(args.ID) != "" {
-		return t.getEventByID(ctx, strings.TrimSpace(args.ID))
-	}
-
 	// Otherwise, list events with filters
-	return t.listEvents(ctx, args.Query, args.StartDate, args.EndDate, args.Location, args.City, args.Region, args.Limit, args.Cursor, args.Context)
+	return t.listEvents(ctx, args.Query, args.StartDate, args.EndDate, args.Location, args.City, args.Region, args.Limit, args.Cursor, args.Context, args.NearLat, args.NearLon, args.Radius)
 }
 
 // getEventByID retrieves a single event by ULID.
@@ -254,7 +284,7 @@ func (t *EventTools) getEventByID(ctx context.Context, id string) (*mcp.CallTool
 
 // listEvents retrieves a list of events with optional filters and pagination.
 // Supports filtering by query text, date range, and location parameters.
-func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, location, city, region string, limit int, cursor string, contextMode string) (*mcp.CallToolResult, error) {
+func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, location, city, region string, limit int, cursor string, contextMode string, nearLat, nearLon, radius *float64) (*mcp.CallToolResult, error) {
 	const maxListLimit = 200
 
 	// Enforce limit caps
@@ -295,7 +325,13 @@ func (t *EventTools) listEvents(ctx context.Context, query, startDate, endDate, 
 		values.Set("after", strings.TrimSpace(cursor))
 	}
 
-	filters, pagination, _, err := events.ParseFilters(values, t.loc)
+	for key, value := range map[string]*float64{"near_lat": nearLat, "near_lon": nearLon, "radius": radius} {
+		if value != nil {
+			values.Set(key, strconv.FormatFloat(*value, 'g', -1, 64))
+		}
+	}
+
+	filters, pagination, _, err := t.eventsService.ParseFilters(values, t.loc)
 	if err != nil {
 		return mcp.NewToolResultErrorFromErr("invalid filters", err), nil
 	}

@@ -125,6 +125,32 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 		publicStates = events.PublicStates[:]
 	}
 
+	args := []any{
+		filters.StartDate,
+		filters.EndDate,
+		filters.VenueULID,
+		filters.OrganizerULID,
+		filters.LifecycleState,
+		filters.Domain,
+		escapedQuery,
+		keywordArray,
+		cursorTimestamp,
+		cursorULID,
+		publicStates,
+		limitPlusOne,
+	}
+	// Keep spatial filtering structural: ordinary lists retain their existing
+	// joins and predicates, while proximity lists can use the geography index.
+	var proximityPredicate string
+	if filters.Latitude != nil && filters.Longitude != nil && filters.RadiusKm != nil {
+		proximityPredicate = `
+    AND p.geo_point IS NOT NULL
+    AND ST_DWithin(p.geo_point::geography,
+        ST_SetSRID(ST_MakePoint($13::float8, $14::float8), 4326)::geography,
+        $15::float8)`
+		args = append(args, *filters.Longitude, *filters.Latitude, *filters.RadiusKm*1000)
+	}
+
 	rows, err := queryer.Query(ctx, `
 SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	   lifecycle_state, event_status, attendance_mode, event_domain,
@@ -166,30 +192,17 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
     AND ($6 = '' OR e.event_domain = $6)
     AND ($7 = '' OR (e.name ILIKE '%' || $7 || '%' ESCAPE '\' OR e.description ILIKE '%' || $7 || '%' ESCAPE '\'))
     AND (coalesce(cardinality($8::text[]), 0) = 0 OR e.keywords && $8::text[])
-    AND ($11::text[] IS NULL OR e.lifecycle_state = ANY($11::text[]))
-    AND (
-      $9::timestamptz IS NULL OR
-      o.start_time > $9::timestamptz OR
-      (o.start_time = $9::timestamptz AND e.ulid > $10)
-    )
+    AND ($11::text[] IS NULL OR e.lifecycle_state = ANY($11::text[]))`+proximityPredicate+`
   ) filtered
  WHERE row_num = 1
+   AND (
+     $9::timestamptz IS NULL OR
+     start_time > $9::timestamptz OR
+     (start_time = $9::timestamptz AND ulid > $10)
+   )
  ORDER BY start_time ASC, ulid ASC
  LIMIT $12
- `,
-		filters.StartDate,
-		filters.EndDate,
-		filters.VenueULID,
-		filters.OrganizerULID,
-		filters.LifecycleState,
-		filters.Domain,
-		escapedQuery,
-		keywordArray,
-		cursorTimestamp,
-		cursorULID,
-		publicStates,
-		limitPlusOne,
-	)
+ `, args...)
 	if err != nil {
 		return events.ListResult{}, fmt.Errorf("list events: %w", err)
 	}
