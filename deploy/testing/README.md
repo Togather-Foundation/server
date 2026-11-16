@@ -10,10 +10,12 @@ Run the local operational tooling regressions without a live server or database:
 scripts/agent-run.sh make test-tooling
 ```
 
-This runs the backup, read-only smoke and performance-wrapper behavior suites using
-stubbed clients. Install Bash, jq, ripgrep and Python 3 first. The optional real
-archive-corruption check reports a skip if `pg_restore` is absent. Both local CI
-gates and GitHub CI run the target automatically.
+This runs configuration preflight, backup, source-sync, read-only smoke and
+performance-wrapper behavior suites using stubbed clients. Install Bash, jq,
+ripgrep and Python 3 first. When Compose is installed, the preflight suite also
+checks required interpolation with its real parser, without starting containers.
+The optional real archive-corruption check reports a skip if `pg_restore` is
+absent. Both local CI gates and GitHub CI run the target automatically.
 
 ```bash
 # Test local server

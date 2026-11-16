@@ -443,6 +443,12 @@ When operators need cloud-specific features (managed databases, auto-scaling, ge
 
 **MVP Implementation:**
 - Use existing `golang-migrate` tool from project dependencies
+- Before cache pruning or image building, validate the selected environment's
+  Compose configuration and require exactly one running database service. When
+  migrations are enabled, validate the PostgreSQL target and backup-tool
+  availability too. Do not emit resolved configuration or credentials. Recheck
+  the target and service after building and reject changes before taking the
+  fresh verified backup; preflight does not constitute backup evidence.
 - Run migrations with the deployment host's migration client before starting the
   inactive application slot; preserve compatibility with the active slot.
 - Require a backup of the exact resolved migration target before migration runs;

@@ -202,14 +202,19 @@ https://github.com/Togather-Foundation/server/actions
 ## Step 7: Deploy to Staging
 
 Before building, check target disk capacity and active-image preflight support.
+The deployment config preflight validates Compose with the selected env file and
+checks the running database service before pruning/building. Resolve a failed
+check before retrying; do not print resolved Compose configuration or credentials.
 Read [manual rollout preparation](../../docs/deploy/remote-deployment.md#environment-preparation-for-a-manual-rollout)
-if the old image lacks the command or Compose cannot see the chosen env file.
-That guide contains the bounded one-time CLI mount and trusted-env workaround;
-preserve the real gate and keep host/container database URLs in their own networks.
+if the old image lacks source preflight. That guide contains the bounded one-time
+CLI mount; keep host/container database URLs in their own networks. Compose
+discovery passes `--env-file` explicitly and needs no ambient credential export.
 
 Deployments that run migrations require a verified private backup of the migration
-target. The helper uses database-container clients for shared network targets and
-host clients for host-local targets; missing tools or failed full archive reads stop
+target. Pre-build checks are not backup evidence: deployment rechecks the target
+and service after building and stops if either changed. The helper uses
+database-container clients for shared network targets and host clients for
+host-local targets; missing tools or failed full archive reads stop
 deployment. Verify the target and evidence as described in
 [snapshot tooling](../../docs/deploy/remote-deployment.md#snapshot-tooling-and-database-container-fallback).
 Keep the backup path/checksum and verification result in the handoff. Full archive

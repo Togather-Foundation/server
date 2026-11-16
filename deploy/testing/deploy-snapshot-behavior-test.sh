@@ -19,9 +19,9 @@ if [[ "$1" == compose ]]; then
     # Service discovery must use the selected environment without relying on
     # secrets exported by the caller (snapshot target resolution is a subshell).
     [[ -z "${ADMIN_PASSWORD+x}${JWT_SECRET+x}${POSTGRES_PASSWORD+x}${DATABASE_URL+x}" ]] || exit 99
-    [[ "$#" == 8 && "$2" == --env-file && "$3" == "$TEST_DIR/db.env" &&
+    [[ "$#" == 10 && "$2" == --env-file && "$3" == "$TEST_DIR/db.env" &&
        "$4" == -f && "$5" == "$ROOT/deploy/docker/docker-compose.yml" &&
-       "$6" == ps && "$7" == -q && "$8" == togather-db ]] || exit 90
+       "$6" == ps && "$7" == --status && "$8" == running && "$9" == -q && "${10}" == togather-db ]] || exit 90
     [[ "${CASE}" != no-container ]] || exit 0
     [[ "${CASE}" != compose-failure ]] || exit 1
     [[ "${CASE}" != multiple-containers ]] || { printf 'db-one\ndb-two\n'; exit 0; }
@@ -64,7 +64,7 @@ MOCK
 chmod +x "$TEST_DIR/bin/docker"
 export PATH="$TEST_DIR/bin:$PATH"
 # Extract real orchestration functions without executing deploy.sh's main.
-sed -n '/^create_db_snapshot()/,/^}/p; /^deploy()/,/^}/p' "$ROOT/deploy/scripts/deploy.sh" > "$TEST_DIR/functions.sh"
+sed -n '/^snapshot_database_url()/,/^}/p; /^snapshot_container()/,/^}/p; /^create_db_snapshot()/,/^}/p; /^deploy()/,/^}/p' "$ROOT/deploy/scripts/deploy.sh" > "$TEST_DIR/functions.sh"
 cat > "$TEST_DIR/run.sh" <<'RUN'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -93,6 +93,7 @@ validate_git_commit() { :; }
 acquire_lock() { :; }
 # This harness isolates backup/migration ordering; the independent source-policy
 # gate is covered by deploy-sync-behavior-test.sh.
+preflight_config() { :; }
 preflight_sources() { :; }
 check_disk_space() { :; }
 prune_docker_cache() { :; }

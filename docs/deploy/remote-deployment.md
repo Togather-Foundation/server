@@ -15,6 +15,20 @@ Remote deployment enables developers to deploy directly from their local machine
 
 ## Prerequisites
 
+Before source-policy checks, cache pruning or image building, `deploy.sh` validates
+the selected environment file with `docker compose config --quiet` and requires
+exactly one running `togather-db` service in that same Compose context. With
+migrations enabled, it also checks the resolved PostgreSQL target and availability
+of the backup tools in the appropriate host/container context. These checks read
+configuration and service state; they do not create a backup or modify the database.
+Failures report the failed check without printing resolved configuration or secrets.
+
+After the build, deployment resolves the database target and service again before
+creating the fresh, fully verified backup. A changed target or container stops the
+deployment. Early preflight success cannot substitute for backup verification.
+`--skip-migrations` retains Compose/service validation while skipping backup-target
+and backup-tool checks, the backup itself, and migrations.
+
 Deployments check incoming source policy before cache pruning or image building.
 The gate runs `source preflight --json` using the existing active image and database
 network, with the current checkout's `configs/sources` mounted read-only. The gate
@@ -105,10 +119,11 @@ diagnostic checks the chosen file and service discovery without exposing credent
 ```
 
 Do not enable shell tracing or print the env file/`docker compose config` output.
-If service discovery or backup verification fails, deployment stops before
-migrations or a traffic switch. Keep traffic on the old slot and resolve that
-failure before retrying. Build timestamps can cause a retry to compile again even
-at the same commit; budget for another build.
+Compose configuration and initial service-discovery errors stop deployment before
+the image build. If the fresh service check or backup verification fails after
+building, deployment stops before migrations or a traffic switch. Keep traffic on
+the old slot and resolve the failure before retrying. Build timestamps can cause a
+retry to compile again even at the same commit; budget for another build.
 
 ## One-time rollout from an image without preflight
 

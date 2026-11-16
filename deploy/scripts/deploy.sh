@@ -60,6 +60,8 @@ GIT_SHORT_COMMIT=""
 DEPLOYMENT_TIMESTAMP=""
 DEPLOYED_BY="${USER}@$(hostname)"
 SNAPSHOT_PATH=""  # Captured during create_db_snapshot for rollback history
+PREFLIGHT_DATABASE_URL=""
+PREFLIGHT_DB_CONTAINER=""
 SNAPSHOT_DIR="${HOME}/.togather/snapshots"  # Private host artifacts
 COMPOSE_CMD="docker compose"  # Default to plugin mode, detected in validate_tool_versions()
 
@@ -1165,6 +1167,90 @@ resolve_database_url() {
     printf 'postgresql://%s:%s@127.0.0.1:%s/%s?sslmode=disable' "$pg_user" "$pg_password" "$pg_port" "$pg_db"
 }
 
+# Resolve the exact migration/backup target without exposing env-file output.
+snapshot_database_url() {
+    local env="$1" env_file="$2"
+    (
+        set -a
+        source "$env_file" >/dev/null 2>&1 || exit 1
+        set +a
+        local resolved_url target
+        resolved_url=$(resolve_database_url "$env") || exit 1
+        target="${resolved_url:-${DATABASE_URL:-}}"
+        [[ "$target" == postgres://* || "$target" == postgresql://* ]] || exit 1
+        [[ "$target" != *$'\n'* ]] || exit 1
+        printf '%s' "$target"
+    )
+}
+
+# Rediscover the running service each time; never reuse an early lookup as backup evidence.
+snapshot_container() {
+    local env_file="$1" container
+    container=$(${COMPOSE_CMD} --env-file "$env_file" -f "${DOCKER_DIR}/docker-compose.yml" \
+        ps --status running -q togather-db 2>/dev/null) || return 1
+    [[ -n "$container" && "$container" != *$'\n'* ]] || return 1
+    printf '%s' "$container"
+}
+
+# Cheap read-only checks before pruning/building. The actual verified dump remains
+# after the build, immediately before migrations, and rediscovers its target.
+preflight_config() {
+    local env="$1" skip_migrations="${2:-false}" env_file container target authority backup_mode tool
+    PREFLIGHT_DATABASE_URL=""
+    PREFLIGHT_DB_CONTAINER=""
+    env_file=$(discover_env_file "$env")
+    if [[ -z "$env_file" || ! -r "$env_file" ]]; then
+        log "ERROR" "Missing readable environment file for deployment preflight"
+        return 1
+    fi
+    if ! ${COMPOSE_CMD} --env-file "$env_file" -f "${DOCKER_DIR}/docker-compose.yml" config --quiet >/dev/null 2>&1; then
+        log "ERROR" "Compose configuration preflight failed; check the selected environment file and Compose configuration privately"
+        return 1
+    fi
+    if ! container=$(snapshot_container "$env_file"); then
+        log "ERROR" "Preflight requires exactly one running configured database service"
+        return 1
+    fi
+    if [[ "$skip_migrations" != "true" ]]; then
+        if ! target=$(snapshot_database_url "$env" "$env_file"); then
+            log "ERROR" "Invalid migration database target in selected environment file"
+            return 1
+        fi
+        for tool in docker jq sha256sum mktemp wc; do
+            if ! command -v "$tool" >/dev/null; then
+                log "ERROR" "Required backup tool unavailable: ${tool}"
+                return 1
+            fi
+        done
+        # Keep namespace classification aligned with snapshot-db.sh. Host clients
+        # must address loopback/socket targets; other URLs use container clients.
+        authority="${target#*://}"
+        authority="${authority%%/*}"
+        authority="${authority##*@}"
+        backup_mode=container
+        case "${authority,,}" in
+            ''|0.*|localhost|localhost:*|*.localhost|*.localhost:*|localhost.localdomain*|127.*|\[*|*%*|*,*) backup_mode=host ;;
+        esac
+        case "$target" in
+            *\?host=*|*\&host=*|*\?hostaddr=*|*\&hostaddr=*) backup_mode=host ;;
+        esac
+        if [[ "$backup_mode" == host ]]; then
+            for tool in pg_dump pg_restore; do
+                if ! command -v "$tool" >/dev/null; then
+                    log "ERROR" "Host-target backup requires ${tool} on the deployment host"
+                    return 1
+                fi
+            done
+        elif ! docker exec "$container" sh -c 'command -v pg_dump >/dev/null && command -v pg_restore >/dev/null' >/dev/null 2>&1; then
+            log "ERROR" "Database container lacks backup tools"
+            return 1
+        fi
+        PREFLIGHT_DATABASE_URL="$target"
+        PREFLIGHT_DB_CONTAINER="$container"
+    fi
+    log "SUCCESS" "Compose and database service preflight passed before image build"
+}
+
 # Create a verified backup before migrations (T017, T041).
 # Resolve the deployed Compose service, never the application container or host CLI.
 create_db_snapshot() {
@@ -1175,24 +1261,19 @@ create_db_snapshot() {
         log "ERROR" "Missing migration environment; cannot establish backup target"
         return 1
     fi
-    snapshot_database_url=$(
-        set -a; source "$env_file" || exit 1; set +a
-        local resolved_url
-        resolved_url=$(resolve_database_url "$env") || exit 1
-        printf '%s' "${resolved_url:-${DATABASE_URL:-}}"
-    ) || return 1
-    if [[ -z "$snapshot_database_url" ]]; then
-        log "ERROR" "Missing database URL; cannot establish backup target"
-        return 1
-    fi
-    SNAPSHOT_PATH=""
-    log "INFO" "Creating and fully reading database backup before migrations"
-    container=$(${COMPOSE_CMD} --env-file "$env_file" -f "${DOCKER_DIR}/docker-compose.yml" ps -q togather-db) || {
-        log "ERROR" "Cannot resolve the configured database service; aborting deployment"
+    snapshot_database_url=$(snapshot_database_url "$env" "$env_file") || {
+        log "ERROR" "Invalid migration database target; cannot establish backup target"
         return 1
     }
-    if [[ -z "$container" || "$container" == *$'\n'* ]]; then
-        log "ERROR" "Expected exactly one running database container; aborting deployment"
+    SNAPSHOT_PATH=""
+    log "INFO" "Creating and fully reading database backup before migrations"
+    container=$(snapshot_container "$env_file") || {
+        log "ERROR" "Expected exactly one running configured database service; aborting deployment"
+        return 1
+    }
+    if [[ -n "${PREFLIGHT_DATABASE_URL:-}" &&
+        ( "$snapshot_database_url" != "$PREFLIGHT_DATABASE_URL" || "$container" != "$PREFLIGHT_DB_CONTAINER" ) ]]; then
+        log "ERROR" "Database target or service changed since preflight; retry deployment with stable configuration"
         return 1
     fi
     snapshot_output=$(DATABASE_URL="$snapshot_database_url" GIT_COMMIT="${GIT_COMMIT:-}" DEPLOYMENT_ID="${DEPLOYMENT_ID:-}" \
@@ -2039,6 +2120,7 @@ deploy() {
         DEPLOYMENT_ID="forced_$(date +%s)_${GIT_SHORT_COMMIT}"
     fi
     
+    preflight_config "$env" "$skip_migrations" || return 1
     preflight_sources "$env" || return 1
 
     # Pre-deploy disk check and cache prune

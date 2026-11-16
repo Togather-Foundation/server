@@ -97,19 +97,30 @@ record that the served code commit precedes the documentation commit.
 scripts/agent-run.sh make test-tooling
 ```
 
-Runs three hermetic suites for deployment snapshot safety, read-only smoke checks,
-and performance-probe behavior. They use temporary fixtures and command stubs;
-no live database, Docker daemon, SSH connection or deployment is required. Run this
-when changing deployment tooling; live post-deploy checks below remain separate.
+Runs hermetic suites for pre-build configuration checks, snapshot safety, source
+sync, read-only smoke checks, and performance-probe behavior. They use temporary
+fixtures and command stubs; the real Compose interpolation fixture validates only
+configuration, without starting services. No live database, Docker daemon, SSH
+connection or deployment is required. Run this when changing deployment tooling;
+live post-deploy checks below remain separate.
 
 ### Database backup readiness
+
+Before building, `deploy.sh` validates Compose interpolation using the selected
+environment file and requires exactly one running database service. With migrations
+enabled, it checks the resolved PostgreSQL target and required backup tools too.
+Check that an invalid configuration fails without invoking the image build or
+creating a backup. Neither resolved Compose output nor connection secrets belong
+in logs. The post-build backup must rediscover the target and service and reject
+changes since preflight.
 
 `deploy.sh` enforces a private, fully read custom-format backup before migrations.
 Check the `.dump.json` evidence: exact artifact path, size, SHA-256, client mode and
 `verification: pg_restore_full_read`. It uses the same resolved `DATABASE_URL` as
 migrations; loopback targets require host clients, while shared network targets use
 the configured database container. Failures stop before migrations/traffic switch.
-`--skip-migrations` is an explicit no-migration/no-automatic-backup path.
+`--skip-migrations` is an explicit no-migration/no-automatic-backup path; it still
+requires valid Compose configuration and one running database service.
 
 Standalone repairs still require the operator to run the
 [verified backup helper](remote-deployment.md#snapshot-tooling-and-database-container-fallback)
