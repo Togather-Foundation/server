@@ -1,7 +1,9 @@
 package config
 
 import (
+	"math"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -717,6 +719,40 @@ func TestLoadEventSearchConfig(t *testing.T) {
 			}
 			if cfg.EventSearch.DefaultRadiusKM != tc.wantDefault || cfg.EventSearch.MaxRadiusKM != tc.wantMax {
 				t.Fatalf("unexpected config: %#v", cfg.EventSearch)
+			}
+		})
+	}
+}
+
+func TestLoadEventSearchConfigMetreConversion(t *testing.T) {
+	boundary := math.MaxFloat64 / 1000
+	for _, tc := range []struct {
+		name                     string
+		defaultRadius, maxRadius float64
+		wantError                bool
+	}{
+		{"finite boundary", 10, boundary, false},
+		{"overflow maximum", 10, math.Nextafter(boundary, math.Inf(1)), true},
+		{"overflow default", 1e308, 1e308, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ENVIRONMENT", "test")
+			t.Setenv("DATABASE_URL", "postgres://test:test@localhost/test")
+			t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+			t.Setenv("EVENTS_DEFAULT_RADIUS_KM", strconv.FormatFloat(tc.defaultRadius, 'g', -1, 64))
+			t.Setenv("EVENTS_MAX_RADIUS_KM", strconv.FormatFloat(tc.maxRadius, 'g', -1, 64))
+			cfg, err := Load()
+			if tc.wantError {
+				if err == nil || !strings.Contains(err.Error(), "finite when converted to metres") {
+					t.Fatalf("expected metre conversion error, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if math.IsInf(cfg.EventSearch.MaxRadiusKM*1000, 0) {
+				t.Fatal("accepted maximum overflows metre conversion")
 			}
 		})
 	}

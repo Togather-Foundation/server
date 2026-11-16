@@ -50,8 +50,8 @@ Deployment fails without these three:
 | `GEOCODING_BOUNDARY_FALLBACK_MAX_LOOKUPS_PER_BATCH` | `5` | Per-batch cap on boundary fallback lookups. |
 | `GEOCODING_BOUNDARY_FALLBACK_BUDGET_MS` | half of `SCRAPER_POLL_TIMEOUT_MS` (`15000`) | Per-batch wall-clock budget for boundary fallback lookups; `0` inherits half the poll window (headroom for the rest of the batch), negative disables the window. |
 | `GEOCODING_BOUNDARY_CONFLICT_RADIUS_KM` | `50` | Distance beyond which a geocoded coordinate pair is treated as contradicting coordinates already supplied. Loose by design; raise for multi-city nodes. |
-| `EVENTS_DEFAULT_RADIUS_KM` | `10` | Default radius in kilometres for event-list proximity filtering when `radius` is omitted. |
-| `EVENTS_MAX_RADIUS_KM` | `100` | Maximum radius in kilometres accepted by event-list proximity filtering. Must be positive and at least `EVENTS_DEFAULT_RADIUS_KM`. |
+| `EVENTS_DEFAULT_RADIUS_KM` | `10` | Default radius in kilometres for event-list proximity filtering when `radius` is omitted. Must be positive, finite, and remain finite when multiplied by 1000 to convert to metres. |
+| `EVENTS_MAX_RADIUS_KM` | `100` | Maximum radius in kilometres accepted by event-list proximity filtering. Must be positive, finite, at least `EVENTS_DEFAULT_RADIUS_KM`, and remain finite when multiplied by 1000 to convert to metres. |
 
 ---
 

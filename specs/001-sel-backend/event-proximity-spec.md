@@ -73,7 +73,8 @@ Keep the package-level `ParseFilters` as a default-config wrapper for existing
 callers. Wire the config in both `internal/api/router.go` and
 `cmd/mcp-server/main.go`. `EVENTS_DEFAULT_RADIUS_KM`
 defaults to 10; `EVENTS_MAX_RADIUS_KM` defaults to 100. Reject invalid configuration
-(malformed values, nonfinite/nonpositive values or default greater than maximum) during configuration
+(malformed values, nonfinite/nonpositive values, values whose kilometre-to-metre
+conversion overflows, or default greater than maximum) during configuration
 validation in `config.Load`, returning an error before the server starts.
 Invalid radius messages should follow the existing `FilterError` style and
 include the effective configured maximum. Document both defaults in OpenAPI, environment docs and examples.

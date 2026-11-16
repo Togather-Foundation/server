@@ -78,6 +78,9 @@ func loadEventSearchConfig() (EventSearchConfig, error) {
 		if math.IsNaN(*setting.value) || math.IsInf(*setting.value, 0) || *setting.value <= 0 {
 			return EventSearchConfig{}, fmt.Errorf("%s must be a finite positive number", setting.key)
 		}
+		if math.IsInf(*setting.value*1000, 0) {
+			return EventSearchConfig{}, fmt.Errorf("%s must remain finite when converted to metres", setting.key)
+		}
 	}
 	if c.DefaultRadiusKM > c.MaxRadiusKM {
 		return EventSearchConfig{}, fmt.Errorf("EVENTS_DEFAULT_RADIUS_KM must not exceed EVENTS_MAX_RADIUS_KM")

@@ -208,7 +208,8 @@ paths:
         proximity parameter is supplied; a radius without coordinates is invalid.
         The default radius is configurable via
         `EVENTS_DEFAULT_RADIUS_KM` (default 10); the maximum is configurable via
-        `EVENTS_MAX_RADIUS_KM` (default 100). Results remain ordered by their
+        `EVENTS_MAX_RADIUS_KM` (default 100). Both configured radii must remain finite
+        when converted to metres; invalid settings prevent startup. Results remain ordered by their
         earliest matching occurrence (soonest first); no distance is returned or
         used for sorting. An occurrence must have a geocoded effective venue to
         match. An occurrence venue overrides the primary venue, and an explicit
