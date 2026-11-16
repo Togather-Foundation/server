@@ -1,6 +1,6 @@
 # Specification: Event proximity filtering
 
-**Date:** 2026-11-16 · **Status:** In Progress · **Ticket:** `t_dbb163bc`
+**Date:** 2026-11-16 · **Status:** Delivered · **Ticket:** `t_dbb163bc`
 **Parent:** [SEL backend specification](spec.md)
 
 ## Goal and context
@@ -120,3 +120,14 @@ coverage during staging verification rather than reusing historical samples.
 Independent explorer review on 2026-11-16 identified parser/config wiring as
 ambiguous. Resolved by using a configured service parsing method and explicitly
 wiring both entrypoints before implementation. No remaining blocking findings.
+
+## Delivery verification (2026-11-16)
+
+Targeted unit and real-PostGIS tests, independent review, `make ci-fast`,
+`make ci`, and `make test-ci-race` passed. Staging deployed application commit
+`ee496f43`; remote smoke/performance checks passed. Read-only REST probes
+verified a 100 m centre-point search, empty far-away search, five RFC 7807
+invalid-input responses, JSON-LD negotiation and eight distinct pagination pages.
+Anonymous MCP exposed the new schema, accepted zero coordinates and rejected an
+incomplete filter. First-page coordinate coverage was 162 of 200 upcoming events;
+this is a sample, not an inventory-wide completeness claim.
