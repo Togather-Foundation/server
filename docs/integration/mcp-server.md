@@ -233,10 +233,10 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   `api_keys`, `manage_api_key`). Read-only tools work without a key.
 - **Solution**: Add the Bearer token to the Authorization header:
   ```bash
-  # Set TOGATHER_API_KEY to a valid key first.
+  # Set SEL_API_KEY to a valid key first.
   curl -X POST http://localhost:8080/mcp \
     -H "Content-Type: application/json" \
-    -H "Authorization: Bearer ${TOGATHER_API_KEY:?Set a valid API key}" \
+    -H "Authorization: Bearer ${SEL_API_KEY:?Set a valid API key}" \
     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
   ```
 - **Verification**: Check if API key exists: `psql $DATABASE_URL -c "SELECT key_prefix FROM api_keys LIMIT 1;"`
@@ -303,8 +303,8 @@ rate limits apply on every request.
 
 These examples use a local server with `MCP_HTTP_ENABLED=true` (or standalone
 `MCP_TRANSPORT=http`) and public tools/resources, so no API key is needed. Replace
-the URL to use another node. For authenticated calls, set `TOGATHER_API_KEY` to a
-valid key and add `-H "Authorization: Bearer $TOGATHER_API_KEY"`.
+the URL to use another node. For authenticated calls, set `SEL_API_KEY` to a
+valid key and add `-H "Authorization: Bearer $SEL_API_KEY"`.
 
 #### Initialize MCP capabilities
 ```bash

@@ -43,8 +43,10 @@ Get a free key: /dev/login (GitHub OAuth, instant)
 > without a key.
 > (opencode substitutes `{env:VAR}`; shell `${VAR}` is not interpolated.)
 
-> Session handshake: `initialize` returns an `mcp-session-id` response header —
-> send it back as `Mcp-Session-Id` on every later call (tools/list, tools/call).
+> Sessions: the streamable HTTP transport is stateless. `Mcp-Session-Id` is
+> optional and ignored; `initialize` does not issue a session header. MCP clients
+> may initialize to discover capabilities, while manual tools/list and tools/call
+> requests can skip the handshake. Send `Content-Type: application/json` on POSTs.
 
 ### Available MCP Tools
 
