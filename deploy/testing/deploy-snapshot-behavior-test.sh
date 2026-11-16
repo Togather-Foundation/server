@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Behavior tests use no live Docker daemon, database, migrations or traffic switch.
 set -euo pipefail
+unset ADMIN_PASSWORD JWT_SECRET POSTGRES_PASSWORD DATABASE_URL
 for tool in jq rg; do
     command -v "$tool" >/dev/null || { echo "FAIL: required assertion tool missing: $tool" >&2; exit 1; }
 done
@@ -15,6 +16,12 @@ cat > "$TEST_DIR/bin/docker" <<'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
 if [[ "$1" == compose ]]; then
+    # Service discovery must use the selected environment without relying on
+    # secrets exported by the caller (snapshot target resolution is a subshell).
+    [[ -z "${ADMIN_PASSWORD+x}${JWT_SECRET+x}${POSTGRES_PASSWORD+x}${DATABASE_URL+x}" ]] || exit 99
+    [[ "$#" == 8 && "$2" == --env-file && "$3" == "$TEST_DIR/db.env" &&
+       "$4" == -f && "$5" == "$ROOT/deploy/docker/docker-compose.yml" &&
+       "$6" == ps && "$7" == -q && "$8" == togather-db ]] || exit 90
     [[ "${CASE}" != no-container ]] || exit 0
     [[ "${CASE}" != compose-failure ]] || exit 1
     [[ "${CASE}" != multiple-containers ]] || { printf 'db-one\ndb-two\n'; exit 0; }
@@ -114,7 +121,8 @@ bash() {
 }
 deploy staging "${SKIP:-false}" false
 RUN
-printf '%s\n' 'DATABASE_URL=postgresql://fixture:secret@external-db:5432/target' > "$TEST_DIR/db.env"
+printf '%s\n' 'DATABASE_URL=postgresql://fixture:secret@external-db:5432/target' \
+    'ADMIN_PASSWORD=fixture-secret' 'JWT_SECRET=fixture-secret' 'POSTGRES_PASSWORD=fixture-secret' > "$TEST_DIR/db.env"
 printf 'return 1\n' > "$TEST_DIR/bad.env"
 printf 'DATABASE_URL=\n' > "$TEST_DIR/empty.env"
 printf 'custom archive payload' > "$TEST_DIR/unverified.dump"
@@ -147,12 +155,14 @@ export CASE=success
 status=0
 bash "$TEST_DIR/run.sh" > "$TEST_DIR/output" 2>&1 || status=$?
 [[ "$status" == 1 ]] # deploy converts the deliberately failing migration into exit 1
-[[ "$(cat "$TEST_DIR/events")" == $'validated\nmigrated' ]]
+if [[ "$(cat "$TEST_DIR/events")" != $'validated\nmigrated' ]]; then
+    echo 'FAIL: selected --env-file must resolve the database service with no ambient secrets'; exit 1
+fi
 evidence=$(find "$TEST_DIR/work/snapshots" -name '*.json' -print -quit)
 jq -e '.verified == true and .verification == "pg_restore_full_read" and .size_bytes > 0 and (.sha256 | length == 64)' "$evidence" > /dev/null
 archive=$(jq -r .snapshot_path "$evidence")
 [[ "$(stat -c %a "$archive")" == 600 && "$(stat -c %a "$evidence")" == 600 ]]
-echo 'PASS: private fully read backup precedes migration and records evidence'
+echo 'PASS: selected --env-file resolves service without ambient secrets; private fully read backup precedes migration'
 # Host-loopback targets use host clients without translating the address.
 cat > "$TEST_DIR/bin/pg_dump" <<'HOSTDUMP'
 #!/usr/bin/env bash

@@ -89,30 +89,26 @@ selected env file's `DATABASE_URL` (often `localhost:5433`); the app and preflig
 use the active container's runtime URL (normally `togather-db:5432`). Keep each URL
 in its own network context. Do not rewrite the host env file to make preflight work.
 
-Until board ticket `t_cbcebcc9` is fixed, backup service discovery can fail with
-Compose interpolation errors for `ADMIN_PASSWORD`, `JWT_SECRET`, or
-`POSTGRES_PASSWORD` even when the chosen staging env file contains those settings.
-The lookup currently omits an explicit `--env-file`. For a manual rollout, export
-the existing trusted env file inside the deployment subshell. This diagnostic
-checks the chosen file and service discovery without exposing credentials:
+Backup service discovery passes the selected environment file explicitly to
+Compose with `--env-file`, so interpolation of `ADMIN_PASSWORD`, `JWT_SECRET`, and
+`POSTGRES_PASSWORD` works without exporting those settings in the calling shell.
+The backup target still comes from that same file's resolved migration URL. This
+diagnostic checks the chosen file and service discovery without exposing credentials:
 
 ```bash
 (
   cd /opt/togather/src
   rollout_env_file=deploy/config/environments/.env.staging
-  set -a
-  source "$rollout_env_file"
-  set +a
   docker compose --env-file "$rollout_env_file" \
     -f deploy/docker/docker-compose.yml ps -q togather-db
 )
 ```
 
 Do not enable shell tracing or print the env file/`docker compose config` output.
-This workaround loads existing settings; it does not fix the automatic deployment
-path. If service discovery or backup verification fails, keep traffic on the old
-slot and resolve that failure before retrying. Build timestamps can cause a retry
-to compile again even at the same commit; budget for another build.
+If service discovery or backup verification fails, deployment stops before
+migrations or a traffic switch. Keep traffic on the old slot and resolve that
+failure before retrying. Build timestamps can cause a retry to compile again even
+at the same commit; budget for another build.
 
 ## One-time rollout from an image without preflight
 
@@ -137,11 +133,6 @@ Bash command. Set `rollout_cli` to the absolute path of the transferred executab
 (
   cd /opt/togather/src
   source deploy/scripts/deploy.sh
-  rollout_env_file=$(discover_env_file staging)
-  test -n "$rollout_env_file"
-  set -a
-  source "$rollout_env_file"
-  set +a
   rollout_cli=/tmp/togather-preflight
   test -x "$rollout_cli"
   docker() {

@@ -1187,7 +1187,7 @@ create_db_snapshot() {
     fi
     SNAPSHOT_PATH=""
     log "INFO" "Creating and fully reading database backup before migrations"
-    container=$(${COMPOSE_CMD} -f "${DOCKER_DIR}/docker-compose.yml" ps -q togather-db) || {
+    container=$(${COMPOSE_CMD} --env-file "$env_file" -f "${DOCKER_DIR}/docker-compose.yml" ps -q togather-db) || {
         log "ERROR" "Cannot resolve the configured database service; aborting deployment"
         return 1
     }
