@@ -429,7 +429,9 @@ coordinates on its effective venue cannot match. An occurrence venue overrides
 the primary venue; when none is set, the primary venue is used. Venue
 coordinate coverage is incomplete. No distance is returned or used for sorting.
 
-> Parameter names above are the canonical camelCase forms. Snake_case aliases
+> Parameter names above are canonical. Most multiword names use camelCase,
+> but proximity coordinates use `near_lat` and `near_lon`; REST does not accept
+> `nearLat` or `nearLon` (those aliases are supported by the MCP events tool). Legacy aliases
 > (`start_date`, `end_date`, `venue_id`, `organizer_id`, `lifecycle_state`,
 > `event_domain`, `search`) are still accepted, but each one adds an entry to the
 > response `warnings` array. Prefer the canonical names.
