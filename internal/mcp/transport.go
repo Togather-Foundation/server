@@ -268,7 +268,7 @@ func ServeHTTP(ctx context.Context, mcpServer *server.MCPServer, cfg *TransportC
 		Str("addr", addr).
 		Msg("Starting MCP server with Streamable HTTP transport")
 
-	httpTransport := server.NewStreamableHTTPServer(mcpServer)
+	httpTransport := NewStreamableHTTPHandler(mcpServer)
 	wrapped, err := wrapMCPHandler(httpTransport, authStore, rateLimitCfg)
 	if err != nil {
 		return fmt.Errorf("failed to wrap HTTP handler: %w", err)
@@ -390,6 +390,8 @@ func WrapHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg 
 // NewStreamableHTTPHandler wraps an MCP server in the Streamable HTTP transport
 // protocol, suitable for production deployments. The returned handler can be
 // embedded in existing HTTP routers or wrapped with additional middleware.
+// Requests are stateless: no session ID is issued or required, and any supplied
+// Mcp-Session-Id header is ignored. Authentication still runs on every request.
 //
 // For authentication and rate limiting, use WrapHandler after creating the handler.
 //
@@ -399,5 +401,5 @@ func WrapHandler(handler http.Handler, authStore auth.APIKeyStore, rateLimitCfg 
 //	wrapped, err := mcp.WrapHandler(mcpHandler, authStore, rateLimitCfg)
 //	router.Handle("/mcp", wrapped)
 func NewStreamableHTTPHandler(mcpServer *server.MCPServer) http.Handler {
-	return server.NewStreamableHTTPServer(mcpServer)
+	return server.NewStreamableHTTPServer(mcpServer, server.WithStateLess(true))
 }

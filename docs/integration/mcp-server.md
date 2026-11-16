@@ -68,7 +68,7 @@ MCP_TRANSPORT=http PORT=8080 ./mcp-server
 ## Authentication and Rate Limiting
 
 The **read-only tools are public** — anonymous sessions may call `events`, `places`,
-`organizations`, `search`, `geocode_address`, and `reverse_geocode` without any header.
+`organizations`, `search`, `geocode_address`, and `reverse_geocode` without an Authorization header.
 Anonymous requests are rate-limited at the public tier (IP-keyed).
 
 The **write/account tools** (`add_event`, `api_keys`, `manage_api_key`) require an API
@@ -233,7 +233,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   `api_keys`, `manage_api_key`). Read-only tools work without a key.
 - **Solution**: Add the Bearer token to the Authorization header:
   ```bash
-  curl -H "Authorization: Bearer YOUR_API_KEY" https://localhost:8080/mcp
+  # Set TOGATHER_API_KEY to a valid key first.
+  curl -X POST http://localhost:8080/mcp \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer ${TOGATHER_API_KEY:?Set a valid API key}" \
+    -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
   ```
 - **Verification**: Check if API key exists: `psql $DATABASE_URL -c "SELECT key_prefix FROM api_keys LIMIT 1;"`
 
@@ -290,11 +294,22 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### HTTP Transport
 
-#### Initialize MCP session
+The embedded `/mcp` endpoint and standalone HTTP transport are stateless. Each
+request must send `Content-Type: application/json`. `Mcp-Session-Id` is optional
+and ignored, including malformed values; `initialize` does not issue a session ID.
+Normal MCP clients may still initialize to discover capabilities, but the manual
+requests below can be sent independently, without a handshake. Authentication and
+rate limits apply on every request.
+
+These examples use a local server with `MCP_HTTP_ENABLED=true` (or standalone
+`MCP_TRANSPORT=http`) and public tools/resources, so no API key is needed. Replace
+the URL to use another node. For authenticated calls, set `TOGATHER_API_KEY` to a
+valid key and add `-H "Authorization: Bearer $TOGATHER_API_KEY"`.
+
+#### Initialize MCP capabilities
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
@@ -334,7 +349,6 @@ curl -X POST http://localhost:8080/mcp \
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
     "jsonrpc": "2.0",
     "id": 2,
@@ -347,7 +361,6 @@ curl -X POST http://localhost:8080/mcp \
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
     "jsonrpc": "2.0",
     "id": 3,
@@ -388,7 +401,6 @@ curl -X POST http://localhost:8080/mcp \
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
     "jsonrpc": "2.0",
     "id": 4,
@@ -406,7 +418,6 @@ curl -X POST http://localhost:8080/mcp \
 ```bash
 curl -X POST http://localhost:8080/mcp \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
     "jsonrpc": "2.0",
     "id": 5,
@@ -419,15 +430,18 @@ curl -X POST http://localhost:8080/mcp \
 
 ### SSE Transport
 
-SSE uses GET requests with query parameters:
+The standalone `MCP_TRANSPORT=sse` server uses the legacy SSE transport, distinct
+from the main server's streamable HTTP `/mcp` endpoint. Open its event stream:
 
 ```bash
-# Initialize and list events
-curl -N -H "Authorization: Bearer YOUR_API_KEY" \
-  'http://localhost:8080/mcp?method=tools/list'
+curl -N http://localhost:8080/sse
 ```
 
-Note: SSE responses are streamed as `data:` lines. Use `-N` to disable buffering.
+The stream emits an `endpoint` event containing a `/message?sessionId=...` URL.
+Keep the stream open; an SSE-capable MCP client POSTs JSON-RPC messages with
+`Content-Type: application/json` to that exact URL and reads replies on the stream.
+Do not send method query parameters to `/mcp`. The stateless session behaviour
+above applies to streamable HTTP, not this legacy SSE transport.
 
 ### stdio Transport
 
@@ -535,14 +549,17 @@ The `data` field follows RFC 7807 (Problem Details) for structured error informa
 ```bash
 # Read-only tools work without a key (public)
 curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 
 # Write tools need a key (JSON-RPC error, not 401, when anonymous)
 curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add_event","arguments":{}}}'
 
 # Test with invalid key (present but wrong → HTTP 401)
 curl -X POST http://localhost:8080/mcp \
+  -H "Content-Type: application/json" \
   -H "Authorization: Bearer invalid" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
@@ -567,13 +584,13 @@ Use the `tools/list` method first to get available tools and their schemas, then
 ```bash
 # List all resources
 curl -X POST http://localhost:8080/mcp \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}'
 
 # Read each resource
 for uri in "context://sel-event" "context://sel-place" "schema://openapi"; do
   curl -X POST http://localhost:8080/mcp \
-    -H "Authorization: Bearer YOUR_API_KEY" \
+    -H "Content-Type: application/json" \
     -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"resources/read\",\"params\":{\"uri\":\"$uri\"}}"
 done
 ```
@@ -589,10 +606,10 @@ LOG_LEVEL=debug MCP_TRANSPORT=http PORT=8080 ./mcp-server 2>&1 | tee mcp-debug.l
 ### Test Rate Limiting
 
 ```bash
-# Send 150 requests rapidly (if limit is 100/minute)
+# Send 150 public requests rapidly (if the configured public limit is 100/minute)
 for i in {1..150}; do
   curl -X POST http://localhost:8080/mcp \
-    -H "Authorization: Bearer YOUR_API_KEY" \
+    -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","id":'$i',"method":"tools/list","params":{}}' &
 done
 wait
@@ -625,4 +642,4 @@ If Claude Desktop integration isn't working:
 
 ---
 
-**Last Updated:** 2026-10-23
+**Last Updated:** 2026-11-16
