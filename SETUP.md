@@ -1,8 +1,15 @@
+<!-- AGENT:NAV
+purpose:~install;opencode;agent;env;https;kit;local;openskills
+lines:53
+-->
+
 # Development Setup
 
-# opencode + kanban + spec kit
+# OpenCode + Spec Kit
 
-This setup uses Ubuntu, with Spec kit and the Hermes kanban MCP server with opencode and openskills.
+This example setup uses Ubuntu, Spec Kit, OpenCode and openskills. Task tracking
+and review use your configured tools; Hermes is optional, and no shared board is
+required. See [agent tooling](docs/contributors/agent-tooling.md) for other clients.
 
 Note: Using '.agent/' directory with a symlink to '.claude/' for compatibility.
 
@@ -19,10 +26,9 @@ Note: Using '.agent/' directory with a symlink to '.claude/' for compatibility.
    4. Make symlink for compatibility: `ln -s .agent .claude`
 4. Install Spec Kit
    1. `uv tool install specify-cli --from git+https://github.com/github/spec-kit.git`
-5. Configure the Hermes kanban MCP server (task tracking on the shared `togather` board)
-   1. Add the `hermes-kanban` MCP server to your OpenCode config (`~/.config/opencode/opencode.json` or project `opencode.json`). See the Hermes docs for the current endpoint and auth setup.
-   2. Verify connectivity: list boards and confirm `togather` appears (`hermes-kanban_board_list`).
-   3. Full workflow: `kanban_help` — claims are kernel-enforced, completion is review-gated.
+5. Optionally configure your preferred task and review tools.
+   1. If using Hermes, add your own endpoint and authentication to your local client configuration, using the Hermes docs.
+   2. Select your own board and review routing. Read live `kanban_help` for its lifecycle; Togather does not prescribe a board or reviewer profile.
 
 
 Notes for setting up new projects:

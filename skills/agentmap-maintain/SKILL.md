@@ -4,7 +4,7 @@ description: Read and maintain AGENT:NAV blocks in Markdown files.
 ---
 <!-- AGENT:NAV
 purpose:~nav;files;agentmap;block;read;agent;lines;markdown
-lines:29
+lines:38
 -->
 
 <!-- agentmap:init -->
@@ -29,5 +29,10 @@ Read the first 50 lines first then use the nav block to jump to the section you 
 1. Run: agentmap update <changed files>
 2. Review output for sections marked content-changed or new.
 3. Read flagged sections and update their descriptions in the nav block.
-4. Commit.
+4. After the final `agentmap update` run, keep exactly one current `files[]` index
+   block in the root `AGENTS.md`. Some versions append a fresh index on every run;
+   `agentmap check` can pass with stale duplicates. Remove older index blocks and
+   compare each retained entry's `lines` and `about` with the target's nav metadata.
+   Do not remove ordinary section-navigation blocks from other files.
+5. Commit.
 <!-- /agentmap:init -->

@@ -1,13 +1,13 @@
 <!-- AGENT:NAV
-purpose:~codex;agents;repository;mcp;configuration;skills;configure;files
-lines:92
+purpose:codex;agents;repository;mcp;configuration;skills;configure;files
+lines:98
 nav[6]{s,n,name,about}:
-13,80,#Agent Tooling,~codex;agents;repository;mcp;configuration
+13,86,#Agent Tooling,~codex;agents;mcp;repository;configuration
 20,18,##Codex setup,~codex;togather;hermes;mcp;optional
 38,14,##Shared instructions,~skill;skills;agents;configure;files
 52,11,##Custom agents,~agents;codex;scraper;ask;avoiding
-63,13,##MCP configuration boundary,~codex;configuration;mcp;repository;opencode
-76,17,##Verification,~codex;configuration;mcp;pathlib;toml
+63,19,##MCP configuration boundary,~codex;configuration;mcp;hermes;repository
+82,17,##Verification,~codex;configuration;mcp;pathlib;toml
 -->
 
 # Agent Tooling
@@ -65,6 +65,12 @@ load the canonical prompt in `agents/agents/`, avoiding a second copy of the rol
 Repository MCP transports are declared in `.codex/config.toml`. Selected kanban tools
 have explicit approval policies there. Credentials remain environment-backed; do not
 add static authorization headers.
+
+The checked-in Hermes entry targets one operator's private tailnet host. It is not
+usable from an arbitrary clone: replace its endpoint with your own service in your
+local checkout, or disable/remove that entry if you do not use Hermes. Keep personal
+endpoints and credentials out of shared changes. The other MCP entries and per-tool
+approval settings need not change when replacing or disabling Hermes.
 
 The repository no longer supplies `opencode.json`. OpenCode users configure MCP
 transports in their own client configuration; shared instructions, skills, and role

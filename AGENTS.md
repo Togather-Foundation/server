@@ -301,20 +301,8 @@ The `domain` field sets the default `event_domain` (`arts`, `music`, `culture`, 
 
 <!-- AGENT:NAV
 purpose:Index of markdown files with agentmap nav blocks:
-files[4]{path,lines,about}:
-docs/deploy/
-releasing.md,411,release;version;deploy;github;bash;staging;git;rollback
-docs/integration/
-kanban-review.md,131,review;ticket;verdict;claim;handoff;reviewer;branch;merge
-skills/agentmap-maintain/
-SKILL.md,33,nav;files;agentmap;block;read;agent;lines;markdown
-skills/release/
-SKILL.md,338,release;version;changelog;github;data;deploy;run;changes
--->
-
-<!-- AGENT:NAV
-purpose:Index of markdown files with agentmap nav blocks:
-files[16]{path,lines,about}:
+files[17]{path,lines,about}:
+SETUP.md,53,install;opencode;agent;env;https;kit;local;openskills
 docs/
 README.md,202,2026;api;admin;guide;living;interop;integration;sel
 docs/admin/
@@ -325,39 +313,7 @@ docs/contributing/
 commits.md,195,scope;change;changes;breaking;fix;add;commit;events
 docs/contributors/
 README.md,122,test;agents;development;tests;agent;guide;race;architecture
-agent-tooling.md,92,codex;agents;repository;mcp;configuration;skills;configure;files
-architecture.md,1480,event;events;api;json;data;sel;artsdata;https
-development.md,552,validation;logger;server;pyshacl;ttl;log;shacl;event
-security.md,586,security;admin;rate;server;api;key;data;agent
-docs/contributors/meta/
-agent_workflows.md,211,code;commits;test;beads;docs;lines;tests;feb
-docs/deploy/
-releasing.md,410,release;version;deploy;github;bash;staging;git;rollback
-docs/integration/
-kanban-review.md,93,review;reviewer;branch;ticket;default;detail;handoff;revision
-scraper.md,2293,source;url;event;events;scrape;sources;server;scraper
-docs/operations/
-source-feed-reconciliation-retrospective.md,174,source;rows;run;repair;backup;cleanup;separate;identity
-skills/agentmap-maintain/
-SKILL.md,33,nav;files;agentmap;block;read;agent;lines;markdown
-skills/release/
-SKILL.md,333,release;version;changelog;github;data;deploy;run;changes
--->
-
-<!-- AGENT:NAV
-purpose:Index of markdown files with agentmap nav blocks:
-files[16]{path,lines,about}:
-docs/
-README.md,202,2026;api;admin;guide;living;interop;integration;sel
-docs/admin/
-admin-ui-overview.md,273,class;div;admin;page;api;nav;tabler;html
-docs/architecture/
-event-review-workflow.md,764,review;event;pending;admin;events;companion;duplicate;queue
-docs/contributing/
-commits.md,195,scope;change;changes;breaking;fix;add;commit;events
-docs/contributors/
-README.md,122,test;agents;development;tests;agent;guide;race;architecture
-agent-tooling.md,92,codex;agents;repository;mcp;configuration;skills;configure;files
+agent-tooling.md,98,codex;agents;repository;mcp;configuration;skills;configure;files
 architecture.md,1480,event;events;api;json;data;sel;artsdata;https
 development.md,552,validation;logger;server;pyshacl;ttl;log;shacl;event
 security.md,586,security;admin;rate;server;api;key;data;agent
@@ -371,7 +327,7 @@ scraper.md,2293,source;url;event;events;scrape;sources;server;scraper
 docs/operations/
 source-feed-reconciliation-retrospective.md,174,source;rows;run;repair;backup;cleanup;separate;identity
 skills/agentmap-maintain/
-SKILL.md,33,nav;files;agentmap;block;read;agent;lines;markdown
+SKILL.md,38,nav;files;agentmap;block;read;agent;lines;markdown
 skills/release/
 SKILL.md,333,release;version;changelog;github;data;deploy;run;changes
 -->
