@@ -1,3 +1,19 @@
+<!-- AGENT:NAV
+purpose:~test;agents;development;tests;agent;guide;race;architecture
+lines:122
+nav[10]{s,n,name,about}:
+17,106,#Contributors Guide,~test;agents;development;tests;agent
+21,8,##Who This Is For,~architecture;bugs;building;codebase;development
+29,9,##Quick Start,~guide;security;agent;architecture;database
+38,6,##Essential Resources,~agents;glossary;001;agent;backend
+44,16,##Development Workflow,~agents;branch;push;required;review
+60,25,##Build & Test Commands,~test;race;build;detector;lint
+85,13,##Architecture at a Glance,~end;tests;api;architecture;business
+98,7,##Key Principles,~add;cli;complexity;constitution;driven
+105,6,##Meta Documentation,~agent;meta;workflows;agents;collaboration
+111,12,##Questions?,~togather;discussions;github;issues;com
+-->
+
 # Contributors Guide
 
 Welcome to the SEL backend contributor documentation!
@@ -27,20 +43,18 @@ You're building features, fixing bugs, or improving the SEL codebase. These docs
 
 ## Development Workflow
 
-Work is tracked on the Hermes kanban board `togather` (see
-[AGENTS.md](../../AGENTS.md) for the full lifecycle).
+Use your configured task tracker and review process; no particular board or MCP
+service is required. See [AGENTS.md](../../AGENTS.md) for repository conventions.
 
 ```bash
-# 1. Find work on the kanban board `togather` (hermes-kanban MCP tools)
-# 2. Claim a ticket (ticket_claim, ready→running)
-# 3. Implement with tests
+# Coordinate ownership, create a feature branch, and implement with tests.
 make test
 
-# 4. Run full CI locally
+# Run required checks, then push the reviewable revision.
 make ci
-
-# 5. Complete the ticket (ticket_complete — review-gated) and push
 git push
+# Request review with repo/branch/SHA and check evidence.
+# Resolve feedback, then merge when approved and authorized.
 ```
 
 ## Build & Test Commands

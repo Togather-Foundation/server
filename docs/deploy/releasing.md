@@ -1,3 +1,29 @@
+<!-- AGENT:NAV
+purpose:release;version;deploy;github;validation;staging;git;rollback
+lines:410
+nav[20]{s,n,name,about}:
+27,384,#Releasing the Togather SEL Server,release;version;deploy;github;validation
+32,20,##Quick Reference,~release;version;deploy;option;production
+52,9,##Prerequisites,~main;access;auth;authenticated;branch
+61,16,##Release Workflow Overview,~release;changelog;test;binary;deploy
+77,21,##Step 1: Prepare for Release,~main;release;check;clean;git
+98,48,##How the Changelog Works,~release;changelog;commit;unreleased;commits
+102,18,###Layer 1: Ongoing — the `[Unreleased]` section,~unreleased;always;changed;changelog;changes
+146,40,##Step 2: Generate Changelog,~release;agent;changelog;github;unreleased
+148,19,###Option A: Agent-Assisted,~release;agent;approval;assisted;changelog
+167,19,###Option B: Manual,~unreleased;com;foundation;github;https
+186,19,##Step 3: Tag and Push,~release;local;tag;actions;commit
+205,20,##Step 4: Monitor the GitHub Release Workflow,~release;github;binary;build;foundation
+225,27,##Step 5: Deploy to Staging,~deploy;staging;new;slot;version
+252,29,##Step 6: Staging Verification,~domain;node;version;check;curl
+281,21,##Step 7: Deploy to Production,~deploy;production;rollback;bash;smoke
+302,21,##Step 8: Post-Release,~domain;handoff;node;push;review
+323,21,##Version Numbering,~pre;release;breaking;bump;changes
+344,19,##Rollback,~rollback;database;snapshot;step;bash
+363,37,##Troubleshooting,~git;release;fails;bash;check
+400,11,##Related Documentation,~docs;release;deploy;deployment;github
+-->
+
 # Releasing the Togather SEL Server
 
 This document describes the complete release process for the Togather SEL Server,
@@ -280,11 +306,17 @@ For detailed rollback procedures, see `docs/deploy/rollback.md`.
 NODE_DOMAIN=$(grep '^NODE_DOMAIN=' .deploy.conf.production | cut -d= -f2)
 curl "https://${NODE_DOMAIN}/version" | jq .
 
-# Close any release-related kanban tickets (hermes-kanban MCP tools, board `togather`)
+# Update the existing release/change handoff and configured tracker, if any
 
 # Push any final state changes
 git push
 ```
+
+Follow [review handoff and waiting](../integration/kanban-review.md) using the
+contributor's configured review process. Push changes before handoff and include
+repo/branch/SHA (or merge commit and diff range), checks and rollout evidence.
+No particular tracker or MCP service is required; deployment alone does not
+require a separate task.
 
 ---
 

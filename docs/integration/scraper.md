@@ -1,3 +1,99 @@
+<!-- AGENT:NAV
+purpose:~source;url;event;events;scrape;sources;server;scraper
+lines:2293
+nav[90]{s,n,name,about}:
+97,2197,#Integrated Event Scraper,~source;url;event;events;scrape
+112,19,##Table of Contents,~config;database;workflow;adding;agentic
+131,69,##Config Storage: YAML + Database,~source;yaml;configs;file;scrape
+140,10,###How the scraper resolves configs at runtime,~source;scraper;configs;database;file
+150,32,###Sync commands,~yaml;source;configs;scrape;server
+182,18,###Bypassing the database entirely,~source;file;config;test;database
+200,32,##Quick Start,~events;scrape;server;com;https
+232,307,##CLI Reference,~server;source;scrape;sources;json
+236,11,###Persistent Flags,~key;sel;server;sources;api
+247,10,###`server scrape inspect <URL>`,~event;inspect;scrape;server;url
+257,23,###`server scrape test <URL>`,~event;events;test;config;json
+280,57,###`server scrape capture <URL>`,~capture;screenshot;network;scrape;server
+337,13,###`server scrape url <URL>`,~url;scrape;server;dry;events
+350,11,###`server scrape list`,~list;scrape;server;sources;bash
+361,26,###`server scrape source <name>`,~source;file;scrape;server;name
+387,24,###`server scrape all`,~scrape;sources;tier;server;json
+411,21,###`server scrape sync`,~sources;sync;database;enabled;yaml
+432,12,###`server scrape export`,~database;export;sources;scrape;server
+444,95,###`server scrape failures`,~source;json;server;failed;admin
+539,106,##Tiered Extraction,~event;json;site;url;objects
+544,20,###Tier 0 — JSON-LD,~event;events;json;objects;url
+564,14,###Tier 1 — Colly CSS Selectors,~selectors;configured;togather;colly;css
+578,13,###Tier 2 — Headless Browser,~headless;config;selectors;tier;block
+591,54,###Tier 3 — API: GraphQL or REST JSON,~event;field;json;arrays;objects>GraphQL variant;REST JSON variant
+645,815,##Source Configuration,~event;url;source;events;date
+650,111,###Per-Feed Provenance and Source Identity,~source;feed;trust;config;url>Reconciling historical source rows
+761,87,###Event Identity: `(feed URL sourceEventId)`,~event;feed;url;source;rows
+848,10,###Minimal Tier 0 Config,~arts;tier;com;config;domain
+858,17,###Multiple Entry-Point URLs,~urls;events;com;https;multiple
+875,151,###Full Config with Tier 1 Selectors,~date;selectors;description;time;event
+901,52,####Composite Date Selectors,~date;time;selectors;start;end
+953,21,####Multi-Occurrence Consolidation,~date;row;event;events;name
+974,52,####Multi-Element Description Selectors,~description;selectors;event;class;div
+1026,40,###Quality Warnings,~selector;date;events;matched;container
+1066,38,###Full Config with Tier 2 Headless,~iframe;wait;event;events;selector
+1104,60,###BiblioCommons RSS,~events;page;max;run;feed>Coverage caps and truncation warnings
+1164,40,###Full Config with Tier 3 GraphQL,~url;template;graphql;field;allevents
+1204,51,###Full Config with Tier 3 REST,~url;field;name;json;template
+1255,8,###Required Fields,~string;name;scrape;url;api
+1263,23,###Optional Fields,~tier;event;source;url;pattern
+1286,24,###Per-source event exclusions,~pattern;event;private;exclude;url
+1310,75,###Per-source review-warning suppression,~review;event;duplicate;series;api
+1385,15,###Headless Config Fields,~wait;selector;iframe;string;css
+1400,18,###Intercept Config Fields,~field;map;events;json;response
+1418,17,###GraphQL Config Fields,~field;date;graphql;start;url
+1435,25,###REST Config Fields,~field;json;url;string;array
+1460,119,##Sitemap-Based URL Discovery,~sitemap;urls;url;pattern;detail
+1477,9,###When to use sitemap vs urls,~sitemap;urls;listing;pages;url
+1486,35,###Sitemap Config Example,~detail;event;sitemap;https;tier
+1521,10,###Sitemap Config Fields,~sitemap;urls;pattern;delay;filter
+1531,13,###Freshness Filtering,~lastmod;urls;scraped;last;max
+1544,10,###Sitemap Index Support,~index;sitemaps;child;children;fail
+1554,16,###Validation Rules,~sitemap;url;non;urls;valid
+1570,9,###Database Storage,~config;export;scrape;server;sitemap
+1579,25,##Periodic Scheduling,~schedule;sources;runs;scraper;config
+1604,63,##Scraper Global Config,~admin;scraper;api;job;scrape
+1618,9,###Admin API,~admin;api;config;key;scraper
+1627,21,###Admin SSE Push,~job;admin;events;scraper;cookie
+1648,19,###Admin UI Toggle,~scrape;admin;auto;scraper;source
+1667,46,##Database Run Tracking,~default;events;int;scrape;completed
+1673,21,###Schema,~default;int;events;text;completed
+1694,19,###Lifecycle,~scrape;completed;events;runs;started
+1713,55,##Environment Variables,~scraper;event;timeout;api;day
+1722,14,###Polling Configuration,~scraper;timeout;chain;poll;source
+1736,32,###Past-Event Filtering,~event;day;2026;dates;enddate
+1768,244,##Staging Scrape Workflow,~sources;staging;scrape;api;togather
+1774,22,###Configuration: `.deploy.conf.staging`,~key;api;admin;perf;agent
+1796,53,###Syncing Source Configs on Staging,~togather;configs;sources;sync;container
+1849,24,###Staging Database Reset,~staging;reset;sources;scripts;wipe
+1873,19,###Makefile Targets,~scrape;staging;sources;reset;add
+1892,28,###Manual Commands,~key;run;server;scrape;source
+1920,61,###Auditing a Full Dry-Run with `parse-scrape-log.py`,~scrape;sources;broken;headless;parse
+1981,31,###Verifying Results,~api;admin;events;curl;domain
+2012,76,##Adding New Sources,~source;events;sources;com;configure
+2014,30,###Quickest path: AI-assisted generation,~source;configure;skill;urls;workflow
+2044,17,###Manual path,~file;scrape;server;source;config
+2061,15,###Currently Configured Sources,~whats;events;season;com;url
+2076,12,###Currently Configured Sources,~sources;disabled;events;api;com
+2088,28,##Observability,~label;scraper;source;tier;togather
+2090,26,###Prometheus Metrics,~label;scraper;source;tier;togather
+2116,82,##Public URL Submission,~url;status;urls;admin;api
+2123,9,###Endpoint,~per;urls;api;authentication;days
+2132,14,###Request,~https;another;api;application;calendar
+2146,28,###Response,~url;status;accepted;days;duplicate
+2174,24,###Admin Endpoints,~admin;status;patch;submissions;api
+2198,89,##Agentic Scraping Workflow,~source;scraper;configs;yaml;scrape
+2203,11,###Tool comparison,~url;agent;configure;git;skill
+2214,14,###How they relate,~worker;scraper;com;configs;https
+2228,59,###Recommended workflow,~source;scrape;server;yaml;sync>After any config change;Adding new sources;Fixing or debugging a single source
+2287,7,##Security Design,~api;checks;mib;redirect;responses
+-->
+
 # Integrated Event Scraper
 
 **Version:** 0.6.0
@@ -1830,7 +1926,7 @@ identifying which sources need config fixes before a live scrape.
 **When to use it:**
 - Before a staging scrape to know which sources are healthy
 - After modifying multiple configs to verify regressions haven't been introduced
-- When triaging broken sources to create kanban tickets or fix-source batches
+- When triaging broken sources to record work items or fix-source batches
 
 ```bash
 # Capture both stdout (table) and stderr (JSON logs) into separate files

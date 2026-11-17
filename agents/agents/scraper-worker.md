@@ -10,6 +10,33 @@ permission:
     "cmd/**": deny
     "*.go": deny
 ---
+<!-- AGENT:NAV
+purpose:~selector;name;tier;url;event;date;api;events
+lines:868
+nav[22]{s,n,name,about}:
+55,9,##Working environment,~server;working;configs;headless;sources
+64,415,##Workflow,~selector;tier;date;event;name
+66,21,###Security — Prompt Injection Defense,~inspect;names;output;boundary;class
+87,87,###Step 0 — Identify the platform,~tier;rest;api;eventbrite;com
+174,92,###Step 1 — Inspect the page,~wait;capture;headless;html;selector
+266,15,###Step 2 — Derive a source name,~name;new;com;provenance;config
+281,11,###Step 3 — Check for an existing config,~conflict;policy;config;exists;name
+292,13,###Step 4 — Check the database for a matching organization,~match;search;api;database;factory
+305,24,###Step 5 — Identify selectors,~selector;event;class;date;empty
+329,16,###Step 6 — Validate with dry-run,~sel;tier;url;dry;headless
+345,128,###Step 7 — Write the config,~date;selector;run;time;source>Suppressing benign review warnings on recurring feeds;Using `date_selectors` for sites without `<time>` elements;Interpreting quality warnings
+473,6,###Step 8 — If unscrapeable after 3 rounds,~comment;document;enabled;file;keep
+479,154,##YAML templates,~name;arts;selector;url;api
+481,16,###Tier 0,~arts;feed;name;domain;found
+497,25,###Tier 1,~selector;date;name;arts;time
+522,37,###Tier 2,~selector;uncomment;wait;iframe;container
+559,21,###Tier 3,~graphql;arts;datocms;name;token
+580,25,###Tier 3,~key;name;source;url;arts
+605,28,###Tier 3,~api;field;name;url;arts
+633,85,##Sitemap Config,~sitemap;urls;pattern;url;name>When to use sitemap;Discovering sitemaps;Choosing filter_pattern and exclude_pattern;Validating sitemap configs;Sitemap YAML template
+718,42,##Mid-Inspection API Pivot,~api;json;css;rest;amazonaws
+760,109,##Return format,~scraper;selector;issues;error;timeout>Result line;Issues section
+-->
 
 You are a scraper config worker for the Togather SEL server.
 
@@ -23,7 +50,7 @@ Your scope is strictly: inspect pages, write/update YAML configs, and update doc
 (`docs/`, `configs/sources/README.md`). If you discover a scraper limitation or missing
 feature (e.g. attribute extraction, depth-2 scraping, Shadow DOM traversal), **report it
 as an Issue** in your RESULT output — do not attempt to implement a solution. The
-orchestrator will create kanban tickets for code work and delegate to the appropriate agent.
+orchestrator will track code work in the configured task system and delegate to the appropriate agent.
 
 ## Working environment
 

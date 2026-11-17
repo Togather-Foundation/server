@@ -2,6 +2,26 @@
 name: release
 description: Cut and deploy a Togather SEL Server release after validating CI, changelog, tags, and staged rollout requirements.
 ---
+<!-- AGENT:NAV
+purpose:release;version;changelog;github;data;deploy;run;changes
+lines:333
+nav[15]{s,n,name,about}:
+26,308,#Release Workflow,release;version;changelog;github;data
+31,9,##Overview,~release;data;automated;changelog;changes
+40,8,##Prerequisites,~main;auth;authenticated;branch;changes
+48,29,##Step 1: Pre-Release Validation,~run;main;branch;current;git
+77,21,##Step 2: Gather Release Data,~data;release;gather;collects;git
+98,74,##Step 3: Generate Changelog,~changelog;release;changes;data;breaking
+172,13,##Step 4: Review and Edit,~breaking;changes;major;minor;patch
+185,21,##Step 5: Execute the Release,~version;release;commit;script;tag
+206,16,##Step 6: Watch the GitHub Release,~github;release;actions;binary;foundation
+222,41,##Step 7: Deploy to Staging,~deploy;backup;database;deployment;staging
+263,16,##Step 8: Staging Verification,~version;correctly;evidence;returns;staging
+279,14,##Step 9: Deploy to Production,~production;deploy;version;smoke;bash
+293,14,##Step 10: Post-Release,~review;configured;evidence;handoff;merge
+307,16,##Rollback,~rollback;production;staging;absolutely;bash
+323,11,##Version Numbering Guide,~minor;patch;add;breaking;bump
+-->
 
 # Release Workflow
 
@@ -272,12 +292,15 @@ make test-production-smoke
 
 ## Step 10: Post-Release
 
-```bash
-# Close any release-related kanban tickets (hermes-kanban MCP tools, board `togather`)
-# hermes-kanban_ticket_list board=togather
+Record rollout evidence in the existing release/change handoff and update the
+contributor's configured tracker, if any. No particular issue tracker, board or MCP
+service is required, and deployment alone does not require a separate task.
 
-# Announce to stakeholders
-```
+Push changes before requesting review through the configured process. Include
+repo/branch/SHA, checks and rollout evidence; if already merged/deleted, include the
+merge commit and diff range. Read the full verdict and preserve any pending review
+or merge obligations. See the [review handoff guide](../../docs/integration/kanban-review.md).
+Only announce to stakeholders when explicitly authorized.
 
 ---
 

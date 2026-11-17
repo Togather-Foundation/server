@@ -1,7 +1,22 @@
+<!-- AGENT:NAV
+purpose:~api;openapi;shapes;events;json;shacl;validate;internal
+lines:102
+nav[9]{s,n,name,about}:
+16,87,#Project-Specific Review Extension — Togather (SEL) Server,~api;openapi;shapes;events;json
+25,21,##SEL Specification Compliance,~shapes;events;json;shacl;ttl
+46,47,##Project-Stack-Specific Checks,~api;openapi;internal;tests;admin
+48,13,###Storage & SQL,~sql;storage;flag;internal;migrations
+61,12,###API & HTTP,~api;admin;events;openapi;config
+73,5,###Background Jobs,~job;jobs;atomicity;background;backoff
+78,7,###Documentation,~api;changes;docs;openapi;updated
+85,8,###Testing,~tests;race;shape;test;validate
+93,10,##Common review-worthy findings,~entity;new;atomicity;built;cc0
+-->
+
 # Project-Specific Review Extension — Togather (SEL) Server
 
 > **Naming note:** "beads" in this file/agent name is legacy naming only — it does not
-> mean the Beads issue tracker is in use. Task tracking is the `togather` kanban board.
+> mean the Beads issue tracker is in use. Use the contributor’s configured task and review system.
 
 This is read by `beads-go-reviewer` (the generic Go reviewer) when it reviews
 this project. It layers **on top of** the generic Go review + the `web-backend`

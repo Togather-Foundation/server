@@ -1,3 +1,55 @@
+<!-- AGENT:NAV
+purpose:~event;events;api;json;data;sel;artsdata;https
+lines:1480
+nav[46]{s,n,name,about}:
+53,1428,#Architecture Guide,~event;events;api;json;data
+65,17,##Table of Contents,~architecture;data;design;access;api
+82,21,##Architecture Philosophy,~real;architecture;data;dependencies;explicit
+103,68,##System Overview,~system;federation;agent;agents;api>Key Characteristics;Architecture Diagram
+171,90,##URI Scheme and Linked Data Foundation,~https;json;node;foundation;sel>Federation Rule;Why ULID?;Identifier Roles;Content Negotiation;Canonical URI Pattern;Tombstones for Deleted Entities
+261,156,##Core Components,~events;api;event;via;data
+263,14,###Ingestion API Server,~api;docs;error;event;explicit
+277,11,###Core Processing Pipeline,~data;enrichment;events;pipeline;reconciliation
+288,20,###Relational Data Store,~event;events;sqlc;table;data
+308,14,###Vector Search,~pgvector;usearch;acceleration;deployment;hybrid
+322,12,###Provenance Tracking System,~field;provenance;desc;source;trust
+334,23,###Knowledge Graph Integration,~arts;cache;graph;knowledge;reconciliation
+357,15,###Authentication & RBAC Layer,~access;keys;user;admin;api
+372,20,###Background Jobs & Utilities,~jobs;job;postgres;queue;river
+392,19,###Federation Layer,~changes;cursor;federation;node;nodes
+411,6,###Agent Tooling,~agent;cli;documented;apis;artifacts
+417,138,##API Design,~api;events;json;event;cursor>OpenAPI Specification;Core Principles;Response Envelopes;Key Endpoints
+555,214,##Data Architecture,~event;tracking;events;per;federation
+559,6,###Three-Layer Architecture,~layer;architecture;cached;core;demand
+565,9,###Key Design Principles,~design;org;schema;tracking;validation
+574,30,###Core Entity Pattern: Events,~event;events;identity;occurrence;series
+604,24,###Related Entities,~event;mapping;org;organizations;performers
+628,21,###Provenance and Trust,~field;provenance;desc;trust;confidence
+649,19,###Federation Infrastructure,~sync;federation;cursor;nodes;state
+668,24,###Reconciliation and External Identifiers,~reconciliation;entity;identifiers;authorities;cache
+692,19,###Temporal and Lifecycle Management,~event;aliases;correctly;dst;events
+711,25,###Search and Discovery,~queries;search;similarity;duplicate;embeddings
+736,13,###Access Control,~api;keys;access;admin;user
+749,20,###Operational Tables,~river;job;webhook;idempotency;keys
+769,96,##Integration Strategy,~artsdata;event;org;reconciliation;wikidata>External Authority Validation;Artsdata Integration;Knowledge Graph Reconciliation
+865,151,##Quality Assurance,~event;validation;events;time;uri
+867,63,###Validation and Normalization,~validation;stage;timezone;date;event>Stage 2: Semantic Validation;Stage 4: Enrichment;Stage 1: Schema Validation;Stage 3: Normalization
+930,68,###Deduplication Strategy,~event;events;uri;duplicate;similarity>Event Aliases;Duplicate Candidates Table;Layer 3: Weak Semantic Matching;Layer 1: Exact Matching;Layer 2: Strong Fuzzy Matching
+998,18,###SHACL Validation,~validation;artsdata;admin;json;report
+1016,112,##Access Control and Authentication,~admin;api;key;events;role>Role-Based Access Control;Rate Limiting;Security Best Practices;Authentication Methods
+1128,120,##Deployment Architecture,~postgres;config;database;log;checks>Health Checks;Database Migrations;Observability;Configuration Management;Container Strategy
+1248,38,##Technology Stack,~generation;json;jwt;search;uuid
+1286,181,##Design Patterns,~event;context;ctx;json;eventid
+1288,17,###Why SQLc Over GORM,~sql;gorm;agents;code;explicit
+1305,22,###Repository Pattern,~context;event;ctx;error;repository
+1327,28,###Service Layer Pattern,~event;business;context;eventservice;handlers
+1355,27,###Transactional Outbox Pattern,~job;enqueue;err;event;eventid
+1382,26,###Content Negotiation Pattern,~json;application;event;html;text
+1408,29,###Provenance Tracking Pattern,~confidence;field;value;eventid;ctx
+1437,30,###Cursor-Based Pagination Pattern,~cursor;pagination;sequence;number;items
+1467,14,##Next Steps,~security;api;database;integration;testing
+-->
+
 # Architecture Guide
 
 **Version:** 0.2  
@@ -32,7 +84,7 @@ This document provides an architectural overview of the Togather Shared Events L
 The Togather SEL backend follows **Specification Driven Development** with these core principles:
 
 ### Observability Over Opacity
-Everything must be inspectable through CLI interfaces. The system provides a shared kanban board for issue tracking, structured logging with zerolog, and explicit SQL queries via SQLc instead of opaque ORMs.
+Everything must be inspectable through CLI interfaces. The system provides structured logging with zerolog and explicit SQL queries via SQLc instead of opaque ORMs. Contributors use their configured task tracker.
 
 ### Simplicity Over Cleverness
 Start simple, add complexity only when proven necessary. The architecture uses a single Go service with modular packages rather than microservices. External dependencies are minimized (PostgreSQL + optional acceleration layers).

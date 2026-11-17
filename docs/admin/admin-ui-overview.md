@@ -1,3 +1,21 @@
+<!-- AGENT:NAV
+purpose:~class;div;admin;page;api;nav;tabler;html
+lines:273
+nav[12]{s,n,name,about}:
+19,255,#Admin UI Overview,~class;div;admin;page;api
+34,10,##Table of Contents,~concepts;core;design;file;framework
+44,50,##Design System & Framework,~tblr;tabler;css;background;badge
+46,23,###Tabler Framework,~tabler;css;admin;modals;api
+69,16,###Color System,~tblr;background;badge;var;cancelled
+85,9,###Typography,~text;system;14px;875rem;apple
+94,38,##File Structure,~html;api;management;page;activity
+132,112,##Core Concepts,~class;div;admin;nav;navbar
+134,54,###Template Structure,~div;class;page;admin;script
+188,56,###Navigation Bar,~class;div;nav;navbar;admin
+244,10,##Reference Links,~tabler;docs;https;api;design
+254,20,##Questions & Support,~api;check;backend;configured;cookie
+-->
+
 # Admin UI Overview
 
 **Version:** 1.0  
@@ -236,7 +254,7 @@ Consistent across all admin pages:
 ## Questions & Support
 
 **For questions or clarifications:**
-- Check open work on the `togather` kanban board (via the hermes-kanban MCP tools)
+- Check open work in your configured task system
 - Review backend API contracts: `../api/openapi.yaml`
 - Test backend endpoints directly: `curl -H "Authorization: Bearer $TOKEN" https://staging.toronto.togather.foundation/api/v1/admin/events`
 

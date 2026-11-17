@@ -1,8 +1,30 @@
+<!-- AGENT:NAV
+purpose:~code;commits;test;beads;docs;lines;tests;feb
+lines:211
+nav[16]{s,n,name,about}:
+23,189,#Agent Collaboration Summary,~code;commits;test;beads;docs
+32,16,##What the human did,~design;gpt;spec;tests;beads
+48,8,##What agents did,~beads;agents;targeted;tests;align
+56,10,##Questions that proved useful,~test;blocking;code;docs;phase
+66,8,##Effective workflow patterns,~beads;code;explicit;loop;quality
+74,9,##Representative instruction types,~instruction;tests;agent;analyze;automation
+83,6,##Impactful examples,~internal;create;api;bead;code
+89,6,##Outcome,~agent;artifacts;auditable;beads;clear
+95,23,##Initial sprint,~tracking;change;delivered;federation;human
+118,33,##Approaching v0.1 Release,~commits;deployment;code;test;docs
+122,29,###Codebase Metrics,~commits;deployment;code;test;docs
+151,61,##Sustained Development,~commits;feb;lines;test;code
+155,19,###Codebase Metrics,~lines;code;commits;test;feb
+174,10,###Key themes since last update,~commits;geocoding;auto;integration;key
+184,12,###Commit breakdown by category,~category;fix;165;breakdown;codebase
+196,16,###Growth since v0.1 snapshot,~feb;lines;test;037;122
+-->
+
 # Agent Collaboration Summary (Jan 2026)
 
-> **Status note (Nov 2026):** the Beads issue tracker was retired in favour of the shared
-> Hermes kanban board `togather`. Historical `bd`/bead references below are kept as a
-> record of how the work was tracked at the time; do not use them for new work.
+> **Historical workflow:** `bd`/bead references record the tooling used at the time.
+> For new work, use your configured task and review system and current `AGENTS.md`;
+> Togather does not require Beads, Hermes or a particular board.
 
 
 This summary is based on the filtered instruction log (204 entries, Jan 25–27, 2026). It focuses on high-signal collaboration patterns: task orchestration, quality gates, review/triage, and documentation alignment.

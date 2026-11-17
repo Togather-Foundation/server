@@ -1,8 +1,34 @@
+<!-- AGENT:NAV
+purpose:~mcp;server;git;branch;push;main;beads;work
+lines:321
+nav[20]{s,n,name,about}:
+27,295,#Working on Multiple Branches with OpenCode,~mcp;server;git;branch;push
+36,8,##The Challenge,~branch;mcp;server;work;002
+44,4,##The Solution: Multiple Terminal/Editor Sessions,~different;multiple;branches;directory;editor
+48,35,##Setup,~mcp;server;work;main;terminal
+50,16,###Option 1: Multiple Terminal Windows,~server;mcp;work;main;terminal
+66,17,###Option 2: Multiple Working Directories,~mcp;directory;separate;server;togather
+83,57,##Workflow,~mcp;server;git;work;push
+85,33,###Starting Work on MCP Server,~mcp;server;git;002;66za
+118,22,###Starting Work on Other Features,~main;git;server;work;k694
+140,40,##Key Points,~branch;mcp;git;push;main
+154,13,###Syncing Beads,~push;dolt;branch;git;main
+167,13,###Keeping MCP Branch Updated,~mcp;branch;git;origin;conflicts
+180,54,##Example Session,~server;git;mcp;push;add
+182,31,###Morning: Work on MCP Server,~server;mcp;git;002;push
+213,21,###Afternoon: Work on Other Features,~git;bug;main;server;add
+234,33,##Merging MCP Branch to Main,~git;mcp;push;server;002
+267,31,##Troubleshooting,~beads;git;bash;checkout;sync
+280,10,###Merge conflicts in .beads/ directory,~beads;branch;checkout;git;merging
+298,9,##Best Practices,~merge;branch;commits;easier;push
+307,15,##Summary,~beads;branch;branches;check;help
+-->
+
 # Working on Multiple Branches with OpenCode
 
-> **Status note (Nov 2026):** the Beads issue tracker was retired in favour of the shared
-> Hermes kanban board `togather`. Historical `bd`/bead references below are kept as a
-> record of how the work was tracked at the time; do not use them for new work.
+> **Historical workflow:** `bd`/bead references record the tooling used at the time.
+> For new work, use your configured task and review system and current `AGENTS.md`;
+> Togather does not require Beads, Hermes or a particular board.
 
 
 This guide explains how to work on the MCP server (in `002-mcp-server` branch) while simultaneously working on other features in different branches.

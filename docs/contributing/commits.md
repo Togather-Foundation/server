@@ -1,3 +1,19 @@
+<!-- AGENT:NAV
+purpose:~scope;change;changes;breaking;fix;add;commit;events
+lines:195
+nav[10]{s,n,name,about}:
+17,179,#Commit Message Conventions,~scope;change;changes;breaking;fix
+27,23,##Format,~wikidata;optional;organizations;reconciliation;abc12
+50,16,##Types,~changes;build;fix;adding;behavior
+66,22,##Scopes,~domain;logic;admin;api;area
+88,18,##Breaking Changes,~breaking;events;endpoint;change;changes
+106,25,##Description Guidelines,~add;feature;fix;bug;date
+131,24,##Body and Footer,~change;issue;closes;body;breaking
+155,8,##Multi-Commit PRs,~commit;follow;changes;commits;convention
+163,18,##Quick Reference Card,~scope;add;fix;something;update
+181,15,##Why This Matters,~changes;changelog;commit;messages;release
+-->
+
 # Commit Message Conventions
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
@@ -169,7 +185,7 @@ During the release process, commit messages are parsed to:
 1. **Categorize changes** into `Added`, `Fixed`, `Changed`, etc. in the changelog
 2. **Detect breaking changes** that require MAJOR version bumps
 3. **Generate release summaries** that are readable and useful
-4. **Link changes** back to kanban tickets for traceability
+4. **Link changes** back to work items, when available, for traceability
 
 The more consistently commit messages follow this format, the higher quality the
 auto-generated changelog entries will be.

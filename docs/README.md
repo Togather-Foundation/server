@@ -1,3 +1,23 @@
+<!-- AGENT:NAV
+purpose:~2026;api;admin;guide;living;interop;integration;sel
+lines:202
+nav[14]{s,n,name,about}:
+21,182,#SEL Documentation,~2026;api;admin;guide;living
+29,80,##Who are you?,~api;admin;guide;integration;interop
+31,15,###🛠️ I'm contributing to the SEL codebase,~contributors;guide;security;architecture;database
+46,32,###🔌 I'm integrating with SEL,~api;integration;source;name;scrapers
+78,15,###🔧 I'm administering a SEL node,~admin;api;deployment;guide;user
+93,16,###🌐 I'm building a SEL-compatible node,~interop;api;artsdata;contract;core
+109,11,##Universal Resources,~api;feature;glossary;openapi;reference
+120,23,##Quick Start by Use Case,~scraper;api;guide;integration;interop
+122,7,###Event Scraper,~scraper;integration;api;guide;authentication
+129,6,###SEL Node Implementer,~interop;api;contract;core;federation
+135,8,###SEL Contributor,~agents;contributors;development;guide;testing
+143,30,##Document Status,~2026;living;admin;contributors;interop
+173,16,##Contributing to Documentation,~docs;documentation;paths;update;8601
+189,14,##Questions or Feedback?,~togather;foundation;discussions;github;https
+-->
+
 # SEL Documentation
 
 **Version:** 0.2.1
@@ -114,7 +134,7 @@ These resources are useful for everyone:
 
 ### SEL Contributor
 1. Read [Development Guide](contributors/development.md)
-2. Pick a task from the kanban board `togather` (see [AGENTS.md](../AGENTS.md))
+2. Choose work using your configured task system (see [AGENTS.md](../AGENTS.md))
 3. Run tests: `make ci`
 4. Follow TDD workflow in [Testing Guide](contributors/testing.md)
 

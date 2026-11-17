@@ -6,11 +6,15 @@ permission:
   write: deny
   edit: deny
 ---
+<!-- AGENT:NAV
+purpose:~beads;reviewer;agent;code;project;global;language;checks
+lines:33
+-->
 
 # Deprecated — use global `beads-code-reviewer`
 
 > **Naming note:** "beads" in this agent name is legacy naming only — it does not mean
-> the Beads issue tracker is in use. Task tracking is the `togather` kanban board.
+> the Beads issue tracker is in use. Use the contributor’s configured task and review system.
 
 This agent has been replaced. The global `beads-code-reviewer` (installed at
 `~/.config/opencode/agent/beads-code-reviewer.md`) is now multi-language. It

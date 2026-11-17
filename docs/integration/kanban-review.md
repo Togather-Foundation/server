@@ -1,84 +1,93 @@
+<!-- AGENT:NAV
+purpose:~review;reviewer;branch;ticket;default;detail;handoff;revision
+lines:93
+nav[5]{s,n,name,about}:
+12,82,#Review handoff and waiting,~review;reviewer;branch;ticket;default
+18,13,##Hand off a reviewable revision,~branch;commit;complete;review;revision
+31,9,##Interpret the verdict,~merge;revision;approval;branch;pushed
+40,14,##Quiet waiting,~review;approvals;branch;events;pending
+54,40,##Optional Hermes kanban integration,~reviewer;ticket;review;default;detail
+-->
+
 # Review handoff and waiting
 
-Use board `togather` explicitly. Read live `kanban_help` for tool arguments,
-claim lifetime and lifecycle behavior; this guide records the workflow and
-communication policy rather than a copy of the entire tool reference.
+Togather does not require a particular issue tracker, review service or MCP server.
+Use the tools configured for the contributor or session. The filename is retained
+for existing links; the review workflow applies with or without a kanban board.
 
 ## Hand off a reviewable revision
 
-Claim the ticket before editing. Finish the authorized implementation,
-documentation and relevant checks, then push the feature branch. Record the
-repository, branch, full SHA, changed scope and check evidence on the ticket.
-For shared branches, identify the commit slice each ticket owns.
+Coordinate task ownership before editing. Finish the authorized implementation,
+documentation and relevant checks, then push the feature branch. Include repository,
+branch, full SHA, changed scope and check evidence in the review request. For shared
+branches, identify the commit slice each work item owns. If the branch was already
+merged/deleted, name the merge commit and diff range so reviewers can find the work.
 
-Use `ticket_request_review` with both board and ticket ID, an explicit
-non-dispatchable implementer `worker` label, a verified installed `reviewer`
-profile, and the summary. `force: true` releases a running claim: use it only
-for your own handoff. The implementer label must not be an installed profile;
-otherwise a changes request can spawn another worker instead of returning to you.
-Never invent a reviewer name; use the configured, verified profile.
-
-`ticket_complete` can perform the review handoff using server defaults. If it
-refuses because no implementer or reviewer resolves, use explicit
-`ticket_request_review` arguments. Operators should validate `MCP_CLAIM_WORKER`
-and `MCP_REVIEWER_PROFILE` against these roles during bridge setup. Remote MCP
-server environment is not configured by guessing settings in the client's TOML.
-
-Claims report their actual expiry and requested TTL (currently a four-hour
-default). Do not renew or reclaim another worker's running ticket. `triage` is
-internal intake, not an accepted `ticket_create` option.
+Use the configured review process. Read complete revision instructions and verdicts;
+inspect truncation indicators rather than treating clipped comments as complete.
+If required tooling or configuration is missing, report the specific blocker instead
+of inventing reviewer identities, unsupported arguments or alternate lifecycle steps.
 
 ## Interpret the verdict
 
-| State or event | Required action |
-|---|---|
-| `review` | Handoff is queued; preserve continuation state. |
-| `running` after review handoff | Reviewer may be working; no implementation re-claim. |
-| Heartbeat, owner admission, timeout, unchanged status | Bookkeeping; no user-facing update or merge authorization. |
-| `done` after approval | Verify the approved revision and merge/push it after all branch tickets clear. |
-| Changes requested, returned to implementer | Read the full verdict, re-claim when claimable, fix and request another review. `todo` may still have dependencies. |
-| `blocked` | Inspect and surface the actual blocker once; do not treat it as normal review waiting. |
-
-Reviewers approve; implementers merge. A comment containing an approval is not
-the completed lifecycle transition: wait for the ticket's verdict state. Never
-merge a newer unreviewed code revision on the strength of an older approval.
+A queued or running review is not approval. Address requested changes and submit
+the new pushed revision. Merge only the approved revision once all reviews sharing
+the branch clear, using the merge authority established for the current session.
+An older approval does not authorize a newer unreviewed revision. Update any tracker
+and remove the merged branch after the merge is pushed. Report actual blockers
+separately from ordinary review waiting.
 
 ## Quiet waiting
 
-Announce the review handoff once. Further messages should convey an actionable
-verdict or blocker, meaningful new evidence, or answer the user's status request.
-Do not narrate repeated polls, heartbeats, timeouts, unchanged review status,
-"ready as soon as approved", or the fact that nothing else remains.
+Announce the review handoff once. Further updates should convey actionable verdicts,
+blockers, meaningful evidence or requested status. Avoid narrating heartbeats,
+timeouts and unchanged status. Prefer supported notifications; otherwise use
+cursored polling. Polling still requires model turns and is not a durable
+subscription. Honor host communication and execution limits.
 
-Prefer a supported durable verdict subscription that suspends the task and
-resumes it on the current review's actionable outcome. Persist enough context
-to continue safely: board and ticket IDs, review epoch/run when available,
-repository and branch, pushed SHA, last event cursor, remaining branch approvals,
-and pending merge/push/branch-cleanup obligations. A resumed task must reconcile
-current state and reject stale approvals or duplicate continuations.
+Preserve the review identity, repository/branch, pushed SHA, last event cursor,
+remaining branch approvals and pending merge/push/cleanup obligations across
+suspension. Reconcile current state on resume and reject stale approvals. On
+truncated events, retrieve missing detail before advancing past unseen events.
+A pending review does not make delivery complete.
 
-If no such integration is available, `ticket_events` supports cursored
-long-polling. It also returns for non-verdict events and status changes; these
-returns do not justify a chat update. Preserve the latest observed cursor and
-inspect truncated results before advancing past unseen events. This fallback
-still requires model turns; it is not a durable zero-turn continuation. State
-that limitation once when relevant. Higher-priority host requirements remain
-in force; repository instructions cannot add runtime capabilities or override
-those requirements.
+## Optional Hermes kanban integration
 
-Ticket `t_4cdbdae8` tracks durable zero-model-turn verdict waiting. Do not claim it
-is delivered by this instruction update. Suspending review does not cancel the
-authorized merge and cleanup work or make the delivery complete; preserve that
-obligation and report pending state honestly if continuation is unavailable.
+These notes apply only when a contributor has configured Hermes. Board names,
+implementer labels, reviewer profiles and credentials belong in that contributor's
+setup; none is prescribed by Togather. Read live `kanban_help` and exposed tool
+schemas for the current contract.
 
-## Cold-agent walkthrough
-
-- **Approval:** pushed SHA A enters review, reviewer-start/heartbeat events arrive,
-  then the current review completes. Announce handoff once; reconcile approval
-  for A, verify every shared-branch ticket, merge/push and clean up.
-- **Changes:** reviewer returns corrections to the implementer. Read the full
-  verdict, claim when dependencies permit, fix and push SHA B, and request a new
-  review. Approval of A cannot authorize B.
-- **Blocker:** inspect a real blocked verdict, report the actionable reason once
-  and preserve continuation context. Additional heartbeats/timeouts do not
-  produce repeated messages or imply the blocker cleared.
+- Supply the configured board on board-scoped/per-ticket calls and retain returned
+  ticket IDs. Boardless discovery tools use their exposed schemas. Avoid `default`
+  as an assignee: it is the host worker profile. Route follow-ups to the proper lane.
+- Claim before editing. Claims default to four hours and there is no heartbeat verb;
+  expiry requeues the card and records a failed attempt. Reclaim only when claimable,
+  never while a worker/reviewer holds it. `todo` waits on parents, `scheduled` on time,
+  and `triage` is internal intake. No promote verb or `triage: true` creation flag exists.
+- Push before `ticket_request_review`. Supply a non-dispatchable implementer `worker`
+  (or configured `MCP_CLAIM_WORKER`) and a summary with refs and evidence. Normally
+  omit `reviewer`: resolution is explicit override → `MCP_REVIEWER_PROFILE` → the last
+  changes-requested round's reviewer. The server verifies installed profiles. Report
+  unresolved reviewer configuration to the operator rather than guessing or retrying.
+  Use `force: true` only for your own running handoff; omit it for ready tickets.
+- Native handoff enters `review`; the reviewer may move it to `running`. Wait for the
+  verdict: approval completes to `done`; changes return to the implementer. `blocked`
+  is an actual blocker. Direct completion is not review approval: `ticket_complete`
+  requires a running claim by default; LOW completes directly, MEDIUM/HIGH (default
+  MEDIUM) use review, and `MCP_COMPLETE_MODE=done` overrides that handoff. Use native
+  review when the change requires review. Completion accepts repo/branch/sha, caps
+  handoff summaries at 16 KiB and verifies `created_cards` child IDs in done mode.
+- Read steers, revision comments and verdicts with `ticket_get(detail="full")`.
+  Partial detail clips comments; full detail is also bounded (32 KiB). Inspect
+  truncation and dropped-comment metadata. Use only options exposed by the client;
+  report capability gaps that prevent reading required content.
+- Wait with `ticket_events` using the last event ID as `since_event_id`.
+  `wake_on="verdicts"` is the default (omit if absent from the client schema): it
+  suppresses bookkeeping and reviewer moves into running/review. `wake_on="any"`
+  restores unfiltered behavior. Check `ticket_status` even when no events return.
+  `suppressed` counts bookkeeping since the cursor, so repeated cursors repeat the
+  counts. Truncated events require detail retrieval before advancing. A cursor
+  already past a completed verdict waits out the timeout; reconcile ticket detail
+  on resume. The default timeout is 120 seconds, maximum 900; choose shorter waits
+  or yield execution to satisfy host limits. This is stateless long-polling.

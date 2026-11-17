@@ -1,3 +1,29 @@
+<!-- AGENT:NAV
+purpose:~security;admin;rate;server;api;key;data;agent
+lines:586
+nav[20]{s,n,name,about}:
+27,560,#SEL Security Model,~security;admin;rate;server;api
+36,12,##Table of Contents,~security;audit;configuration;history;implemented
+48,17,##Security Philosophy,~security;data;fail;sel;access
+65,100,##Threat Model,~data;risk;agent;impact;medium>Assets;Threat Actors
+84,81,###Attack Vectors,~risk;impact;mitigated;mitigation;status>1. SQL Injection;2. Denial of Service;3. Weak Authentication;4. Resource Leaks;5. Cross-Site Scripting;6. Cross-Site Request Forgery;7. Information Disclosure;8. Scraper Agent Prompt Injection
+165,139,##Implemented Protections,~admin;via;api;event;key>SQL Injection Prevention;Resource Management;Rate Limiting
+167,18,###Authentication & Authorization,~api;authentication;admin;bcrypt;key
+213,25,###HTTP Security,~inline;prevents;self;src;allow
+238,32,###Data Integrity,~validation;admin;csrf;cookie;domain
+283,21,###Privacy & Logging,~admin;resource;address;event;logging
+304,50,##Configuration Requirements,~rate;limit;secret;database;http>Required Environment Variables;Production Deployment Checklist
+316,25,###Recommended Environment Variables,~rate;http;key;limit;per
+354,89,##Operational Security,~rate;agent;security;api;database>2. Enable HTTPS;4. Monitor Rate Limits;1. Generate Strong Secrets;6. Review Audit Logs;5. Rotate API Keys;3. Database Security
+443,33,##Dependency Vulnerability Tracking,~mcp;client;release;code;crypto
+476,64,##Security Audit History,~server;admin;audit;completed;csrf
+478,33,###v0.1.3 (2026-01-26) - Admin Interface Security Hardening,~admin;completed;csrf;audit;server
+511,29,###v0.1.2 (2026-01-25) - Security Hardening Release,~server;resolved;api;key;2026
+540,32,##Reporting Security Issues,~security;acknowledgment;days;description;disclosure
+542,30,###Responsible Disclosure Policy,~security;acknowledgment;days;description;disclosure
+572,15,##Additional Resources,~security;architecture;code;foundation;review
+-->
+
 # SEL Security Model
 
 **Version:** 0.1.4  
@@ -548,7 +574,7 @@ We take security seriously and appreciate responsible disclosure of vulnerabilit
 - **Architecture Documentation**: [architecture.md](./architecture.md) § 7.1 (Security Hardening)
 - **Code Review Report**: `../../CODE_REVIEW.md`
 - **Setup Guide**: `../../SETUP.md` (Security Configuration section)
-- **Issue Tracker**: Active security issues are tracked on the `togather` kanban board (via the hermes-kanban MCP tools); GitHub security advisories apply for the repo itself
+- **Issue Tracker**: Use the configured private reporting and tracking process for active security issues; GitHub security advisories apply for the repo itself
 
 ---
 

@@ -1,3 +1,15 @@
+<!-- AGENT:NAV
+purpose:~codex;agents;repository;mcp;configuration;skills;configure;files
+lines:92
+nav[6]{s,n,name,about}:
+13,80,#Agent Tooling,~codex;agents;repository;mcp;configuration
+20,18,##Codex setup,~codex;togather;hermes;mcp;optional
+38,14,##Shared instructions,~skill;skills;agents;configure;files
+52,11,##Custom agents,~agents;codex;scraper;ask;avoiding
+63,13,##MCP configuration boundary,~codex;configuration;mcp;repository;opencode
+76,17,##Verification,~codex;configuration;mcp;pathlib;toml
+-->
+
 # Agent Tooling
 
 Togather supports both Codex and OpenCode from one repository-owned set of instructions.
@@ -9,26 +21,19 @@ to each client.
 
 1. Open the repository in Codex and mark it as trusted. Codex only loads project-scoped
    `.codex/config.toml`, custom agents, hooks, and rules for trusted projects.
-2. Export both MCP credentials before starting Codex:
-
-   ```bash
-   export KANBAN_MCP_API_KEY="..."
-   export TOGATHER_MCP_API_KEY="..."
-   ```
-
-   Keep the values in local environment or secret-manager configuration. Never commit them.
-3. Start Codex from the repository root and verify the project MCP servers:
-
-   ```bash
-   codex mcp list
-   ```
-
-   The expected project servers are `context7`, `hermes-kanban`, and `togather`.
-
-`context7` provides current external-library documentation. `hermes-kanban` is the
-project task board and reads its bearer token from `KANBAN_MCP_API_KEY`; every call must
-use `board: "togather"`. `togather` connects to the staging SEL MCP endpoint and reads
-its bearer token from `TOGATHER_MCP_API_KEY`.
+2. Use the shared instructions, skills and role adapters below. Configure only the
+   optional services your workflow needs; contributing does not require Hermes,
+   a personal board or access to a hosted Togather instance.
+3. If using the repository's optional MCP transports, export the corresponding
+   credentials (`KANBAN_MCP_API_KEY` for Hermes, `TOGATHER_MCP_API_KEY` for the
+   configured Togather endpoint) before starting the client. Keep them in your
+   environment or secret manager, never in committed configuration. Configure your
+   own board and review routing outside repository instructions.
+4. Inspect available connections with `codex mcp list`. The checked-in configuration
+   declares `context7`, `hermes-kanban` and `togather`; their availability depends on
+   your setup. `context7` supplies external-library docs; Hermes is an optional
+   tracker; the Togather connection targets a configured SEL instance. These are
+   client integrations, not backend runtime dependencies.
 
 ## Shared instructions
 

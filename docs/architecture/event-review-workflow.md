@@ -1,3 +1,29 @@
+<!-- AGENT:NAV
+purpose:~review;event;pending;admin;events;companion;duplicate;queue
+lines:764
+nav[20]{s,n,name,about}:
+27,738,#Event Review Workflow,~review;event;pending;admin;events
+29,4,##Overview,~review;admin;queue;approval;auditable
+33,14,##Problem Statement,~event;events;dates;errors;reversed
+47,88,##Design Rationale,~event;review;decision;events;auto>Why No Auto-Merge for Consolidated Events?;Why Expire Reviews After Event Passes?;Why Two Warning Codes (Not Three)?;Why Compare Original vs Normalized in Validation?;Why Hybrid Status (pending_review + queue)?;Why Always Auto-Fix Reversed Dates?;Why Store in Both `events` and `event_review_queue`?;Why Track Rejection History?
+135,18,##Architecture,~validation;domain;events;internal;normalization
+153,92,##1. State Machine Diagram,~admin;service;event;delete;approved
+245,18,##2. Decision Table,~event;via;review;companion;deleted
+263,76,##3. Consolidation Decision Table,~event;review;row;pending;companion>Dispatch Paths;Retire Processing;When consolidateStripRetiredDupWarnings Triggers;Pending Resolution;Series Companion Cross-Linking;Review-row atomicity and lock order
+339,34,##4. Post-Action Recomputation,~admin;service;pending;recomputelifecycleafterreview;recompute
+373,70,##5. Companion Dismissal Mechanisms,~companion;event;admin;duplicate;service>Mechanism 2: DismissWarningMatchByReviewID — Atomic JSONB Warning Removal;All Three Warning Types Now Handled by Atomic SQL;Which Actions Use Which Mechanism;Mechanism 1: MergeReview — Full Row Dismissal;Mechanism 3: approveStripCompanionDupWarning — Atomic SQL via DismissAllCompanionWarnings
+443,63,##6. Known Gaps and Technical Debt,~companion;admin;event;status;service>G7: Approve Companion Strip is Now Atomic;G6: All Warning Types Now Handled by Atomic SQL;G2: Recompute Logic Centralised;G8: Reject Leaves Companion Reviews Orphaned;G4: Consolidate Now Recomputes;G5: OpenAPI Spec Now Includes `dismissed`;G1: `dismissed` Status Not Covered by CleanupArchivedReviews;G3: Companion Dismissal Duplicated 4+ Times;G9: Series-Candidate Clusters Use Unguarded Transitive Closure
+506,36,##7. Lifecycle State Transitions,~review;pending;admin;deleted;cleanup
+542,54,##Database Schema,~event;text;events;review;timestamptz>`events` Lifecycle State;`event_review_queue` Table
+596,16,##Warning Codes,~event;duplicate;review;year;date
+612,13,##Near-Duplicate Cross-Linking,~event;duplicate;review;existing;row
+625,24,##Ingestion Workflow,~review;boundary;insert;pending;reject
+649,75,##Admin Review API,~review;events;admin;event;api>POST /api/v1/admin/review-queue/:id/approve;GET /api/v1/admin/review-queue;POST /api/v1/admin/events/consolidate;POST /api/v1/admin/review-queue/:id/fix;GET /api/v1/admin/review-queue/:id;POST /api/v1/admin/review-queue/:id/reject;GET /api/v1/admin/events/series-candidates
+724,16,##Cleanup & Maintenance,~event;review;delete;queue;cleanup
+740,7,##Implementation Tasks,~implementation;work;change;completed;configured
+747,18,##Related Documentation,~review;internal;events;queue;api
+-->
+
 # Event Review Workflow
 
 ## Overview
@@ -713,8 +739,8 @@ Runs daily via River (`cleanup_review_queue.go:37`). Three phases:
 
 ## Implementation Tasks
 
-Implementation tasks are tracked on the `togather` kanban board; see the issue
-history for completed work details.
+Use the configured task system for implementation work; see the change history
+for completed work details.
 
 ---
 

@@ -6,7 +6,7 @@ Go 1.24+ SEL backend (Togather server). PostgreSQL 16+/PostGIS, SQLc, River, net
 
 - Spec driven red/green TDD.
 - Use parallel tools whenever applicable.
-- Use the kanban board `togather` (via `hermes-kanban-*` MCP tools) for task tracking — not markdown todo lists, and not any other issue tracker.
+- Track work in the contributor’s configured issue tracker or task system. No particular tracker, board, or tracking MCP service is required by this repository.
 - Use `context7` MCP server for external library docs.
 - Act without confirmation unless blocked by missing info or irreversibility.
 - When stuck (cryptic errors, multiple failed approaches): escalate via Task tool with `subagent_type: "diagnose"`.
@@ -175,81 +175,55 @@ Create new migration: `migrate create -ext sql -dir internal/storage/postgres/mi
 
 **Testing:** see `tests/AGENTS.md`.
 
-## Kanban (shared board)
+## Task Tracking and Review
 
-Project work is tracked on the Hermes kanban board `togather` via the kanban MCP
-tools (`hermes-kanban-*`).
+Use the task and review tools configured for the current contributor or session.
+Keep personal board names, dispatch profiles and MCP settings in local configuration,
+not in repository requirements. If no tracker is available, record the scope,
+verification and remaining work in the change description or handoff.
 
-- **Always pass `board: "togather"` on every kanban MCP call.** The server default is
-  not this project; never depend on an implicit board. The current bridge rejects
-  missing board arguments.
-- **Capture the ticket `id` from the `ticket_create` response (`t_<hex>`) and reuse it
-  verbatim on every subsequent call.** Every per-ticket call — `ticket_claim`,
-  `ticket_comment`, `ticket_get`, `ticket_events`, `ticket_request_review`,
-  `ticket_complete`, `ticket_block` — requires BOTH
-  `board` and `id`. Omitting `id` fails the call with `invalid ticket id`; do not guess,
-  truncate, or reconstruct it. If a call errors, `ticket_list`/`ticket_get` to recover the
-  id before retrying.
-- Orient with `board_list`; read with `ticket_list`/`ticket_get`; `kanban_help` is the
-  lifecycle contract.
-- Tickets must be self-contained: **Goal** · **Acceptance** (verification commands +
-  expected output) · **File scope** (exact paths) · **Constraints** (standing rules) ·
-  **Source** (repo, who asked, when, requirement verbatim — never a pointer to a file outside the repo).
-- Work on a **feature branch**, never `main`: `git checkout -b <type>/<ticket-id>-<desc>`.
-  The agent merges to main once kanban review has passed (see below); no human merge step.
-- Workflow: `ticket_create` (lands `ready`, or `todo` behind parents) → `ticket_claim`
-  immediately before editing → work and verification → push → record repo, branch,
-  commit SHA, changed files and check evidence → `ticket_request_review`.
-  `triage` is internal intake; do not pass the unsupported `triage: true` argument.
-- **Native review lifecycle:** handoff enters `review`; the dispatcher may move it
-  to `running` while the reviewer works. Neither state is a verdict or permission
-  to re-claim. `done` after approval authorizes the implementer to merge; a changes
-  request returns the ticket to the implementer for correction and re-review.
-  Read the verdict when it returns to `ready`/`todo`. `blocked` means an actual
-  blocker/escalation, not the old review-required waiting convention.
-- **Push before requesting review.** Supply an explicit `worker` implementer label
-  that is not an installed dispatchable profile, a `reviewer` installed profile,
-  and a summary with pushed repo/branch/SHA and verification evidence. Use
-  `force: true` only to hand off your own running claim. `ticket_complete` can use
-  server defaults, but missing implementer/reviewer configuration can refuse it;
-  use the explicit handoff rather than repeating the failing call.
-- **Quiet review waits:** announce the handoff once. Do not send repeated
-  "still waiting", heartbeat, timeout, unchanged-status or ready-to-merge updates.
-  Report actionable verdicts/blockers, meaningful new evidence, or requested
-  status. Prefer a supported durable verdict subscription/continuation; otherwise
-  use cursored long-polling and treat non-verdict events as bookkeeping. A quiet
-  fallback still uses model turns; do not claim it implements zero-turn waiting.
-  Follow higher-priority runtime requirements where they constrain silence, and
-  explain the limitation once rather than promise capabilities the host lacks.
-- Preserve the review epoch, pushed SHA, event cursor and pending merge/cleanup
-  responsibilities across suspension. Merge only the approved revision after all
-  tickets sharing the branch clear; review waiting is not completed delivery.
-  See [review handoff and waiting](docs/integration/kanban-review.md).
-- **Claim lifetime:** use the TTL/expiry reported by `ticket_claim` and current
-  `kanban_help` (currently default 14400 seconds / four hours). Re-claim only an
-  expired claim that has returned to a claimable state. Reviewers' heartbeats are
-  not your claim renewal mechanism.
-- Never put credentials in ticket bodies — write `***`.
+- Work items should include the goal, acceptance criteria, affected files,
+  constraints and source of the request. Preserve returned IDs when using a tracker.
+- Work on a feature branch, never directly on `main` for implementation changes:
+  `git checkout -b <type>/<short-description>` (include a ticket ID when available).
+- Coordinate ownership before editing shared work. Do not take over another
+  contributor's active task or review without authorization.
+- Finish implementation, docs and relevant checks, then push before requesting
+  review. Include repository, branch, full commit SHA, changed scope and evidence.
+- Use the configured review process. A queued or running review is not approval.
+  Read the complete verdict; resolve requested changes and submit the new revision.
+  Merge only the approved revision after all reviews sharing the branch clear.
+- If the session authorizes the agent to merge, merge/push after approval and
+  remove the merged work branch; otherwise hand off the approved revision.
+- Announce review handoff once. Report actionable verdicts, blockers, meaningful
+  evidence or requested status; avoid repeated unchanged-status updates. Use
+  supported notifications or cursored polling, inspect truncation, and preserve
+  review identity, pushed SHA and pending merge/cleanup work across suspension.
+- Consult live tool documentation for state transitions, claim expiry, review
+  routing and result limits. Report missing capabilities/configuration rather
+  than guessing service-specific arguments or reviewer names.
+- Never put credentials in work items or handoffs — write `***`.
+
+See [review handoff and waiting](docs/integration/kanban-review.md) for generic
+handoff guidance and optional Hermes integration notes.
 
 ## Session Close Protocol
 
-Work is NOT complete until docs are updated and `git push` succeeds. Complete kanban tickets
-AFTER pushing — the review gate reads the pushed commit.
+Work is not complete until documentation is updated and `git push` succeeds.
+Update any configured tracker after pushing so reviewers can inspect the commit.
 
 ```bash
 scripts/agent-run.sh make ci-fast     # quality gate (if code changed)
-# 1. push first (feature branch or main)
 git pull --rebase
 git push
 git status                            # must show "up to date with origin"
-# 2. request native review, recording repo+branch+commit SHA:
-#    hermes-kanban_ticket_comment board=togather id=<id> body="repo+branch+commit"
-#    hermes-kanban_ticket_request_review board=togather id=<id> ...
-# 3. after approval: merge/push main, remove the merged work branch, then clean up
+# Request review through the configured process, with repo/branch/SHA and checks.
+# After approval, merge/cleanup when authorized by the session.
 scripts/agent-cleanup.sh              # remove agent output files
 ```
 
-Remove your work branch once it is merged to main.
+Report pending review or merge responsibilities honestly; a handoff is not a
+completed delivery. Remove your work branch once it is merged to main.
 
 **Commit messages** use Conventional Commits and must include a `Generated-by` trailer:
 
@@ -275,7 +249,7 @@ scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
 
 - Feature branches: always use `--version HEAD`, never omit it
 - New env vars: run `./deploy/scripts/env-audit.sh staging` before deploying
-- Do NOT create kanban tickets for deployment tasks
+- Deployment evidence belongs in the current release/change handoff; a separate deployment task is not required.
 
 Docs:
 - `docs/deploy/remote-deployment.md` — how `deploy.sh` works, options, first-time setup
@@ -325,3 +299,79 @@ The `domain` field sets the default `event_domain` (`arts`, `music`, `culture`, 
 - `tests/` — integration, contract, e2e, performance
 - `specs/` — Spec Kit artifacts (source of intent: constitution → spec → tasks)
 
+<!-- AGENT:NAV
+purpose:Index of markdown files with agentmap nav blocks:
+files[4]{path,lines,about}:
+docs/deploy/
+releasing.md,411,release;version;deploy;github;bash;staging;git;rollback
+docs/integration/
+kanban-review.md,131,review;ticket;verdict;claim;handoff;reviewer;branch;merge
+skills/agentmap-maintain/
+SKILL.md,33,nav;files;agentmap;block;read;agent;lines;markdown
+skills/release/
+SKILL.md,338,release;version;changelog;github;data;deploy;run;changes
+-->
+
+<!-- AGENT:NAV
+purpose:Index of markdown files with agentmap nav blocks:
+files[16]{path,lines,about}:
+docs/
+README.md,202,2026;api;admin;guide;living;interop;integration;sel
+docs/admin/
+admin-ui-overview.md,273,class;div;admin;page;api;nav;tabler;html
+docs/architecture/
+event-review-workflow.md,764,review;event;pending;admin;events;companion;duplicate;queue
+docs/contributing/
+commits.md,195,scope;change;changes;breaking;fix;add;commit;events
+docs/contributors/
+README.md,122,test;agents;development;tests;agent;guide;race;architecture
+agent-tooling.md,92,codex;agents;repository;mcp;configuration;skills;configure;files
+architecture.md,1480,event;events;api;json;data;sel;artsdata;https
+development.md,552,validation;logger;server;pyshacl;ttl;log;shacl;event
+security.md,586,security;admin;rate;server;api;key;data;agent
+docs/contributors/meta/
+agent_workflows.md,211,code;commits;test;beads;docs;lines;tests;feb
+docs/deploy/
+releasing.md,410,release;version;deploy;github;bash;staging;git;rollback
+docs/integration/
+kanban-review.md,93,review;reviewer;branch;ticket;default;detail;handoff;revision
+scraper.md,2293,source;url;event;events;scrape;sources;server;scraper
+docs/operations/
+source-feed-reconciliation-retrospective.md,174,source;rows;run;repair;backup;cleanup;separate;identity
+skills/agentmap-maintain/
+SKILL.md,33,nav;files;agentmap;block;read;agent;lines;markdown
+skills/release/
+SKILL.md,333,release;version;changelog;github;data;deploy;run;changes
+-->
+
+<!-- AGENT:NAV
+purpose:Index of markdown files with agentmap nav blocks:
+files[16]{path,lines,about}:
+docs/
+README.md,202,2026;api;admin;guide;living;interop;integration;sel
+docs/admin/
+admin-ui-overview.md,273,class;div;admin;page;api;nav;tabler;html
+docs/architecture/
+event-review-workflow.md,764,review;event;pending;admin;events;companion;duplicate;queue
+docs/contributing/
+commits.md,195,scope;change;changes;breaking;fix;add;commit;events
+docs/contributors/
+README.md,122,test;agents;development;tests;agent;guide;race;architecture
+agent-tooling.md,92,codex;agents;repository;mcp;configuration;skills;configure;files
+architecture.md,1480,event;events;api;json;data;sel;artsdata;https
+development.md,552,validation;logger;server;pyshacl;ttl;log;shacl;event
+security.md,586,security;admin;rate;server;api;key;data;agent
+docs/contributors/meta/
+agent_workflows.md,211,code;commits;test;beads;docs;lines;tests;feb
+docs/deploy/
+releasing.md,410,release;version;deploy;github;validation;staging;git;rollback
+docs/integration/
+kanban-review.md,93,review;reviewer;branch;ticket;default;detail;handoff;revision
+scraper.md,2293,source;url;event;events;scrape;sources;server;scraper
+docs/operations/
+source-feed-reconciliation-retrospective.md,174,source;rows;run;repair;backup;cleanup;separate;identity
+skills/agentmap-maintain/
+SKILL.md,33,nav;files;agentmap;block;read;agent;lines;markdown
+skills/release/
+SKILL.md,333,release;version;changelog;github;data;deploy;run;changes
+-->

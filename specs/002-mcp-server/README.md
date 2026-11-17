@@ -1,3 +1,29 @@
+<!-- AGENT:NAV
+purpose:~mcp;server;api;event;implemented;context;implementation;tools
+lines:225
+nav[20]{s,n,name,about}:
+27,199,#MCP Server for Togather API - Quick Start,~mcp;server;api;event;implemented
+31,9,##What is MCP?,~agent;agents;api;event;mcp
+40,31,##Implementation Status,~documentation;2026;implementation;issues;priority
+46,18,###Implementation Summary,~issues;priority;resolved;2026;completed
+64,7,###Quality Metrics,~documentation;integration;quality;added;api
+71,24,##Project Structure,~mcp;server;tools;create;list
+95,32,##Features,~implemented;event;context;search;api
+97,13,###Tools,~implemented;search;api;geocode;address
+110,7,###Resources,~context;json;sel;event;openapi
+122,5,###Transports,~web;agent;claude;deployments;desktop
+127,34,##Parallel Development Workflow,~server;mcp;development;work;branch
+129,8,###Why This Works,~api;existing;merge;additive;anytime
+137,20,###Multi-Branch Development with OpenCode,~server;mcp;branch;development;task
+161,7,##Documentation,~mcp;plan;docs;https;spec
+168,8,##Task and Review Workflow,~review;branch;kanban;repository;task
+176,6,##Dependencies,~work;completed;dependencies;implementation;mcp
+182,18,##Testing Strategy,~integration;tool;client;end;testing
+189,6,###Integration Tests,~end;tool;authentication;client;connection
+200,14,##Success Criteria,~criteria;tools;accessible;api;authentication
+214,12,##Questions?,~mcp;plan;2026;agents;https
+-->
+
 # MCP Server for Togather API - Quick Start
 
 This directory contains the specification and implementation plan for adding Model Context Protocol (MCP) support to the Togather SEL API.
@@ -116,16 +142,16 @@ You can work on MCP server in one terminal while working on other features in an
 # Terminal 1 - MCP Server Development
 cd /path/to/togather/server
 git checkout -b 002-mcp-server
-# Claim and work MCP tickets on the togather kanban board
+# Coordinate MCP work in your configured task system
 
 # Terminal 2 - Other Feature Development  
 cd /path/to/togather/server
 git checkout main  # or another feature branch
-# Work on other kanban tickets
+# Work on other tasks
 ```
 
 **Key Points:**
-- Task tracking is shared on the `togather` kanban board (hermes-kanban MCP tools), not per-branch
+- Coordinate task ownership across branches using your configured task system
 - The 002-mcp-server branch is additive, so merge conflicts are minimal
 
 ### Getting Started
@@ -139,23 +165,13 @@ Use the standalone MCP server binary or enable the `/mcp` endpoint on the main s
 - **MCP Protocol Docs**: https://modelcontextprotocol.io/docs
 - **mcp-go Library**: https://github.com/mark3labs/mcp-go
 
-## Kanban Workflow
+## Task and Review Workflow
 
-Work is tracked on the `togather` kanban board via the `hermes-kanban-*` MCP tools:
-
-```bash
-# Orient
-hermes-kanban_board_list board=togather
-hermes-kanban_ticket_list board=togather
-
-# Read a ticket
-hermes-kanban_ticket_get board=togather id=<id>
-
-# Claim before editing (ready→running), comment as you work, complete when done
-hermes-kanban_ticket_claim board=togather id=<id>
-hermes-kanban_ticket_comment board=togather id=<id> body="..."
-hermes-kanban_ticket_complete board=togather id=<id>
-```
+Use the contributor's configured task system and review process; this repository
+does not require a particular kanban board or MCP service. Coordinate ownership,
+implement and verify on a feature branch, push, then request review with the
+repository, branch, SHA and check evidence. See [agent instructions](../../AGENTS.md)
+and [review handoff guidance](../../docs/integration/kanban-review.md).
 
 ## Dependencies
 
@@ -199,7 +215,7 @@ All MCP implementation work has been completed and merged.
 
 - MCP Protocol: https://modelcontextprotocol.io/docs
 - mcp-go SDK: https://github.com/mark3labs/mcp-go
-- Project board: `hermes-kanban_ticket_list board=togather`
+- Task and review conventions: [AGENTS.md](../../AGENTS.md)
 - Implementation plan: [plan.md](./plan.md)
 
 ---

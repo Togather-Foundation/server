@@ -1,3 +1,29 @@
+<!-- AGENT:NAV
+purpose:spec;phase;review;plan;implementation;ticket;source;task
+lines:535
+nav[20]{s,n,name,about}:
+27,509,#Spec-Driven Development Guide,spec;phase;review;plan;implementation
+32,12,##Overview,spec;code;review;implementation
+44,19,##Directory Convention,directory;optional;tasks;contracts
+63,113,##Breaking Work into Phases,~phase;spec;phases;plan;split>Spec Sizing: The "Two Screens" Test;When NOT to Write a Spec;When to Phase;Progressive Spec Detail
+77,27,###How to Phase,~phase;build;phasing;bad;builds
+104,22,###The Plan → Spec → Beads Pipeline,~spec;plan;review;big;lines
+148,15,###Phase Boundaries and Dependencies,~phase;phases;contracts;criteria;depend
+176,121,##Document Lifecycle,~spec;implementation;phase;task;plan
+178,34,###1. Plan,~plan;code;exists;feature;writing
+212,57,###2. Spec,~phase;spec;acceptance;test;task
+269,28,###3. Tasks → Work Items,
+297,98,##Review Process,~review;spec;error;input;data
+299,16,###Why Review Matters,~codebase;error;source;verify;004
+315,55,###How to Review,~review;spec;error;input;issues
+370,25,###Review Prompting Template,~review;context;data;external;project
+395,63,##Writing Quality Standards,~json;action;confidence;review;string>Be Precise Not Verbose;Link to Code Not to Memory
+409,19,###Show Don't Describe,~json;string;action;confidence;decision
+428,16,###Use Tables for Status/Inventory,~dates;reversed;auto;duplicate;ingest
+458,64,##Common Mistakes,~spec;data;input;review;says>8. Review feedback files in the repo;6. Not verifying enums against the codebase;5. Letting non-goals creep in;2. Writing prose instead of schemas;4. Forgetting the failure path;7. Omitting data locality decisions;3. Inconsistent naming across documents;1. Skipping the security section
+522,14,##Updating Specs After Implementation,~spec;update;implementation;status;add
+-->
+
 # Spec-Driven Development Guide
 
 Agent instructions for creating and managing specifications in this project.
@@ -8,7 +34,7 @@ Read this file before writing any plan, spec, or task document.
 Every feature flows through a pipeline:
 
 ```
-Discovery → Plan → Spec → Review → Tasks (kanban) → Implementation → Close
+Discovery → Plan → Spec → Review → Tasks → Implementation → Close
 ```
 
 Specs are the **source of intent**. Code implements what the spec says. If the spec
@@ -22,7 +48,7 @@ specs/
   NNN-feature-name/       # NNN = zero-padded sequence number
     plan.md               # Architecture, phases, dependencies, risks
     spec.md               # Or spec-phaseN.md for phased delivery
-    tasks.md              # Optional — only if NOT using kanban for tracking
+    tasks.md              # Optional — when no external task system is configured
     research.md           # Optional — exploratory findings
     data-model.md         # Optional — schema/ERD if complex
     checklists/           # Optional — verification checklists
@@ -240,58 +266,33 @@ when a plan has multiple implementation phases.
 - **Non-goals are as important as goals.** Explicitly state what is deferred and to
   which phase. This prevents scope creep during implementation.
 
-### 3. Tasks → Kanban Tickets
+### 3. Tasks → Work Items
 
-**Do NOT maintain tasks.md for new features.** Track implementation tasks as tickets on
-the `togather` kanban board (via the `hermes-kanban-*` MCP tools). The older specs
-(001, 003) have `tasks.md` files from before kanban was adopted — these are historical
-artifacts.
+Use the contributor's configured issue tracker or task system. Togather requires
+no specific board, MCP server or dispatcher. If no external tracker is configured,
+use the spec's Implementation Tasks section or an optional `tasks.md`; avoid
+maintaining competing copies of task status.
 
-**The spec's Implementation Tasks section is the bridge.** Every task in the spec
-becomes exactly one ticket. The spec task gives the ticket its title, description,
-test criteria, and acceptance gate. If a task in the spec is too vague to create a
-ticket from, the spec isn't ready — go back and add detail.
+Every implementation task should have one corresponding work item with its goal,
+test/acceptance criteria, file scope, constraints and source. Include the spec task
+number for traceability, and verify that all tasks are represented. Wire dependencies
+using the configured tool's supported mechanism and coordinate ownership before work.
+Keep personal board names and reviewer profiles in local configuration.
 
-**Verification step: count check.** After creating all tickets, verify:
-```bash
-# Count tasks in spec
-grep -c '^### Task' specs/NNN-feature-name/spec-phaseN.md
-
-# Count tickets created for the phase (see the board's per-status counts)
-# hermes-kanban_board_list board=togather
-```
-These numbers must match. If they don't, a task was missed.
-
-**Workflow for converting spec tasks to tickets:**
-
-1. Create one ticket per spec task with `hermes-kanban_ticket_create board=togather`,
-   using the spec's What + Test + Acceptance as the ticket body (Goal / Acceptance /
-   File scope / Constraints / Source).
-2. Use `parents` on `ticket_create` to wire a phase gate: the phase ticket is the
-   parent, child tickets promote when it completes.
-3. Always pass `board: "togather"` — the server default board is `hermes-agent`.
-
-**Tips:**
-- Use a subagent (`subagent_type: "basic"`) to create many tickets in batch
-- Include the spec task number in the ticket title or description for traceability
-- `kanban_help` is the lifecycle contract; claims are kernel-enforced and completion is
-  review-gated
+Push implementation changes and verification evidence before requesting review.
+Read full verdicts, resolve changes and merge only the approved revision using the
+session's established merge authority. See [review handoff and waiting](../docs/integration/kanban-review.md)
+for the generic workflow and optional Hermes integration notes.
 
 **When implementation discovers new tasks:**
 
-During implementation, you will discover tasks that the spec didn't anticipate.
-This is normal and expected. Handle them as follows:
+1. **Small (< 1 hour)**: Fold into the current scope and record the decision.
+2. **Medium (1-4 hours)**: Record a work item in the configured system and note it in
+   the spec's Implementation Tasks section, with dependencies where needed.
+3. **Large (> 4 hours)**: Add a spec task and corresponding work item; consider
+   whether the phase needs to be split.
 
-1. **Small (< 1 hour)**: Fold into the current ticket's scope. Note it in the ticket.
-2. **Medium (1-4 hours)**: Create a new ticket, parent it under the phase gate, and add
-   a brief note to the spec's Implementation Tasks section.
-3. **Large (> 4 hours)**: This is a sign the phase was under-specified. Create the
-   ticket, parent it under the phase gate, AND update the spec with a new Task
-   section. Consider whether the phase needs to be split.
-
-**Never let discovered work go untracked.** If you notice something that needs doing
-but you're in the middle of another task, create the ticket immediately with a
-description of what you noticed and why it matters. You can flesh it out later.
+Keep discovered work traceable and route follow-ups to the appropriate owner.
 
 ## Review Process
 

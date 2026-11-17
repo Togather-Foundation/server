@@ -1,10 +1,40 @@
+<!-- AGENT:NAV
+purpose:~validation;logger;server;pyshacl;ttl;log;shacl;event
+lines:552
+nav[23]{s,n,name,about}:
+30,523,#Development Guide,~validation;logger;server;pyshacl;ttl
+39,75,##Building the Server,~server;env;build;log;api>Binary Location;Build Commands;Version Information;Configuration Loading
+114,201,##Logging Standards,~logger;log;error;request;string
+123,12,###Configuration,~log;console;format;info;json
+135,9,###Request Correlation IDs,~request;correlation;header;automatically;balancer
+144,33,###Logging in Handlers,~logger;service;zerolog;myhandler;handlers
+177,24,###Logging Levels,~err;logger;msg;error;messages
+201,18,###Structured Fields,~occurrences;event;eventid;fields;info
+219,20,###Standard Field Names,~string;http;duration;field;request
+239,14,###Error Logging,~error;errors;logged;automatically;level
+253,25,###Background Jobs,~logger;job;slog;nil;river
+278,20,###PII and Sensitive Data,~username;admin;api;bootstrap;email
+298,6,###Performance Considerations,~logging;arrays;avoid;cases;consider
+304,11,###Testing,~logger;testing;tests;code;disabled
+315,226,##SHACL Validation and Turtle Serialization,~validation;ttl;pyshacl;shacl;shapes
+321,38,###Setup,~validation;pyshacl;install;bash;uvx
+359,14,###How It Works,~ttl;turtle;pyshacl;shape;shapes
+373,60,###Important Implementation Details,~ttl;pyshacl;properties;shapes;xsd>uvx vs Direct pyshacl Execution;pyshacl Multi-Shape File Limitation;Turtle Serialization Requires Datatypes
+433,35,###Testing SHACL Validation,~test;event;tmp;ttl;bash
+468,32,###Fail-Open Philosophy,~validation;shacl;production;application;enabled
+500,14,###Performance Considerations,~validation;enable;event;file;overhead
+514,27,###Adding New Shapes,~schema;shapes;add;new;org
+541,12,##References,~https;org;rfc;www;architecture
+-->
+
 # Development Guide
 
 This document provides guidelines and best practices for developing the Togather SEL backend server.
 
-For agent task handoffs, native kanban review and quiet verdict waiting, see
+For task handoffs, review and quiet verdict waiting, see
 [review handoff and waiting](../integration/kanban-review.md) and the repository
-[agent instructions](../../AGENTS.md). Live `kanban_help` defines the tool contract.
+[agent instructions](../../AGENTS.md). Use your configured tracker and review tools;
+Hermes integration is optional.
 
 ## Building the Server
 

@@ -1,10 +1,23 @@
+<!-- AGENT:NAV
+purpose:~source;rows;run;repair;backup;cleanup;separate;identity
+lines:174
+nav[6]{s,n,name,about}:
+13,162,#Source cleanup retrospective,~source;rows;run;repair;backup
+22,49,##Outcome and confidence,~rows;attributions;identity;source;183
+71,35,##What worked and should be repeated,~rows;source;repair;review;event
+106,22,##What I would do differently,~run;source;backup;fallback;image
+128,21,##Remaining review concerns,~follow;attribution;cleanup;label;old
+149,26,##Procedure to reuse,~run;verify;audit;backup;binary
+-->
+
 # Source cleanup retrospective
 
 Recorded 2026-11-12 UTC after completion of `t_eafc6fae`. The
 [repair evidence](source-feed-reconciliation-t_eafc6fae.md) is the authoritative
 measurement record, including SQL, source UUIDs, backup checksum and validation.
 This retrospective explains the decisions and improvements; implementation work
-continues to be tracked on the shared `togather` board.
+was tracked on the operator’s `togather` board; that personal setup is not a
+project requirement.
 
 ## Outcome and confidence
 
