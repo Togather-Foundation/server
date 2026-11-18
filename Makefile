@@ -174,6 +174,7 @@ test-unit-coverage:
 
 # Hermetic operational regression checks: fake Docker/HTTP/load clients, no live DB.
 test-tooling:
+	@$(RUN) bash deploy/testing/deploy-verification-behavior-test.sh
 	@$(RUN) bash deploy/testing/deploy-rollback-behavior-test.sh
 	@$(RUN) bash deploy/testing/deploy-preflight-behavior-test.sh
 	@$(RUN) bash deploy/testing/deploy-snapshot-behavior-test.sh

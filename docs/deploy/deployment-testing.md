@@ -27,12 +27,61 @@ scripts/agent-run.sh make test-ci-race
 # 3. Deploy the exact commit (auto-loads .deploy.conf if available)
 scripts/agent-run.sh ./deploy/scripts/deploy.sh staging --version HEAD
 
-# 4. Run post-deploy smoke and read-only performance checks
-scripts/agent-run.sh ./deploy/scripts/test-remote.sh staging all
-scripts/agent-run.sh scripts/remote.sh staging source audit --json
+# 4. Verify the deployed commit and save its evidence report
+./deploy/scripts/verify-deployment.sh staging \
+  --expected-commit "$(git rev-parse HEAD)" > /tmp/staging-verification.json
 ```
 
 See `docs/deploy/deploy-conf.md` for complete .deploy.conf documentation.
+
+Run the full CI and race gates sequentially. The integration suites currently
+reuse database containers, so simultaneous gate processes can reset each other's
+fixtures (`t_7af2cb9b`).
+
+### One-command deployment verification
+
+`verify-deployment.sh` reads the host, user and domain from
+`.deploy.conf.<environment>`. It emits one JSON report on stdout and a short
+summary on stderr. A failed required check produces a nonzero exit status;
+inspect the report rather than treating successful command execution as proof
+that all evidence was present.
+
+Run it with Bash, Python 3, curl and SSH available locally, and Python 3 plus the
+existing deployment tools available on the host. The smoke suite also uses jq.
+
+The report checks the expected full commit and slot against HTTPS, the active
+container, deployment state and history. It also checks container health, the
+stopped fallback and its image, the released deployment lock, clean migrations,
+the deployment's backup evidence and checksum, source-sync evidence and source
+audit, the existing smoke suite, and rollback-preview readiness. It compares
+deployment-state hashes around the preview and rechecks identity at the end.
+
+This requires a recorded blue/green deployment with a retained previous version,
+its normal pre-deploy backup, and the current deployment's sync log. Missing
+evidence fails verification; the command does not resync sources or manufacture
+a replacement backup. It uses `ADMIN_API_KEY` or `TOGATHER_ADMIN_API_KEY` for the
+optional admin probe, falling back to `.agent-keys/<environment>` when available.
+No credential values are included in the report.
+
+Light read-only load testing is opt-in on staging:
+
+```bash
+./deploy/scripts/verify-deployment.sh staging \
+  --expected-commit <deployed-full-commit-sha> --load-test \
+  > /tmp/staging-verification.json
+```
+
+Production load testing is refused. Optional checks appear as explicit skips
+when not requested or when their required optional credential is absent. The
+verifier performs no actual rollback, database restore, fixture ingestion or
+destructive cleanup. Rollback preview can write a deployment log; it must not
+change deployment state or containers. Backup verification confirms the recorded
+full archive-read result and current size/checksum, not a restore rehearsal.
+
+Use the reviewed **deployed application commit** as `--expected-commit` when
+checking an existing rollout. A later tooling-only commit does not require an
+application rebuild or deployment. Keep the report with the kanban deployment
+handoff; the verifier does not post it automatically.
 
 Before building, check host disk/inode capacity and confirm the active image can
 run `source preflight`. For an older image or Compose credential-interpolation
@@ -505,9 +554,11 @@ fixtures or mutate the target database.
 
 - [ ] **Deployment lock is released**
   ```bash
-  ssh deploy@<server> 'test -f /tmp/togather-deploy.lock && echo "LOCKED" || echo "OK"'
-  # Should output "OK" (no lock file)
+  ssh deploy@<server> 'test -e /tmp/togather-deploy-staging.lock && echo "LOCKED" || echo "OK"'
+  # Should output "OK" (no lock directory); use the matching environment suffix.
   ```
+  Also require `.lock.locked` to be false in deployment state. The verifier
+  checks both forms of lock evidence at the beginning and end of its run.
 
 ### Version Information
 
