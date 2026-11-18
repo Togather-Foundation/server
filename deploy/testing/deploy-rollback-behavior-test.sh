@@ -221,3 +221,56 @@ cmp -s "$state" "$fixture/competing-state" || fail 'replaced container check cha
 diff -r --no-dereference "$fixture/before-history" "$history/staging" || fail 'replaced container check changed history'
 [[ ! -s "$fixture/events" ]] || fail 'rollback started the replaced container or changed traffic'
 echo 'PASS: rollback rechecks the inactive container image under lock'
+
+# Run the public Make recipes with their default shell and capture both SSH
+# arguments. Config files and the Makefile all live in the same fixture checkout.
+cp "${MAKEFILE_UNDER_TEST:-$root/Makefile}" "$project/Makefile"
+cat > "$fixture/bin/ssh" <<'SSH'
+#!/usr/bin/env bash
+set -eu
+printf '%s\n' "$#" "$@" >> "$FIXTURE/events"
+exit "$SSH_STATUS"
+SSH
+chmod +x "$fixture/bin/ssh"
+run_make() {
+    : > "$fixture/events"
+    env -i PATH="$fixture/bin:/usr/bin:/bin" HOME="$fixture/home" FIXTURE="$fixture" \
+        SSH_STATUS="${ssh_status:-0}" make --no-print-directory -C "$project" "$@" \
+        > "$fixture/out" 2>&1
+}
+for env in staging production; do
+    target="rollback-$env"
+    conf="$project/.deploy.conf.$env"
+    remote_command="cd /opt/togather/src && ./deploy/scripts/deploy.sh rollback $env"
+    if run_make "$target" </dev/null; then fail "$target accepted missing config"; fi
+    grep -Fq ".deploy.conf.$env not found" "$fixture/out" || fail "$target omitted missing config"
+    [[ ! -s "$fixture/events" ]] || fail "$target used SSH without config"
+
+    printf 'SSH_USER=%s-user\nSSH_HOST=%s.fixture.invalid\nNODE_DOMAIN=node-%s.fixture.invalid\n' \
+        "$env" "$env" "$env" > "$conf"
+    run_make -n "$target" EXTRA_ARGS=--dry-run || fail "$target Make dry run failed"
+    grep -Fq "$remote_command --dry-run" "$fixture/out" || fail "$target preview has wrong remote command"
+    [[ ! -s "$fixture/events" ]] || fail "$target preview ran SSH"
+
+    for extra in '' --dry-run; do
+        args=("$target")
+        [[ -z "$extra" ]] || args+=("EXTRA_ARGS=$extra")
+        run_make "${args[@]}" <<< y || fail "$target failed with $extra"
+        expected=$(printf '%s\n' 2 "$env-user@$env.fixture.invalid" "$remote_command${extra:+ $extra}")
+        [[ "$(cat "$fixture/events")" == "$expected" ]] || fail "$target dispatched incorrectly with $extra"
+        if [[ "$env" == production ]]; then
+            grep -Fq 'node-production.fixture.invalid' "$fixture/out" || fail 'production confirmation omitted configured domain'
+        fi
+    done
+
+    ssh_status=42
+    if run_make "$target" <<< y; then fail "$target suppressed SSH failure"; fi
+    [[ -s "$fixture/events" ]] || fail "$target failed before SSH"
+    unset ssh_status
+    echo "PASS: $target selects its configured SSH host, runs the checkout script, forwards --dry-run and propagates SSH failure"
+done
+run_make rollback-production <<< n || fail 'production decline failed'
+[[ ! -s "$fixture/events" ]] || fail 'declining production dispatched SSH'
+run_make rollback-production </dev/null || fail 'noninteractive production decline failed'
+[[ ! -s "$fixture/events" ]] || fail 'production dispatched SSH without confirmation'
+echo 'PASS: declining or omitting production confirmation leaves SSH idle'

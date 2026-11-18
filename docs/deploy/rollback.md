@@ -4,6 +4,21 @@ Use this when a deployment fails or health checks stay unhealthy.
 
 ## Quick Reference
 
+From your local checkout, use the Make targets to run rollback over SSH.
+
+```bash
+make rollback-staging EXTRA_ARGS=--dry-run
+make rollback-staging
+make rollback-production EXTRA_ARGS=--dry-run
+make rollback-production
+```
+
+Staging keeps its deployment state in `/opt/togather/src`. The production target
+expects the same checkout layout on the provisioned host and prompts for `y` or
+`Y` followed by Enter, including for a preview.
+
+From the deployment host, run the script in the checkout that holds the state.
+
 ```bash
 deploy/scripts/deploy.sh rollback <environment> --dry-run   # show the plan
 deploy/scripts/deploy.sh rollback <environment>             # do the rollback

@@ -440,19 +440,20 @@ ssh deploy@server 'sudo journalctl -u caddy -n 100'
 
 ## Rollback
 
-Manual rollback to previous slot:
+Preview or restore the previous slot from your local checkout.
 
 ```bash
-# Check current active slot
-curl -I https://staging.toronto.togather.foundation/health | grep slot
-
-# Edit Caddyfile to switch back
-ssh deploy@server 'sudo nano /etc/caddy/Caddyfile'
-# Change: reverse_proxy localhost:8082 → localhost:8081
-
-# Reload Caddy
-ssh deploy@server 'sudo systemctl reload caddy'
+make rollback-staging EXTRA_ARGS=--dry-run
+make rollback-staging
 ```
+
+The target reads `SSH_HOST` and `SSH_USER` from `.deploy.conf.staging` and runs
+`./deploy/scripts/deploy.sh rollback staging` over SSH in `/opt/togather/src`.
+That checkout contains staging's `deploy/config/deployment-state.json` and must
+include the rollback subcommand. A production host provisioned with the same
+layout uses `make rollback-production` and `.deploy.conf.production`.
+
+See the [Rollback Guide](rollback.md) for verification and recovery steps.
 
 Automated rollback is handled by `deploy.sh` when health checks fail.
 

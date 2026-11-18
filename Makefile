@@ -1503,7 +1503,7 @@ rollback-staging:
 	@SSH_HOST=$$(grep '^SSH_HOST=' .deploy.conf.staging | cut -d= -f2); \
 	SSH_USER=$$(grep '^SSH_USER=' .deploy.conf.staging | cut -d= -f2); \
 	echo "Rolling back staging ($${SSH_USER}@$${SSH_HOST})..."; \
-	ssh "$${SSH_USER}@$${SSH_HOST}" "cd /opt/togather && server deploy rollback staging"
+	ssh "$${SSH_USER}@$${SSH_HOST}" "cd /opt/togather/src && ./deploy/scripts/deploy.sh rollback staging$(if $(EXTRA_ARGS), $(EXTRA_ARGS))"
 
 # Rollback production to the previous deployment.
 rollback-production:
@@ -1517,13 +1517,15 @@ rollback-production:
 	echo ""; \
 	echo "⚠️  Production rollback on $${NODE_DOMAIN}"; \
 	echo ""; \
-	read -p "Rollback PRODUCTION? [y/N] " -n 1 -r REPLY; echo ""; \
-	if [ ! "$$REPLY" = "y" ] && [ ! "$$REPLY" = "Y" ]; then \
+	printf '%s' 'Rollback PRODUCTION? [y/N] '; \
+	IFS= read -r REPLY || REPLY=; \
+	printf '\n'; \
+	if [ "$$REPLY" != "y" ] && [ "$$REPLY" != "Y" ]; then \
 		echo "Aborted."; \
 		exit 0; \
 	fi; \
 	echo "Rolling back production ($${SSH_USER}@$${SSH_HOST})..."; \
-	ssh "$${SSH_USER}@$${SSH_HOST}" "cd /opt/togather && server deploy rollback production"
+	ssh "$${SSH_USER}@$${SSH_HOST}" "cd /opt/togather/src && ./deploy/scripts/deploy.sh rollback production$(if $(EXTRA_ARGS), $(EXTRA_ARGS))"
 
 # Scrape all enabled sources to staging.
 # Sources .deploy.conf.staging for NODE_DOMAIN and PERF_AGENT_API_KEY.
