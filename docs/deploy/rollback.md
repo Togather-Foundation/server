@@ -29,10 +29,19 @@ only when you want the state file moved and nothing else.
    ```bash
    deploy/scripts/deploy.sh rollback <environment> --dry-run
    ```
+   The plan shows the HTTPS `/version` URL used to verify traffic after the switch.
+   Rollback loads `NODE_DOMAIN` from the repository's `.deploy.conf.<environment>`.
+   If the file is missing, rollback logs a warning and keeps the current `NODE_DOMAIN`.
+   When `NODE_DOMAIN` is unset or empty, the URL defaults to
+   `https://<environment>.toronto.togather.foundation/version`.
 2. Roll back:
    ```bash
    deploy/scripts/deploy.sh rollback <environment>
    ```
+   If deployment state changed during preflight, rollback stops. Preview the
+   updated plan before retrying. Rollback rechecks the target image and container
+   under the deployment lock because a failed deploy can change either one
+   before recording deployment state.
 3. Verify health:
    ```bash
    server healthcheck --slot blue --format json

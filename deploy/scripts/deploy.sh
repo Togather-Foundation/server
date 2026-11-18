@@ -2302,6 +2302,39 @@ rollback_check_container() {
     return 0
 }
 
+# rollback_preflight - Verify that the recorded image is ready to start.
+# Args: $1 - environment
+rollback_preflight() {
+    local env="$1"
+    local image_rc=0
+    rollback_check_image || image_rc=$?
+    case "${image_rc}" in
+        0)
+            ;;
+        1)
+            rollback_rebuild_hint "${env}"
+            return 1
+            ;;
+        *)
+            log "ERROR" "Cannot verify image ${ROLLBACK_IMAGE}: docker did not answer"
+            log "ERROR" "  ${ROLLBACK_IMAGE_ERROR:-no output from docker image inspect}"
+            log "ERROR" "Refusing to roll back without a fallback image check."
+            return 1
+            ;;
+    esac
+
+    rollback_check_container "${ROLLBACK_SLOT}"
+    if [[ "${ROLLBACK_CONTAINER_STATE}" != "absent" && "${ROLLBACK_CONTAINER_MATCH}" != "yes" ]]; then
+        log "ERROR" "Container ${ROLLBACK_CONTAINER} exists but was created from ${ROLLBACK_CONTAINER_IMAGE:-an unknown image}, not ${ROLLBACK_IMAGE}."
+        log "ERROR" "Starting it would serve a different build than the one this rollback reports."
+        log "ERROR" "Recreate it on the recorded image, then run the rollback again:"
+        log "ERROR" "  docker rm -f ${ROLLBACK_CONTAINER}"
+        log "ERROR" "  ./deploy/scripts/deploy.sh rollback ${env}"
+        return 1
+    fi
+    return 0
+}
+
 # rollback_detect_compose - Set COMPOSE_CMD the way validate_tool_versions does.
 # Only the recreate path needs it. validate_tool_versions is deliberately not
 # used here: it also demands migrate/psql/jq, and refusing a rollback mid
@@ -2439,6 +2472,7 @@ rollback_print_plan() {
     log "INFO" "  start:         docker start togather-server-${ROLLBACK_SLOT} (compose up -d if absent)"
     log "INFO" "  health:        ${ROLLBACK_HEALTH_URL} via deploy/scripts/wait-for-health.sh --slot ${ROLLBACK_SLOT}"
     log "INFO" "  caddy:         currently $(rollback_caddy_target) -> would point at localhost:${ROLLBACK_PORT}"
+    log "INFO" "  verify:        https://${NODE_DOMAIN:-${env}.toronto.togather.foundation}/version"
     log "INFO" "  state:         active_slot -> ${ROLLBACK_SLOT}, rollback appended to history"
     log "INFO" "  retire:        docker stop togather-server-${ROLLBACK_ACTIVE_SLOT} after the switch"
 
@@ -2466,9 +2500,9 @@ rollback_print_plan() {
 
 # main_rollback - One command that puts the retired slot back in service
 # Args: ENVIRONMENT [--dry-run]
-# Steps: resolve target -> preflight image -> (dry run stops) -> lock ->
-#        start container -> wait for health -> switch traffic -> flip state ->
-#        stop the outgoing slot
+# Steps: resolve target -> (dry run prints plan) -> preflight -> lock ->
+#        recheck state and preflight -> start container -> wait for health ->
+#        switch traffic -> flip state -> stop the outgoing slot
 main_rollback() {
     local environment=""
     local dry_run=false
@@ -2519,6 +2553,15 @@ main_rollback() {
     init_logging "${environment}"
     log "INFO" "Rollback requested for ${environment} by ${DEPLOYED_BY}"
 
+    local deploy_conf="${PROJECT_ROOT}/.deploy.conf.${environment}"
+    if [[ -f "${deploy_conf}" ]]; then
+        # shellcheck disable=SC1090
+        source "${deploy_conf}"
+        export NODE_DOMAIN
+    else
+        log "WARN" "Deployment configuration not found at ${deploy_conf}"
+    fi
+
     if [[ ! -f "${STATE_FILE}" ]]; then
         log "ERROR" "Deployment state file not found: ${STATE_FILE}"
         log "ERROR" "Cannot tell which slot is live, so there is nothing safe to roll back to."
@@ -2526,8 +2569,15 @@ main_rollback() {
     fi
     validate_state_file "${STATE_FILE}" || exit 1
 
+    # Record the state that preflight is based on, excluding lock metadata.
+    local state_before_lock
+    if ! state_before_lock=$(jq -cSe 'del(.lock)' "${STATE_FILE}"); then
+        log "ERROR" "Cannot read deployment state from ${STATE_FILE}"
+        exit 1
+    fi
+
     local state_env
-    state_env=$(jq -r '.environment // empty' "${STATE_FILE}" 2>/dev/null || echo "")
+    state_env=$(jq -r '.environment // empty' <<< "${state_before_lock}")
     if [[ "${state_env}" != "${environment}" ]]; then
         log "ERROR" "Environment mismatch: requested ${environment}, ${STATE_FILE} says '${state_env}'"
         exit 1
@@ -2543,39 +2593,8 @@ main_rollback() {
         exit 0
     fi
 
-    # Preflight before anything is changed: a rollback to a slot whose image is
-    # gone would restore a container on the wrong build.
-    local image_rc=0
-    rollback_check_image || image_rc=$?
-    case "${image_rc}" in
-        0)
-            log "SUCCESS" "Preflight passed: ${ROLLBACK_IMAGE} present, target ${ROLLBACK_SLOT} at ${ROLLBACK_VERSION}"
-            ;;
-        1)
-            rollback_rebuild_hint "${environment}"
-            exit 1
-            ;;
-        *)
-            log "ERROR" "Cannot verify image ${ROLLBACK_IMAGE}: docker did not answer"
-            log "ERROR" "  ${ROLLBACK_IMAGE_ERROR:-no output from docker image inspect}"
-            log "ERROR" "Refusing to roll back without a fallback image check."
-            exit 1
-            ;;
-    esac
-
-    # Container preflight: the image tag existing does not prove the target
-    # slot's container was created from it. A deploy that died between the
-    # recreate and the state write leaves a container on another build, and
-    # starting it would serve that build under the recorded version.
-    rollback_check_container "${ROLLBACK_SLOT}"
-    if [[ "${ROLLBACK_CONTAINER_STATE}" != "absent" && "${ROLLBACK_CONTAINER_MATCH}" != "yes" ]]; then
-        log "ERROR" "Container ${ROLLBACK_CONTAINER} exists but was created from ${ROLLBACK_CONTAINER_IMAGE:-an unknown image}, not ${ROLLBACK_IMAGE}."
-        log "ERROR" "Starting it would serve a different build than the one this rollback reports."
-        log "ERROR" "Recreate it on the recorded image, then run the rollback again:"
-        log "ERROR" "  docker rm -f ${ROLLBACK_CONTAINER}"
-        log "ERROR" "  ./deploy/scripts/deploy.sh rollback ${environment}"
-        exit 1
-    fi
+    # Refuse an unusable fallback before acquiring the lock.
+    rollback_preflight "${environment}" || exit 1
 
     # Take the deployment lock from here on, so a forward deploy cannot race the
     # restart and the traffic switch. acquire_lock also handles a stale lock
@@ -2585,6 +2604,21 @@ main_rollback() {
         log "ERROR" "A deploy is in progress, or a lock is stuck. See docs/deploy/lock-management.md"
         exit 1
     }
+
+    local state_after_lock
+    if ! state_after_lock=$(jq -cSe 'del(.lock)' "${STATE_FILE}"); then
+        log "ERROR" "Cannot recheck deployment state from ${STATE_FILE} after acquiring the lock"
+        exit 1
+    fi
+    if [[ "${state_before_lock}" != "${state_after_lock}" ]]; then
+        log "ERROR" "Deployment state changed during rollback preflight. Preview the rollback plan again before retrying."
+        exit 1
+    fi
+
+    # A failed deployment can change images or containers without recording
+    # a state change. Refresh both checks while holding the lock.
+    rollback_preflight "${environment}" || exit 1
+    log "SUCCESS" "Preflight passed: ${ROLLBACK_IMAGE} present, target ${ROLLBACK_SLOT} at ${ROLLBACK_VERSION}"
 
     # Label this run as a rollback in state and history, and keep the lock block
     # pointing at the id that will appear there.

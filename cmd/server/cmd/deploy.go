@@ -431,8 +431,8 @@ func rollbackDeployment(env string) error {
 		fmt.Println()
 		fmt.Println("Next steps:")
 		fmt.Printf("  1. State now says %s is active, but traffic was not moved.\n", result.NewActiveSlot)
-		fmt.Println("     Confirm Caddy points where you expect, or run:")
-		fmt.Printf("     ./deploy/scripts/deploy.sh rollback %s\n", env)
+		fmt.Println("     Reconcile Caddy with the recorded active slot before resuming traffic.")
+		fmt.Println("     Running operational rollback now would target the opposite deployment.")
 		fmt.Println("  2. Verify the application is working correctly")
 		fmt.Println("  3. Monitor logs for errors")
 		if rollbackTarget.SnapshotPath != "" {
