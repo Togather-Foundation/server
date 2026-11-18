@@ -826,54 +826,55 @@ test_admin_auth() {
     ((TESTS_RUN++)) || true
     log "INFO" "Test 20/${TESTS_TOTAL}: Admin auth smoke test (${env}) - POST ${base_url}/api/v1/auth/token"
 
+    # Ignore curl configuration and keep credential-bearing output private.
     local exchange_response
-    exchange_response=$(curl -s -w "\n%{http_code}" \
+    if ! exchange_response=$(curl -q -s -w "\n%{http_code}" --max-time "$TIMEOUT" \
+        -X POST \
         -H "Authorization: Bearer ${api_key}" \
         -H "Accept: application/json" \
-        "${base_url}/api/v1/auth/token")
+        "${base_url}/api/v1/auth/token" 2>/dev/null); then
+        log "FAIL" "Token exchange request failed"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
 
-    local exchange_http_code
-    exchange_http_code=$(echo "$exchange_response" | tail -1)
-    local exchange_body
-    exchange_body=$(echo "$exchange_response" | sed '$d')
+    local exchange_http_code="${exchange_response##*$'\n'}"
 
     if [ "$exchange_http_code" != "200" ]; then
+        [[ "$exchange_http_code" =~ ^[0-9]{3}$ ]] || exchange_http_code=unknown
         log "FAIL" "Token exchange failed: HTTP ${exchange_http_code}"
-        log "ERROR" "  Response: ${exchange_body}"
         ((TESTS_FAILED++)) || true
         return 1
     fi
 
     local admin_token
-    admin_token=$(echo "$exchange_body" | jq -r '.token' 2>/dev/null || true)
-    if [ -z "$admin_token" ] || [ "$admin_token" = "null" ]; then
-        log "FAIL" "Token exchange response missing 'token' field"
-        log "ERROR" "  Response: ${exchange_body}"
+    if ! admin_token=$(jq -ers 'select(length == 1) | .[0].token | strings | select(length > 0 and (test("[[:space:][:cntrl:]]") | not))' \
+        <<< "${exchange_response%$'\n'*}" 2>/dev/null); then
+        log "FAIL" "Token exchange response missing a usable token"
         ((TESTS_FAILED++)) || true
         return 1
     fi
     log "SUCCESS" "Token exchange (200 OK, token received)"
 
-    local stats_response
-    stats_response=$(curl -s -w "\n%{http_code}" \
+    local stats_http_code
+    if ! stats_http_code=$(curl -q -s -o /dev/null -w "%{http_code}" --max-time "$TIMEOUT" \
         -H "Authorization: Bearer ${admin_token}" \
         -H "Accept: application/json" \
-        "${base_url}/api/v1/admin/stats")
-
-    local stats_http_code
-    stats_http_code=$(echo "$stats_response" | tail -1)
-
-    if [ "$stats_http_code" = "200" ]; then
-        log "SUCCESS" "Admin stats endpoint (200 OK with JWT from STS exchange)"
-    else
-        local stats_body
-        stats_body=$(echo "$stats_response" | sed '$d')
-        log "FAIL" "Admin stats endpoint: HTTP ${stats_http_code}"
-        log "ERROR" "  Response: ${stats_body}"
+        "${base_url}/api/v1/admin/stats" 2>/dev/null); then
+        log "FAIL" "Admin stats request failed"
         ((TESTS_FAILED++)) || true
         return 1
     fi
 
+    if [ "$stats_http_code" != "200" ]; then
+        [[ "$stats_http_code" =~ ^[0-9]{3}$ ]] || stats_http_code=unknown
+        log "FAIL" "Admin stats endpoint: HTTP ${stats_http_code}"
+        ((TESTS_FAILED++)) || true
+        return 1
+    fi
+
+    log "SUCCESS" "Admin stats endpoint (200 OK with JWT from STS exchange)"
+    ((TESTS_PASSED++)) || true
     return 0
 }
 
