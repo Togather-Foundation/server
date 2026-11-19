@@ -2069,21 +2069,23 @@ paths:
     post:
       operationId: login
       summary: Admin login
-      description: Authenticate admin user and receive JWT token
+      description: |
+        Authenticate a user with the `admin` role and receive a JWT token and
+        `auth_token` HttpOnly cookie. Valid credentials for any other role receive
+        `403` without issuing a token or cookie. Invalid credentials receive `401`.
       tags: [Admin]
       x-internal: true
       requestBody:
-        description: Admin credentials (email and password) for authentication
+        description: Admin credentials (username and password) for authentication
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required: [username, password]
               properties:
-                email:
+                username:
                   type: string
-                  format: email
                 password:
                   type: string
                   format: password
@@ -2102,6 +2104,8 @@ paths:
                     format: date-time
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /api/v1/auth/token:
     post:
@@ -3475,7 +3479,9 @@ paths:
         Server-Sent Events stream of River job lifecycle events for scraper jobs.
         Clients receive events when scrape_source jobs complete, fail, or are cancelled.
         Maintains a keepalive comment every 15 seconds to prevent proxy timeouts.
-        Protected by admin cookie auth (same-origin EventSource sends cookies automatically).
+        Requires a valid `auth_token` cookie with the `admin` role (same-origin
+        EventSource sends cookies automatically). Valid non-admin cookies receive
+        `403`; missing or invalid cookies receive `401`, without a login redirect.
       tags: [Admin]
       x-internal: true
       security:
@@ -3496,6 +3502,8 @@ paths:
                   A `retry: 5000` directive is sent on connection.
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           description: Streaming not supported
 
@@ -4861,7 +4869,7 @@ components:
       type: apiKey
       in: cookie
       name: auth_token
-      description: Admin JWT token in HttpOnly cookie (used by same-origin SSE endpoints)
+      description: JWT with the admin role in an HttpOnly cookie (used by admin HTML pages and same-origin SSE endpoints)
     devCookie:
       type: apiKey
       in: cookie

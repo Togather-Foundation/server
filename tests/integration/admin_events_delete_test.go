@@ -91,11 +91,7 @@ func TestAdminDeleteEventSuccess(t *testing.T) {
 func TestAdminDeleteEventUnauthorized(t *testing.T) {
 	env := setupTestEnv(t)
 
-	username := "viewer"
-	password := "viewer-password-123"
-	email := "viewer@example.com"
-	insertAdminUser(t, env, username, password, email, "viewer")
-	viewerToken := adminLogin(t, env, username, password)
+	viewerToken := signedAdminRoleToken(t, env, "viewer", "viewer")
 
 	deleteReq, err := http.NewRequest(http.MethodDelete, env.Server.URL+"/api/v1/admin/events/01234567890123456789012345", nil)
 	require.NoError(t, err)

@@ -74,6 +74,34 @@ func TestAdminLoginSuccess(t *testing.T) {
 	require.NotEmpty(t, authCookie.Value, "expected cookie value")
 }
 
+func TestAdminLoginRejectsNonAdminRoles(t *testing.T) {
+	env := setupTestEnv(t)
+	for _, role := range []string{"viewer", "editor"} {
+		t.Run(role, func(t *testing.T) {
+			password := "non-admin-password-123"
+			insertAdminUser(t, env, role, password, role+"@example.com", role)
+			body, err := json.Marshal(map[string]string{"username": role, "password": password})
+			require.NoError(t, err)
+			req, err := http.NewRequest(http.MethodPost, env.Server.URL+"/api/v1/admin/login", bytes.NewReader(body))
+			require.NoError(t, err)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := env.Server.Client().Do(req)
+			require.NoError(t, err)
+			defer func() { _ = resp.Body.Close() }()
+			require.Equal(t, http.StatusForbidden, resp.StatusCode)
+			require.True(t, strings.HasPrefix(resp.Header.Get("Content-Type"), "application/problem+json"))
+			require.Empty(t, resp.Header.Get("Authorization"))
+			for _, cookie := range resp.Cookies() {
+				require.NotEqual(t, "auth_token", cookie.Name, "non-admin login must not issue a session cookie")
+			}
+			var response map[string]any
+			require.NoError(t, json.NewDecoder(resp.Body).Decode(&response))
+			require.NotContains(t, response, "token")
+			require.Equal(t, float64(http.StatusForbidden), response["status"])
+		})
+	}
+}
+
 // TestAdminLoginInvalidCredentials tests login with wrong password
 func TestAdminLoginInvalidCredentials(t *testing.T) {
 	env := setupTestEnv(t)
@@ -304,13 +332,9 @@ func TestAdminJWTMalformed(t *testing.T) {
 func TestAdminInsufficientRole(t *testing.T) {
 	env := setupTestEnv(t)
 
-	// Insert viewer user (not admin)
-	username := "viewer"
-	password := "viewer-password-123"
-	email := "viewer@example.com"
-	insertAdminUser(t, env, username, password, email, "viewer")
-
-	token := adminLogin(t, env, username, password)
+	// Admin login refuses non-admin roles. Sign a viewer token directly to
+	// continue exercising the Bearer guard against pre-existing sessions.
+	token := signedAdminRoleToken(t, env, "viewer", "viewer")
 
 	// Try to access admin endpoint with viewer role
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/admin/events/pending", nil)

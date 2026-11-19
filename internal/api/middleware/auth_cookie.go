@@ -67,6 +67,11 @@ func AdminAuthCookie(manager *auth.JWTManager, redirectURL string) func(http.Han
 				return
 			}
 
+			if claims.Role != "admin" {
+				problem.Write(w, r, http.StatusForbidden, "https://sel.events/problems/forbidden", "Insufficient permissions", problem.ErrForbidden, "")
+				return
+			}
+
 			ctx := r.Context()
 			ctx = contextWithAdminClaims(ctx, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))

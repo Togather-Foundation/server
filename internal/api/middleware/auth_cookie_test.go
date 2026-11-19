@@ -1,14 +1,53 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/auth"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAdminAuthCookieRequiresAdminRole(t *testing.T) {
+	manager := auth.NewJWTManager("secret", time.Hour, "test")
+	for _, role := range []string{"admin", "viewer", "editor", "agent", "unknown", ""} {
+		for _, redirect := range []string{"", "/admin/login"} {
+			t.Run(role+"/"+redirect, func(t *testing.T) {
+				token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, auth.Claims{
+					Role:             role,
+					RegisteredClaims: jwt.RegisteredClaims{Subject: "user", ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour))},
+				}).SignedString([]byte("secret"))
+				require.NoError(t, err)
+				called := false
+				h := AdminAuthCookie(manager, redirect)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					called = true
+					require.Equal(t, role, AdminClaims(r).Role)
+					w.WriteHeader(http.StatusNoContent)
+				}))
+				req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
+				req.AddCookie(&http.Cookie{Name: AdminAuthCookieName, Value: token})
+				res := httptest.NewRecorder()
+				h.ServeHTTP(res, req)
+				if role == "admin" {
+					require.True(t, called)
+					require.Equal(t, http.StatusNoContent, res.Code)
+					return
+				}
+				require.False(t, called)
+				require.Equal(t, http.StatusForbidden, res.Code)
+				require.Empty(t, res.Header().Get("Location"))
+				require.Equal(t, "application/problem+json", res.Header().Get("Content-Type"))
+				var body map[string]any
+				require.NoError(t, json.Unmarshal(res.Body.Bytes(), &body))
+				require.Equal(t, float64(http.StatusForbidden), body["status"])
+			})
+		}
+	}
+}
 
 func TestAdminAuthCookieRejectsBearerHeader(t *testing.T) {
 	manager := auth.NewJWTManager("secret", time.Hour, "test")

@@ -148,11 +148,7 @@ func TestAdminUpdateEventPublishDraft(t *testing.T) {
 func TestAdminUpdateEventUnauthorized(t *testing.T) {
 	env := setupTestEnv(t)
 
-	username := "viewer"
-	password := "viewer-password-123"
-	email := "viewer@example.com"
-	insertAdminUser(t, env, username, password, email, "viewer")
-	viewerToken := adminLogin(t, env, username, password)
+	viewerToken := signedAdminRoleToken(t, env, "viewer", "viewer")
 
 	updates := map[string]any{
 		"name": "Unauthorized Update",

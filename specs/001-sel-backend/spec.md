@@ -185,7 +185,7 @@ Peer SEL nodes and external consumers need to sync changes efficiently without p
 - **FR-025**: System MUST provide admin management for federation node registry
 - **FR-026**: System MUST authenticate admins via local credentials stored in the database and issue JWTs from `POST /api/v1/admin/login`
 - **FR-027**: System MUST bootstrap the first admin from environment variables and allow subsequent admin management via admin UI/API
-- **FR-028**: System MUST accept admin JWTs via `Authorization: Bearer` for API requests and via HttpOnly cookie for the admin HTML UI
+- **FR-028**: System MUST accept admin JWTs via `Authorization: Bearer` for API requests and via HttpOnly cookie for the admin HTML UI. Both transports MUST require the `admin` role, including cookie-authenticated scraper SSE. Admin login MUST issue tokens/cookies only for admin-role users; valid non-admin credentials or cookies MUST receive `403`. The login page MUST reject valid non-admin cookies without redirecting (t_58ef98dc).
 - **FR-029**: System MUST record both source-provided timestamps and server-received timestamps in provenance fields and in change feed entries
 - **FR-030**: System MUST support Schema.org Place properties: `name`, `address` (PostalAddress with `streetAddress`, `addressLocality`, `addressRegion`, `postalCode`, `addressCountry`), `geo` (GeoCoordinates with `latitude`, `longitude`), `telephone`, `url`, and `sameAs` for external identifiers
 - **FR-031**: System MUST support Schema.org Organization properties: `name`, `legalName`, `alternateName`, `description`, `email`, `telephone`, `url`, `address`, and `sameAs` for external identifiers

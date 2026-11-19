@@ -116,6 +116,17 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Admin sessions are issued only to administrators, after verifying credentials.
+	if user.Role != "admin" {
+		if h.AuditLogger != nil {
+			h.AuditLogger.LogFailure("admin.login", req.Username, extractClientIP(r), map[string]string{
+				"reason": "insufficient_permissions",
+			})
+		}
+		problem.Write(w, r, http.StatusForbidden, "https://sel.events/problems/forbidden", "Insufficient permissions", problem.ErrForbidden, h.Env)
+		return
+	}
+
 	// Generate JWT
 	userID, err := uuid.FromBytes(user.ID.Bytes[:])
 	if err != nil {
@@ -187,7 +198,11 @@ func (h *AdminAuthHandler) LoginPage(w http.ResponseWriter, r *http.Request) {
 
 	// If already authenticated, redirect to dashboard (or original target)
 	if cookie, err := r.Cookie("auth_token"); err == nil && cookie.Value != "" {
-		if _, err := h.JWTManager.Validate(cookie.Value); err == nil {
+		if claims, err := h.JWTManager.Validate(cookie.Value); err == nil {
+			if claims.Role != "admin" {
+				problem.Write(w, r, http.StatusForbidden, "https://sel.events/problems/forbidden", "Insufficient permissions", problem.ErrForbidden, h.Env)
+				return
+			}
 			target := validation.IsSafeRelativeRedirect(r.URL.Query().Get("redirect"), "/admin/dashboard")
 			http.Redirect(w, r, target, http.StatusFound)
 			return

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/api"
+	"github.com/Togather-Foundation/server/internal/auth"
 	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/developers"
 	"github.com/Togather-Foundation/server/internal/domain/ids"
@@ -264,6 +265,18 @@ func insertAdminUser(t *testing.T, env *testEnv, username, password, email, role
 		username, email, string(hashedPassword), role, true,
 	)
 	require.NoError(t, err, "failed to insert admin user")
+}
+
+// signedAdminRoleToken models a pre-existing session with the requested role.
+// Use it for authorization tests: admin login intentionally refuses non-admins.
+func signedAdminRoleToken(t *testing.T, env *testEnv, subject, role string) string {
+	t.Helper()
+	key, err := auth.DeriveAdminJWTKey([]byte(env.Config.Auth.JWTSecret))
+	require.NoError(t, err)
+	manager := auth.NewJWTManagerFromKey(key, env.Config.Auth.JWTExpiry, "sel.events")
+	token, err := manager.Generate(subject, role)
+	require.NoError(t, err)
+	return token
 }
 
 // adminLogin performs login and returns the JWT token

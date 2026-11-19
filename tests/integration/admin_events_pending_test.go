@@ -315,12 +315,7 @@ func TestAdminPendingListFilters(t *testing.T) {
 func TestAdminPendingListUnauthorized(t *testing.T) {
 	env := setupTestEnv(t)
 
-	// Insert viewer user (not admin)
-	username := "viewer"
-	password := "viewer-password-123"
-	email := "viewer@example.com"
-	insertAdminUser(t, env, username, password, email, "viewer")
-	viewerToken := adminLogin(t, env, username, password)
+	viewerToken := signedAdminRoleToken(t, env, "viewer", "viewer")
 
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/admin/events/pending", nil)
 	require.NoError(t, err)

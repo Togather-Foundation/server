@@ -316,7 +316,7 @@ README.md,122,test;agents;development;tests;agent;guide;race;architecture
 agent-tooling.md,98,codex;agents;repository;mcp;configuration;skills;configure;files
 architecture.md,1480,event;events;api;json;data;sel;artsdata;https
 development.md,552,validation;logger;server;pyshacl;ttl;log;shacl;event
-security.md,586,security;admin;rate;server;api;key;data;agent
+security.md,592,security;admin;rate;server;api;key;data;agent
 docs/contributors/meta/
 agent_workflows.md,211,code;commits;test;beads;docs;lines;tests;feb
 docs/deploy/
