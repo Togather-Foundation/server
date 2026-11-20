@@ -161,6 +161,26 @@ func TestLocationResolver_DoesNotShortenAStreetAddress(t *testing.T) {
 	}
 }
 
+func TestLocationResolver_DoesNotRetryStreetAsCity(t *testing.T) {
+	for _, street := range []string{"486 Bloor Street West", "Bloor Street West", "Bloor St. W"} {
+		t.Run(street, func(t *testing.T) {
+			geocoder := &queryGeocoder{byQuery: map[string]*GeocodeResult{
+				"Toronto, ON M5R 3P3, CA": {
+					Latitude: 43.6532, Longitude: -79.3832,
+					Address: AddressComponents{City: "Toronto", State: "Ontario"},
+				},
+			}}
+			raw := street + ", Toronto, ON M5R 3P3, CA"
+			if _, ok := NewLocationResolver(geocoder, "ca", zerolog.Nop()).Resolve(context.Background(), raw); ok {
+				t.Fatal("a no-result street must not resolve to city-centre coordinates")
+			}
+			if len(geocoder.calls) != 1 || geocoder.calls[0] != raw {
+				t.Fatalf("calls = %v, want only the original street query", geocoder.calls)
+			}
+		})
+	}
+}
+
 // funcGeocoder answers each call through fn, recording the queries, so tests
 // can script "no results, then success" and count the attempts.
 type funcGeocoder struct {
@@ -236,9 +256,26 @@ func TestAddressWithoutVenueName(t *testing.T) {
 		{"Sweat and Tonic, 486 Front St W, Toronto, ON M5V 0V2, Canada", "486 Front St W, Toronto, ON M5V 0V2, Canada", true},
 		{"MOLA CAFE/MARKET, 822 Dundas St W, Toronto, ON M6J 1V3, Canada", "822 Dundas St W, Toronto, ON M6J 1V3, Canada", true},
 		{"123 Main St, Toronto, ON", "", false},
+		{"Bloor Street West, Toronto, ON M5R 3P3, CA", "", false},
+		{"bloor sT. w, Toronto, ON", "", false},
+		{"Queen Street Theatre, 123 Main St, Toronto, ON", "", false},
+		{"Some Venue, Bloor Street West, Toronto, ON", "Bloor Street West, Toronto, ON", true},
+		{"Streetcar Studio, 123 Main St, Toronto, ON", "123 Main St, Toronto, ON", true},
 		{"Toronto, ON", "", false},
+		{"Toronto, ON, CA", "ON, CA", true},
 		{"Some Venue", "", false},
 		{"", "", false},
+	}
+	for _, suffix := range []string{
+		"St", "Street", "Ave", "Avenue", "Rd", "Road", "Blvd", "Boulevard",
+		"Dr", "Drive", "Ln", "Lane", "Way", "Cres", "Crescent", "Pl", "Place",
+		"Ct", "Court", "Terrace", "Terr", "Hwy", "Highway", "Square", "Circle",
+	} {
+		tests = append(tests, struct {
+			raw  string
+			want string
+			ok   bool
+		}{raw: "Bloor " + suffix + ", Toronto, ON"})
 	}
 	for _, tc := range tests {
 		got, ok := addressWithoutVenueName(tc.raw)

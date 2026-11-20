@@ -310,8 +310,14 @@ Components already present in the query are skipped, so the ICS shape (whose
 locality/region is also set) does not produce a duplicated franken-address. The
 query goes to `NOMINATIM_API_URL` (default
 `https://nominatim.openstreetmap.org`). If — and only if — Nominatim answers
-with no results, the same query is retried once without its leading venue name;
-a timeout, transport error or HTTP 429 stops after the first query. Successful
+with no results, the query may be retried once without its first comma-separated
+component. Shortening is declined if that component starts with a digit or
+contains a recognized street-type token (such as `Street`, `St.`, `Ave` or `Road`,
+case-insensitive), or if the remainder has no comma. This keeps numbered and
+numberless streets such as `Bloor Street West` from becoming city-only queries.
+The conservative token check also declines venue names such as `Queen Street
+Theatre`; their full query is still attempted. A timeout, transport error or
+HTTP 429 stops after the first query. Successful
 answers are cached, so a repeated venue is free. A cached no-result also keeps
 its "no result" meaning, so the shortened query is still tried on later events.
 No event name, description, organiser or URL is sent — only the location string

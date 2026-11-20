@@ -106,8 +106,8 @@ func (r *LocationResolver) Resolve(ctx context.Context, raw string) (geoloc.Part
 //	-> "486 Front St W, Toronto, ON M5V 0V2, Canada"
 //
 // It declines when the leading component looks like a street address itself
-// (starts with a digit), or when the remainder is not still an address (no comma
-// of its own), so a well-formed address is never shortened into just a city.
+// (starts with a digit or contains a recognized street-type token), or when the
+// remainder has no comma of its own.
 func addressWithoutVenueName(raw string) (string, bool) {
 	first, rest, found := strings.Cut(raw, ",")
 	if !found {
@@ -121,6 +121,18 @@ func addressWithoutVenueName(raw string) (string, bool) {
 	digits := strings.IndexFunc(first, func(r rune) bool { return r >= '0' && r <= '9' })
 	if digits == 0 {
 		return "", false
+	}
+	// Conservatively keep numberless streets intact: dropping "Bloor Street
+	// West" could turn an honest no-result into a city-centre match. Whole-token
+	// matching also declines venue names like "Queen Street Theatre", but only
+	// after their full query found nothing. Periods allow abbreviations like St.
+	for _, token := range strings.Fields(first) {
+		switch strings.ToLower(strings.TrimSuffix(token, ".")) {
+		case "st", "street", "ave", "avenue", "rd", "road", "blvd", "boulevard",
+			"dr", "drive", "ln", "lane", "way", "cres", "crescent", "pl", "place",
+			"ct", "court", "terrace", "terr", "hwy", "highway", "square", "circle":
+			return "", false
+		}
 	}
 	return rest, true
 }

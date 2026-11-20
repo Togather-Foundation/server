@@ -536,8 +536,14 @@ the extractor supplied:
 
 Components already present in the query are not repeated. No event name,
 description, organiser or URL is sent. The query goes to `NOMINATIM_API_URL`. A
-shortened retry (without the leading venue name) happens only after an honest
-no-result; timeouts, transport errors and HTTP 429 stop after one query. See
+shortened retry drops the first comma-separated component only after an honest
+no-result, and only when the remainder contains a comma. It is declined when
+the first component starts with a digit or contains a recognized street-type
+token (such as `Street`, `St.`, `Ave` or `Road`, case-insensitive), preserving
+numberless streets such as `Bloor Street West`. This conservative check can also
+decline venue names containing those tokens, such as `Queen Street Theatre`,
+after their full query finds nothing. Timeouts, transport errors and HTTP 429
+stop after one query. See
 [ICS feeds](ics-feeds.md) for the full contract.
 
 A resolution is accepted only when it agrees with supplied evidence: a
