@@ -77,3 +77,36 @@ func TestAdminEventWrites_Retryable(t *testing.T) {
 		}
 	}
 }
+
+func TestConsolidate_Retryable(t *testing.T) {
+	const retireULID = "01HTEST0000000000000000002"
+	const path = "/api/v1/admin/events/consolidate"
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"sentinel", events.ErrRetryable, http.StatusServiceUnavailable},
+		{"wrapped", fmt.Errorf("database contention: %w", events.ErrRetryable), http.StatusServiceUnavailable},
+		{"non-retryable", fmt.Errorf("database unavailable"), http.StatusInternalServerError},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := new(MockRepository)
+			setupTxMock(repo)
+			repo.On("GetByULID", mock.Anything, retireULID).Return(&events.Event{
+				ID: "uuid-retire", ULID: retireULID, LifecycleState: "published",
+			}, nil).Once()
+			repo.On("LockEventForUpdate", mock.Anything, "uuid-retire").Return(tc.err).Once()
+			body := consolidateBody(t, map[string]any{
+				"event_ulid": occTestEventULID,
+				"retire":     []string{retireULID},
+			})
+			req := withAdminUser(httptest.NewRequest(http.MethodPost, path, body), "admin")
+			rec := httptest.NewRecorder()
+			newTestAdminHandler(repo).ConsolidateEvents(rec, req)
+			assertAdminWriteProblem(t, rec, path, tc.status)
+			repo.AssertExpectations(t)
+		})
+	}
+}
