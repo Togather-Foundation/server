@@ -4,15 +4,60 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
+
+func TestAdminOccurrenceWrites_Retryable(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		suffix string
+		handle func(*AdminHandler, http.ResponseWriter, *http.Request)
+	}{
+		{"create", http.MethodPost, "", (*AdminHandler).CreateOccurrence},
+		{"update", http.MethodPut, "/" + occTestOccID, (*AdminHandler).UpdateOccurrence},
+		{"delete", http.MethodDelete, "/" + occTestOccID, (*AdminHandler).DeleteOccurrence},
+	}
+	errors := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{"sentinel", events.ErrRetryable, http.StatusServiceUnavailable},
+		{"wrapped", fmt.Errorf("database contention: %w", events.ErrRetryable), http.StatusServiceUnavailable},
+		{"non-retryable", fmt.Errorf("database unavailable"), http.StatusInternalServerError},
+	}
+	for _, tc := range tests {
+		for _, serviceErr := range errors {
+			t.Run(tc.name+"/"+serviceErr.name, func(t *testing.T) {
+				repo := new(MockRepository)
+				setupTxMock(repo)
+				repo.On("GetByULID", mock.Anything, occTestEventULID).Return(occTestEvent("published"), nil).Once()
+				repo.On("LockEventForUpdate", mock.Anything, occTestEventID).Return(serviceErr.err).Once()
+				path := "/api/v1/admin/events/" + occTestEventULID + "/occurrences" + tc.suffix
+				body := fmt.Sprintf(`{"start_time":%q,"timezone":"America/Toronto","virtual_url":%q}`, clock.FutureTime(30).Format(time.RFC3339), occTestVirtualURL)
+				req := httptest.NewRequest(tc.method, path, strings.NewReader(body))
+				req.SetPathValue("id", occTestEventULID)
+				req.SetPathValue("occurrenceId", occTestOccID)
+				req = withAdminUser(req, "admin")
+				rec := httptest.NewRecorder()
+				tc.handle(newTestAdminHandler(repo), rec, req)
+				assertAdminWriteProblem(t, rec, path, serviceErr.status)
+				repo.AssertExpectations(t)
+			})
+		}
+	}
+}
 
 // ─── constants shared across occurrence tests ────────────────────────────────
 

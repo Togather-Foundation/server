@@ -47,6 +47,17 @@ func NewAdminHandler(service *events.Service, adminService *events.AdminService,
 	}
 }
 
+// writeRetryableError reports transient database contention and whether it wrote a response.
+func (h *AdminHandler) writeRetryableError(w http.ResponseWriter, r *http.Request, err error) bool {
+	if !errors.Is(err, events.ErrRetryable) {
+		return false
+	}
+
+	w.Header().Set("Retry-After", "1")
+	problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/server-error", "Transient contention — retry the request", err, h.Env)
+	return true
+}
+
 // ListPendingEvents handles GET /api/v1/admin/events/pending
 // Returns events in draft state or flagged for review
 func (h *AdminHandler) ListPendingEvents(w http.ResponseWriter, r *http.Request) {
@@ -212,6 +223,9 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 			problem.Write(w, r, http.StatusBadRequest, "https://sel.events/problems/validation-error", "Invalid request", err, h.Env)
 			return
 		}
+		if h.writeRetryableError(w, r, err) {
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
@@ -267,6 +281,9 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
 			return
 		}
+		if h.writeRetryableError(w, r, err) {
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
@@ -319,6 +336,9 @@ func (h *AdminHandler) UnpublishEvent(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if h.writeRetryableError(w, r, err) {
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
@@ -401,6 +421,9 @@ func (h *AdminHandler) DeleteEvent(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, events.ErrNotFound) {
 			problem.Write(w, r, http.StatusNotFound, "https://sel.events/problems/not-found", "Event not found", err, h.Env)
+			return
+		}
+		if h.writeRetryableError(w, r, err) {
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
@@ -1475,6 +1498,9 @@ func (h *AdminHandler) CreateOccurrence(w http.ResponseWriter, r *http.Request) 
 			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/occurrence-location-required", "Occurrence must have a venue or virtual URL", err, h.Env)
 			return
 		}
+		if h.writeRetryableError(w, r, err) {
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
@@ -1676,6 +1702,9 @@ func (h *AdminHandler) UpdateOccurrence(w http.ResponseWriter, r *http.Request) 
 			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/occurrence-location-required", "Occurrence must have a venue or virtual URL", err, h.Env)
 			return
 		}
+		if h.writeRetryableError(w, r, err) {
+			return
+		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
 		return
 	}
@@ -1720,6 +1749,9 @@ func (h *AdminHandler) DeleteOccurrence(w http.ResponseWriter, r *http.Request) 
 		}
 		if errors.Is(err, events.ErrLastOccurrence) {
 			problem.Write(w, r, http.StatusUnprocessableEntity, "https://sel.events/problems/last-occurrence", "Cannot delete the last occurrence of an event", err, h.Env)
+			return
+		}
+		if h.writeRetryableError(w, r, err) {
 			return
 		}
 		problem.Write(w, r, http.StatusInternalServerError, "https://sel.events/problems/server-error", "Server error", err, h.Env)
@@ -1809,9 +1841,7 @@ func (h *AdminHandler) ConsolidateEvents(w http.ResponseWriter, r *http.Request)
 			problem.Write(w, r, http.StatusConflict, "https://sel.events/problems/conflict", "Occurrence overlap", err, h.Env)
 			return
 		}
-		if errors.Is(err, events.ErrRetryable) {
-			w.Header().Set("Retry-After", "1")
-			problem.Write(w, r, http.StatusServiceUnavailable, "https://sel.events/problems/server-error", "Transient contention — retry the request", err, h.Env)
+		if h.writeRetryableError(w, r, err) {
 			return
 		}
 		if errors.Is(err, events.ErrNotFound) {

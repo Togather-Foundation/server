@@ -1038,6 +1038,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
     delete:
       operationId: deleteEvent
@@ -1058,6 +1060,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/admin/events/consolidate:
     post:
@@ -1226,6 +1230,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/admin/events/{id}/occurrences/{occurrenceId}:
     put:
@@ -1284,6 +1290,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
     delete:
       operationId: deleteOccurrence
@@ -1325,6 +1333,8 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/admin/api-keys:
     get:
@@ -4051,6 +4061,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/admin/events/{id}/unpublish:
     post:
@@ -4075,6 +4087,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
 
   /api/v1/admin/duplicates:
     get:
