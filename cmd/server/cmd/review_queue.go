@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -136,7 +137,7 @@ func printFlatTable(out io.Writer, items []ReviewQueueItem) error {
 	}
 
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "ID\tULID\tNAME\tSTART DATE\tWARNINGS\tOCC\tAGE")
+	_, _ = fmt.Fprintln(w, "ID\tULID\tNAME\tSTART DATE\tWARNINGS\tOCC\tAGE\tEVENT URL\tSOURCE URL")
 
 	for _, item := range items {
 		startDate := "-"
@@ -146,9 +147,11 @@ func printFlatTable(out io.Writer, items []ReviewQueueItem) error {
 		occ := fmt.Sprintf("%d", item.OccurrenceCount)
 		warnings := headerWarningCodes(item.Warnings)
 		age := formatAge(item.CreatedAt)
+		eventURL := cmp.Or(item.EventURL, "-")
+		sourceURL := cmp.Or(item.SourceURL, "-")
 
-		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			item.ID, item.EventID, item.EventName, startDate, warnings, occ, age)
+		_, _ = fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			item.ID, item.EventID, item.EventName, startDate, warnings, occ, age, eventURL, sourceURL)
 	}
 
 	return w.Flush()

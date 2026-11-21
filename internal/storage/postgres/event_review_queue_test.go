@@ -187,7 +187,7 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 		require.NoError(t, err)
 
 		// Find by source ID
-		entry, err := repo.FindReviewByDedup(ctx, &findSourceID, &findExternalID, nil)
+		entry, err := repo.FindReviewByDedup(ctx, &findSourceID, &findExternalID, nil, false)
 		require.NoError(t, err)
 		assert.Equal(t, created.ID, entry.ID)
 	})
@@ -209,14 +209,14 @@ func TestEventRepository_ReviewQueue(t *testing.T) {
 		require.NoError(t, err)
 
 		// Find by dedup hash
-		entry, err := repo.FindReviewByDedup(ctx, nil, nil, &uniqueHash)
+		entry, err := repo.FindReviewByDedup(ctx, nil, nil, &uniqueHash, false)
 		require.NoError(t, err)
 		assert.Equal(t, created.ID, entry.ID)
 	})
 
 	t.Run("FindReviewByDedup_NotFound", func(t *testing.T) {
 		nonexistent := "nonexistent"
-		entry, err := repo.FindReviewByDedup(ctx, &nonexistent, &nonexistent, nil)
+		entry, err := repo.FindReviewByDedup(ctx, &nonexistent, &nonexistent, nil, false)
 		assert.ErrorIs(t, err, events.ErrNotFound)
 		assert.Nil(t, entry)
 	})

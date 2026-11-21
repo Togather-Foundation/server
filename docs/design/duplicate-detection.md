@@ -84,7 +84,9 @@ belongs to scraper config. See [source identity](../integration/scraper.md#per-f
 
 ## Auto-Merge Strategy (exact dedup hash match)
 
-When two events have identical dedup hashes (same normalized name, same venue, same start date) from different sources:
+The exact lookup matches the dedup hash and the stored synthetic marker. Existing
+ordinary hashes retain their format. An exact match from another source applies
+the following rules:
 
 ```
 For each field on the existing event:

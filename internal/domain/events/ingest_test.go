@@ -22,10 +22,10 @@ type MockRepository struct {
 	// Storage
 	events            map[string]*Event
 	idempotencyKeys   map[string]*IdempotencyKey
-	sources           map[string]string            // sourceKey -> sourceID
-	eventsByFeedEvent map[string]map[string]*Event // feed URL (trailing slashes trimmed) -> sourceEventID -> Event
+	sources           map[string]string // sourceKey -> sourceID
+	eventsByFeedEvent map[feedIdentity]*Event
 	eventsBySources   map[string]map[string]*Event // sourceID -> sourceEventID -> Event (trust linkage)
-	eventsByDedupHash map[string]*Event
+	eventsByDedupHash map[dedupIdentity]*Event
 	places            map[string]*PlaceRecord
 	placeParams       map[string]PlaceCreateParams // "ulid:"+ULID -> stored parameters
 	organizations     map[string]*OrganizationRecord
@@ -99,9 +99,9 @@ func NewMockRepository() *MockRepository {
 		events:             make(map[string]*Event),
 		idempotencyKeys:    make(map[string]*IdempotencyKey),
 		sources:            make(map[string]string),
-		eventsByFeedEvent:  make(map[string]map[string]*Event),
+		eventsByFeedEvent:  make(map[feedIdentity]*Event),
 		eventsBySources:    make(map[string]map[string]*Event),
-		eventsByDedupHash:  make(map[string]*Event),
+		eventsByDedupHash:  make(map[dedupIdentity]*Event),
 		places:             make(map[string]*PlaceRecord),
 		placeParams:        make(map[string]PlaceCreateParams),
 		organizations:      make(map[string]*OrganizationRecord),
@@ -175,6 +175,7 @@ func (m *MockRepository) Create(ctx context.Context, params EventCreateParams) (
 		VirtualURL:     params.VirtualURL,
 		ImageURL:       params.ImageURL,
 		PublicURL:      params.PublicURL,
+		Synthetic:      params.Synthetic,
 		Confidence:     params.Confidence,
 		QualityScore:   params.QualityScore,
 		Keywords:       params.Keywords,
@@ -184,7 +185,7 @@ func (m *MockRepository) Create(ctx context.Context, params EventCreateParams) (
 	m.events[params.ULID] = event
 
 	if params.DedupHash != "" {
-		m.eventsByDedupHash[params.DedupHash] = event
+		m.eventsByDedupHash[dedupIdentity{params.DedupHash, params.Synthetic}] = event
 	}
 
 	return event, nil
@@ -246,21 +247,23 @@ func (m *MockRepository) CreateSource(ctx context.Context, params EventSourceCre
 // form (query and fragment stripped by validation) with trailing slashes ignored
 // on both sides.
 func (m *MockRepository) indexFeedEventLocked(feedURL, sourceEventID string, event *Event) {
-	feedURL = feedIdentityKey(feedURL)
 	if feedURL == "" || sourceEventID == "" {
 		return
 	}
-	if _, ok := m.eventsByFeedEvent[feedURL]; !ok {
-		m.eventsByFeedEvent[feedURL] = make(map[string]*Event)
-	}
-	m.eventsByFeedEvent[feedURL][sourceEventID] = event
+	m.eventsByFeedEvent[feedIdentityKey(feedURL, sourceEventID, event.Synthetic)] = event
 }
 
-func feedIdentityKey(feedURL string) string {
-	return strings.TrimRight(feedURL, "/")
+type feedIdentity struct {
+	feedURL   string
+	eventID   string
+	synthetic bool
 }
 
-func (m *MockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*Event, error) {
+func feedIdentityKey(feedURL, eventID string, synthetic bool) feedIdentity {
+	return feedIdentity{strings.TrimRight(feedURL, "/"), eventID, synthetic}
+}
+
+func (m *MockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string, synthetic bool) (*Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -272,15 +275,18 @@ func (m *MockRepository) FindByFeedEventID(ctx context.Context, feedURL string, 
 		return nil, ErrNotFound
 	}
 
-	if eventsForFeed, ok := m.eventsByFeedEvent[feedIdentityKey(feedURL)]; ok {
-		if event, ok := eventsForFeed[sourceEventID]; ok {
-			return event, nil
-		}
+	if event, ok := m.eventsByFeedEvent[feedIdentityKey(feedURL, sourceEventID, synthetic)]; ok {
+		return event, nil
 	}
 	return nil, ErrNotFound
 }
 
-func (m *MockRepository) FindByDedupHash(ctx context.Context, dedupHash string) (*Event, error) {
+type dedupIdentity struct {
+	hash      string
+	synthetic bool
+}
+
+func (m *MockRepository) FindByDedupHash(ctx context.Context, dedupHash string, synthetic bool) (*Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -288,7 +294,7 @@ func (m *MockRepository) FindByDedupHash(ctx context.Context, dedupHash string) 
 		return nil, errors.New("mock find by dedup hash error")
 	}
 
-	event, ok := m.eventsByDedupHash[dedupHash]
+	event, ok := m.eventsByDedupHash[dedupIdentity{dedupHash, synthetic}]
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -541,11 +547,11 @@ func (m *MockRepository) UpdateEvent(ctx context.Context, ulid string, params Up
 	}
 	if params.DedupHash != nil {
 		if event.DedupHash != "" && event.DedupHash != *params.DedupHash {
-			delete(m.eventsByDedupHash, event.DedupHash)
+			delete(m.eventsByDedupHash, dedupIdentity{event.DedupHash, event.Synthetic})
 		}
 		event.DedupHash = *params.DedupHash
 		if *params.DedupHash != "" {
-			m.eventsByDedupHash[*params.DedupHash] = event
+			m.eventsByDedupHash[dedupIdentity{*params.DedupHash, event.Synthetic}] = event
 		}
 	}
 	event.UpdatedAt = time.Now()
@@ -635,7 +641,7 @@ func (m *MockRepository) GetPublicTombstoneByEventULID(ctx context.Context, even
 }
 
 // Review Queue methods
-func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error) {
+func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string, synthetic bool) (*ReviewQueueEntry, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -1028,7 +1034,7 @@ func (m *MockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sour
 	return 5, nil // default trust level
 }
 
-func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
+func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64, synthetic bool) ([]NearDuplicateCandidate, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -1336,7 +1342,7 @@ func (m *MockRepository) AddEventByDedupHash(hash string, event *Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.eventsByDedupHash[hash] = event
+	m.eventsByDedupHash[dedupIdentity{hash, event.Synthetic}] = event
 	m.events[event.ULID] = event
 }
 

@@ -5,6 +5,7 @@ package schema
 
 // Event represents a full schema.org Event for JSON-LD output.
 type Event struct {
+	Synthetic           bool           `json:"sel:synthetic,omitempty"`
 	Context             any            `json:"@context,omitempty"`
 	Type                string         `json:"@type"`
 	ID                  string         `json:"@id,omitempty"`
@@ -44,11 +45,13 @@ func NewEvent(name string) *Event {
 // response), DoorTime and Timezone are populated so that the admin UI can
 // display and edit all occurrence details.
 type EventSummary struct {
+	Synthetic     bool      `json:"sel:synthetic,omitempty"`
 	Context       any       `json:"@context,omitempty"`
 	Type          string    `json:"@type"`
 	ID            string    `json:"@id,omitempty"`
 	Name          string    `json:"name"`
 	Description   string    `json:"description,omitempty"`
+	URL           string    `json:"url,omitempty"`
 	Keywords      []string  `json:"keywords,omitempty"`
 	StartDate     string    `json:"startDate,omitempty"`
 	EndDate       string    `json:"endDate,omitempty"`

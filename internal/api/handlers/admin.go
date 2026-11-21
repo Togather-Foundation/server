@@ -96,9 +96,11 @@ func (h *AdminHandler) ListPendingEvents(w http.ResponseWriter, r *http.Request)
 	for _, event := range result.Events {
 		item := adminEventItem{
 			EventSummary: schema.EventSummary{
-				Type: "Event",
-				ID:   buildEventURI(h.BaseURL, event.ULID),
-				Name: event.Name,
+				Type:      "Event",
+				ID:        buildEventURI(h.BaseURL, event.ULID),
+				Name:      event.Name,
+				URL:       event.PublicURL,
+				Synthetic: event.Synthetic,
 			},
 			Description:    event.Description,
 			Confidence:     event.Confidence,
@@ -144,9 +146,11 @@ func (h *AdminHandler) ListEvents(w http.ResponseWriter, r *http.Request) {
 	for _, event := range result.Events {
 		item := adminEventListItem{
 			EventSummary: schema.EventSummary{
-				Type: "Event",
-				ID:   buildEventURI(h.BaseURL, event.ULID),
-				Name: event.Name,
+				Type:      "Event",
+				ID:        buildEventURI(h.BaseURL, event.ULID),
+				Name:      event.Name,
+				URL:       event.PublicURL,
+				Synthetic: event.Synthetic,
 			},
 			Description:    event.Description,
 			Confidence:     event.Confidence,
@@ -241,6 +245,7 @@ func (h *AdminHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event := schema.NewEvent(updated.Name)
+	event.Synthetic = updated.Synthetic
 	event.Context = loadDefaultContext()
 	event.ID = buildEventURI(h.BaseURL, updated.ULID)
 	event.Description = updated.Description
@@ -299,6 +304,7 @@ func (h *AdminHandler) PublishEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event := schema.NewEvent(published.Name)
+	event.Synthetic = published.Synthetic
 	event.Context = loadDefaultContext()
 	event.ID = buildEventURI(h.BaseURL, published.ULID)
 
@@ -356,6 +362,7 @@ func (h *AdminHandler) UnpublishEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event := schema.NewEvent(unpublished.Name)
+	event.Synthetic = unpublished.Synthetic
 	event.Context = loadDefaultContext()
 	event.ID = buildEventURI(h.BaseURL, unpublished.ULID)
 

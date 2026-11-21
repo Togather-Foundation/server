@@ -95,6 +95,7 @@ func (r *SyncRepository) UpsertFederatedEvent(ctx context.Context, arg federatio
 	sqlcParams := UpsertFederatedEventParams{
 		Ulid:                  arg.Ulid,
 		Name:                  arg.Name,
+		Synthetic:             arg.Synthetic,
 		Description:           arg.Description,
 		LifecycleState:        arg.LifecycleState,
 		EventStatus:           arg.EventStatus,
@@ -125,6 +126,9 @@ func (r *SyncRepository) UpsertFederatedEvent(ctx context.Context, arg federatio
 
 	row, err := r.queries.UpsertFederatedEvent(ctx, sqlcParams)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return federation.Event{}, fmt.Errorf("%w: sel:synthetic must match the existing event", federation.ErrInvalidJSONLD)
+		}
 		return federation.Event{}, err
 	}
 

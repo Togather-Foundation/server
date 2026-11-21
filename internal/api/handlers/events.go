@@ -144,6 +144,8 @@ func (h *EventsHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 		item.ID = schema.BuildEventURI(h.BaseURL, event.ULID)
 		item.Description = event.Description
+		item.Synthetic = event.Synthetic
+		item.URL = event.PublicURL
 		item.Keywords = event.Keywords
 
 		// Add startDate (required per Interop Profile §3.1)
@@ -315,6 +317,9 @@ func (h *EventsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	event := schema.NewEvent(input.Name)
 	event.Context = loadDefaultContext()
 	event.ID = eventURI(h.BaseURL, result)
+	if result != nil && result.Event != nil {
+		event.Synthetic = result.Event.Synthetic
+	}
 	event.Location = location
 
 	// Include lifecycle_state and warnings for events needing review
@@ -408,6 +413,7 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	event.ID = schema.BuildEventURI(h.BaseURL, item.ULID)
 	event.Description = item.Description
 	event.Image = item.ImageURL
+	event.Synthetic = item.Synthetic
 	event.URL = item.PublicURL
 	event.Keywords = item.Keywords
 	event.InLanguage = item.InLanguage
@@ -475,8 +481,9 @@ func (h *EventsHandler) Get(w http.ResponseWriter, r *http.Request) {
 			}
 			loc := timeutil.OccLoc(occ.Timezone, h.Loc)
 			sub := schema.EventSummary{
-				Type: "Event",
-				Name: item.Name,
+				Synthetic: item.Synthetic,
+				Type:      "Event",
+				Name:      item.Name,
 			}
 			if loc != nil {
 				sub.Timezone = loc.String()

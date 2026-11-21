@@ -782,6 +782,23 @@ func TestConcurrentEventCreation(t *testing.T) {
 
 ## Test Organization
 
+### Generated synthetic events
+
+`server generate` emits fixture events with `"sel:synthetic": true`, including
+the ordinary, `--review-queue` and `--review-events` modes. Ingest preserves the
+marker in event storage. Public and admin event lists and public detail responses
+expose it when true; omission means false. Consumers can filter locally with
+`items.filter(event => event["sel:synthetic"] !== true)`.
+Canonical event pages, MCP event reads and federation snapshots/imports preserve
+the same marker.
+
+Generated event and source links use reserved fixture hosts instead of invented
+paths on real platforms. The marker declares fixture data; it does not certify
+ordinary events, bypass validation or grant publishing permissions. Existing
+unmarked data is not classified retroactively. Keep signed load-test run manifests
+for their separate attribution checks and cleanup workflow (see
+[load testing](../operations/load-testing.md)).
+
 ### Directory Structure
 
 ```

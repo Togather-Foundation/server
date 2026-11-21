@@ -42,6 +42,7 @@ type ValidationResult struct {
 }
 
 type EventInput struct {
+	Synthetic                     bool                  `json:"sel:synthetic,omitempty"`
 	Context                       json.RawMessage       `json:"@context,omitempty"` // Accepted but ignored (schema.org compatibility)
 	ID                            string                `json:"@id,omitempty"`
 	Type                          string                `json:"@type,omitempty"`

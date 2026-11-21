@@ -249,7 +249,13 @@ func ownedFixtureServer(t *testing.T, fault func(*http.Request, map[string]any) 
 				return
 			}
 			state.ownershipKeys[r.Header.Get("Authorization")] = true
-			reply = map[string]any{"@id": "https://canonical.invalid/api/v1/events/" + id, "name": input.Name, "url": input.URL, "sources": []map[string]any{{"url": input.Source.URL, "sel:sourceEventId": input.Source.EventID}}}
+			reply = map[string]any{
+				"@id":           "https://canonical.invalid/api/v1/events/" + id,
+				"name":          input.Name,
+				"url":           input.URL,
+				"sel:synthetic": input.Synthetic,
+				"sources":       []map[string]any{{"url": input.Source.URL, "sel:sourceEventId": input.Source.EventID}},
+			}
 		}
 		if fault != nil {
 			if override := fault(r, reply); override != 0 {
@@ -265,7 +271,7 @@ func ownedFixtureServer(t *testing.T, fault func(*http.Request, map[string]any) 
 }
 
 func TestOwnershipPreflightRefusesMismatchesBeforeLoad(t *testing.T) {
-	for _, name := range []string{"accepted", "duplicate", "invalid-create-id", "missing-sources", "extra-sources", "wrong-source", "wrong-source-id", "wrong-name", "wrong-url", "wrong-detail-id", "hidden", "redirect"} {
+	for _, name := range []string{"accepted", "duplicate", "invalid-create-id", "missing-sources", "extra-sources", "wrong-source", "wrong-source-id", "wrong-name", "wrong-url", "missing-synthetic-marker", "wrong-detail-id", "hidden", "redirect"} {
 		t.Run(name, func(t *testing.T) {
 			server, state := ownedFixtureServer(t, func(r *http.Request, reply map[string]any) int {
 				if r.Method == "POST" {
@@ -291,6 +297,8 @@ func TestOwnershipPreflightRefusesMismatchesBeforeLoad(t *testing.T) {
 						reply["name"] = "real event"
 					case "wrong-url":
 						reply["url"] = "https://real.invalid/event"
+					case "missing-synthetic-marker":
+						delete(reply, "sel:synthetic")
 					case "wrong-detail-id":
 						reply["@id"] = "https://canonical.invalid/api/v1/events/" + ulid.Make().String()
 					case "hidden":

@@ -53,6 +53,15 @@ shared venue/organizer fixtures. Pure virtual events enqueue no geocoding job.
 The run UUID is separate from the database source UUID; source registry identity
 remains the normalized feed URL.
 
+New runs use version-2 manifests. Their fixtures carry `"sel:synthetic": true`
+and use `https://loadtest.togather.invalid/_loadtest/runs/{uuid}` as the reserved
+source URL, with event links under that run. This URL identifies attribution;
+HTTP requests still go to the manifest's actual target. The version-2 signature
+binds the target as well as the fixture identity. Keep the manifest private.
+Version-1 manifests remain valid for verifying and cleaning their original
+unmarked fixtures with the original URL and signature format. Neither a reserved
+URL nor the synthetic marker alone proves ownership.
+
 ## Preflight and failure recovery
 
 Before sustained traffic, every rotating credential must pass both checks:
@@ -152,7 +161,8 @@ the known production hostname through your private environment configuration.
 These environment guards supplement the run proof; they do not establish ownership.
 
 Reserved test domains such as `example.com` remain blocked by normal staging ingest.
-The run builder derives its URLs from the actual target instead of those domains.
+Version-2 runs use the reserved `.invalid` URLs described above, which normal
+validation accepts; version-1 runs retain URLs derived from their original target.
 Test harnesses that intentionally need reserved domains must explicitly configure
 `ValidationConfig{AllowTestDomains: true}`; there is no environment-variable bypass.
 

@@ -164,20 +164,32 @@ func decodeLoadtestInput(payload []byte) (events.EventInput, error) {
 	// EventInput has a permissive custom UnmarshalJSON for interop. The plain
 	// alias preserves strict top-level unknown-field rejection for owned fixtures.
 	type strictInput events.EventInput
-	var input strictInput
+	var raw struct {
+		strictInput
+		Synthetic json.RawMessage `json:"sel:synthetic"`
+	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&input); err != nil {
+	if err := decoder.Decode(&raw); err != nil {
 		return events.EventInput{}, err
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
 		return events.EventInput{}, fmt.Errorf("unexpected trailing payload")
 	}
-	return events.EventInput(input), nil
+	input := events.EventInput(raw.strictInput)
+	switch string(raw.Synthetic) {
+	case "", "false":
+		input.Synthetic = false
+	case "true":
+		input.Synthetic = true
+	default:
+		return events.EventInput{}, fmt.Errorf("sel:synthetic must be a boolean")
+	}
+	return input, nil
 }
 
 func verifyLoadtestCanonical(event Event, input events.EventInput) error {
-	if input.VirtualLocation == nil || event.Name != input.Name || event.Description.String != input.Description || event.PublicUrl.String != input.URL || event.VirtualUrl.String != input.VirtualLocation.URL || event.ImageUrl.String != input.Image || event.LicenseUrl != input.License || event.LicenseStatus != "cc0" {
+	if input.VirtualLocation == nil || event.Name != input.Name || event.Description.String != input.Description || event.PublicUrl.String != input.URL || event.VirtualUrl.String != input.VirtualLocation.URL || event.ImageUrl.String != input.Image || event.LicenseUrl != input.License || event.LicenseStatus != "cc0" || event.Synthetic != input.Synthetic {
 		return fmt.Errorf("fixture identity differs")
 	}
 	if event.LifecycleState != "published" && event.LifecycleState != "pending_review" {

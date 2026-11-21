@@ -138,7 +138,7 @@ func (q *Queries) DeleteFederationNode(ctx context.Context, id pgtype.UUID) erro
 
 const getEventByFederationURI = `-- name: GetEventByFederationURI :one
 
-SELECT id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason, first_published_at
+SELECT id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason, first_published_at, synthetic
 FROM events
 WHERE federation_uri = $1
 LIMIT 1
@@ -186,6 +186,7 @@ func (q *Queries) GetEventByFederationURI(ctx context.Context, federationUri pgt
 		&i.MergedIntoID,
 		&i.DeletionReason,
 		&i.FirstPublishedAt,
+		&i.Synthetic,
 	)
 	return i, err
 }
@@ -499,11 +500,12 @@ INSERT INTO events (
   version,
   created_at,
   updated_at,
-  published_at
+  published_at,
+  synthetic
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
   $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-  $21, $22, $23, $24, $25, $26, $27, $28
+  $21, $22, $23, $24, $25, $26, $27, $28, $29
 )
 ON CONFLICT (federation_uri)
 WHERE federation_uri IS NOT NULL
@@ -528,7 +530,8 @@ DO UPDATE SET
   quality_score = EXCLUDED.quality_score,
   version = events.version + 1,
   updated_at = now()
-RETURNING id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason, first_published_at
+WHERE events.synthetic = EXCLUDED.synthetic
+RETURNING id, ulid, name, description, lifecycle_state, event_status, attendance_mode, organizer_id, primary_venue_id, series_id, image_url, public_url, virtual_url, keywords, in_language, default_language, is_accessible_for_free, accessibility_features, event_domain, origin_node_id, federation_uri, dedup_hash, license_url, license_status, takedown_requested, takedown_requested_at, takedown_request_notes, confidence, quality_score, version, created_at, updated_at, published_at, deleted_at, merged_into_id, deletion_reason, first_published_at, synthetic
 `
 
 type UpsertFederatedEventParams struct {
@@ -560,6 +563,7 @@ type UpsertFederatedEventParams struct {
 	CreatedAt             pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 	PublishedAt           pgtype.Timestamptz `json:"published_at"`
+	Synthetic             bool               `json:"synthetic"`
 }
 
 func (q *Queries) UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedEventParams) (Event, error) {
@@ -592,6 +596,7 @@ func (q *Queries) UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedE
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.PublishedAt,
+		arg.Synthetic,
 	)
 	var i Event
 	err := row.Scan(
@@ -632,6 +637,7 @@ func (q *Queries) UpsertFederatedEvent(ctx context.Context, arg UpsertFederatedE
 		&i.MergedIntoID,
 		&i.DeletionReason,
 		&i.FirstPublishedAt,
+		&i.Synthetic,
 	)
 	return i, err
 }

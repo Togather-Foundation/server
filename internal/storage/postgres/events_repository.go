@@ -65,6 +65,7 @@ type eventRow struct {
 	VirtualURL          *string
 	ImageURL            *string
 	PublicURL           *string
+	Synthetic           bool
 	Confidence          *float64
 	QualityScore        *int32
 	Keywords            []string
@@ -155,7 +156,7 @@ func (r *EventRepository) List(ctx context.Context, filters events.Filters, pagi
 SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	   lifecycle_state, event_status, attendance_mode, event_domain,
 	   organizer_id, primary_venue_id, primary_venue_ulid,
-	   virtual_url, image_url, public_url, confidence, quality_score,
+	   virtual_url, image_url, public_url, synthetic, confidence, quality_score,
 	   keywords, in_language, is_accessible_for_free,
 	   created_at, updated_at, published_at,
 	   start_time, end_time, timezone, is_all_day, occ_venue_id, occ_venue_ulid, occ_virtual_url,
@@ -166,7 +167,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 	       e.lifecycle_state, e.event_status, e.attendance_mode, e.event_domain,
 	       e.organizer_id, e.primary_venue_id,
 	       pv.ulid AS primary_venue_ulid,
-	       e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
+	       e.virtual_url, e.image_url, e.public_url, e.synthetic, e.confidence, e.quality_score,
 	       e.keywords, e.in_language, e.is_accessible_for_free,
 	       e.created_at, e.updated_at, e.published_at,
 	       o.start_time, o.end_time, o.timezone, o.is_all_day,
@@ -229,6 +230,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			&row.VirtualURL,
 			&row.ImageURL,
 			&row.PublicURL,
+			&row.Synthetic,
 			&row.Confidence,
 			&row.QualityScore,
 			&row.Keywords,
@@ -272,6 +274,7 @@ SELECT id, ulid, name, description, license_url, license_status, dedup_hash,
 			VirtualURL:          derefString(row.VirtualURL),
 			ImageURL:            derefString(row.ImageURL),
 			PublicURL:           derefString(row.PublicURL),
+			Synthetic:           row.Synthetic,
 			Confidence:          row.Confidence,
 			QualityScore:        intPtr(row.QualityScore),
 			Keywords:            row.Keywords,
@@ -368,7 +371,7 @@ func (r *EventRepository) getByULID(ctx context.Context, ulid string, publicStat
 SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
 	   e.lifecycle_state, e.event_status, e.attendance_mode, e.event_domain,
 	   e.organizer_id, e.primary_venue_id, pv.ulid AS primary_venue_ulid, pv.name AS primary_venue_name,
-	   e.virtual_url, e.image_url, e.public_url, e.confidence, e.quality_score,
+	   e.virtual_url, e.image_url, e.public_url, e.synthetic, e.confidence, e.quality_score,
 	   e.keywords, e.in_language, e.is_accessible_for_free,
 	   e.federation_uri, e.created_at, e.updated_at, e.published_at,
 	   o.id, o.start_time, o.end_time, o.timezone, o.is_all_day, o.local_date,
@@ -422,6 +425,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			virtualURL          *string
 			imageURL            *string
 			publicURL           *string
+			synthetic           bool
 			confidence          *float64
 			qualityScore        *int32
 			keywords            []string
@@ -475,6 +479,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 			&virtualURL,
 			&imageURL,
 			&publicURL,
+			&synthetic,
 			&confidence,
 			&qualityScore,
 			&keywords,
@@ -533,6 +538,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 				VirtualURL:          derefString(virtualURL),
 				ImageURL:            derefString(imageURL),
 				PublicURL:           derefString(publicURL),
+				Synthetic:           synthetic,
 				Confidence:          confidence,
 				QualityScore:        intPtr(qualityScore),
 				Keywords:            keywords,
@@ -649,7 +655,8 @@ INSERT INTO events (
 	confidence,
 	quality_score,
 	dedup_hash,
-	series_id
+	series_id,
+	synthetic
 ) VALUES (
 	$1,
 	$2,
@@ -669,12 +676,13 @@ INSERT INTO events (
 	$16,
 	$17,
 	NULLIF($18, ''),
-	$19
+	$19,
+	$20
 )
 RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 	  lifecycle_state, event_status, attendance_mode, event_domain,
 	  organizer_id, primary_venue_id,
-	  virtual_url, image_url, public_url, confidence, quality_score,
+	  virtual_url, image_url, public_url, synthetic, confidence, quality_score,
 	  keywords, in_language, is_accessible_for_free,
 	  created_at, updated_at
 `,
@@ -697,6 +705,7 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 		params.QualityScore,
 		params.DedupHash,
 		params.SeriesID,
+		params.Synthetic,
 	)
 
 	var data eventRow
@@ -717,6 +726,7 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 		&data.VirtualURL,
 		&data.ImageURL,
 		&data.PublicURL,
+		&data.Synthetic,
 		&data.Confidence,
 		&data.QualityScore,
 		&data.Keywords,
@@ -748,6 +758,7 @@ RETURNING id, ulid, name, description, license_url, license_status, dedup_hash,
 		VirtualURL:          derefString(data.VirtualURL),
 		ImageURL:            derefString(data.ImageURL),
 		PublicURL:           derefString(data.PublicURL),
+		Synthetic:           data.Synthetic,
 		Confidence:          data.Confidence,
 		QualityScore:        intPtr(data.QualityScore),
 		Keywords:            data.Keywords,
@@ -976,7 +987,7 @@ SET retrieved_at = now(),
 // the only match. Tombstone resolution (merged_into_id) is the open gap tracked
 // by specs/006-curator-protection/plan.md; filtering deleted events here is not
 // the fix — it would re-create occurrences that were deliberately retired.
-func (r *EventRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*events.Event, error) {
+func (r *EventRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string, synthetic bool) (*events.Event, error) {
 	if strings.TrimSpace(feedURL) == "" || strings.TrimSpace(sourceEventID) == "" {
 		return nil, events.ErrNotFound
 	}
@@ -984,16 +995,16 @@ func (r *EventRepository) FindByFeedEventID(ctx context.Context, feedURL string,
 	row := queryer.QueryRow(ctx, `
 SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
 	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
-	   e.virtual_url, e.image_url, e.public_url, e.keywords, e.created_at, e.updated_at
+	   e.virtual_url, e.image_url, e.public_url, e.synthetic, e.keywords, e.created_at, e.updated_at
   FROM events e
   JOIN event_sources es ON es.event_id = e.id
- WHERE rtrim(es.source_url, '/') = rtrim($1, '/') AND es.source_event_id = $2
+ WHERE rtrim(es.source_url, '/') = rtrim($1, '/') AND es.source_event_id = $2 AND e.synthetic = $3
  ORDER BY (e.deleted_at IS NULL) DESC,
           (e.lifecycle_state = 'published') DESC,
           e.created_at ASC,
           e.id ASC
  LIMIT 1
-`, feedURL, sourceEventID)
+`, feedURL, sourceEventID, synthetic)
 
 	var data eventRow
 	if err := row.Scan(
@@ -1011,6 +1022,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 		&data.VirtualURL,
 		&data.ImageURL,
 		&data.PublicURL,
+		&data.Synthetic,
 		&data.Keywords,
 		&data.CreatedAt,
 		&data.UpdatedAt,
@@ -1036,6 +1048,7 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 		VirtualURL:     derefString(data.VirtualURL),
 		ImageURL:       derefString(data.ImageURL),
 		PublicURL:      derefString(data.PublicURL),
+		Synthetic:      data.Synthetic,
 		Keywords:       data.Keywords,
 	}
 	if data.CreatedAt.Valid {
@@ -1047,40 +1060,16 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	return event, nil
 }
 
-func (r *EventRepository) FindByDedupHash(ctx context.Context, dedupHash string) (*events.Event, error) {
+func (r *EventRepository) FindByDedupHash(ctx context.Context, dedupHash string, synthetic bool) (*events.Event, error) {
 	if strings.TrimSpace(dedupHash) == "" {
 		return nil, events.ErrNotFound
 	}
-	queryer := r.queryer()
-	row := queryer.QueryRow(ctx, `
-SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
-	   e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
-	   e.virtual_url, e.image_url, e.public_url, e.keywords, e.created_at, e.updated_at
-  FROM events e
- WHERE e.dedup_hash = $1
- LIMIT 1
-`, dedupHash)
-
-	var data eventRow
-	if err := row.Scan(
-		&data.ID,
-		&data.ULID,
-		&data.Name,
-		&data.Description,
-		&data.LicenseURL,
-		&data.LicenseStatus,
-		&data.DedupHash,
-		&data.LifecycleState,
-		&data.EventDomain,
-		&data.OrganizerID,
-		&data.PrimaryVenueID,
-		&data.VirtualURL,
-		&data.ImageURL,
-		&data.PublicURL,
-		&data.Keywords,
-		&data.CreatedAt,
-		&data.UpdatedAt,
-	); err != nil {
+	queries := Queries{db: r.queryer()}
+	row, err := queries.FindEventByDedupHash(ctx, FindEventByDedupHashParams{
+		DedupHash: pgtype.Text{String: dedupHash, Valid: true},
+		Synthetic: synthetic,
+	})
+	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, events.ErrNotFound
 		}
@@ -1088,27 +1077,30 @@ SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.d
 	}
 
 	event := &events.Event{
-		ID:             data.ID,
-		ULID:           data.ULID,
-		Name:           data.Name,
-		Description:    derefString(data.Description),
-		LicenseURL:     derefString(data.LicenseURL),
-		LicenseStatus:  derefString(data.LicenseStatus),
-		DedupHash:      derefString(data.DedupHash),
-		LifecycleState: data.LifecycleState,
-		EventDomain:    data.EventDomain,
-		OrganizerID:    data.OrganizerID,
-		PrimaryVenueID: data.PrimaryVenueID,
-		VirtualURL:     derefString(data.VirtualURL),
-		ImageURL:       derefString(data.ImageURL),
-		PublicURL:      derefString(data.PublicURL),
-		Keywords:       data.Keywords,
+		ID:             row.ID.String(),
+		ULID:           row.Ulid,
+		Name:           row.Name,
+		Description:    row.Description.String,
+		LicenseURL:     row.LicenseUrl,
+		LicenseStatus:  row.LicenseStatus,
+		DedupHash:      row.DedupHash.String,
+		LifecycleState: row.LifecycleState,
+		EventDomain:    row.EventDomain.String,
+		VirtualURL:     row.VirtualUrl.String,
+		ImageURL:       row.ImageUrl.String,
+		PublicURL:      row.PublicUrl.String,
+		Synthetic:      row.Synthetic,
+		Keywords:       row.Keywords,
+		CreatedAt:      row.CreatedAt.Time,
+		UpdatedAt:      row.UpdatedAt.Time,
 	}
-	if data.CreatedAt.Valid {
-		event.CreatedAt = data.CreatedAt.Time
+	if row.OrganizerID.Valid {
+		organizerID := row.OrganizerID.String()
+		event.OrganizerID = &organizerID
 	}
-	if data.UpdatedAt.Valid {
-		event.UpdatedAt = data.UpdatedAt.Time
+	if row.PrimaryVenueID.Valid {
+		venueID := row.PrimaryVenueID.String()
+		event.PrimaryVenueID = &venueID
 	}
 	return event, nil
 }
@@ -1551,10 +1543,15 @@ func (r *EventRepository) UpsertEventSeries(ctx context.Context, params events.U
 		rdates = []pgtype.Timestamptz{}
 	}
 
+	// Keep both upsert targets independent while legacy binaries still use external_key.
+	keyColumn := "external_key"
+	if params.Synthetic {
+		keyColumn = "synthetic_external_key"
+	}
 	row := queryer.QueryRow(ctx, `
-INSERT INTO event_series (external_key, name, series_start_date, series_end_date, rrule, exdates, rdates, schedule_timezone)
+INSERT INTO event_series (`+keyColumn+`, name, series_start_date, series_end_date, rrule, exdates, rdates, schedule_timezone)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (external_key)
+ON CONFLICT (`+keyColumn+`)
   DO UPDATE SET
     name = EXCLUDED.name,
     series_start_date = EXCLUDED.series_start_date,
@@ -1695,7 +1692,7 @@ SELECT trust_level FROM sources WHERE id = $1
 
 // FindNearDuplicates finds events at the same venue on the same date with similar names.
 // Uses pg_trgm similarity() for fuzzy name matching. Returns candidates above the threshold.
-func (r *EventRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+func (r *EventRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64, synthetic bool) ([]events.NearDuplicateCandidate, error) {
 	queryer := r.queryer()
 
 	// Match events at the same venue on the same calendar date with similar names.
@@ -1712,12 +1709,12 @@ SELECT * FROM (
    WHERE e.deleted_at IS NULL
      AND e.primary_venue_id = $1
      AND DATE(o.start_time) = DATE($2::timestamptz)
-     AND similarity(e.name, $3) >= $4
+     AND similarity(e.name, $3) >= $4 AND e.synthetic = $5
    ORDER BY e.id, sim DESC
 ) sub
 ORDER BY sim DESC
 LIMIT 5
-`, venueID, startTime, eventName, threshold)
+`, venueID, startTime, eventName, threshold, synthetic)
 	if err != nil {
 		return nil, fmt.Errorf("find near duplicates: %w", err)
 	}
@@ -1768,6 +1765,7 @@ func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events
 	 WHERE e.deleted_at IS NULL
 	   AND e.lifecycle_state IN ('published', 'pending_review')
 	   AND e.primary_venue_id = $1
+	   AND e.synthetic = $4
 	   AND normalize_name(e.name) % normalize_name($2)
 	   AND similarity(normalize_name(e.name), normalize_name($2)) >= 0.8
 	   AND (
@@ -1777,7 +1775,7 @@ func (r *EventRepository) FindSeriesCompanion(ctx context.Context, params events
 	   )
 	   AND ABS(EXTRACT(EPOCH FROM (o.start_time::time - $3::timestamptz::time))) < 1800
 	LIMIT 1
-	`, params.VenueID, params.NormalizedName, params.StartTime).Scan(
+	`, params.VenueID, params.NormalizedName, params.StartTime, params.Synthetic).Scan(
 		&companionULID, &companionName, &companionStartTime, &companionVenueName,
 	)
 	if err == pgx.ErrNoRows {
@@ -1868,7 +1866,7 @@ paired AS (
        AND b.local_day_of_week = a.local_day_of_week
        AND abs(extract(epoch FROM (a.local_start_time - b.local_start_time))) <= 1800
       JOIN events ea ON ea.id = a.event_id
-      JOIN events eb ON eb.id = b.event_id
+      JOIN events eb ON eb.id = b.event_id AND eb.synthetic = ea.synthetic
      WHERE ea.primary_venue_id = eb.primary_venue_id
 ),
 agg AS (
@@ -2939,6 +2937,7 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params e
 		EventDomain:    row.EventDomain.String,
 		ImageURL:       row.ImageUrl.String,
 		PublicURL:      row.PublicUrl.String,
+		Synthetic:      row.Synthetic,
 		Keywords:       row.Keywords,
 		DedupHash:      row.DedupHash.String,
 		CreatedAt:      row.CreatedAt.Time,
@@ -3158,10 +3157,10 @@ func tombstoneFromRow(row EventTombstone) *events.Tombstone {
 }
 
 // FindReviewByDedup finds an existing review by deduplication keys
-func (r *EventRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*events.ReviewQueueEntry, error) {
+func (r *EventRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string, synthetic bool) (*events.ReviewQueueEntry, error) {
 	queries := Queries{db: r.queryer()}
 
-	params := FindReviewByDedupParams{}
+	params := FindReviewByDedupParams{Synthetic: synthetic}
 	if sourceID != nil {
 		params.SourceID = pgtype.Text{String: *sourceID, Valid: true}
 	}
@@ -4190,10 +4189,14 @@ func (r *EventRepository) CleanupExpiredReviews(ctx context.Context) error {
 	return nil
 }
 
-// convertListReviewQueueRow converts SQLc ListReviewQueueRow to events.ReviewQueueEntry
-// Used when the query includes a JOIN with events table to get event_ulid
+// convertListReviewQueueRow includes the public event and source URLs for the list.
 func convertListReviewQueueRow(row ListReviewQueueRow) *events.ReviewQueueEntry {
-	return convertReviewQueueRowGeneric(row)
+	entry := convertReviewQueueRowGeneric(row)
+	if row.EventUrl.Valid {
+		entry.EventURL = row.EventUrl.String
+	}
+	entry.SourceURL = row.SourceUrl
+	return entry
 }
 
 // convertGetReviewQueueEntryRow converts SQLc GetReviewQueueEntryRow to events.ReviewQueueEntry

@@ -33,6 +33,8 @@ type ReviewQueueItem struct {
 	DuplicateOfEventID *string    `json:"duplicateOfEventUlid,omitempty"`
 	SourceID           *string    `json:"sourceId,omitempty"`
 	EventName          string     `json:"eventName,omitempty"`
+	EventURL           string     `json:"eventUrl,omitempty"`
+	SourceURL          string     `json:"sourceUrl,omitempty"`
 	EventStartTime     *time.Time `json:"eventStartTime,omitempty"`
 	EventEndTime       *time.Time `json:"eventEndTime,omitempty"`
 	OccurrenceCount    int        `json:"occurrenceCount,omitempty"`

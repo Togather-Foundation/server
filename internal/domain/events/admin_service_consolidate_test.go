@@ -658,7 +658,7 @@ func TestConsolidate_CreatePath_DedupHashMatch_FlagsAsReview(t *testing.T) {
 	}
 	// FindByDedupHash returns an existing event with a different ULID (not the new one,
 	// not in the retire list) — should trigger the exact_duplicate warning.
-	base.findByDedupHashFunc = func(_ context.Context, _ string) (*Event, error) {
+	base.findByDedupHashFunc = func(_ context.Context, _ string, _ bool) (*Event, error) {
 		return makePublishedEvent("uuid-existing", existingMatchULID, "New Canon Event"), nil
 	}
 
@@ -735,7 +735,7 @@ func TestConsolidate_CreatePath_DedupHashMatch_RetiredExcluded(t *testing.T) {
 		return nil
 	}
 	// FindByDedupHash returns the event being retired — should NOT trigger a warning.
-	base.findByDedupHashFunc = func(_ context.Context, _ string) (*Event, error) {
+	base.findByDedupHashFunc = func(_ context.Context, _ string, _ bool) (*Event, error) {
 		return makePublishedEvent("uuid-retire", consolidateRetireULID, "Old Event"), nil
 	}
 

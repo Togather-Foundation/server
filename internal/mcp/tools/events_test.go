@@ -480,8 +480,10 @@ func TestBuildListItem(t *testing.T) {
 		{
 			name: "event with occurrence",
 			event: events.Event{
-				ULID: "01HX1234567890ABCDEFGHJKMN",
-				Name: "Event with Venue",
+				ULID:      "01HX1234567890ABCDEFGHJKMN",
+				Name:      "Event with Venue",
+				PublicURL: "https://meetup.fixtures.togather.invalid/events/123",
+				Synthetic: true,
 				Occurrences: []events.Occurrence{
 					{VenueID: &venueID},
 				},
@@ -507,6 +509,12 @@ func TestBuildListItem(t *testing.T) {
 			}
 			if _, hasCtx := result["@context"]; !hasCtx {
 				t.Error("expected @context on item in includeContext mode")
+			}
+			if got, present := result["url"]; present != (tt.event.PublicURL != "") || present && got != tt.event.PublicURL {
+				t.Errorf("expected matching optional URL %q, got %v (present=%v)", tt.event.PublicURL, got, present)
+			}
+			if got, present := result["sel:synthetic"]; present != tt.event.Synthetic || present && got != true {
+				t.Errorf("expected synthetic marker presence %v, got %v (present=%v)", tt.event.Synthetic, got, present)
 			}
 		})
 	}
@@ -536,7 +544,8 @@ func TestBuildEventPayloadIncludesProvenanceFields(t *testing.T) {
 		ULID:        "01HX1234567890ABCDEFGHJKMN",
 		Name:        "Provenance Test",
 		Description: "A test event with a resolvable source URL",
-		PublicURL:   "https://www.meetup.com/example/events/123",
+		PublicURL:   "https://meetup.fixtures.togather.invalid/events/123",
+		Synthetic:   true,
 		Occurrences: []events.Occurrence{
 			{
 				StartTime: time.Date(2026, 7, 10, 19, 0, 0, 0, time.UTC),
@@ -550,6 +559,9 @@ func TestBuildEventPayloadIncludesProvenanceFields(t *testing.T) {
 	if got, ok := payload["url"]; !ok || got != event.PublicURL {
 		t.Errorf("expected url %q, got %v (present=%v)", event.PublicURL, got, ok)
 	}
+	if got := payload["sel:synthetic"]; got != true {
+		t.Errorf("expected synthetic marker true, got %v", got)
+	}
 	if got, ok := payload["description"]; !ok || got != event.Description {
 		t.Errorf("expected description %q, got %v (present=%v)", event.Description, got, ok)
 	}
@@ -558,9 +570,8 @@ func TestBuildEventPayloadIncludesProvenanceFields(t *testing.T) {
 	}
 }
 
-// TestBuildEventPayloadOmitsEmptyOptionalFields verifies that url/description/
-// endDate are omitted when absent, matching the REST detail handler's
-// omitempty semantics rather than emitting empty strings.
+// TestBuildEventPayloadOmitsEmptyOptionalFields verifies the same omission
+// behavior as the REST detail handler for unset URL and provenance fields.
 func TestBuildEventPayloadOmitsEmptyOptionalFields(t *testing.T) {
 	event := &events.Event{
 		ULID: "01HX1234567890ABCDEFGHJKMN",
@@ -572,7 +583,7 @@ func TestBuildEventPayloadOmitsEmptyOptionalFields(t *testing.T) {
 
 	payload := buildEventPayload(context.Background(), event, "https://test.example.com", nil, nil, nil, zerolog.Nop())
 
-	for _, field := range []string{"url", "description", "endDate"} {
+	for _, field := range []string{"url", "description", "endDate", "sel:synthetic"} {
 		if _, present := payload[field]; present {
 			t.Errorf("expected %q to be omitted when empty, but it was present: %v", field, payload[field])
 		}

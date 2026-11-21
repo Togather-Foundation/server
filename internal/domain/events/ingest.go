@@ -866,6 +866,9 @@ func reconstructPayloadFromEvent(event *Event) ([]byte, error) {
 		"name":           event.Name,
 	}
 
+	if event.Synthetic {
+		payload["sel:synthetic"] = true
+	}
 	if event.Description != "" {
 		payload["description"] = event.Description
 	}

@@ -135,6 +135,7 @@ type Querier interface {
 	// reference any of the given retire ULIDs. Returns the review ID and event ULID
 	// so callers can update the warning details to point to a surviving canonical.
 	FindCrossWeekCompanionTargets(ctx context.Context, retireUlids []string) ([]FindCrossWeekCompanionTargetsRow, error)
+	FindEventByDedupHash(ctx context.Context, arg FindEventByDedupHashParams) (FindEventByDedupHashRow, error)
 	// SQLc queries for event_review_queue domain.
 	// See docs/architecture/event-review-workflow.md for complete design.
 	// Find existing review by deduplication keys (checks source_external_id or dedup_hash)

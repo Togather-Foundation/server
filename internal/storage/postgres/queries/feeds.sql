@@ -5,7 +5,11 @@ SELECT ec.id,
        ec.event_id,
        ec.action,
        ec.changed_fields,
-       ec.snapshot,
+       -- Delete snapshots store the tombstone payload instead of the event row.
+       CASE WHEN ec.action = 'delete' AND e.synthetic AND jsonb_typeof(ec.snapshot) = 'object'
+            THEN ec.snapshot || '{"sel:synthetic":true}'::jsonb
+            ELSE ec.snapshot
+       END::jsonb AS snapshot,
        ec.changed_at,
        ec.sequence_number,
        e.ulid AS event_ulid,

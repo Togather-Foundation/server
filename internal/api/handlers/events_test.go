@@ -84,11 +84,11 @@ func (s stubEventsRepo) CreateSource(_ context.Context, _ events.EventSourceCrea
 	return errors.New("not implemented")
 }
 
-func (s stubEventsRepo) FindByFeedEventID(_ context.Context, _ string, _ string) (*events.Event, error) {
+func (s stubEventsRepo) FindByFeedEventID(_ context.Context, _ string, _ string, _ bool) (*events.Event, error) {
 	return nil, events.ErrNotFound
 }
 
-func (s stubEventsRepo) FindByDedupHash(_ context.Context, _ string) (*events.Event, error) {
+func (s stubEventsRepo) FindByDedupHash(_ context.Context, _ string, _ bool) (*events.Event, error) {
 	return nil, events.ErrNotFound
 }
 
@@ -169,7 +169,7 @@ func (s stubEventsRepo) BeginTx(_ context.Context) (events.Repository, events.Tx
 }
 
 // Review Queue methods
-func (s stubEventsRepo) FindReviewByDedup(_ context.Context, _ *string, _ *string, _ *string) (*events.ReviewQueueEntry, error) {
+func (s stubEventsRepo) FindReviewByDedup(_ context.Context, _ *string, _ *string, _ *string, _ bool) (*events.ReviewQueueEntry, error) {
 	return nil, events.ErrNotFound
 }
 
@@ -216,7 +216,7 @@ func (s stubEventsRepo) GetSourceTrustLevelBySourceID(_ context.Context, _ strin
 	return 5, nil
 }
 
-func (s stubEventsRepo) FindNearDuplicates(_ context.Context, _ string, _ time.Time, _ string, _ float64) ([]events.NearDuplicateCandidate, error) {
+func (s stubEventsRepo) FindNearDuplicates(_ context.Context, _ string, _ time.Time, _ string, _ float64, _ bool) ([]events.NearDuplicateCandidate, error) {
 	return nil, nil
 }
 func (s stubEventsRepo) FindSimilarPlaces(_ context.Context, _ string, _ string, _ string, _ float64) ([]events.SimilarPlaceCandidate, error) {

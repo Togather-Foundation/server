@@ -54,3 +54,17 @@ func TestBuildEventPayloadTimedRendering(t *testing.T) {
 	_, hasAllDay := payload["allDay"]
 	require.False(t, hasAllDay, "timed occurrence must not expose allDay")
 }
+
+func TestPublicPageEventProvenance(t *testing.T) {
+	event := events.Event{Name: "Harbour Walk", ULID: "01HX1234567890ABCDEFGHJKMN"}
+	payload := buildEventPayload(&event, "https://catalogue.invalid", time.UTC)
+	require.NotContains(t, payload, "url")
+	require.NotContains(t, payload, "sel:synthetic")
+
+	event.PublicURL = "https://listing.fixtures.togather.invalid/harbour-walk"
+	event.Synthetic = true
+	payload = buildEventPayload(&event, "https://catalogue.invalid", time.UTC)
+	require.Equal(t, event.PublicURL, payload["url"])
+	require.Equal(t, true, payload["sel:synthetic"])
+	require.NotEqual(t, event.PublicURL, payload["@id"])
+}

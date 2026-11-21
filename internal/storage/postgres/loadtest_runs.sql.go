@@ -72,7 +72,7 @@ func (q *Queries) GetLoadtestRunLifecycle(ctx context.Context, eventID pgtype.UU
 }
 
 const listLoadtestRunCandidates = `-- name: ListLoadtestRunCandidates :many
-SELECT es.id, es.event_id, es.source_id, es.source_url, es.source_event_id, es.retrieved_at, es.payload, es.payload_hash, es.confidence, e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_status, e.attendance_mode, e.organizer_id, e.primary_venue_id, e.series_id, e.image_url, e.public_url, e.virtual_url, e.keywords, e.in_language, e.default_language, e.is_accessible_for_free, e.accessibility_features, e.event_domain, e.origin_node_id, e.federation_uri, e.dedup_hash, e.license_url, e.license_status, e.takedown_requested, e.takedown_requested_at, e.takedown_request_notes, e.confidence, e.quality_score, e.version, e.created_at, e.updated_at, e.published_at, e.deleted_at, e.merged_into_id, e.deletion_reason, e.first_published_at
+SELECT es.id, es.event_id, es.source_id, es.source_url, es.source_event_id, es.retrieved_at, es.payload, es.payload_hash, es.confidence, e.id, e.ulid, e.name, e.description, e.lifecycle_state, e.event_status, e.attendance_mode, e.organizer_id, e.primary_venue_id, e.series_id, e.image_url, e.public_url, e.virtual_url, e.keywords, e.in_language, e.default_language, e.is_accessible_for_free, e.accessibility_features, e.event_domain, e.origin_node_id, e.federation_uri, e.dedup_hash, e.license_url, e.license_status, e.takedown_requested, e.takedown_requested_at, e.takedown_request_notes, e.confidence, e.quality_score, e.version, e.created_at, e.updated_at, e.published_at, e.deleted_at, e.merged_into_id, e.deletion_reason, e.first_published_at, e.synthetic
 FROM event_sources es JOIN events e ON e.id=es.event_id
 WHERE rtrim(split_part(split_part(es.source_url, '#', 1), '?', 1), '/')=$1::text
 ORDER BY e.id, es.id
@@ -139,6 +139,7 @@ func (q *Queries) ListLoadtestRunCandidates(ctx context.Context, sourceUrl strin
 			&i.Event.MergedIntoID,
 			&i.Event.DeletionReason,
 			&i.Event.FirstPublishedAt,
+			&i.Event.Synthetic,
 		); err != nil {
 			return nil, err
 		}
@@ -232,7 +233,7 @@ func (q *Queries) ListLoadtestRunOccurrences(ctx context.Context, eventID pgtype
 }
 
 const listLoadtestRunReviews = `-- name: ListLoadtestRunReviews :many
-SELECT id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day FROM event_review_queue WHERE event_id=$1::uuid ORDER BY id
+SELECT id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day, synthetic FROM event_review_queue WHERE event_id=$1::uuid ORDER BY id
 `
 
 func (q *Queries) ListLoadtestRunReviews(ctx context.Context, eventID pgtype.UUID) ([]EventReviewQueue, error) {
@@ -264,6 +265,7 @@ func (q *Queries) ListLoadtestRunReviews(ctx context.Context, eventID pgtype.UUI
 			&i.UpdatedAt,
 			&i.DuplicateOfEventID,
 			&i.EventAllDay,
+			&i.Synthetic,
 		); err != nil {
 			return nil, err
 		}

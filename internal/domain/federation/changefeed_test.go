@@ -7,7 +7,32 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestTransformSnapshotSyntheticMarker(t *testing.T) {
+	service := &ChangeFeedService{}
+	for _, tc := range []struct {
+		name     string
+		snapshot string
+		marked   bool
+	}{
+		{name: "marked", snapshot: `{"name":"Fixture","synthetic":true}`, marked: true},
+		{name: "ordinary", snapshot: `{"name":"Event","synthetic":false}`},
+		{name: "legacy", snapshot: `{"name":"Event"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshot, err := service.transformSnapshotToJSONLD([]byte(tc.snapshot), "", snapshotExtras{})
+			require.NoError(t, err)
+			if tc.marked {
+				require.Contains(t, string(snapshot), `"sel:synthetic":true`)
+			} else {
+				require.NotContains(t, string(snapshot), `"sel:synthetic"`)
+			}
+			require.NotContains(t, string(snapshot), `"synthetic"`)
+		})
+	}
+}
 
 func TestUuidToString(t *testing.T) {
 	tests := []struct {

@@ -801,6 +801,7 @@ func TestEventInput_JSONRoundTrip_AllFields(t *testing.T) {
 
 	original := EventInput{
 		Name:                  "Round-Trip Test Event",
+		Synthetic:             true,
 		Description:           "Testing all fields survive JSON round-trip",
 		StartDate:             "2026-07-08T19:00:00-04:00",
 		EndDate:               "2026-07-08T21:00:00-04:00",
@@ -842,6 +843,7 @@ func TestEventInput_JSONRoundTrip_AllFields(t *testing.T) {
 	assert.Equal(t, original.EndDate, decoded.EndDate, "EndDate")
 	assert.Equal(t, original.DoorTime, decoded.DoorTime, "DoorTime")
 	assert.Equal(t, original.AllDay, decoded.AllDay, "AllDay")
+	assert.True(t, decoded.Synthetic)
 	assert.Equal(t, original.EventDomain, decoded.EventDomain, "EventDomain")
 	assert.NotNil(t, decoded.Location, "Location should not be nil")
 	assert.Equal(t, "Test Venue", decoded.Location.Name, "Location.Name")
@@ -875,4 +877,30 @@ func TestEventInput_JSONRoundTrip_AllFields(t *testing.T) {
 	assert.NotNil(t, decoded.Recurrence.SeriesEnd, "Recurrence.SeriesEnd")
 	assert.Len(t, decoded.Recurrence.ExDates, 1, "Recurrence.ExDates")
 	assert.Len(t, decoded.Recurrence.RDates, 1, "Recurrence.RDates")
+}
+
+func TestEventInputSyntheticMarker(t *testing.T) {
+	for _, tc := range []struct {
+		payload string
+		want    bool
+		valid   bool
+	}{
+		{`{}`, false, true},
+		{`{"sel:synthetic": false}`, false, true},
+		{`{"sel:synthetic": true}`, true, true},
+		{`{"sel:synthetic": null}`, false, false},
+		{`{"sel:synthetic": "true"}`, false, false},
+		{`{"sel:synthetic": 1}`, false, false},
+	} {
+		t.Run(tc.payload, func(t *testing.T) {
+			input := EventInput{Synthetic: true}
+			err := json.Unmarshal([]byte(tc.payload), &input)
+			if !tc.valid {
+				require.ErrorContains(t, err, "sel:synthetic")
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.want, input.Synthetic)
+		})
+	}
 }

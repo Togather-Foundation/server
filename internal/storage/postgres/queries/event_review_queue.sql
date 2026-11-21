@@ -36,6 +36,7 @@ SELECT r.id,
          (sqlc.narg('dedup_hash')::text IS NOT NULL 
           AND r.dedup_hash = sqlc.narg('dedup_hash'))
        )
+   AND r.synthetic = sqlc.arg('synthetic')
    AND r.status IN ('pending', 'rejected')
  ORDER BY r.created_at DESC
  LIMIT 1;
@@ -43,6 +44,7 @@ SELECT r.id,
 -- name: CreateReviewQueueEntry :one
 -- Create new review queue entry
 INSERT INTO event_review_queue (
+  synthetic,
   event_id,
   original_payload,
   normalized_payload,
@@ -55,6 +57,7 @@ INSERT INTO event_review_queue (
   event_all_day,
   duplicate_of_event_id
 ) VALUES (
+  (SELECT e.synthetic FROM events e WHERE e.id = sqlc.arg('event_id')::uuid),
   sqlc.arg('event_id'),
   sqlc.arg('original_payload'),
   sqlc.arg('normalized_payload'),
@@ -88,6 +91,7 @@ RETURNING *;
 -- conflict. Times, provenance (source_id/source_external_id/dedup_hash),
 -- status, review metadata and created_at are never touched on conflict.
 INSERT INTO event_review_queue (
+  synthetic,
   event_id,
   original_payload,
   normalized_payload,
@@ -100,6 +104,7 @@ INSERT INTO event_review_queue (
   event_all_day,
   duplicate_of_event_id
 ) VALUES (
+  (SELECT e.synthetic FROM events e WHERE e.id = sqlc.arg('event_id')::uuid),
   sqlc.arg('event_id'),
   sqlc.arg('original_payload'),
   sqlc.arg('normalized_payload'),
@@ -207,10 +212,12 @@ SELECT r.id,
 SELECT r.id,
        r.event_id,
        e.ulid AS event_ulid,
+       e.public_url AS event_url,
        r.original_payload,
        r.normalized_payload,
        r.warnings,
        r.source_id,
+       COALESCE(NULLIF(s.feed_url, ''), s.base_url, '') AS source_url,
        r.source_external_id,
        r.dedup_hash,
        r.event_start_time,
@@ -227,6 +234,8 @@ SELECT r.id,
        dup.ulid AS duplicate_of_event_ulid
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
+  -- Legacy review rows can contain non-UUID source identifiers.
+  LEFT JOIN sources s ON s.id::text = r.source_id
   LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
  WHERE (sqlc.narg('status')::text IS NULL OR r.status = sqlc.narg('status'))
    AND (sqlc.narg('after_id')::integer IS NULL OR r.id > sqlc.narg('after_id'))

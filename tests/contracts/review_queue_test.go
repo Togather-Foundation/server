@@ -39,8 +39,24 @@ func TestReviewQueueListResponseStructure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert review queue entries
-	insertReviewQueueEntry(t, env, eventID1, `{"name":"Jazz in the Park"}`, `{"name":"Jazz in the Park"}`, `[]`, testhelpers.FutureTime(1))
-	insertReviewQueueEntry(t, env, eventID2, `{"name":"Summer Arts Expo"}`, `{"name":"Summer Arts Expo"}`, `[]`, testhelpers.FutureTime(2))
+	insertReviewQueueEntry(t, env, eventID1, `{"name":"Jazz in the Park","url":"https://venue.example.org/listing-before-correction"}`, `{"name":"Jazz in the Park"}`, `[]`, testhelpers.FutureTime(1))
+	insertReviewQueueEntry(t, env, eventID2, `{"name":"Summer Arts Expo","url":"https://venue.example.org/legacy-listing"}`, `{"name":"Summer Arts Expo"}`, `[]`, testhelpers.FutureTime(2))
+
+	const eventURL = "https://venue.example.org/events/jazz-in-the-park"
+	const sourceURL = "https://venue.example.org/calendar"
+	const legacySourceID = "legacy-scraper"
+	var sourceID string
+	err = env.Pool.QueryRow(env.Context, `
+		INSERT INTO sources (name, source_type, base_url, feed_url, license_url, license_type)
+		VALUES ('Venue calendar', 'scraper', 'https://venue.example.org', $1, 'https://creativecommons.org/publicdomain/zero/1.0/', 'CC0')
+		RETURNING id::text`, sourceURL).Scan(&sourceID)
+	require.NoError(t, err)
+	_, err = env.Pool.Exec(env.Context, `UPDATE events SET public_url = $1 WHERE id = $2`, eventURL, eventID1)
+	require.NoError(t, err)
+	_, err = env.Pool.Exec(env.Context, `UPDATE event_review_queue SET source_id = $1 WHERE event_id = $2`, sourceID, eventID1)
+	require.NoError(t, err)
+	_, err = env.Pool.Exec(env.Context, `UPDATE event_review_queue SET source_id = $1 WHERE event_id = $2`, legacySourceID, eventID2)
+	require.NoError(t, err)
 
 	// Test list endpoint
 	req, err := http.NewRequest(http.MethodGet, env.Server.URL+"/api/v1/admin/review-queue", nil)
@@ -67,7 +83,16 @@ func TestReviewQueueListResponseStructure(t *testing.T) {
 	// Verify items is an array
 	items, ok := payload["items"].([]any)
 	require.True(t, ok, "items should be an array")
-	require.GreaterOrEqual(t, len(items), 2, "should have at least 2 items")
+	require.Len(t, items, 2)
+	first := items[0].(map[string]any)
+	require.Equal(t, eventULID1, first["eventId"])
+	require.Equal(t, eventURL, first["eventUrl"])
+	require.Equal(t, sourceURL, first["sourceUrl"])
+	second := items[1].(map[string]any)
+	require.Equal(t, eventULID2, second["eventId"])
+	require.Equal(t, legacySourceID, second["sourceId"])
+	require.NotContains(t, second, "eventUrl")
+	require.NotContains(t, second, "sourceUrl")
 
 	// Verify next_cursor is a string (even if empty)
 	_, ok = payload["next_cursor"].(string)

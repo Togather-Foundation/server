@@ -247,7 +247,7 @@ type mockTransactionalRepo struct {
 	dismissAllCompanionWarningsFunc                 func(ctx context.Context, reviewID int, eventULID string) (bool, error)
 	stripRetiredDupWarningsFunc                     func(ctx context.Context, reviewID int, retireULIDs []string) (bool, error)
 	findCrossWeekCompanionTargetsFunc               func(ctx context.Context, retireULIDs []string) ([]CrossWeekCompanionTarget, error)
-	findByDedupHashFunc                             func(ctx context.Context, dedupHash string) (*Event, error)
+	findByDedupHashFunc                             func(ctx context.Context, dedupHash string, synthetic bool) (*Event, error)
 	findNearDuplicatesFunc                          func(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
 	findSeriesCompanionFunc                         func(ctx context.Context, params SeriesCompanionQuery) (*CrossWeekCompanion, error)
 	commitCalled                                    bool
@@ -322,12 +322,12 @@ func (m *mockTransactionalRepo) CreateOccurrence(ctx context.Context, params Occ
 func (m *mockTransactionalRepo) CreateSource(ctx context.Context, params EventSourceCreateParams) error {
 	return errors.New("not implemented")
 }
-func (m *mockTransactionalRepo) FindByFeedEventID(ctx context.Context, feedURL, sourceEventID string) (*Event, error) {
+func (m *mockTransactionalRepo) FindByFeedEventID(ctx context.Context, feedURL, sourceEventID string, synthetic bool) (*Event, error) {
 	return nil, errors.New("not implemented")
 }
-func (m *mockTransactionalRepo) FindByDedupHash(ctx context.Context, dedupHash string) (*Event, error) {
+func (m *mockTransactionalRepo) FindByDedupHash(ctx context.Context, dedupHash string, synthetic bool) (*Event, error) {
 	if m.findByDedupHashFunc != nil {
-		return m.findByDedupHashFunc(ctx, dedupHash)
+		return m.findByDedupHashFunc(ctx, dedupHash, synthetic)
 	}
 	return nil, ErrNotFound
 }
@@ -399,7 +399,7 @@ func (m *mockTransactionalRepo) SoftDeleteEvent(ctx context.Context, ulid, reaso
 }
 
 // Review Queue methods
-func (m *mockTransactionalRepo) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error) {
+func (m *mockTransactionalRepo) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string, synthetic bool) (*ReviewQueueEntry, error) {
 	return nil, errors.New("not implemented")
 }
 func (m *mockTransactionalRepo) CreateReviewQueueEntry(ctx context.Context, params ReviewQueueCreateParams) (*ReviewQueueEntry, error) {
@@ -566,7 +566,7 @@ func (m *mockTransactionalRepo) GetSourceTrustLevel(ctx context.Context, eventID
 func (m *mockTransactionalRepo) GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error) {
 	return 5, nil
 }
-func (m *mockTransactionalRepo) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error) {
+func (m *mockTransactionalRepo) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64, synthetic bool) ([]NearDuplicateCandidate, error) {
 	if m.findNearDuplicatesFunc != nil {
 		return m.findNearDuplicatesFunc(ctx, venueID, startTime, eventName, threshold)
 	}

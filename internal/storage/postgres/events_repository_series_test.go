@@ -99,6 +99,48 @@ func TestUpsertEventSeries(t *testing.T) {
 		require.Equal(t, "America/Toronto", tzid)
 	})
 
+	t.Run("legacy and synthetic upserts keep separate series for the same key", func(t *testing.T) {
+		const externalKey = "myorg-ical:EVT-COMPAT"
+		// The previous binary still uses this conflict target during cutover and rollback.
+		const legacyUpsert = `
+			INSERT INTO event_series (external_key, name, series_start_date)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (external_key) DO UPDATE SET name = EXCLUDED.name
+			RETURNING id::text`
+		var ordinaryID string
+		err := pool.QueryRow(ctx, legacyUpsert, externalKey, "Legacy schedule", seriesStart).Scan(&ordinaryID)
+		require.NoError(t, err)
+
+		params := events.UpsertEventSeriesParams{
+			ExternalKey: externalKey,
+			Name:        "Synthetic schedule",
+			SeriesStart: seriesStart,
+			RRule:       "FREQ=DAILY;COUNT=3",
+			Synthetic:   true,
+		}
+		synthetic, err := repo.UpsertEventSeries(ctx, params)
+		require.NoError(t, err)
+		require.NotEqual(t, ordinaryID, synthetic.SeriesID)
+
+		params.Name = "Updated synthetic schedule"
+		replayed, err := repo.UpsertEventSeries(ctx, params)
+		require.NoError(t, err)
+		require.Equal(t, synthetic.SeriesID, replayed.SeriesID)
+
+		var legacyReplayID string
+		err = pool.QueryRow(ctx, legacyUpsert, externalKey, "Updated legacy schedule", seriesStart).Scan(&legacyReplayID)
+		require.NoError(t, err)
+		require.Equal(t, ordinaryID, legacyReplayID)
+
+		var ordinaryName, syntheticName string
+		err = pool.QueryRow(ctx, `SELECT ordinary.name, synthetic.name
+			FROM event_series ordinary CROSS JOIN event_series synthetic
+			WHERE ordinary.id = $1 AND synthetic.id = $2`, ordinaryID, synthetic.SeriesID).Scan(&ordinaryName, &syntheticName)
+		require.NoError(t, err)
+		require.Equal(t, "Updated legacy schedule", ordinaryName)
+		require.Equal(t, "Updated synthetic schedule", syntheticName)
+	})
+
 	t.Run("nil SeriesEnd", func(t *testing.T) {
 		result, err := repo.UpsertEventSeries(ctx, events.UpsertEventSeriesParams{
 			ExternalKey: "myorg-ical:EVT-003",

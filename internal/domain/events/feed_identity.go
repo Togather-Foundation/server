@@ -3,7 +3,8 @@ package events
 // Feed-scoped event identity.
 //
 // A feed event's identity is the pair (feed URL, sourceEventID) — the source's
-// own id for the event, scoped to the feed that published it. It is
+// own id for the event, scoped to the feed that published it. Matching also
+// requires the same synthetic marker to isolate generated fixtures. It is
 // deliberately NOT scoped to a `sources` row: historical host/name-based source
 // registration could give one feed several source rows, making the same feed
 // event look new under a second row. Sources now register a canonical normalized

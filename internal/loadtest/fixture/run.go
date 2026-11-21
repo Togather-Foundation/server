@@ -22,6 +22,13 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	legacyManifestVersion    = 1
+	syntheticManifestVersion = 2
+	runSourcePath            = "/_loadtest/runs/"
+	syntheticSourcePrefix    = "https://loadtest.togather.invalid" + runSourcePath
+)
+
 // Manifest is a private, immutable run capability. Never log its OwnershipKey.
 type Manifest struct {
 	Version      int       `json:"version"`
@@ -56,13 +63,20 @@ func New(targetURL string, now time.Time) (Manifest, error) {
 	if _, err := rand.Read(key); err != nil {
 		return Manifest{}, fmt.Errorf("generate ownership key: %w", err)
 	}
-	m := Manifest{Version: 1, RunID: id.String(), TargetURL: target, SourceURL: target + "/_loadtest/runs/" + id.String(), AnchorTime: now.UTC().Truncate(time.Second), OwnershipKey: base64.StdEncoding.EncodeToString(key)}
+	m := Manifest{
+		Version:      syntheticManifestVersion,
+		RunID:        id.String(),
+		TargetURL:    target,
+		SourceURL:    syntheticSourcePrefix + id.String(),
+		AnchorTime:   now.UTC().Truncate(time.Second),
+		OwnershipKey: base64.StdEncoding.EncodeToString(key),
+	}
 	return m, m.Validate()
 }
 
 // Validate verifies the manifest contract without exposing its secret in errors.
 func (m Manifest) Validate() error {
-	if m.Version != 1 {
+	if m.Version != legacyManifestVersion && m.Version != syntheticManifestVersion {
 		return fmt.Errorf("unsupported run manifest version")
 	}
 	id, err := uuid.Parse(m.RunID)
@@ -73,7 +87,11 @@ func (m Manifest) Validate() error {
 	if err != nil || target != m.TargetURL {
 		return fmt.Errorf("invalid canonical run target")
 	}
-	if m.SourceURL != target+"/_loadtest/runs/"+m.RunID || events.NormalizeFeedURL(m.SourceURL) != m.SourceURL {
+	sourcePrefix := syntheticSourcePrefix
+	if m.Version == legacyManifestVersion {
+		sourcePrefix = target + runSourcePath
+	}
+	if m.SourceURL != sourcePrefix+m.RunID || events.NormalizeFeedURL(m.SourceURL) != m.SourceURL {
 		return fmt.Errorf("invalid run source URL")
 	}
 	_, offset := m.AnchorTime.Zone()
@@ -160,6 +178,11 @@ func (m Manifest) eventID(sequence uint64) string {
 	prefix := "loadtest:" + m.RunID + ":" + strconv.FormatUint(sequence, 10)
 	key, _ := base64.StdEncoding.DecodeString(m.OwnershipKey)
 	mac := hmac.New(sha256.New, key)
+	if m.Version == syntheticManifestVersion {
+		// The reserved source URL no longer contains the HTTP target. Bind the
+		// canonical target in the signature and retain v1's signature format.
+		_, _ = mac.Write([]byte("v2\n" + m.TargetURL + "\n"))
+	}
 	_, _ = mac.Write([]byte(prefix))
 	return prefix + ":" + hex.EncodeToString(mac.Sum(nil))
 }
@@ -175,6 +198,7 @@ func (m Manifest) Event(sequence uint64) (events.EventInput, error) {
 	suffix := strconv.FormatUint(sequence, 10)
 	start := m.AnchorTime.AddDate(0, 0, 7)
 	return events.EventInput{
+		Synthetic:   m.Version == syntheticManifestVersion,
 		Name:        "Load test " + m.RunID + " event " + suffix,
 		Description: "Disposable virtual event generated for an explicitly owned load-test run. This fixture measures ingestion and must be removed with its private run manifest after testing.",
 		StartDate:   start.Format(time.RFC3339), EndDate: start.Add(time.Hour).Format(time.RFC3339),

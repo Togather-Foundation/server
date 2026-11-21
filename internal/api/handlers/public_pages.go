@@ -349,6 +349,8 @@ func buildEventPayload(event *events.Event, baseURL string, loc *time.Location) 
 	ev.Context = loadDefaultContext()
 	ev.ID = buildEventURI(baseURL, event.ULID)
 	ev.Description = event.Description
+	ev.URL = event.PublicURL
+	ev.Synthetic = event.Synthetic
 
 	// Extract startDate from first occurrence if available.
 	// All-day occurrences render date-only and carry the allDay marker, mirroring

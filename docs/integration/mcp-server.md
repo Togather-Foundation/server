@@ -132,6 +132,11 @@ Examples:
 {"id": "01KGSV7H8ZDHTYTV6QKFGMFFMZ"}
 ```
 
+Event list items and individual events include the stored public listing URL as
+`url` when available. The `@id` identifies the event on its Togather node. Events
+marked as synthetic include `"sel:synthetic": true`. Unmarked events omit the
+property, so clients can exclude fixtures by checking for `true`.
+
 ### Event proximity filters
 
 The MCP `events` list tool supports proximity filters with the same behavior as

@@ -350,6 +350,9 @@ func (s *ChangeFeedService) transformSnapshotToJSONLD(dbSnapshot json.RawMessage
 	}
 
 	// Add optional fields if present
+	if synthetic, _ := dbData["synthetic"].(bool); synthetic {
+		jsonLD["sel:synthetic"] = true
+	}
 	if desc, ok := dbData["description"].(string); ok && desc != "" {
 		jsonLD["description"] = desc
 	}

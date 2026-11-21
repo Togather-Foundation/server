@@ -172,6 +172,7 @@ func (n FederationNode) CanAcceptInboundSync() bool {
 type UpsertFederatedEventParams struct {
 	Ulid                  string
 	Name                  string
+	Synthetic             bool
 	Description           pgtype.Text
 	LifecycleState        string
 	EventStatus           pgtype.Text
@@ -520,6 +521,10 @@ func (s *SyncService) validateJSONLD(payload map[string]any) error {
 	if _, ok := payload["@context"]; !ok {
 		return fmt.Errorf("%w: missing @context", ErrInvalidJSONLD)
 	}
+	marker, present := payload["sel:synthetic"]
+	if _, isBoolean := marker.(bool); present && !isBoolean {
+		return fmt.Errorf("%w: sel:synthetic must be a boolean", ErrInvalidJSONLD)
+	}
 
 	return nil
 }
@@ -769,6 +774,7 @@ func extractOptionalEventFields(payload map[string]any, params *UpsertFederatedE
 	}
 
 	// Boolean fields
+	params.Synthetic, _ = payload["sel:synthetic"].(bool)
 	if accessible, ok := payload["isAccessibleForFree"].(bool); ok {
 		params.IsAccessibleForFree = pgtype.Bool{Bool: accessible, Valid: true}
 	}

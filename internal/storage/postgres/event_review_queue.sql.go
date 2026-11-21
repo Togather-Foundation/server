@@ -20,7 +20,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = $3
    AND status = 'pending'
-RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day, synthetic
 `
 
 type ApproveReviewParams struct {
@@ -53,6 +53,7 @@ func (q *Queries) ApproveReview(ctx context.Context, arg ApproveReviewParams) (E
 		&i.UpdatedAt,
 		&i.DuplicateOfEventID,
 		&i.EventAllDay,
+		&i.Synthetic,
 	)
 	return i, err
 }
@@ -112,6 +113,7 @@ func (q *Queries) CountReviewQueueByStatus(ctx context.Context, status pgtype.Te
 
 const createReviewQueueEntry = `-- name: CreateReviewQueueEntry :one
 INSERT INTO event_review_queue (
+  synthetic,
   event_id,
   original_payload,
   normalized_payload,
@@ -124,6 +126,7 @@ INSERT INTO event_review_queue (
   event_all_day,
   duplicate_of_event_id
 ) VALUES (
+  (SELECT e.synthetic FROM events e WHERE e.id = $1::uuid),
   $1,
   $2,
   $3,
@@ -136,7 +139,7 @@ INSERT INTO event_review_queue (
   $10,
   $11
 )
-RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day, synthetic
 `
 
 type CreateReviewQueueEntryParams struct {
@@ -189,6 +192,7 @@ func (q *Queries) CreateReviewQueueEntry(ctx context.Context, arg CreateReviewQu
 		&i.UpdatedAt,
 		&i.DuplicateOfEventID,
 		&i.EventAllDay,
+		&i.Synthetic,
 	)
 	return i, err
 }
@@ -415,6 +419,7 @@ SELECT r.id,
          ($3::text IS NOT NULL 
           AND r.dedup_hash = $3)
        )
+   AND r.synthetic = $4
    AND r.status IN ('pending', 'rejected')
  ORDER BY r.created_at DESC
  LIMIT 1
@@ -424,6 +429,7 @@ type FindReviewByDedupParams struct {
 	SourceID         pgtype.Text `json:"source_id"`
 	SourceExternalID pgtype.Text `json:"source_external_id"`
 	DedupHash        pgtype.Text `json:"dedup_hash"`
+	Synthetic        bool        `json:"synthetic"`
 }
 
 type FindReviewByDedupRow struct {
@@ -454,7 +460,12 @@ type FindReviewByDedupRow struct {
 // See docs/architecture/event-review-workflow.md for complete design.
 // Find existing review by deduplication keys (checks source_external_id or dedup_hash)
 func (q *Queries) FindReviewByDedup(ctx context.Context, arg FindReviewByDedupParams) (FindReviewByDedupRow, error) {
-	row := q.db.QueryRow(ctx, findReviewByDedup, arg.SourceID, arg.SourceExternalID, arg.DedupHash)
+	row := q.db.QueryRow(ctx, findReviewByDedup,
+		arg.SourceID,
+		arg.SourceExternalID,
+		arg.DedupHash,
+		arg.Synthetic,
+	)
 	var i FindReviewByDedupRow
 	err := row.Scan(
 		&i.ID,
@@ -831,10 +842,12 @@ const listReviewQueue = `-- name: ListReviewQueue :many
 SELECT r.id,
        r.event_id,
        e.ulid AS event_ulid,
+       e.public_url AS event_url,
        r.original_payload,
        r.normalized_payload,
        r.warnings,
        r.source_id,
+       COALESCE(NULLIF(s.feed_url, ''), s.base_url, '') AS source_url,
        r.source_external_id,
        r.dedup_hash,
        r.event_start_time,
@@ -851,6 +864,8 @@ SELECT r.id,
        dup.ulid AS duplicate_of_event_ulid
   FROM event_review_queue r
   JOIN events e ON e.id = r.event_id
+  -- Legacy review rows can contain non-UUID source identifiers.
+  LEFT JOIN sources s ON s.id::text = r.source_id
   LEFT JOIN events dup ON dup.id = r.duplicate_of_event_id
  WHERE ($1::text IS NULL OR r.status = $1)
    AND ($2::integer IS NULL OR r.id > $2)
@@ -868,10 +883,12 @@ type ListReviewQueueRow struct {
 	ID                   int32              `json:"id"`
 	EventID              pgtype.UUID        `json:"event_id"`
 	EventUlid            string             `json:"event_ulid"`
+	EventUrl             pgtype.Text        `json:"event_url"`
 	OriginalPayload      []byte             `json:"original_payload"`
 	NormalizedPayload    []byte             `json:"normalized_payload"`
 	Warnings             []byte             `json:"warnings"`
 	SourceID             pgtype.Text        `json:"source_id"`
+	SourceUrl            string             `json:"source_url"`
 	SourceExternalID     pgtype.Text        `json:"source_external_id"`
 	DedupHash            pgtype.Text        `json:"dedup_hash"`
 	EventStartTime       pgtype.Timestamptz `json:"event_start_time"`
@@ -902,10 +919,12 @@ func (q *Queries) ListReviewQueue(ctx context.Context, arg ListReviewQueueParams
 			&i.ID,
 			&i.EventID,
 			&i.EventUlid,
+			&i.EventUrl,
 			&i.OriginalPayload,
 			&i.NormalizedPayload,
 			&i.Warnings,
 			&i.SourceID,
+			&i.SourceUrl,
 			&i.SourceExternalID,
 			&i.DedupHash,
 			&i.EventStartTime,
@@ -959,7 +978,7 @@ UPDATE event_review_queue
        updated_at = NOW()
  WHERE id = $3
    AND status = 'pending'
-RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day, synthetic
 `
 
 type RejectReviewParams struct {
@@ -992,6 +1011,7 @@ func (q *Queries) RejectReview(ctx context.Context, arg RejectReviewParams) (Eve
 		&i.UpdatedAt,
 		&i.DuplicateOfEventID,
 		&i.EventAllDay,
+		&i.Synthetic,
 	)
 	return i, err
 }
@@ -1079,7 +1099,7 @@ UPDATE event_review_queue
                                END,
        updated_at = NOW()
  WHERE id = $7
-RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day
+RETURNING id, event_id, original_payload, normalized_payload, warnings, source_id, source_external_id, dedup_hash, event_start_time, event_end_time, status, reviewed_by, reviewed_at, review_notes, rejection_reason, created_at, updated_at, duplicate_of_event_id, event_all_day, synthetic
 `
 
 type UpdateReviewQueueEntryParams struct {
@@ -1126,6 +1146,7 @@ func (q *Queries) UpdateReviewQueueEntry(ctx context.Context, arg UpdateReviewQu
 		&i.UpdatedAt,
 		&i.DuplicateOfEventID,
 		&i.EventAllDay,
+		&i.Synthetic,
 	)
 	return i, err
 }
@@ -1150,6 +1171,7 @@ func (q *Queries) UpdateReviewWarnings(ctx context.Context, arg UpdateReviewWarn
 
 const upsertReviewQueueEntry = `-- name: UpsertReviewQueueEntry :one
 INSERT INTO event_review_queue (
+  synthetic,
   event_id,
   original_payload,
   normalized_payload,
@@ -1162,6 +1184,7 @@ INSERT INTO event_review_queue (
   event_all_day,
   duplicate_of_event_id
 ) VALUES (
+  (SELECT e.synthetic FROM events e WHERE e.id = $1::uuid),
   $1,
   $2,
   $3,

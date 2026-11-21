@@ -153,7 +153,7 @@ func (s *IngestService) createEventCore(
 		}
 		sourceID = resolvedID
 
-		existing, err := s.repo.FindByFeedEventID(ctx, validated.Source.URL, validated.Source.EventID)
+		existing, err := s.repo.FindByFeedEventID(ctx, validated.Source.URL, validated.Source.EventID, validated.Synthetic)
 		if err == nil && existing != nil {
 			if opts.SkipDedupAutoMerge {
 				// Warn instead of auto-merging
@@ -191,11 +191,13 @@ func (s *IngestService) createEventCore(
 
 					incomingVenue := NormalizeVenueKey(validated)
 					oldHashFromIncoming := BuildDedupHash(DedupCandidate{
+						Synthetic: validated.Synthetic,
 						Name:      existing.Name,
 						VenueID:   incomingVenue,
 						StartDate: validated.StartDate,
 					})
 					newHash := BuildDedupHash(DedupCandidate{
+						Synthetic: validated.Synthetic,
 						Name:      name,
 						VenueID:   incomingVenue,
 						StartDate: validated.StartDate,
@@ -239,13 +241,14 @@ func (s *IngestService) createEventCore(
 
 	// ── 4. Layer 1 dedup hash ────────────────────────────────────────────────
 	dedupHash := BuildDedupHash(DedupCandidate{
+		Synthetic: validated.Synthetic,
 		Name:      validated.Name,
 		VenueID:   NormalizeVenueKey(validated),
 		StartDate: validated.StartDate,
 	})
 	isDuplicate := false
 	if dedupHash != "" {
-		existing, err := s.repo.FindByDedupHash(ctx, dedupHash)
+		existing, err := s.repo.FindByDedupHash(ctx, dedupHash, validated.Synthetic)
 		if err == nil && existing != nil {
 			if opts.SkipDedupAutoMerge {
 				// Consolidation path: check if the match is one of the excluded ULIDs
@@ -318,7 +321,7 @@ func (s *IngestService) createEventCore(
 			sourceIDPtr = &sourceID
 		}
 
-		existingReview, err := s.repo.FindReviewByDedup(ctx, sourceIDPtr, externalID, dedupHashPtr)
+		existingReview, err := s.repo.FindReviewByDedup(ctx, sourceIDPtr, externalID, dedupHashPtr, validated.Synthetic)
 		if err != nil && err != ErrNotFound {
 			return nil, fmt.Errorf("check existing review: %w", err)
 		}
@@ -400,6 +403,7 @@ func (s *IngestService) createEventCore(
 		eventDomain = "arts"
 	}
 	params := EventCreateParams{
+		Synthetic:           validated.Synthetic,
 		ULID:                ulidValue,
 		Name:                validated.Name,
 		Description:         validated.Description,
@@ -599,7 +603,7 @@ func (s *IngestService) createEventCore(
 		if parseErr == nil {
 			dedupWarnings, nearDuplicateCandidates, seriesCompanion, _ = s.runDedupWarningChecks(
 				ctx, dbRepo, validated.Name, *params.PrimaryVenueID, startTime,
-				ulidValue, opts.ExcludeFromNearDup, s.dedupConfig.NearDuplicateThreshold,
+				ulidValue, opts.ExcludeFromNearDup, s.dedupConfig.NearDuplicateThreshold, validated.Synthetic,
 			)
 			warnings = append(warnings, dedupWarnings...)
 			if warningsRequireReview(dedupWarnings, suppressedWarnings) {
@@ -783,6 +787,7 @@ func (s *IngestService) createEventCore(
 	if validated.Recurrence != nil {
 		rec := validated.Recurrence
 		seriesResult, err := dbRepo.UpsertEventSeries(ctx, UpsertEventSeriesParams{
+			Synthetic:   validated.Synthetic,
 			ExternalKey: rec.ExternalKey,
 			Name:        rec.SeriesName,
 			SeriesStart: rec.SeriesStart,
@@ -959,6 +964,7 @@ func (s *IngestService) runDedupWarningChecks(
 	ulid string,
 	excludeULIDs []string,
 	nearDupThreshold float64,
+	synthetic bool,
 ) (warnings []ValidationWarning, candidates []NearDuplicateCandidate, seriesCompanion *CrossWeekCompanion, err error) {
 	if venueID == "" || nearDupThreshold <= 0 {
 		return nil, nil, nil, nil
@@ -970,7 +976,7 @@ func (s *IngestService) runDedupWarningChecks(
 		excludeSet[u] = struct{}{}
 	}
 
-	candidates, err = txRepo.FindNearDuplicates(ctx, venueID, startTime, name, nearDupThreshold)
+	candidates, err = txRepo.FindNearDuplicates(ctx, venueID, startTime, name, nearDupThreshold, synthetic)
 	if err != nil {
 		s.logger.Warn().Err(err).
 			Str("event_name", name).
@@ -1024,6 +1030,7 @@ func (s *IngestService) runDedupWarningChecks(
 	}
 
 	companion, err := txRepo.FindSeriesCompanion(ctx, SeriesCompanionQuery{
+		Synthetic:      synthetic,
 		NormalizedName: name,
 		VenueID:        venueID,
 		StartTime:      startTime,

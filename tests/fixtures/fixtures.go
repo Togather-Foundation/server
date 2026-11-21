@@ -154,16 +154,16 @@ var SampleOrganizers = []Organizer{
 	{Name: "Fuckup Nights Toronto", URL: "https://fuckupnights.com/toronto"},
 }
 
-// SampleSources contains source configurations based on event_mocks.csv.
+// SampleSources uses reserved fixture hosts for the platforms in event_mocks.csv.
 var SampleSources = []Source{
-	{Name: "Eventbrite", BaseURL: "https://www.eventbrite.ca", Type: "JSONLD"},
-	{Name: "Meetup", BaseURL: "https://www.meetup.com", Type: "JSONLD"},
-	{Name: "Lu.ma", BaseURL: "https://lu.ma", Type: "ICS"},
-	{Name: "Squarespace", BaseURL: "https://www.squarespace.com", Type: "API"},
-	{Name: "BlogTO", BaseURL: "https://www.blogto.com", Type: "API"},
-	{Name: "Exclaim", BaseURL: "https://exclaim.ca", Type: "API"},
-	{Name: "Showpass", BaseURL: "https://www.showpass.com", Type: "API"},
-	{Name: "Google Calendar", BaseURL: "https://calendar.google.com", Type: "ICS"},
+	{Name: "Eventbrite", BaseURL: "https://eventbrite.fixtures.togather.invalid", Type: "JSONLD"},
+	{Name: "Meetup", BaseURL: "https://meetup.fixtures.togather.invalid", Type: "JSONLD"},
+	{Name: "Lu.ma", BaseURL: "https://luma.fixtures.togather.invalid", Type: "ICS"},
+	{Name: "Squarespace", BaseURL: "https://squarespace.fixtures.togather.invalid", Type: "API"},
+	{Name: "BlogTO", BaseURL: "https://blogto.fixtures.togather.invalid", Type: "API"},
+	{Name: "Exclaim", BaseURL: "https://exclaim.fixtures.togather.invalid", Type: "API"},
+	{Name: "Showpass", BaseURL: "https://showpass.fixtures.togather.invalid", Type: "API"},
+	{Name: "Google Calendar", BaseURL: "https://google-calendar.fixtures.togather.invalid", Type: "ICS"},
 }
 
 // EventCategory represents different event types for generating varied test data.
@@ -270,6 +270,7 @@ func (g *Generator) RandomEventInput() events.EventInput {
 	endTime := startTime.Add(time.Duration(g.rng.Intn(4)+1) * time.Hour)
 
 	return events.EventInput{
+		Synthetic:   true,
 		Name:        g.generateTitle(category),
 		Description: g.generateDescription(category),
 		StartDate:   startTime.Format(time.RFC3339),
@@ -306,6 +307,7 @@ func (g *Generator) MinimalEventInput() events.EventInput {
 	startTime := g.randomFutureTime()
 
 	return events.EventInput{
+		Synthetic: true,
 		Name:      fmt.Sprintf("Minimal Event %d", g.rng.Intn(1000)),
 		StartDate: startTime.Format(time.RFC3339),
 		Location: &events.PlaceInput{
@@ -321,13 +323,14 @@ func (g *Generator) VirtualEventInput() events.EventInput {
 	endTime := startTime.Add(time.Duration(g.rng.Intn(2)+1) * time.Hour)
 
 	return events.EventInput{
+		Synthetic:   true,
 		Name:        g.generateTitle(category) + " (Online)",
 		Description: g.generateDescription(category),
 		StartDate:   startTime.Format(time.RFC3339),
 		EndDate:     endTime.Format(time.RFC3339),
 		VirtualLocation: &events.VirtualLocationInput{
 			Type: "VirtualLocation",
-			URL:  fmt.Sprintf("https://zoom.us/j/%d", g.rng.Intn(10000000000)),
+			URL:  fmt.Sprintf("https://zoom.fixtures.togather.invalid/j/%d", g.rng.Intn(10000000000)),
 			Name: "Zoom Meeting",
 		},
 		Keywords: g.randomKeywords(category),
@@ -341,7 +344,7 @@ func (g *Generator) HybridEventInput() events.EventInput {
 	input.Name = input.Name + " (Hybrid)"
 	input.VirtualLocation = &events.VirtualLocationInput{
 		Type: "VirtualLocation",
-		URL:  fmt.Sprintf("https://meet.google.com/%s", g.randomMeetingCode()),
+		URL:  fmt.Sprintf("https://google-meet.fixtures.togather.invalid/%s", g.randomMeetingCode()),
 		Name: "Google Meet",
 	}
 	return input
@@ -378,6 +381,7 @@ func (g *Generator) EventInputNeedsReview() events.EventInput {
 	startTime := g.randomFutureTime()
 
 	return events.EventInput{
+		Synthetic: true,
 		Name:      fmt.Sprintf("Sparse Event %d", g.rng.Intn(1000)),
 		StartDate: startTime.Format(time.RFC3339),
 		Location: &events.PlaceInput{
@@ -414,6 +418,7 @@ func (g *Generator) DuplicateCandidates() (events.EventInput, events.EventInput)
 	first := g.RandomEventInput()
 
 	second := events.EventInput{
+		Synthetic:   true,
 		Name:        first.Name,
 		Description: "Different description but same core details",
 		StartDate:   first.StartDate,
@@ -423,7 +428,7 @@ func (g *Generator) DuplicateCandidates() (events.EventInput, events.EventInput)
 			Name: "Different Organizer",
 		},
 		Source: &events.SourceInput{
-			URL:     "https://different-source.com/events/999",
+			URL:     "https://different-source.fixtures.togather.invalid/events/999",
 			EventID: "diff-evt-999",
 			Name:    "Different Source",
 		},
@@ -583,6 +588,7 @@ func (g *Generator) EventInputReversedDates() events.EventInput {
 	endTime := time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 2, 0, 0, 0, startTime.Location())
 
 	return events.EventInput{
+		Synthetic:   true,
 		Name:        g.generateTitle(category) + " (Late Night)",
 		Description: g.generateDescription(category) + " Event runs past midnight.",
 		StartDate:   startTime.Format(time.RFC3339),
@@ -623,6 +629,7 @@ func (g *Generator) EventInputMissingVenue() events.EventInput {
 	source := g.randomSource()
 
 	return events.EventInput{
+		Synthetic:   true,
 		Name:        g.generateTitle(category) + " (Online)",
 		Description: g.generateDescription(category),
 		StartDate:   startTime.Format(time.RFC3339),
@@ -630,7 +637,7 @@ func (g *Generator) EventInputMissingVenue() events.EventInput {
 		// No Location field at all - should trigger review
 		VirtualLocation: &events.VirtualLocationInput{
 			Type: "VirtualLocation",
-			URL:  fmt.Sprintf("https://zoom.us/j/%d", g.rng.Intn(10000000000)),
+			URL:  fmt.Sprintf("https://zoom.fixtures.togather.invalid/j/%d", g.rng.Intn(10000000000)),
 			Name: "Zoom Meeting",
 		},
 		Organizer: &events.OrganizationInput{
@@ -662,6 +669,7 @@ func (g *Generator) EventInputLikelyDuplicate() events.EventInput {
 	eventName := "Weekly Community Meetup at " + venue.Name
 
 	return events.EventInput{
+		Synthetic:   true,
 		Name:        eventName,
 		Description: "Regular weekly community gathering. Bring your friends!",
 		StartDate:   startTime.Format(time.RFC3339),
@@ -702,7 +710,8 @@ func (g *Generator) EventInputMultipleWarnings() events.EventInput {
 	startTime := g.randomFutureTime()
 
 	return events.EventInput{
-		Name: g.generateTitle(category),
+		Synthetic: true,
+		Name:      g.generateTitle(category),
 		// Missing: Description (should trigger review)
 		StartDate: startTime.Format("2006-01-02"), // Date only, no time (should trigger warning)
 		// Missing: EndDate (should be inferred)
@@ -872,6 +881,7 @@ func (b *RecurringSeriesBuilder) WithOccurrences(occs []events.OccurrenceInput) 
 // Build constructs and returns the final EventInput.
 func (b *RecurringSeriesBuilder) Build() events.EventInput {
 	result := events.EventInput{
+		Synthetic:   true,
 		Name:        b.name,
 		Description: b.description,
 		Location: &events.PlaceInput{
@@ -927,17 +937,6 @@ type ReviewEventScenario struct {
 	Events      []events.EventInput // Events in this scenario group
 }
 
-// reviewSources returns source configs for staging-safe review fixture events.
-// These are separate from SampleSources to guarantee no blocked domains appear.
-var reviewSources = []Source{
-	{Name: "Eventbrite", BaseURL: "https://www.eventbrite.ca", Type: "JSONLD"},
-	{Name: "Meetup", BaseURL: "https://www.meetup.com", Type: "JSONLD"},
-	{Name: "Lu.ma", BaseURL: "https://lu.ma", Type: "ICS"},
-	{Name: "BlogTO", BaseURL: "https://www.blogto.com", Type: "API"},
-	{Name: "Showpass", BaseURL: "https://www.showpass.com", Type: "API"},
-	{Name: "Google Calendar", BaseURL: "https://calendar.google.com", Type: "ICS"},
-}
-
 // unsplashImage returns a deterministic Unsplash placeholder URL for a given slot index.
 func unsplashImage(slot int) string {
 	ids := []string{
@@ -967,8 +966,8 @@ func reviewSourceURL(src Source, fixtureID string) (string, string) {
 // queue workflows. Each ReviewEventScenario is a "scenario group" — events that belong
 // together (e.g. a base series + its near-duplicate).
 //
-// All URLs use real-looking domains (eventbrite.ca, meetup.com, lu.ma, etc.) and
-// image URLs use images.unsplash.com.
+// Listing and source URLs use the same reserved platform hosts as the other
+// synthetic fixtures.
 func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	// Fixed anchor time: next Monday at 10:00 AM (deterministic regardless of when tests run).
 	// We compute the upcoming Monday from the generator's baseTime.
@@ -980,12 +979,12 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 
 	week := 7 * 24 * time.Hour
 
-	eb := reviewSources[0]     // Eventbrite
-	mu := reviewSources[1]     // Meetup
-	luma := reviewSources[2]   // Lu.ma
-	blogto := reviewSources[3] // BlogTO
-	sp := reviewSources[4]     // Showpass
-	gcal := reviewSources[5]   // Google Calendar
+	eb := SampleSources[0]     // Eventbrite
+	mu := SampleSources[1]     // Meetup
+	luma := SampleSources[2]   // Lu.ma
+	blogto := SampleSources[4] // BlogTO
+	sp := SampleSources[6]     // Showpass
+	gcal := SampleSources[7]   // Google Calendar
 
 	yoga := TorontoVenues[0]       // The Tranzac
 	bookclub := TorontoVenues[6]   // Snakes and Lattes
@@ -1052,6 +1051,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	// scraper (Lu.ma). Same venue + same date + name similarity ~0.65 → near-dup
 	// detection fires → companion pair created → merge duplicate path.
 	rs01NewOcc := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-01 Weekly Yoga",
 		Description: "Weekly yoga session at The Tranzac. Drop-in friendly, all levels welcome.",
 		StartDate:   anchor.Format(time.RFC3339),
@@ -1087,6 +1087,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	rs02NearDupStart := anchor.Add(2*24*time.Hour + 4*time.Hour) // Tuesday 2pm
 	rs02NearDupEnd := rs02NearDupStart.Add(2 * time.Hour)        // Tuesday 4pm
 	rs02NearDup := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-02 Book Club — Tuesday Night",
 		Description: "Book club gathering at Snakes and Lattes — same evening, different listing source.",
 		StartDate:   rs02NearDupStart.Format(time.RFC3339),
@@ -1116,6 +1117,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	rs03Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
 
 	rs03AddlOcc := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-03 Tech Meetup — Additional Occurrence",
 		Description: "Extra session added mid-cycle. Add-occurrence resolves review; lifecycle stays pending.",
 		StartDate:   anchor.Add(3 * week).Add(1 * 24 * time.Hour).Format(time.RFC3339),
@@ -1145,6 +1147,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	rs04Base.License = "https://creativecommons.org/publicdomain/zero/1.0/"
 
 	rs04NewOcc := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-04 Art Walk — New Occurrence",
 		Description: "Additional art walk session added to draft series.",
 		StartDate:   anchor.Add(3 * week).Add(5 * 24 * time.Hour).Format(time.RFC3339),
@@ -1179,6 +1182,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	overlapStart := wsAnchor.Add(30 * time.Minute)
 	overlapEnd := overlapStart.Add(2 * time.Hour)
 	rs05Overlap := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-05 Workshop — Overlapping Occurrence",
 		Description: "A second listing of the same workshop session — overlaps existing occurrence.",
 		StartDate:   overlapStart.Format(time.RFC3339),
@@ -1200,6 +1204,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	jazzStart := time.Date(jazzDate.Year(), jazzDate.Month(), jazzDate.Day(), 23, 0, 0, 0, jazzDate.Location())
 	jazzEnd := time.Date(jazzDate.Year(), jazzDate.Month(), jazzDate.Day(), 2, 0, 0, 0, jazzDate.Location())
 	rs06Jazz := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-06 Jazz Night — Reversed Dates Late Show",
 		Description: "Late-night jazz at Dovercourt House. Sets from 11pm until 2am. Cash bar. 19+.",
 		StartDate:   jazzStart.Format(time.RFC3339),
@@ -1231,6 +1236,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	// Not-a-duplicate: similar name (similarity ~0.71) + same venue + same day → triggers dedup,
 	// but admin should approve with record_not_duplicates (it's a social dance, not the class).
 	rs07NotDup := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-07 Dance Class — Wednesday Social",
 		Description: "A different dance event at The Baby G — social dancing, not the structured class series.",
 		StartDate:   anchor.Add(2*24*time.Hour + 4*time.Hour).Format(time.RFC3339), // same day, later time
@@ -1250,6 +1256,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	potluckStart := anchor.Add(6 * 24 * time.Hour) // Sunday
 	potluckEnd := potluckStart.Add(3 * time.Hour)
 	rs08Original := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-08 Community Potluck — Original",
 		Description: "Bring a dish to share! Community gathering at InterAccess. Family-friendly.",
 		StartDate:   potluckStart.Format(time.RFC3339),
@@ -1263,6 +1270,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
 	rs08ExactDup := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-08 Community Potluck — Exact Duplicate",
 		Description: "Bring a dish to share! Community gathering at InterAccess. Family-friendly.",
 		StartDate:   potluckStart.Format(time.RFC3339),
@@ -1282,6 +1290,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	filmStart := anchor.Add(1 * 24 * time.Hour) // Tuesday
 	filmEnd := filmStart.Add(6 * time.Hour)     // Long duration (6h) for 8 sessions
 	rs09Film := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-09 Film Screening (8 sessions) — Multi-Session",
 		Description: "Eight consecutive short-film screenings with Q&A breaks between each session. Doors at 10am.",
 		StartDate:   filmStart.Format(time.RFC3339),
@@ -1301,6 +1310,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	choirAStart := anchor.Add(3 * 24 * time.Hour) // Wednesday 10am
 	choirAEnd := choirAStart.Add(2 * time.Hour)   // Wednesday 12pm
 	rs10SourceA := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-10 Choir Rehearsal — Source A",
 		Description: "Weekly choir rehearsal at Bampot Tea House. All voice types welcome.",
 		StartDate:   choirAStart.Format(time.RFC3339),
@@ -1321,6 +1331,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	choirBStart := anchor.Add(3*24*time.Hour + 4*time.Hour) // Wednesday 2pm
 	choirBEnd := choirBStart.Add(2 * time.Hour)             // Wednesday 4pm
 	rs10SourceB := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-10 Choir Rehearsal — Source B",
 		Description: "Choir rehearsal — same ensemble, listed from a second source.",
 		StartDate:   choirBStart.Format(time.RFC3339),
@@ -1347,6 +1358,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 	mon7_2pmEnd := mon7_2pm.Add(2 * time.Hour)
 
 	rs11Mon10am := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-11 Pottery Studio — Morning Session",
 		Description: "Hand-building pottery session. All clay and tools provided. Beginners welcome.",
 		StartDate:   mon10am.Format(time.RFC3339),
@@ -1360,6 +1372,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
 	rs11Mon2pm := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-11 Pottery Studio — Afternoon Session",
 		Description: "Afternoon hand-building pottery session. All clay and tools provided.",
 		StartDate:   mon2pm.Format(time.RFC3339),
@@ -1373,6 +1386,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
 	rs11Mon7_10am := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-11 Pottery Studio — Morning Session",
 		Description: "Hand-building pottery session, next Monday morning. All clay and tools provided.",
 		StartDate:   mon7_10am.Format(time.RFC3339),
@@ -1386,6 +1400,7 @@ func (g *Generator) BatchReviewEventInputs() []ReviewEventScenario {
 		License:     "https://creativecommons.org/publicdomain/zero/1.0/",
 	}
 	rs11Mon7_2pm := events.EventInput{
+		Synthetic:   true,
 		Name:        "RS-11 Pottery Studio — Afternoon Session",
 		Description: "Afternoon pottery session, next Monday. All clay and tools provided.",
 		StartDate:   mon7_2pm.Format(time.RFC3339),

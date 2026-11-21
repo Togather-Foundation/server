@@ -156,6 +156,68 @@ func (q *Queries) DeleteOccurrencesByEventULID(ctx context.Context, eventUlid st
 	return err
 }
 
+const findEventByDedupHash = `-- name: FindEventByDedupHash :one
+SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
+       e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+       e.virtual_url, e.image_url, e.public_url, e.synthetic, e.keywords, e.created_at, e.updated_at
+  FROM events e
+ WHERE e.dedup_hash = $1
+   AND e.synthetic = $2
+ LIMIT 1
+`
+
+type FindEventByDedupHashParams struct {
+	DedupHash pgtype.Text `json:"dedup_hash"`
+	Synthetic bool        `json:"synthetic"`
+}
+
+type FindEventByDedupHashRow struct {
+	ID             pgtype.UUID        `json:"id"`
+	Ulid           string             `json:"ulid"`
+	Name           string             `json:"name"`
+	Description    pgtype.Text        `json:"description"`
+	LicenseUrl     string             `json:"license_url"`
+	LicenseStatus  string             `json:"license_status"`
+	DedupHash      pgtype.Text        `json:"dedup_hash"`
+	LifecycleState string             `json:"lifecycle_state"`
+	EventDomain    pgtype.Text        `json:"event_domain"`
+	OrganizerID    pgtype.UUID        `json:"organizer_id"`
+	PrimaryVenueID pgtype.UUID        `json:"primary_venue_id"`
+	VirtualUrl     pgtype.Text        `json:"virtual_url"`
+	ImageUrl       pgtype.Text        `json:"image_url"`
+	PublicUrl      pgtype.Text        `json:"public_url"`
+	Synthetic      bool               `json:"synthetic"`
+	Keywords       []string           `json:"keywords"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+func (q *Queries) FindEventByDedupHash(ctx context.Context, arg FindEventByDedupHashParams) (FindEventByDedupHashRow, error) {
+	row := q.db.QueryRow(ctx, findEventByDedupHash, arg.DedupHash, arg.Synthetic)
+	var i FindEventByDedupHashRow
+	err := row.Scan(
+		&i.ID,
+		&i.Ulid,
+		&i.Name,
+		&i.Description,
+		&i.LicenseUrl,
+		&i.LicenseStatus,
+		&i.DedupHash,
+		&i.LifecycleState,
+		&i.EventDomain,
+		&i.OrganizerID,
+		&i.PrimaryVenueID,
+		&i.VirtualUrl,
+		&i.ImageUrl,
+		&i.PublicUrl,
+		&i.Synthetic,
+		&i.Keywords,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getEventByULID = `-- name: GetEventByULID :many
 
 SELECT e.id,
@@ -705,7 +767,7 @@ UPDATE events
        dedup_hash = COALESCE($9, dedup_hash),
        updated_at = now()
  WHERE ulid = $1
-RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, dedup_hash, created_at, updated_at
+RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, synthetic, keywords, dedup_hash, created_at, updated_at
 `
 
 type UpdateEventParams struct {
@@ -729,6 +791,7 @@ type UpdateEventRow struct {
 	EventDomain    pgtype.Text        `json:"event_domain"`
 	ImageUrl       pgtype.Text        `json:"image_url"`
 	PublicUrl      pgtype.Text        `json:"public_url"`
+	Synthetic      bool               `json:"synthetic"`
 	Keywords       []string           `json:"keywords"`
 	DedupHash      pgtype.Text        `json:"dedup_hash"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
@@ -757,6 +820,7 @@ func (q *Queries) UpdateEvent(ctx context.Context, arg UpdateEventParams) (Updat
 		&i.EventDomain,
 		&i.ImageUrl,
 		&i.PublicUrl,
+		&i.Synthetic,
 		&i.Keywords,
 		&i.DedupHash,
 		&i.CreatedAt,

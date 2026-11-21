@@ -25,6 +25,15 @@ SELECT e.id,
  WHERE e.ulid = $1
   ORDER BY o.start_time ASC;
 
+-- name: FindEventByDedupHash :one
+SELECT e.id, e.ulid, e.name, e.description, e.license_url, e.license_status, e.dedup_hash,
+       e.lifecycle_state, e.event_domain, e.organizer_id, e.primary_venue_id,
+       e.virtual_url, e.image_url, e.public_url, e.synthetic, e.keywords, e.created_at, e.updated_at
+  FROM events e
+ WHERE e.dedup_hash = sqlc.arg('dedup_hash')
+   AND e.synthetic = sqlc.arg('synthetic')
+ LIMIT 1;
+
 -- name: GetIdempotencyKey :one
 SELECT key,
        request_hash,
@@ -50,7 +59,7 @@ UPDATE events
        dedup_hash = COALESCE(sqlc.narg('dedup_hash'), dedup_hash),
        updated_at = now()
  WHERE ulid = $1
-RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, keywords, dedup_hash, created_at, updated_at;
+RETURNING id, ulid, name, description, lifecycle_state, event_domain, image_url, public_url, synthetic, keywords, dedup_hash, created_at, updated_at;
 
 -- name: UpdateOccurrenceDatesByEventULID :exec
 -- Update the start_time, end_time, and is_all_day of all occurrences for an event

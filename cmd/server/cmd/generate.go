@@ -23,7 +23,8 @@ var generateCmd = &cobra.Command{
 	Long: `Generate realistic test events using built-in fixtures.
 
 This command creates valid event JSON that can be ingested into the SEL server.
-Events are based on real Toronto venues and include proper Schema.org structure.
+Events carry the sel:synthetic marker and use reserved hosts for invented links.
+Physical venue fixtures are based on Toronto locations.
 
 Examples:
   # Generate one event to stdout

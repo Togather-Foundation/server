@@ -77,7 +77,7 @@ func (m *MockRepository) CreateSource(ctx context.Context, params events.EventSo
 	return args.Error(0)
 }
 
-func (m *MockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*events.Event, error) {
+func (m *MockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string, synthetic bool) (*events.Event, error) {
 	args := m.Called(ctx, feedURL, sourceEventID)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -85,8 +85,8 @@ func (m *MockRepository) FindByFeedEventID(ctx context.Context, feedURL string, 
 	return args.Get(0).(*events.Event), args.Error(1)
 }
 
-func (m *MockRepository) FindByDedupHash(ctx context.Context, dedupHash string) (*events.Event, error) {
-	args := m.Called(ctx, dedupHash)
+func (m *MockRepository) FindByDedupHash(ctx context.Context, dedupHash string, synthetic bool) (*events.Event, error) {
+	args := m.Called(ctx, dedupHash, synthetic)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -234,7 +234,7 @@ func (m *MockRepository) GetPublicTombstoneByEventULID(ctx context.Context, even
 	return m.GetTombstoneByEventULID(ctx, eventULID)
 }
 
-func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*events.ReviewQueueEntry, error) {
+func (m *MockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string, synthetic bool) (*events.ReviewQueueEntry, error) {
 	args := m.Called(ctx, sourceID, externalID, dedupHash)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
@@ -337,7 +337,7 @@ func (m *MockRepository) GetSourceTrustLevelBySourceID(ctx context.Context, sour
 	return args.Int(0), args.Error(1)
 }
 
-func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+func (m *MockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64, synthetic bool) ([]events.NearDuplicateCandidate, error) {
 	args := m.Called(ctx, venueID, startTime, eventName, threshold)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)

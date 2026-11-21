@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/stretchr/testify/require"
 )
 
 var reviewTestMu sync.Mutex
@@ -200,6 +201,54 @@ func TestReviewQueueJSON(t *testing.T) {
 	if items[0].EventName != "Weekly Jazz Night" {
 		t.Errorf("unexpected event name: %s", items[0].EventName)
 	}
+}
+
+func TestReviewQueueURLs(t *testing.T) {
+	t.Parallel()
+	reviewTestMu.Lock()
+	t.Cleanup(func() { reviewTestMu.Unlock() })
+
+	const eventURL = "https://venue.example.org/events/jazz-in-the-park"
+	const sourceURL = "https://venue.example.org/calendar"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"items": []map[string]any{
+				{"id": 42, "eventId": "evt_abc123", "eventName": "Jazz in the Park", "eventUrl": eventURL, "sourceUrl": sourceURL},
+				{"id": 43, "eventId": "evt_def456", "eventName": "Summer Arts Expo"},
+			},
+		})
+	}))
+	defer server.Close()
+
+	origServer, origToken := reviewServerURL, reviewTokenFlag
+	defer func() { reviewServerURL, reviewTokenFlag = origServer, origToken }()
+	reviewServerURL, reviewTokenFlag = server.URL, "test-jwt"
+
+	t.Run("table", func(t *testing.T) {
+		cmd, buf, _ := setupReviewCmd(t, []string{"review", "queue"})
+		require.NoError(t, cmd.Execute())
+		require.Contains(t, buf.String(), "EVENT URL")
+		require.Contains(t, buf.String(), "SOURCE URL")
+		require.Contains(t, buf.String(), eventURL)
+		require.Contains(t, buf.String(), sourceURL)
+		rows := strings.Split(strings.TrimSpace(buf.String()), "\n")
+		require.Len(t, rows, 3)
+		lastRow := strings.Fields(rows[2])
+		require.GreaterOrEqual(t, len(lastRow), 2)
+		require.Equal(t, []string{"-", "-"}, lastRow[len(lastRow)-2:])
+	})
+	t.Run("json", func(t *testing.T) {
+		cmd, buf, _ := setupReviewCmd(t, []string{"review", "queue", "--json"})
+		require.NoError(t, cmd.Execute())
+		var items []map[string]any
+		require.NoError(t, json.Unmarshal(buf.Bytes(), &items))
+		require.Len(t, items, 2)
+		require.Equal(t, eventURL, items[0]["eventUrl"])
+		require.Equal(t, sourceURL, items[0]["sourceUrl"])
+		require.NotContains(t, items[1], "eventUrl")
+		require.NotContains(t, items[1], "sourceUrl")
+	})
 }
 
 func TestReviewQueueEmpty(t *testing.T) {

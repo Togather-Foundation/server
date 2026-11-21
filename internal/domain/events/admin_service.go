@@ -1709,7 +1709,7 @@ func (s *AdminService) Consolidate(ctx context.Context, params ConsolidateParams
 				canonicalEvent.Occurrences[0].StartTime,
 				canonicalEvent.ULID,
 				params.Retire,
-				s.ingestService.dedupConfig.NearDuplicateThreshold,
+				s.ingestService.dedupConfig.NearDuplicateThreshold, canonicalEvent.Synthetic,
 			)
 			if dedupErr != nil {
 				s.logger.Warn().Err(dedupErr).
@@ -2103,6 +2103,9 @@ func buildReviewPayload(event *Event) map[string]any {
 	m := map[string]any{
 		"name": event.Name,
 	}
+	if event.Synthetic {
+		m["sel:synthetic"] = true
+	}
 	if event.Description != "" {
 		m["description"] = event.Description
 	}
@@ -2195,6 +2198,7 @@ func (s *AdminService) consolidateSyncSeriesCompanion(
 	}
 
 	companion, err := txRepo.FindSeriesCompanion(ctx, SeriesCompanionQuery{
+		Synthetic:      canonical.Synthetic,
 		NormalizedName: canonical.Name,
 		VenueID:        *canonical.PrimaryVenueID,
 		StartTime:      canonical.Occurrences[0].StartTime,

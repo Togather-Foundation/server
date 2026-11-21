@@ -137,6 +137,7 @@ type Event struct {
 	DeletionReason        pgtype.Text        `json:"deletion_reason"`
 	// First time the event entered a public lifecycle state (NULL = never public). Maintained by trg_events_first_published_at; gates public tombstones and change-feed delete rows.
 	FirstPublishedAt pgtype.Timestamptz `json:"first_published_at"`
+	Synthetic        bool               `json:"synthetic"`
 }
 
 type EventChange struct {
@@ -203,25 +204,27 @@ type EventReviewQueue struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	DuplicateOfEventID pgtype.UUID        `json:"duplicate_of_event_id"`
 	EventAllDay        bool               `json:"event_all_day"`
+	Synthetic          bool               `json:"synthetic"`
 }
 
 type EventSeries struct {
-	ID               pgtype.UUID          `json:"id"`
-	Name             string               `json:"name"`
-	Description      pgtype.Text          `json:"description"`
-	SeriesStartDate  pgtype.Date          `json:"series_start_date"`
-	SeriesEndDate    pgtype.Date          `json:"series_end_date"`
-	ScheduleTimezone string               `json:"schedule_timezone"`
-	DefaultVenueID   pgtype.UUID          `json:"default_venue_id"`
-	DefaultStartTime pgtype.Time          `json:"default_start_time"`
-	DefaultEndTime   pgtype.Time          `json:"default_end_time"`
-	OrganizerID      pgtype.UUID          `json:"organizer_id"`
-	CreatedAt        pgtype.Timestamptz   `json:"created_at"`
-	UpdatedAt        pgtype.Timestamptz   `json:"updated_at"`
-	Rrule            pgtype.Text          `json:"rrule"`
-	Exdates          []pgtype.Timestamptz `json:"exdates"`
-	Rdates           []pgtype.Timestamptz `json:"rdates"`
-	ExternalKey      pgtype.Text          `json:"external_key"`
+	ID                   pgtype.UUID          `json:"id"`
+	Name                 string               `json:"name"`
+	Description          pgtype.Text          `json:"description"`
+	SeriesStartDate      pgtype.Date          `json:"series_start_date"`
+	SeriesEndDate        pgtype.Date          `json:"series_end_date"`
+	ScheduleTimezone     string               `json:"schedule_timezone"`
+	DefaultVenueID       pgtype.UUID          `json:"default_venue_id"`
+	DefaultStartTime     pgtype.Time          `json:"default_start_time"`
+	DefaultEndTime       pgtype.Time          `json:"default_end_time"`
+	OrganizerID          pgtype.UUID          `json:"organizer_id"`
+	CreatedAt            pgtype.Timestamptz   `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz   `json:"updated_at"`
+	Rrule                pgtype.Text          `json:"rrule"`
+	Exdates              []pgtype.Timestamptz `json:"exdates"`
+	Rdates               []pgtype.Timestamptz `json:"rdates"`
+	ExternalKey          pgtype.Text          `json:"external_key"`
+	SyntheticExternalKey pgtype.Text          `json:"synthetic_external_key"`
 }
 
 type EventSource struct {

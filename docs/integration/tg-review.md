@@ -155,9 +155,15 @@ server review queue --output /tmp/queue.json --json
 
 **Plain table output (default):**
 ```
-ID  ULID       NAME               START DATE  WARNINGS      OCC  AGE
-42  evt_abc123 Astro Coffee       2026-03-15  potential_dup  3   5d
+ID  ULID       NAME               START DATE  WARNINGS      OCC  AGE  EVENT URL                              SOURCE URL
+42  evt_abc123 Astro Coffee       2026-03-15  potential_dup  3   5d   https://calendar.invalid/events/coffee  https://calendar.invalid/feed
 ```
+
+`EVENT URL` is the event's original listing page; `SOURCE URL` is the resolved
+source's canonical feed URL (or its legacy base URL). Missing URLs display as
+`-`. JSON output carries these as optional `eventUrl` and `sourceUrl` fields.
+Public and admin event lists expose the listing page as optional `url`; the
+canonical SEL identifier remains `@id`.
 
 **Grouped output (`--group-by name`):**
 ```

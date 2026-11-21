@@ -69,6 +69,9 @@ Example tombstone in change feed:
 
 Each change includes the full event snapshot at that point in time, avoiding N+1 queries for consumers processing the feed. The snapshot uses standard JSON-LD serialization with `@context`.
 
+Snapshots of synthetic events include `"sel:synthetic": true` for create,
+update, and delete actions. Ordinary event snapshots omit the property.
+
 ## Federation Sync Protocol
 
 The sync protocol allows trusted peer nodes to submit events while preserving their original URIs and origin metadata. This prevents URI collisions and maintains global identifier stability.
@@ -106,16 +109,19 @@ Every federated event stores `origin_node_id` referencing the node that original
 The sync endpoint uses `ON CONFLICT (federation_uri)` upsert semantics:
 
 ```sql
-INSERT INTO events (federation_uri, name, start_date, ...)
+INSERT INTO events (federation_uri, name, synthetic, ...)
 VALUES ($1, $2, $3, ...)
-ON CONFLICT (federation_uri) 
-DO UPDATE SET 
+ON CONFLICT (federation_uri) WHERE federation_uri IS NOT NULL
+DO UPDATE SET
   name = EXCLUDED.name,
-  start_date = EXCLUDED.start_date,
   ...
+WHERE events.synthetic = EXCLUDED.synthetic
 ```
 
-Submitting the same event multiple times (with the same full URI) updates the existing record rather than creating duplicates. This makes sync operations safe to retry.
+Submitting the same full URI and synthetic classification updates the existing
+record. A different classification for an existing URI returns HTTP 400
+`Invalid JSON-LD` and rolls back the transaction, including writes for the
+event's location and organizer.
 
 ### Authentication
 
@@ -186,6 +192,10 @@ Incoming events are validated as proper JSON-LD with required schema.org propert
 - `location` (Place or VirtualLocation)
 
 The `@id` field is extracted and stored as `federation_uri`. Malformed JSON-LD returns HTTP 400 with RFC 7807 error details.
+
+`sel:synthetic` is an optional JSON boolean. `true` marks the event as synthetic.
+`false` and omission both classify it as an ordinary event. `null`, strings,
+and other non-boolean values return HTTP 400 `Invalid JSON-LD`.
 
 Example validation error:
 

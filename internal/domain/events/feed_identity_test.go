@@ -197,7 +197,7 @@ func TestIngest_FeedIdentity_RenameUpdatesOneEvent(t *testing.T) {
 	if stored.DedupHash == firstHash {
 		t.Error("dedup_hash was not rewritten by the rename")
 	}
-	if _, ok := repo.eventsByDedupHash[wantHash]; !ok {
+	if _, ok := repo.eventsByDedupHash[dedupIdentity{wantHash, stored.Synthetic}]; !ok {
 		t.Error("recomputed dedup hash is not indexed for Layer-1 dedupe")
 	}
 
@@ -312,7 +312,7 @@ func TestIngest_FeedIdentity_RenameWithVenueMoveKeepsHash(t *testing.T) {
 	if stored.DedupHash != storedHash {
 		t.Errorf("dedup_hash = %q, want it left untouched at %q (venue differs)", stored.DedupHash, storedHash)
 	}
-	if _, ok := repo.eventsByDedupHash[storedHash]; !ok {
+	if _, ok := repo.eventsByDedupHash[dedupIdentity{storedHash, stored.Synthetic}]; !ok {
 		t.Error("the unchanged dedup hash is no longer indexed for Layer-1 dedupe")
 	}
 }
@@ -339,7 +339,7 @@ func TestFindByFeedEventID_EmptyArguments(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := repo.FindByFeedEventID(context.Background(), tt.feedURL, tt.sourceEventID)
+			got, err := repo.FindByFeedEventID(context.Background(), tt.feedURL, tt.sourceEventID, false)
 			if err != ErrNotFound {
 				t.Errorf("FindByFeedEventID() error = %v, want ErrNotFound", err)
 			}

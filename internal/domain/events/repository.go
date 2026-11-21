@@ -71,6 +71,7 @@ type RecurrenceRule struct {
 }
 
 type Event struct {
+	Synthetic           bool
 	ID                  string
 	ULID                string
 	Name                string
@@ -128,10 +129,11 @@ type Occurrence struct {
 }
 
 // UpsertEventSeriesParams are the parameters for creating or updating an event_series row.
-// ExternalKey is the upsert key (unique): "<source_name>:<master_uid>".
+// ExternalKey is the upsert key ("<source_name>:<master_uid>") within the synthetic or ordinary namespace.
 // On conflict, series_start_date, series_end_date, rrule, exdates, rdates, and
 // schedule_timezone are updated to reflect the latest feed state.
 type UpsertEventSeriesParams struct {
+	Synthetic   bool
 	ExternalKey string
 	Name        string
 	SeriesStart time.Time  // truncated to local date via TZID
@@ -149,6 +151,7 @@ type UpsertEventSeriesResult struct {
 }
 
 type EventCreateParams struct {
+	Synthetic           bool
 	ULID                string
 	Name                string
 	Description         string
@@ -304,15 +307,16 @@ type Repository interface {
 	// rows without its events becoming duplicates. URLs are normalised before
 	// storage (query and fragment stripped) and compared with trailing slashes
 	// ignored on both sides (see feed_identity.go).
-	FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*Event, error)
-	FindByDedupHash(ctx context.Context, dedupHash string) (*Event, error)
+	FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string, synthetic bool) (*Event, error)
+	// FindByDedupHash matches events with the same synthetic classification.
+	FindByDedupHash(ctx context.Context, dedupHash string, synthetic bool) (*Event, error)
 	GetOrCreateSource(ctx context.Context, params SourceLookupParams) (string, error)
 	GetIdempotencyKey(ctx context.Context, key string) (*IdempotencyKey, error)
 	InsertIdempotencyKey(ctx context.Context, params IdempotencyKeyCreateParams) (*IdempotencyKey, error)
 	UpdateIdempotencyKeyEvent(ctx context.Context, key string, eventID string, eventULID string) error
 	UpsertPlace(ctx context.Context, params PlaceCreateParams) (*PlaceRecord, error)
-	// UpsertEventSeries creates or updates an event_series row identified by ExternalKey.
-	// On conflict (same ExternalKey), series_start_date, series_end_date, rrule, exdates,
+	// UpsertEventSeries creates or updates an event_series row identified by ExternalKey and Synthetic.
+	// On conflict, series_start_date, series_end_date, rrule, exdates,
 	// rdates, and schedule_timezone are updated. Returns the UUID of the series row.
 	// Must be called inside a transaction (uses the same db connection as the caller).
 	UpsertEventSeries(ctx context.Context, params UpsertEventSeriesParams) (*UpsertEventSeriesResult, error)
@@ -335,7 +339,7 @@ type Repository interface {
 	GetSourceTrustLevelBySourceID(ctx context.Context, sourceID string) (int, error)
 
 	// Near-duplicate detection (Layer 2)
-	FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]NearDuplicateCandidate, error)
+	FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64, synthetic bool) ([]NearDuplicateCandidate, error)
 
 	// Cross-week series detection: checks for an existing published/pending event
 	// at the same venue with the same normalized name and a start date 7–21 days
@@ -452,7 +456,7 @@ type Repository interface {
 	DismissPendingReviewsByEventULIDs(ctx context.Context, eventULIDs []string, reviewedBy string) ([]int, error)
 
 	// Review Queue operations
-	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*ReviewQueueEntry, error)
+	FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string, synthetic bool) (*ReviewQueueEntry, error)
 	// CreateReviewQueueEntry is the non-atomic insert primitive. Deprecated for
 	// production callers: use UpsertReviewRow, which serialises on the events
 	// row and merges into an existing UNIQUE row instead of returning 23505.
@@ -610,10 +614,12 @@ type ReviewQueueEntry struct {
 	ID                   int
 	EventID              string // UUID (events.id)
 	EventULID            string // ULID (events.ulid) - populated via JOIN
+	EventURL             string
 	OriginalPayload      []byte
 	NormalizedPayload    []byte
 	Warnings             []byte
 	SourceID             *string
+	SourceURL            string
 	SourceExternalID     *string
 	DedupHash            *string
 	DuplicateOfEventID   *string // UUID of the event this is a duplicate of (for merge workflow)

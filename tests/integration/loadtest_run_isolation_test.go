@@ -53,6 +53,20 @@ func TestLoadtestRunIsolation_RealRunnerOwnershipPreflight(t *testing.T) {
 	require.Zero(t, countLoadtestRows(t, env, "events"))
 }
 
+func TestLoadtestRunIsolation_LegacyManifestCleanup(t *testing.T) {
+	env := setupTestEnv(t)
+	key := insertAPIKey(t, env, "legacy-loadtest-runner")
+	run := newLoadtestManifest(t, env)
+	run.Version = 1
+	run.SourceURL = run.TargetURL + "/_loadtest/runs/" + run.RunID
+	created := createLoadtestFixture(t, env, key, run, 1)
+	require.False(t, created.Input.Synthetic)
+	assertLoadtestPublicAttribution(t, env, created)
+	report, err := postgres.NewEventRepository(env.Pool, zerolog.Nop()).CleanupLoadtestRun(env.Context, run, true)
+	require.NoError(t, err)
+	require.Equal(t, []string{created.ID}, report.EventIDs)
+}
+
 // Exercise the public ingestion and provenance routes rather than assuming that
 // either the key's source or the submitted source became the stored attribution.
 func TestLoadtestRunIsolation_ConcurrentRunsAndCleanup(t *testing.T) {
@@ -203,6 +217,10 @@ func TestLoadtestRunIsolation_RefusesAmbiguousOwnership(t *testing.T) {
 		}},
 		{"altered signed payload", func(t *testing.T, env *testEnv, owned, real loadtestCreatedEvent, foreign string) {
 			_, err := env.Pool.Exec(env.Context, `UPDATE event_sources SET payload=jsonb_set(payload,'{description}','"not the signed fixture"') WHERE event_id=$1`, owned.ID)
+			require.NoError(t, err)
+		}},
+		{"altered canonical marker", func(t *testing.T, env *testEnv, owned, real loadtestCreatedEvent, foreign string) {
+			_, err := env.Pool.Exec(env.Context, `UPDATE events SET synthetic=false WHERE id=$1`, owned.ID)
 			require.NoError(t, err)
 		}},
 		{"external review reference", func(t *testing.T, env *testEnv, owned, real loadtestCreatedEvent, foreign string) {
@@ -393,9 +411,10 @@ func assertLoadtestPublicAttribution(t *testing.T, env *testEnv, created loadtes
 	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	var payload struct {
-		Name    string `json:"name"`
-		URL     string `json:"url"`
-		Sources []struct {
+		Name      string `json:"name"`
+		URL       string `json:"url"`
+		Synthetic bool   `json:"sel:synthetic"`
+		Sources   []struct {
 			URL     string `json:"url"`
 			EventID string `json:"sel:sourceEventId"`
 		} `json:"sources"`
@@ -403,6 +422,7 @@ func assertLoadtestPublicAttribution(t *testing.T, env *testEnv, created loadtes
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&payload))
 	require.Equal(t, created.Input.Name, payload.Name)
 	require.Equal(t, created.Input.URL, payload.URL)
+	require.Equal(t, created.Input.Synthetic, payload.Synthetic)
 	require.Len(t, payload.Sources, 1)
 	require.Equal(t, created.Input.Source.URL, payload.Sources[0].URL)
 	require.Equal(t, created.Input.Source.EventID, payload.Sources[0].EventID)

@@ -6,11 +6,53 @@ import (
 	"time"
 
 	"github.com/Togather-Foundation/server/internal/domain/events"
+	"github.com/Togather-Foundation/server/internal/domain/ids"
 	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
+
+func TestFindByDedupHashScopesSyntheticEvents(t *testing.T) {
+	ctx := t.Context()
+	pool, _ := setupPostgres(t, ctx)
+	repo := NewEventRepository(pool, zerolog.Nop())
+	venue := insertPlace(t, ctx, pool, "Jazz Hall", "Toronto", "ON")
+	hash := events.BuildDedupHash(events.DedupCandidate{Synthetic: true, Name: "Jazz Night"})
+	require.Equal(t, hash, events.BuildDedupHash(events.DedupCandidate{Name: "synthetic\x00Jazz Night"}))
+
+	insert := func(synthetic bool) string {
+		t.Helper()
+		ulid, err := ids.NewULID()
+		require.NoError(t, err)
+		// PostgreSQL text disallows NUL. Store the shared digest to exercise
+		// lookup independently of input handling and event creation.
+		_, err = pool.Exec(ctx, `
+INSERT INTO events (ulid, name, dedup_hash, synthetic, primary_venue_id)
+VALUES ($1, $2, $3, $4, $5)`, ulid, "Jazz Night", hash, synthetic, venue.ID)
+		require.NoError(t, err)
+		return ulid
+	}
+	assertMatch := func(synthetic bool, ulid string) {
+		t.Helper()
+		found, err := repo.FindByDedupHash(ctx, hash, synthetic)
+		require.NoError(t, err)
+		require.Equal(t, ulid, found.ULID)
+		require.Equal(t, synthetic, found.Synthetic)
+		require.Equal(t, &venue.ID, found.PrimaryVenueID)
+		require.Nil(t, found.OrganizerID)
+	}
+
+	syntheticULID := insert(true)
+	missing, err := repo.FindByDedupHash(ctx, hash, false)
+	require.ErrorIs(t, err, events.ErrNotFound)
+	require.Nil(t, missing)
+	assertMatch(true, syntheticULID)
+
+	ordinaryULID := insert(false)
+	assertMatch(false, ordinaryULID)
+	assertMatch(true, syntheticULID)
+}
 
 func TestEventRepositoryListFiltersAndPagination(t *testing.T) {
 	ctx := context.Background()

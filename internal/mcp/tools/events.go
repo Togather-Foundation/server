@@ -466,6 +466,12 @@ func buildListItem(event events.Event, baseURL string, placeRes PlaceResolver, o
 	if uri := buildEventURI(baseURL, event.ULID); uri != "" {
 		item["@id"] = uri
 	}
+	if event.PublicURL != "" {
+		item["url"] = event.PublicURL
+	}
+	if event.Synthetic {
+		item["sel:synthetic"] = true
+	}
 
 	if len(event.Occurrences) > 0 {
 		occ := event.Occurrences[0]
@@ -529,6 +535,9 @@ func buildEventPayload(ctx context.Context, event *events.Event, baseURL string,
 
 	if event.PublicURL != "" {
 		payload["url"] = event.PublicURL
+	}
+	if event.Synthetic {
+		payload["sel:synthetic"] = true
 	}
 
 	location := resolveEventLocation(ctx, *event, baseURL, placeRes, logger)

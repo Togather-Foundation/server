@@ -66,6 +66,8 @@ type reviewQueueBase struct {
 type reviewQueueItem struct {
 	reviewQueueBase
 	EventName       string     `json:"eventName,omitempty"`
+	EventURL        string     `json:"eventUrl,omitempty"`
+	SourceURL       string     `json:"sourceUrl,omitempty"`
 	EventStartTime  *time.Time `json:"eventStartTime,omitempty"`
 	EventEndTime    *time.Time `json:"eventEndTime,omitempty"`
 	OccurrenceCount int        `json:"occurrenceCount,omitempty"`
@@ -669,6 +671,8 @@ func buildReviewQueueItem(ctx context.Context, repo events.Repository, review ev
 	item := reviewQueueItem{
 		reviewQueueBase: populateReviewQueueBase(review, warnings),
 		EventName:       eventName,
+		EventURL:        review.EventURL,
+		SourceURL:       review.SourceURL,
 	}
 
 	if review.EventEndTime != nil {

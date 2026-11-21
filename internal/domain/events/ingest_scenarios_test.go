@@ -212,6 +212,31 @@ func TestScenario_S3_SourceExternalID(t *testing.T) {
 // --- S4: Exact Dedup Hash Scenarios ---
 
 func TestScenario_S4_DedupHash(t *testing.T) {
+	t.Run("ordinary input cannot match a synthetic event with the same hash", func(t *testing.T) {
+		repo := NewMockRepository()
+		service := newTestService(repo)
+		input := completeEventInput("Jazz Night")
+		input.Synthetic = true
+		synthetic, err := service.Ingest(t.Context(), input)
+		if err != nil {
+			t.Fatalf("ingest synthetic event: %v", err)
+		}
+
+		input.Name = "synthetic\x00" + input.Name
+		input.Synthetic = false
+		input.Description = "Description from ordinary input"
+		ordinary, err := service.Ingest(t.Context(), input)
+		if err != nil {
+			t.Fatalf("ingest ordinary event: %v", err)
+		}
+		if ordinary.IsDuplicate || ordinary.Event.ULID == synthetic.Event.ULID || ordinary.Event.Synthetic {
+			t.Fatalf("ordinary input matched the synthetic event: %+v", ordinary)
+		}
+		if ordinary.Event.DedupHash != synthetic.Event.DedupHash {
+			t.Fatalf("fixture hashes differ: ordinary %q, synthetic %q", ordinary.Event.DedupHash, synthetic.Event.DedupHash)
+		}
+	})
+
 	t.Run("S4.1_exact_match_auto_merge_higher_trust", func(t *testing.T) {
 		// Given: Event E1 exists with hash, description "Old desc", no image, trust=5.
 		// Action: New event with same hash, description "New desc", image URL, trust=7.

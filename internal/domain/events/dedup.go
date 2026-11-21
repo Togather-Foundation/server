@@ -12,6 +12,7 @@ import (
 // hashing regardless of how the venue was originally represented (place ID,
 // name string, etc.).
 type DedupCandidate struct {
+	Synthetic bool
 	Name      string
 	VenueID   string // Normalized venue key — use NormalizeVenueKey() to populate
 	StartDate string
@@ -74,6 +75,11 @@ func BuildDedupHash(candidate DedupCandidate) string {
 	}
 
 	payload := strings.Join([]string{name, venue, start}, "|")
+	// Keep ordinary hashes compatible with existing rows. Lookups also match
+	// the stored synthetic flag because names can contain this prefix at ingest.
+	if candidate.Synthetic {
+		payload = "synthetic\x00" + payload
+	}
 	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:])
 }

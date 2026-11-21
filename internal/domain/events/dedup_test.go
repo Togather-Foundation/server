@@ -18,7 +18,7 @@ func TestBuildDedupHash(t *testing.T) {
 				VenueID:   "venue-123",
 				StartDate: "2024-06-15T10:00:00Z",
 			},
-			expected: "", // hash changed due to internal whitespace normalization
+			expected: "f3914fb4555eb4c1f301405cbe7f4c545f45add62c9d833a824f584777bc0b13", // Legacy hash stored on ordinary events.
 			desc:     "should generate consistent hash for same inputs",
 		},
 		{

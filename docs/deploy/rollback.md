@@ -143,6 +143,25 @@ references remain. Migration `000061` holds complete attribution/source snapshot
 for duplicate attribution consolidation; do not drop that archive after repair. Restore
 the pre-deployment snapshot if the data repair itself must be undone. Never delete provenance rows merely to make a rollback index succeed.
 
+### Synthetic event provenance (migration 000064)
+
+The previous server can still write ordinary recurrence series through the
+existing unique `event_series.external_key`. Submit synthetic events only after
+the previous server has stopped. During application rollback, the previous server
+returns existing synthetic events without their marker and can match them during
+ordinary ingest. Restore a pre-deployment snapshot if the rollback must exclude
+those records.
+
+Roll the application back before running the down migration. The down migration
+removes the provenance marker and synthetic series keys while retaining the
+events and recurrence schedules. It fails atomically if ordinary and synthetic
+pending review entries still share a source and external ID. Resolve those
+review entries or restore a pre-deployment snapshot before retrying.
+After a failed down migration, inspect the intact schema and follow the
+[dirty migration recovery procedure](migrations.md#issue-2-dirty-migration-state)
+before retrying; the migration runner can mark its version dirty even though
+the transaction rolled back.
+
 ## Troubleshooting
 
 - **No previous deployment found**: first deployment or cleared state; redeploy target version.

@@ -465,10 +465,11 @@ func (lt *LoadTester) verifyFixtureOwnership(ctx context.Context, key *string) e
 		return fmt.Errorf("fixture ownership detail is not publicly readable")
 	}
 	var detail struct {
-		ID      string `json:"@id"`
-		Name    string `json:"name"`
-		URL     string `json:"url"`
-		Sources []struct {
+		ID        string `json:"@id"`
+		Name      string `json:"name"`
+		URL       string `json:"url"`
+		Synthetic bool   `json:"sel:synthetic"`
+		Sources   []struct {
 			URL     string `json:"url"`
 			EventID string `json:"sel:sourceEventId"`
 		} `json:"sources"`
@@ -477,7 +478,7 @@ func (lt *LoadTester) verifyFixtureOwnership(ctx context.Context, key *string) e
 		return fmt.Errorf("invalid fixture ownership detail JSON")
 	}
 	gotID, err := responseEventULID(detail.ID)
-	if err != nil || gotID != eventID || detail.Name != input.Name || detail.URL != input.URL || len(detail.Sources) != 1 || events.NormalizeFeedURL(detail.Sources[0].URL) != lt.fixtureRun.SourceURL || detail.Sources[0].EventID != input.Source.EventID {
+	if err != nil || gotID != eventID || detail.Name != input.Name || detail.URL != input.URL || detail.Synthetic != input.Synthetic || len(detail.Sources) != 1 || events.NormalizeFeedURL(detail.Sources[0].URL) != lt.fixtureRun.SourceURL || detail.Sources[0].EventID != input.Source.EventID {
 		return fmt.Errorf("stored fixture ownership does not match the run")
 	}
 	return nil

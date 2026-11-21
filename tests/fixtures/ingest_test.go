@@ -25,9 +25,9 @@ type IngestMockRepository struct {
 	// Storage
 	events            map[string]*events.Event
 	idempotencyKeys   map[string]*events.IdempotencyKey
-	sources           map[string]string                          // sourceKey -> sourceID
-	eventsByFeedEvent map[string]map[string]*events.Event        // feed URL (trailing slashes trimmed) -> sourceEventID -> Event
-	eventsByDedupHash map[string]*events.Event                   // dedupHash -> Event
+	sources           map[string]string // sourceKey -> sourceID
+	eventsByFeedEvent map[feedIdentity]*events.Event
+	eventsByDedupHash map[dedupIdentity]*events.Event
 	places            map[string]*events.PlaceRecord             // key -> place
 	organizations     map[string]*events.OrganizationRecord      // key -> org
 	Occurrences       map[string][]events.OccurrenceCreateParams // eventID -> occurrences (exported for tests)
@@ -39,8 +39,8 @@ func NewIngestMockRepository() *IngestMockRepository {
 		events:            make(map[string]*events.Event),
 		idempotencyKeys:   make(map[string]*events.IdempotencyKey),
 		sources:           make(map[string]string),
-		eventsByFeedEvent: make(map[string]map[string]*events.Event),
-		eventsByDedupHash: make(map[string]*events.Event),
+		eventsByFeedEvent: make(map[feedIdentity]*events.Event),
+		eventsByDedupHash: make(map[dedupIdentity]*events.Event),
 		places:            make(map[string]*events.PlaceRecord),
 		organizations:     make(map[string]*events.OrganizationRecord),
 		Occurrences:       make(map[string][]events.OccurrenceCreateParams),
@@ -102,6 +102,7 @@ func (m *IngestMockRepository) Create(ctx context.Context, params events.EventCr
 		VirtualURL:     params.VirtualURL,
 		ImageURL:       params.ImageURL,
 		PublicURL:      params.PublicURL,
+		Synthetic:      params.Synthetic,
 		Confidence:     params.Confidence,
 		QualityScore:   params.QualityScore,
 		Keywords:       params.Keywords,
@@ -111,7 +112,7 @@ func (m *IngestMockRepository) Create(ctx context.Context, params events.EventCr
 	m.events[params.ULID] = event
 
 	if params.DedupHash != "" {
-		m.eventsByDedupHash[params.DedupHash] = event
+		m.eventsByDedupHash[dedupIdentity{params.DedupHash, params.Synthetic}] = event
 	}
 
 	return event, nil
@@ -134,14 +135,10 @@ func (m *IngestMockRepository) CreateSource(ctx context.Context, params events.E
 	// (query and fragment stripped) and compared with trailing slashes ignored
 	// on both sides.
 	if params.SourceURL != "" && params.SourceEventID != "" {
-		feedURL := feedIdentityKey(params.SourceURL)
-		if _, ok := m.eventsByFeedEvent[feedURL]; !ok {
-			m.eventsByFeedEvent[feedURL] = make(map[string]*events.Event)
-		}
 		// Find the event by ID and record it
 		for _, event := range m.events {
 			if event.ID == params.EventID {
-				m.eventsByFeedEvent[feedURL][params.SourceEventID] = event
+				m.eventsByFeedEvent[feedIdentityKey(params.SourceURL, params.SourceEventID, event.Synthetic)] = event
 				break
 			}
 		}
@@ -151,11 +148,17 @@ func (m *IngestMockRepository) CreateSource(ctx context.Context, params events.E
 
 // feedIdentityKey mirrors the repository's URL comparison rule: the normalised
 // form, except that trailing slashes are ignored.
-func feedIdentityKey(feedURL string) string {
-	return strings.TrimRight(feedURL, "/")
+type feedIdentity struct {
+	feedURL   string
+	eventID   string
+	synthetic bool
 }
 
-func (m *IngestMockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string) (*events.Event, error) {
+func feedIdentityKey(feedURL, eventID string, synthetic bool) feedIdentity {
+	return feedIdentity{strings.TrimRight(feedURL, "/"), eventID, synthetic}
+}
+
+func (m *IngestMockRepository) FindByFeedEventID(ctx context.Context, feedURL string, sourceEventID string, synthetic bool) (*events.Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -163,19 +166,22 @@ func (m *IngestMockRepository) FindByFeedEventID(ctx context.Context, feedURL st
 		return nil, events.ErrNotFound
 	}
 
-	if eventsForFeed, ok := m.eventsByFeedEvent[feedIdentityKey(feedURL)]; ok {
-		if event, ok := eventsForFeed[sourceEventID]; ok {
-			return event, nil
-		}
+	if event, ok := m.eventsByFeedEvent[feedIdentityKey(feedURL, sourceEventID, synthetic)]; ok {
+		return event, nil
 	}
 	return nil, events.ErrNotFound
 }
 
-func (m *IngestMockRepository) FindByDedupHash(ctx context.Context, dedupHash string) (*events.Event, error) {
+type dedupIdentity struct {
+	hash      string
+	synthetic bool
+}
+
+func (m *IngestMockRepository) FindByDedupHash(ctx context.Context, dedupHash string, synthetic bool) (*events.Event, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	event, ok := m.eventsByDedupHash[dedupHash]
+	event, ok := m.eventsByDedupHash[dedupIdentity{dedupHash, synthetic}]
 	if !ok {
 		return nil, events.ErrNotFound
 	}
@@ -452,7 +458,7 @@ func (m *IngestMockRepository) StripRetiredDupWarnings(ctx context.Context, revi
 }
 
 // Review Queue methods (stub implementations)
-func (m *IngestMockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string) (*events.ReviewQueueEntry, error) {
+func (m *IngestMockRepository) FindReviewByDedup(ctx context.Context, sourceID *string, externalID *string, dedupHash *string, synthetic bool) (*events.ReviewQueueEntry, error) {
 	return nil, events.ErrNotFound
 }
 
@@ -513,7 +519,7 @@ func (m *IngestMockRepository) GetSourceTrustLevelBySourceID(ctx context.Context
 	return 5, nil
 }
 
-func (m *IngestMockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64) ([]events.NearDuplicateCandidate, error) {
+func (m *IngestMockRepository) FindNearDuplicates(ctx context.Context, venueID string, startTime time.Time, eventName string, threshold float64, synthetic bool) ([]events.NearDuplicateCandidate, error) {
 	return nil, nil
 }
 
@@ -589,11 +595,7 @@ func (m *IngestMockRepository) AddExistingEvent(feedURL, sourceEventID string, e
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	key := feedIdentityKey(feedURL)
-	if _, ok := m.eventsByFeedEvent[key]; !ok {
-		m.eventsByFeedEvent[key] = make(map[string]*events.Event)
-	}
-	m.eventsByFeedEvent[key][sourceEventID] = event
+	m.eventsByFeedEvent[feedIdentityKey(feedURL, sourceEventID, event.Synthetic)] = event
 	m.events[event.ULID] = event
 }
 

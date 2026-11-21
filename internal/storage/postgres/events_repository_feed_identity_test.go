@@ -53,7 +53,7 @@ func TestFindByFeedEventID(t *testing.T) {
 		ulidValue := insertEvent(t, ctx, pool, "GW Focus Group", "Journal club", org, place, "education", "published", nil, start)
 		insertFeedAttribution(t, ctx, pool, ulidValue, sourceA, feedURL, sourceEventID)
 
-		found, err := repo.FindByFeedEventID(ctx, feedURL, sourceEventID)
+		found, err := repo.FindByFeedEventID(ctx, feedURL, sourceEventID, false)
 		require.NoError(t, err)
 		require.Equal(t, ulidValue, found.ULID)
 	})
@@ -65,11 +65,11 @@ func TestFindByFeedEventID(t *testing.T) {
 		ulidValue := insertEvent(t, ctx, pool, "Gravitational Waves: Michael Fedderke", "Research talk", org, place, "education", "published", nil, start)
 		insertFeedAttribution(t, ctx, pool, ulidValue, sourceA, otherFeed, sourceEventID)
 
-		found, err := repo.FindByFeedEventID(ctx, otherFeed, sourceEventID)
+		found, err := repo.FindByFeedEventID(ctx, otherFeed, sourceEventID, false)
 		require.NoError(t, err)
 		require.Equal(t, ulidValue, found.ULID, "the other feed must resolve to its own event")
 
-		found, err = repo.FindByFeedEventID(ctx, feedURL, sourceEventID)
+		found, err = repo.FindByFeedEventID(ctx, feedURL, sourceEventID, false)
 		require.NoError(t, err)
 		require.NotEqual(t, ulidValue, found.ULID, "a different feed must not steal this feed's event")
 	})
@@ -88,7 +88,7 @@ func TestFindByFeedEventID(t *testing.T) {
 		_, err = pool.Exec(ctx, `UPDATE events SET lifecycle_state = 'deleted', deleted_at = now() WHERE ulid = $1`, tombstonedULID)
 		require.NoError(t, err)
 
-		found, err := repo.FindByFeedEventID(ctx, tombstoneFeed, sourceEventID)
+		found, err := repo.FindByFeedEventID(ctx, tombstoneFeed, sourceEventID, false)
 		require.NoError(t, err)
 		require.Equal(t, liveULID, found.ULID, "prefers the live twin when both rows match the key")
 	})
@@ -104,7 +104,7 @@ func TestFindByFeedEventID(t *testing.T) {
 		publishedULID := insertEvent(t, ctx, pool, "Published Meetup", "Published", org, place, "community", "published", nil, start)
 		insertFeedAttribution(t, ctx, pool, publishedULID, sourceB, draftFirstFeed, sourceEventID)
 
-		found, err := repo.FindByFeedEventID(ctx, draftFirstFeed, sourceEventID)
+		found, err := repo.FindByFeedEventID(ctx, draftFirstFeed, sourceEventID, false)
 		require.NoError(t, err)
 		require.Equal(t, publishedULID, found.ULID)
 	})
@@ -119,7 +119,7 @@ func TestFindByFeedEventID(t *testing.T) {
 		ulidValue := insertEvent(t, ctx, pool, "Legacy Listing", "Stored with a slash", org, place, "community", "published", nil, start)
 		insertFeedAttribution(t, ctx, pool, ulidValue, sourceA, stored, sourceEventID)
 
-		found, err := repo.FindByFeedEventID(ctx, incoming, sourceEventID)
+		found, err := repo.FindByFeedEventID(ctx, incoming, sourceEventID, false)
 		require.NoError(t, err)
 		require.Equal(t, ulidValue, found.ULID, "a trailing slash must not make a legacy row invisible")
 	})
@@ -131,7 +131,7 @@ func TestFindByFeedEventID(t *testing.T) {
 		ulidValue := insertEvent(t, ctx, pool, "Program Feed", "Stored without a slash", org, place, "community", "published", nil, start)
 		insertFeedAttribution(t, ctx, pool, ulidValue, sourceA, stored, sourceEventID)
 
-		found, err := repo.FindByFeedEventID(ctx, incoming, sourceEventID)
+		found, err := repo.FindByFeedEventID(ctx, incoming, sourceEventID, false)
 		require.NoError(t, err)
 		require.Equal(t, ulidValue, found.ULID, "the comparison must ignore trailing slashes on both sides")
 	})
@@ -145,7 +145,7 @@ func TestFindByFeedEventID(t *testing.T) {
 		ulidValue := insertEvent(t, ctx, pool, "Listed Event", "Feed one", org, place, "community", "published", nil, start)
 		insertFeedAttribution(t, ctx, pool, ulidValue, sourceA, feedOne, sourceEventID)
 
-		_, err := repo.FindByFeedEventID(ctx, feedTwo, sourceEventID)
+		_, err := repo.FindByFeedEventID(ctx, feedTwo, sourceEventID, false)
 		require.ErrorIs(t, err, events.ErrNotFound)
 	})
 
@@ -200,17 +200,17 @@ SELECT count(*), max(source_url) FROM event_sources WHERE event_id = $1 AND sour
 		}
 
 		for i := 0; i < 3; i++ {
-			found, err := repo.FindByFeedEventID(ctx, tiedFeed, sourceEventID)
+			found, err := repo.FindByFeedEventID(ctx, tiedFeed, sourceEventID, false)
 			require.NoError(t, err)
 			require.Equal(t, wantULID, found.ULID, "tie-break must not depend on row order")
 		}
 	})
 
 	t.Run("empty arguments return ErrNotFound", func(t *testing.T) {
-		_, err := repo.FindByFeedEventID(ctx, "", sourceEventID)
+		_, err := repo.FindByFeedEventID(ctx, "", sourceEventID, false)
 		require.ErrorIs(t, err, events.ErrNotFound)
 
-		_, err = repo.FindByFeedEventID(ctx, feedURL, "")
+		_, err = repo.FindByFeedEventID(ctx, feedURL, "", false)
 		require.ErrorIs(t, err, events.ErrNotFound)
 	})
 }

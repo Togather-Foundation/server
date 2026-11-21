@@ -24,6 +24,7 @@ import (
 func (e *EventInput) UnmarshalJSON(data []byte) error {
 	// Use a raw intermediate to handle flexible fields
 	type rawEvent struct {
+		Synthetic                     json.RawMessage       `json:"sel:synthetic,omitempty"`
 		Context                       json.RawMessage       `json:"@context,omitempty"`
 		ID                            string                `json:"@id,omitempty"`
 		Type                          string                `json:"@type,omitempty"`
@@ -63,6 +64,15 @@ func (e *EventInput) UnmarshalJSON(data []byte) error {
 	e.Context = raw.Context
 	e.ID = raw.ID
 	e.Type = raw.Type
+	// A missing marker means false. Explicit null is outside the Boolean contract.
+	switch string(raw.Synthetic) {
+	case "", "false":
+		e.Synthetic = false
+	case "true":
+		e.Synthetic = true
+	default:
+		return fmt.Errorf("sel:synthetic must be a boolean")
+	}
 	e.Name = raw.Name
 	e.Description = raw.Description
 	e.StartDate = raw.StartDate

@@ -116,11 +116,12 @@ INSERT INTO events (
   version,
   created_at,
   updated_at,
-  published_at
+  published_at,
+  synthetic
 ) VALUES (
   $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
   $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-  $21, $22, $23, $24, $25, $26, $27, $28
+  $21, $22, $23, $24, $25, $26, $27, $28, $29
 )
 ON CONFLICT (federation_uri)
 WHERE federation_uri IS NOT NULL
@@ -145,6 +146,7 @@ DO UPDATE SET
   quality_score = EXCLUDED.quality_score,
   version = events.version + 1,
   updated_at = now()
+WHERE events.synthetic = EXCLUDED.synthetic
 RETURNING *;
 
 -- name: CreateFederatedEventOccurrence :exec

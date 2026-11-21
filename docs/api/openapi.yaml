@@ -1501,6 +1501,8 @@ paths:
           in: query
           description: |
             When `true`, each change embeds the full JSON-LD event snapshot.
+            Snapshots preserve `sel:synthetic: true` for generated events and
+            omit the marker for ordinary events.
             Snapshots are only attached to create/update rows that were recorded
             while the event was publicly visible and whose event is still public
             (rows with no recorded lifecycle fall back to the current event
@@ -3800,6 +3802,12 @@ paths:
         original URI as the canonical `@id`. Requires an API key. Supports
         idempotent retries via `Idempotency-Key`.
 
+        The optional `sel:synthetic` field must be a Boolean; absence means
+        false. Null and other types return `400`. The marker is retained on
+        import and emitted only when true. An existing canonical URI cannot
+        change its synthetic classification; a conflicting import returns
+        `400` without changing the event or its nested entities.
+
         **Node binding (fail closed).** The authenticated API key must be bound
         to a federation node (`api_keys.federation_node_id`, set at key creation
         with `federation_node_id`). Unbound keys are rejected with `403`. The
@@ -3831,10 +3839,18 @@ paths:
             schema:
               type: object
               description: JSON-LD Event payload (`@context`, `@type`, `@id`, `name`, `startDate`, ...).
+              properties:
+                'sel:synthetic':
+                  type: boolean
+                  default: false
               additionalProperties: true
           application/json:
             schema:
               type: object
+              properties:
+                'sel:synthetic':
+                  type: boolean
+                  default: false
               additionalProperties: true
       responses:
         '200':
@@ -4029,6 +4045,9 @@ paths:
           description: Paginated list of events
           content:
             application/json:
+              schema:
+                $ref: '#/components/schemas/AdminEventListResponse'
+            application/ld+json:
               schema:
                 $ref: '#/components/schemas/AdminEventListResponse'
         '400':
@@ -5729,6 +5748,9 @@ components:
         'sel:originNode':
           type: string
           format: uri
+        'sel:synthetic':
+          type: boolean
+          description: True for explicitly marked synthetic fixture events. Omitted when false; consumers can exclude items where this field is true. This is a fixture marker, not a verification or trust rating.
         'sel:ingestedAt':
           type: string
           format: date-time
@@ -5813,6 +5835,10 @@ components:
       description: Input schema for creating or updating an event. Minimal required fields with optional Schema.org properties
       required: [name, startDate]
       properties:
+        'sel:synthetic':
+          type: boolean
+          default: false
+          description: Declares generated fixture data. Persisted on ingest and exposed as sel:synthetic when true. Omission means false; this marker does not grant permissions or bypass validation.
         name:
           type: string
           minLength: 1
@@ -5889,7 +5915,9 @@ components:
           description: |
             Series recurrence metadata for ICS-ingested recurring events.
             When present, the create pipeline upserts an event_series row using
-            external_key as the upsert key, and links this event to the series.
+            external_key and the event's synthetic marker as its identity, and
+            links this event to the series. Ordinary and synthetic inputs with
+            the same external key have separate series.
         suppress_review_warnings:
           type: [array, 'null']
           items:
@@ -5933,12 +5961,12 @@ components:
         Carries series-level recurrence metadata populated by the ICS mapper.
         All occurrences from the same master VEVENT share an identical RecurrenceInput.
         The createEventCore pipeline uses it to upsert exactly one event_series row
-        per master UID (keyed by external_key).
+        per external_key and event synthetic marker.
       required: [external_key, series_name, series_start, rrule, tzid]
       properties:
         external_key:
           type: string
-          description: Upsert key for the event_series row, formatted as "<source_name>:<master_uid>".
+          description: Series identity within the event's synthetic classification, formatted as "<source_name>:<master_uid>".
         series_name:
           type: string
           description: Master VEVENT SUMMARY (shared across all occurrences).
@@ -6167,7 +6195,7 @@ components:
 
     EventSummary:
       type: object
-      description: Compact event representation returned in list responses. For the full record (organizer, offers, provenance) fetch the individual event by @id.
+      description: Compact event representation returned in public and admin list responses, including the original event URL when available. For the full record (organizer, offers, provenance) fetch the individual event by @id.
       required: ['@id', '@type', name, startDate, location]
       properties:
         '@context':
@@ -6193,6 +6221,13 @@ components:
         description:
           type: string
           description: Event description. Present when the source provided one.
+        url:
+          type: string
+          format: uri
+          description: Original human-facing event page from events.public_url (schema.org url). Omitted when unavailable; '@id' remains the canonical SEL URI.
+        'sel:synthetic':
+          type: boolean
+          description: True for explicitly marked synthetic fixture events. Omitted when false; consumers can exclude items where this field is true. This is a fixture marker, not a verification or trust rating.
         keywords:
           type: array
           items:
@@ -6445,6 +6480,14 @@ components:
         sourceId:
           type: [string, 'null']
           description: Source identifier for provenance tracking.
+        eventUrl:
+          type: string
+          format: uri
+          description: Original event page from events.public_url. Omitted when unavailable.
+        sourceUrl:
+          type: string
+          format: uri
+          description: Canonical feed URL of the resolved source, falling back to its legacy base URL. Omitted when the source cannot be resolved or has no URL.
         eventName:
           type: string
           description: Name of the event (from original payload)

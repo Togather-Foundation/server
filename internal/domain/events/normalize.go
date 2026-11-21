@@ -22,6 +22,7 @@ type SeriesCompanionRepo interface {
 
 // SeriesCompanionQuery contains the input parameters for cross-week series detection.
 type SeriesCompanionQuery struct {
+	Synthetic      bool
 	NormalizedName string
 	VenueID        string
 	StartTime      time.Time

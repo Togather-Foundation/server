@@ -173,6 +173,37 @@ func TestSyncEvent_RejectsInvalidIDScheme(t *testing.T) {
 	assert.ErrorIs(t, err, ErrMissingID)
 }
 
+func TestSyncEvent_RejectsMalformedSyntheticMarker(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value any
+	}{
+		{name: "null"},
+		{name: "string", value: "true"},
+		{name: "number", value: float64(1)},
+		{name: "object", value: map[string]any{"@value": true}},
+		{name: "array", value: []any{true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockSyncRepo{}
+			service := NewSyncService(repo, nil, zerolog.Nop())
+			result, err := service.SyncEvent(context.Background(), SyncEventParams{
+				CallerNodeID: mockNodeIDString,
+				Payload: map[string]any{
+					"@context":      "https://togather.foundation/contexts/sel/v0.1.jsonld",
+					"@type":         "Event",
+					"@id":           "https://example.org/events/123",
+					"name":          "Test Event",
+					"sel:synthetic": tc.value,
+				},
+			})
+			require.ErrorIs(t, err, ErrInvalidJSONLD)
+			require.Nil(t, result)
+			require.Zero(t, repo.eventUpserts)
+		})
+	}
+}
+
 func TestSyncEvent_WithoutURL_UsesFederationURI(t *testing.T) {
 	repo := &mockSyncRepo{}
 	service := NewSyncService(repo, nil, zerolog.Nop())
