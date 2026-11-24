@@ -2884,6 +2884,23 @@ func (r *EventRepository) DeleteOccurrencesByEventULID(ctx context.Context, even
 
 // UpdateEvent updates an event by ULID with the provided parameters
 func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params events.UpdateEventParams) (*events.Event, error) {
+	if params.DedupHash != nil && r.tx == nil {
+		txRepo, tx, err := r.BeginTx(ctx)
+		if err != nil {
+			return nil, mapDBContention(err)
+		}
+		defer func() { _ = tx.Rollback(ctx) }()
+
+		event, err := txRepo.UpdateEvent(ctx, ulid, params)
+		if err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return nil, mapDBContention(fmt.Errorf("commit event hash rewrite: %w", err))
+		}
+		return event, nil
+	}
+
 	queries := Queries{db: r.queryer()}
 
 	// Build update parameters for SQLc
@@ -2922,6 +2939,15 @@ func (r *EventRepository) UpdateEvent(ctx context.Context, ulid string, params e
 			return nil, events.ErrNotFound
 		}
 		return nil, mapDBContention(fmt.Errorf("update event: %w", err))
+	}
+	if params.DedupHash != nil {
+		err := queries.RefreshPendingReviewDedupHash(ctx, RefreshPendingReviewDedupHashParams{
+			EventID:   row.ID,
+			DedupHash: row.DedupHash,
+		})
+		if err != nil {
+			return nil, mapDBContention(fmt.Errorf("refresh pending review dedup hash: %w", err))
+		}
 	}
 
 	// Map back to domain Event (convert pgtype values to native Go types)

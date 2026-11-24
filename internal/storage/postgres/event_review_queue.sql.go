@@ -969,6 +969,27 @@ func (q *Queries) MarkUnreviewedEventsAsDeleted(ctx context.Context) error {
 	return err
 }
 
+const refreshPendingReviewDedupHash = `-- name: RefreshPendingReviewDedupHash :exec
+UPDATE event_review_queue
+   SET dedup_hash = $1,
+       updated_at = now()
+ WHERE event_id = $2
+   AND status = 'pending'
+   AND dedup_hash IS DISTINCT FROM $1
+`
+
+type RefreshPendingReviewDedupHashParams struct {
+	DedupHash pgtype.Text `json:"dedup_hash"`
+	EventID   pgtype.UUID `json:"event_id"`
+}
+
+// Run after updating the event hash in the same transaction. A separate
+// statement can see review rows committed while the event update waited.
+func (q *Queries) RefreshPendingReviewDedupHash(ctx context.Context, arg RefreshPendingReviewDedupHashParams) error {
+	_, err := q.db.Exec(ctx, refreshPendingReviewDedupHash, arg.DedupHash, arg.EventID)
+	return err
+}
+
 const rejectReview = `-- name: RejectReview :one
 UPDATE event_review_queue
    SET status = 'rejected',

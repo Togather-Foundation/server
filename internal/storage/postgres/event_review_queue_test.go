@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Togather-Foundation/server/internal/config"
 	"github.com/Togather-Foundation/server/internal/domain/events"
 	"github.com/Togather-Foundation/server/tests/testhelpers/clock"
 
@@ -70,6 +71,66 @@ func reviewQueueTestEvent(t *testing.T, ctx context.Context, repo *EventReposito
 	require.NoError(t, err)
 
 	return event.ID, startTime
+}
+
+func TestFeedRenameRefreshesPendingReviewDedupHash(t *testing.T) {
+	ctx := t.Context()
+	pool, _ := setupPostgres(t, ctx)
+	repo := NewEventRepository(pool, zerolog.Nop())
+	ingest := events.NewIngestService(repo, "https://togather.example.org", "America/Toronto", config.ValidationConfig{}, zerolog.Nop())
+	start := reviewQueueStart()
+	input := events.EventInput{
+		Name:        "Original concert",
+		Description: "A concert featuring performances by local musicians.",
+		StartDate:   start.Format(time.RFC3339),
+		Location:    &events.PlaceInput{Name: "Test Venue", AddressLocality: "Toronto", AddressRegion: "ON"},
+		Source:      &events.SourceInput{URL: "https://calendar.example.org/feed", EventID: "concert-1"},
+	}
+	first, err := ingest.Ingest(ctx, input)
+	require.NoError(t, err)
+	require.NotEmpty(t, first.Event.DedupHash)
+
+	review, err := repo.CreateReviewQueueEntry(ctx, events.ReviewQueueCreateParams{
+		EventID:           first.Event.ID,
+		OriginalPayload:   []byte(`{}`),
+		NormalizedPayload: []byte(`{}`),
+		Warnings:          []byte(`[]`),
+		DedupHash:         &first.Event.DedupHash,
+		EventStartTime:    start,
+	})
+	require.NoError(t, err)
+
+	input.Name = "Renamed concert"
+	renamed, err := ingest.Ingest(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, first.Event.ULID, renamed.Event.ULID)
+	require.NotEqual(t, first.Event.DedupHash, renamed.Event.DedupHash)
+	pending, err := repo.GetReviewQueueEntry(ctx, review.ID)
+	require.NoError(t, err)
+	require.Equal(t, "pending", pending.Status)
+	require.Equal(t, &renamed.Event.DedupHash, pending.DedupHash)
+	_, err = repo.FindReviewByDedup(ctx, nil, nil, &first.Event.DedupHash, false)
+	require.ErrorIs(t, err, events.ErrNotFound)
+
+	_, err = repo.RejectReview(ctx, review.ID, "test-reviewer", "Test decision")
+	require.NoError(t, err)
+	decided, err := repo.GetReviewQueueEntry(ctx, review.ID)
+	require.NoError(t, err)
+	input.Name = "Final concert name"
+	renamedAgain, err := ingest.Ingest(ctx, input)
+	require.NoError(t, err)
+	require.Equal(t, first.Event.ULID, renamedAgain.Event.ULID)
+	require.NotEqual(t, renamed.Event.DedupHash, renamedAgain.Event.DedupHash)
+	history, err := repo.GetReviewQueueEntry(ctx, review.ID)
+	require.NoError(t, err)
+	require.Equal(t, decided, history)
+
+	admin := events.NewAdminService(repo, true, "America/Toronto", config.ValidationConfig{}, "https://togather.example.org", zerolog.Nop())
+	editorialName := "Editorial concert name"
+	edited, err := admin.UpdateEvent(ctx, first.Event.ULID, events.UpdateEventParams{Name: &editorialName})
+	require.NoError(t, err)
+	require.Equal(t, editorialName, edited.Name)
+	require.Equal(t, renamedAgain.Event.DedupHash, edited.DedupHash)
 }
 
 func TestEventRepository_ReviewQueue(t *testing.T) {

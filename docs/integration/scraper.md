@@ -1,8 +1,8 @@
 <!-- AGENT:NAV
 purpose:~source;url;event;events;scrape;sources;server;scraper
-lines:2293
+lines:2296
 nav[90]{s,n,name,about}:
-97,2197,#Integrated Event Scraper,~source;url;event;events;scrape
+97,2200,#Integrated Event Scraper,~source;url;event;events;scrape
 112,19,##Table of Contents,~config;database;workflow;adding;agentic
 131,69,##Config Storage: YAML + Database,~source;yaml;configs;file;scrape
 140,10,###How the scraper resolves configs at runtime,~source;scraper;configs;database;file
@@ -26,72 +26,72 @@ nav[90]{s,n,name,about}:
 564,14,###Tier 1 — Colly CSS Selectors,~selectors;configured;togather;colly;css
 578,13,###Tier 2 — Headless Browser,~headless;config;selectors;tier;block
 591,54,###Tier 3 — API: GraphQL or REST JSON,~event;field;json;arrays;objects>GraphQL variant;REST JSON variant
-645,815,##Source Configuration,~event;url;source;events;date
+645,818,##Source Configuration,~event;url;source;date;events
 650,111,###Per-Feed Provenance and Source Identity,~source;feed;trust;config;url>Reconciling historical source rows
-761,87,###Event Identity: `(feed URL sourceEventId)`,~event;feed;url;source;rows
-848,10,###Minimal Tier 0 Config,~arts;tier;com;config;domain
-858,17,###Multiple Entry-Point URLs,~urls;events;com;https;multiple
-875,151,###Full Config with Tier 1 Selectors,~date;selectors;description;time;event
-901,52,####Composite Date Selectors,~date;time;selectors;start;end
-953,21,####Multi-Occurrence Consolidation,~date;row;event;events;name
-974,52,####Multi-Element Description Selectors,~description;selectors;event;class;div
-1026,40,###Quality Warnings,~selector;date;events;matched;container
-1066,38,###Full Config with Tier 2 Headless,~iframe;wait;event;events;selector
-1104,60,###BiblioCommons RSS,~events;page;max;run;feed>Coverage caps and truncation warnings
-1164,40,###Full Config with Tier 3 GraphQL,~url;template;graphql;field;allevents
-1204,51,###Full Config with Tier 3 REST,~url;field;name;json;template
-1255,8,###Required Fields,~string;name;scrape;url;api
-1263,23,###Optional Fields,~tier;event;source;url;pattern
-1286,24,###Per-source event exclusions,~pattern;event;private;exclude;url
-1310,75,###Per-source review-warning suppression,~review;event;duplicate;series;api
-1385,15,###Headless Config Fields,~wait;selector;iframe;string;css
-1400,18,###Intercept Config Fields,~field;map;events;json;response
-1418,17,###GraphQL Config Fields,~field;date;graphql;start;url
-1435,25,###REST Config Fields,~field;json;url;string;array
-1460,119,##Sitemap-Based URL Discovery,~sitemap;urls;url;pattern;detail
-1477,9,###When to use sitemap vs urls,~sitemap;urls;listing;pages;url
-1486,35,###Sitemap Config Example,~detail;event;sitemap;https;tier
-1521,10,###Sitemap Config Fields,~sitemap;urls;pattern;delay;filter
-1531,13,###Freshness Filtering,~lastmod;urls;scraped;last;max
-1544,10,###Sitemap Index Support,~index;sitemaps;child;children;fail
-1554,16,###Validation Rules,~sitemap;url;non;urls;valid
-1570,9,###Database Storage,~config;export;scrape;server;sitemap
-1579,25,##Periodic Scheduling,~schedule;sources;runs;scraper;config
-1604,63,##Scraper Global Config,~admin;scraper;api;job;scrape
-1618,9,###Admin API,~admin;api;config;key;scraper
-1627,21,###Admin SSE Push,~job;admin;events;scraper;cookie
-1648,19,###Admin UI Toggle,~scrape;admin;auto;scraper;source
-1667,46,##Database Run Tracking,~default;events;int;scrape;completed
-1673,21,###Schema,~default;int;events;text;completed
-1694,19,###Lifecycle,~scrape;completed;events;runs;started
-1713,55,##Environment Variables,~scraper;event;timeout;api;day
-1722,14,###Polling Configuration,~scraper;timeout;chain;poll;source
-1736,32,###Past-Event Filtering,~event;day;2026;dates;enddate
-1768,244,##Staging Scrape Workflow,~sources;staging;scrape;api;togather
-1774,22,###Configuration: `.deploy.conf.staging`,~key;api;admin;perf;agent
-1796,53,###Syncing Source Configs on Staging,~togather;configs;sources;sync;container
-1849,24,###Staging Database Reset,~staging;reset;sources;scripts;wipe
-1873,19,###Makefile Targets,~scrape;staging;sources;reset;add
-1892,28,###Manual Commands,~key;run;server;scrape;source
-1920,61,###Auditing a Full Dry-Run with `parse-scrape-log.py`,~scrape;sources;broken;headless;parse
-1981,31,###Verifying Results,~api;admin;events;curl;domain
-2012,76,##Adding New Sources,~source;events;sources;com;configure
-2014,30,###Quickest path: AI-assisted generation,~source;configure;skill;urls;workflow
-2044,17,###Manual path,~file;scrape;server;source;config
-2061,15,###Currently Configured Sources,~whats;events;season;com;url
-2076,12,###Currently Configured Sources,~sources;disabled;events;api;com
-2088,28,##Observability,~label;scraper;source;tier;togather
-2090,26,###Prometheus Metrics,~label;scraper;source;tier;togather
-2116,82,##Public URL Submission,~url;status;urls;admin;api
-2123,9,###Endpoint,~per;urls;api;authentication;days
-2132,14,###Request,~https;another;api;application;calendar
-2146,28,###Response,~url;status;accepted;days;duplicate
-2174,24,###Admin Endpoints,~admin;status;patch;submissions;api
-2198,89,##Agentic Scraping Workflow,~source;scraper;configs;yaml;scrape
-2203,11,###Tool comparison,~url;agent;configure;git;skill
-2214,14,###How they relate,~worker;scraper;com;configs;https
-2228,59,###Recommended workflow,~source;scrape;server;yaml;sync>After any config change;Adding new sources;Fixing or debugging a single source
-2287,7,##Security Design,~api;checks;mib;redirect;responses
+761,90,###Event Identity: `(feed URL sourceEventId)`,feed;url;sourceEventId;rename;dedup_hash;pending;review
+851,10,###Minimal Tier 0 Config,~arts;tier;com;config;domain
+861,17,###Multiple Entry-Point URLs,~urls;events;com;https;multiple
+878,151,###Full Config with Tier 1 Selectors,~date;selectors;description;time;event
+904,52,####Composite Date Selectors,~date;time;selectors;start;end
+956,21,####Multi-Occurrence Consolidation,~date;row;event;events;name
+977,52,####Multi-Element Description Selectors,~description;selectors;event;class;div
+1029,40,###Quality Warnings,~selector;date;events;matched;container
+1069,38,###Full Config with Tier 2 Headless,~iframe;wait;event;events;selector
+1107,60,###BiblioCommons RSS,~events;page;max;run;feed>Coverage caps and truncation warnings
+1167,40,###Full Config with Tier 3 GraphQL,~url;template;graphql;field;allevents
+1207,51,###Full Config with Tier 3 REST,~url;field;name;json;template
+1258,8,###Required Fields,~string;name;scrape;url;api
+1266,23,###Optional Fields,~tier;event;source;url;pattern
+1289,24,###Per-source event exclusions,~pattern;event;private;exclude;url
+1313,75,###Per-source review-warning suppression,~review;event;duplicate;series;api
+1388,15,###Headless Config Fields,~wait;selector;iframe;string;css
+1403,18,###Intercept Config Fields,~field;map;events;json;response
+1421,17,###GraphQL Config Fields,~field;date;graphql;start;url
+1438,25,###REST Config Fields,~field;json;url;string;array
+1463,119,##Sitemap-Based URL Discovery,~sitemap;urls;url;pattern;detail
+1480,9,###When to use sitemap vs urls,~sitemap;urls;listing;pages;url
+1489,35,###Sitemap Config Example,~detail;event;sitemap;https;tier
+1524,10,###Sitemap Config Fields,~sitemap;urls;pattern;delay;filter
+1534,13,###Freshness Filtering,~lastmod;urls;scraped;last;max
+1547,10,###Sitemap Index Support,~index;sitemaps;child;children;fail
+1557,16,###Validation Rules,~sitemap;url;non;urls;valid
+1573,9,###Database Storage,~config;export;scrape;server;sitemap
+1582,25,##Periodic Scheduling,~schedule;sources;runs;scraper;config
+1607,63,##Scraper Global Config,~admin;scraper;api;job;scrape
+1621,9,###Admin API,~admin;api;config;key;scraper
+1630,21,###Admin SSE Push,~job;admin;events;scraper;cookie
+1651,19,###Admin UI Toggle,~scrape;admin;auto;scraper;source
+1670,46,##Database Run Tracking,~default;events;int;scrape;completed
+1676,21,###Schema,~default;int;events;text;completed
+1697,19,###Lifecycle,~scrape;completed;events;runs;started
+1716,55,##Environment Variables,~scraper;event;timeout;api;day
+1725,14,###Polling Configuration,~scraper;timeout;chain;poll;source
+1739,32,###Past-Event Filtering,~event;day;2026;dates;enddate
+1771,244,##Staging Scrape Workflow,~sources;staging;scrape;api;togather
+1777,22,###Configuration: `.deploy.conf.staging`,~key;api;admin;perf;agent
+1799,53,###Syncing Source Configs on Staging,~togather;configs;sources;sync;container
+1852,24,###Staging Database Reset,~staging;reset;sources;scripts;wipe
+1876,19,###Makefile Targets,~scrape;staging;sources;reset;add
+1895,28,###Manual Commands,~key;run;server;scrape;source
+1923,61,###Auditing a Full Dry-Run with `parse-scrape-log.py`,~scrape;sources;broken;headless;parse
+1984,31,###Verifying Results,~api;admin;events;curl;domain
+2015,76,##Adding New Sources,~source;events;sources;com;configure
+2017,30,###Quickest path: AI-assisted generation,~source;configure;skill;urls;workflow
+2047,17,###Manual path,~file;scrape;server;source;config
+2064,15,###Currently Configured Sources,~whats;events;season;com;url
+2079,12,###Currently Configured Sources,~sources;disabled;events;api;com
+2091,28,##Observability,~label;scraper;source;tier;togather
+2093,26,###Prometheus Metrics,~label;scraper;source;tier;togather
+2119,82,##Public URL Submission,~url;status;urls;admin;api
+2126,9,###Endpoint,~per;urls;api;authentication;days
+2135,14,###Request,~https;another;api;application;calendar
+2149,28,###Response,~url;status;accepted;days;duplicate
+2177,24,###Admin Endpoints,~admin;status;patch;submissions;api
+2201,89,##Agentic Scraping Workflow,~source;scraper;configs;yaml;scrape
+2206,11,###Tool comparison,~url;agent;configure;git;skill
+2217,14,###How they relate,~worker;scraper;com;configs;https
+2231,59,###Recommended workflow,~source;scrape;server;yaml;sync>After any config change;Adding new sources;Fixing or debugging a single source
+2290,7,##Security Design,~api;checks;mib;redirect;responses
 -->
 
 # Integrated Event Scraper
@@ -811,9 +811,12 @@ for explicit reconciliation of legacy rows.
 Consequences:
 
 - **A rename in the feed renames our event.** The next observation of the same
-  `(feed URL, sourceEventId)` updates the existing event's name (and recomputes its
-  dedup hash) instead of inserting a second event. The event keeps its ULID, URL and
-  review history.
+  `(feed URL, sourceEventId)` updates the existing event's name and keeps its ULID
+  and URL. Ingest recomputes the dedup hash when the incoming venue and start date,
+  combined with the previous name, reproduce the stored hash. That rewrite refreshes
+  the pending review row's hash in the same transaction and preserves decided rows
+  as review history. Admin name edits preserve the ingest hash because an editorial
+  edit lacks the original venue key and date representation used for matching.
 - **Conflict rule:** the feed that owns the id is authoritative for the **name**. Every
   other field keeps the existing trust-based auto-merge (`description`, `image_url`,
   `public_url`, `event_domain`, `keywords`), and ingest does not move dates at all — the

@@ -41,6 +41,16 @@ SELECT r.id,
  ORDER BY r.created_at DESC
  LIMIT 1;
 
+-- name: RefreshPendingReviewDedupHash :exec
+-- Run after updating the event hash in the same transaction. A separate
+-- statement can see review rows committed while the event update waited.
+UPDATE event_review_queue
+   SET dedup_hash = sqlc.arg('dedup_hash'),
+       updated_at = now()
+ WHERE event_id = sqlc.arg('event_id')
+   AND status = 'pending'
+   AND dedup_hash IS DISTINCT FROM sqlc.arg('dedup_hash');
+
 -- name: CreateReviewQueueEntry :one
 -- Create new review queue entry
 INSERT INTO event_review_queue (

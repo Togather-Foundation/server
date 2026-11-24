@@ -908,7 +908,8 @@ func (s *AdminService) UpdateEvent(ctx context.Context, ulid string, params Upda
 		return existing, nil
 	}
 
-	// Persist updates via repository
+	// Keep the ingest identity hash for editorial changes. A feed observation
+	// can prove the original venue and start date used to build that hash.
 	updated, err := s.repo.UpdateEvent(ctx, ulid, params)
 	if err != nil {
 		return nil, fmt.Errorf("update event: %w", err)

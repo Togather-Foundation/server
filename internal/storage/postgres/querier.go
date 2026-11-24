@@ -386,6 +386,9 @@ type Querier interface {
 	MoveSourceRepairAttribution(ctx context.Context, arg MoveSourceRepairAttributionParams) (int64, error)
 	MoveSourceRepairChanges(ctx context.Context, arg MoveSourceRepairChangesParams) (int64, error)
 	MoveSourceRepairFields(ctx context.Context, arg MoveSourceRepairFieldsParams) (int64, error)
+	// Run after updating the event hash in the same transaction. A separate
+	// statement can see review rows committed while the event update waited.
+	RefreshPendingReviewDedupHash(ctx context.Context, arg RefreshPendingReviewDedupHashParams) error
 	// Mark review as rejected
 	RejectReview(ctx context.Context, arg RejectReviewParams) (EventReviewQueue, error)
 	RelabelCanonicalSource(ctx context.Context, arg RelabelCanonicalSourceParams) error

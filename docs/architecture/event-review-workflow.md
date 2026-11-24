@@ -1,8 +1,8 @@
 <!-- AGENT:NAV
 purpose:~review;event;pending;admin;events;companion;duplicate;queue
-lines:764
+lines:768
 nav[20]{s,n,name,about}:
-27,738,#Event Review Workflow,~review;event;pending;admin;events
+27,742,#Event Review Workflow,~review;event;pending;admin;events
 29,4,##Overview,~review;admin;queue;approval;auditable
 33,14,##Problem Statement,~event;events;dates;errors;reversed
 47,88,##Design Rationale,~event;review;decision;events;auto>Why No Auto-Merge for Consolidated Events?;Why Expire Reviews After Event Passes?;Why Two Warning Codes (Not Three)?;Why Compare Original vs Normalized in Validation?;Why Hybrid Status (pending_review + queue)?;Why Always Auto-Fix Reversed Dates?;Why Store in Both `events` and `event_review_queue`?;Why Track Rejection History?
@@ -14,14 +14,14 @@ nav[20]{s,n,name,about}:
 373,70,##5. Companion Dismissal Mechanisms,~companion;event;admin;duplicate;service>Mechanism 2: DismissWarningMatchByReviewID — Atomic JSONB Warning Removal;All Three Warning Types Now Handled by Atomic SQL;Which Actions Use Which Mechanism;Mechanism 1: MergeReview — Full Row Dismissal;Mechanism 3: approveStripCompanionDupWarning — Atomic SQL via DismissAllCompanionWarnings
 443,63,##6. Known Gaps and Technical Debt,~companion;admin;event;status;service>G7: Approve Companion Strip is Now Atomic;G6: All Warning Types Now Handled by Atomic SQL;G2: Recompute Logic Centralised;G8: Reject Leaves Companion Reviews Orphaned;G4: Consolidate Now Recomputes;G5: OpenAPI Spec Now Includes `dismissed`;G1: `dismissed` Status Not Covered by CleanupArchivedReviews;G3: Companion Dismissal Duplicated 4+ Times;G9: Series-Candidate Clusters Use Unguarded Transitive Closure
 506,36,##7. Lifecycle State Transitions,~review;pending;admin;deleted;cleanup
-542,54,##Database Schema,~event;text;events;review;timestamptz>`events` Lifecycle State;`event_review_queue` Table
-596,16,##Warning Codes,~event;duplicate;review;year;date
-612,13,##Near-Duplicate Cross-Linking,~event;duplicate;review;existing;row
-625,24,##Ingestion Workflow,~review;boundary;insert;pending;reject
-649,75,##Admin Review API,~review;events;admin;event;api>POST /api/v1/admin/review-queue/:id/approve;GET /api/v1/admin/review-queue;POST /api/v1/admin/events/consolidate;POST /api/v1/admin/review-queue/:id/fix;GET /api/v1/admin/review-queue/:id;POST /api/v1/admin/review-queue/:id/reject;GET /api/v1/admin/events/series-candidates
-724,16,##Cleanup & Maintenance,~event;review;delete;queue;cleanup
-740,7,##Implementation Tasks,~implementation;work;change;completed;configured
-747,18,##Related Documentation,~review;internal;events;queue;api
+542,58,##Database Schema,review;queue;pending;decided;dedup_hash>`events` Lifecycle State;`event_review_queue` Table
+600,16,##Warning Codes,~event;duplicate;review;year;date
+616,13,##Near-Duplicate Cross-Linking,~event;duplicate;review;existing;row
+629,24,##Ingestion Workflow,~review;boundary;insert;pending;reject
+653,75,##Admin Review API,~review;events;admin;event;api>POST /api/v1/admin/review-queue/:id/approve;GET /api/v1/admin/review-queue;POST /api/v1/admin/events/consolidate;POST /api/v1/admin/review-queue/:id/fix;GET /api/v1/admin/review-queue/:id;POST /api/v1/admin/review-queue/:id/reject;GET /api/v1/admin/events/series-candidates
+728,16,##Cleanup & Maintenance,~event;review;delete;queue;cleanup
+744,7,##Implementation Tasks,~implementation;work;change;completed;configured
+751,18,##Related Documentation,~review;internal;events;queue;api
 -->
 
 # Event Review Workflow
@@ -542,6 +542,10 @@ component to be pairwise connected.
 ## Database Schema
 
 ### `event_review_queue` Table
+
+A feed rename that rewrites an event's dedup hash also refreshes the pending
+review's dedup hash in the same transaction. Decided rows retain the hash
+recorded at the time of review.
 
 ```sql
 CREATE TABLE event_review_queue (

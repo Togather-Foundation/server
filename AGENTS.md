@@ -308,7 +308,7 @@ README.md,202,2026;api;admin;guide;living;interop;integration;sel
 docs/admin/
 admin-ui-overview.md,273,class;div;admin;page;api;nav;tabler;html
 docs/architecture/
-event-review-workflow.md,764,review;event;pending;admin;events;companion;duplicate;queue
+event-review-workflow.md,768,review;event;pending;admin;events;companion;duplicate;queue
 docs/contributing/
 commits.md,195,scope;change;changes;breaking;fix;add;commit;events
 docs/contributors/
@@ -323,7 +323,7 @@ docs/deploy/
 releasing.md,410,release;version;deploy;github;validation;staging;git;rollback
 docs/integration/
 kanban-review.md,93,review;reviewer;branch;ticket;default;detail;handoff;revision
-scraper.md,2293,source;url;event;events;scrape;sources;server;scraper
+scraper.md,2296,source;url;event;events;scrape;sources;server;scraper
 docs/operations/
 source-feed-reconciliation-retrospective.md,174,source;rows;run;repair;backup;cleanup;separate;identity
 skills/agentmap-maintain/
