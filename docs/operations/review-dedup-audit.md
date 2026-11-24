@@ -84,6 +84,8 @@ is sought by multiple mismatched rows. These counts can overlap. A free,
 unshared target means the audit found neither conflict at snapshot time.
 Hash mismatches are candidates for investigation. Review workflows can
 intentionally omit the hash, so the audit counts NULL review hashes separately.
+The `missing_event_hash` count covers rows with a review hash and no event hash
+to compare it with.
 
 ## Check rename errors in logs
 
@@ -92,14 +94,20 @@ available, and the database container. Run this Bash snippet on the staging
 host. Update the UTC window and retain only the containers found above.
 
 ```bash
+(
 set -euo pipefail
 since_utc=$(date -u -d '7 days ago' +%FT%TZ)
 until_utc=$(date -u +%FT%TZ)
 printf 'requested_since=%s requested_until=%s\n' "$since_utc" "$until_utc"
 
+scan_failed=0
 for container in togather-server-blue togather-server-green togather-db; do
-    docker inspect --format '{{.Name}} {{.Config.Image}} {{.Created}} {{.HostConfig.LogConfig.Type}}' "$container"
-    timeout 45s docker logs --timestamps --since "$since_utc" --until "$until_utc" "$container" 2>&1 |
+    if ! docker inspect --format '{{.Name}} {{.Config.Image}} {{.Created}} {{.HostConfig.LogConfig.Type}}' "$container"; then
+        printf 'container=%s scan_status=inspect_failed\n' "$container" >&2
+        scan_failed=1
+        continue
+    fi
+    if summary=$(timeout 45s docker logs --timestamps --since "$since_utc" --until "$until_utc" "$container" 2>&1 |
         awk '
             /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T/ {
                 if (++lines == 1) first = $1
@@ -118,13 +126,23 @@ for container in togather-server-blue togather-server-green togather-db; do
                 printf "lines=%d first=%s last=%s\n", lines, first, last
                 printf "refresh_lines=%d index_conflicts=%d refresh_collisions=%d rename_contention=%d broad_contention=%d\n",
                     refresh_lines, index_conflicts, refresh_collisions, rename_contention, broad_contention
-            }'
+            }'); then
+        printf 'container=%s scan_status=ok\n%s\n' "$container" "$summary"
+    else
+        status=$?
+        printf 'container=%s scan_status=failed exit=%d\n' "$container" "$status" >&2
+        scan_failed=1
+    fi
 done
+exit "$scan_failed"
+)
 ```
 
-Use counts from successful scans. A timeout or Docker error can leave partial
-output. Counts are matching log lines. Admin-side deadlock errors can lack
-rename context, so broad contention helps explain why a rename-specific count
-can be lower. Zero matches means the retained logs contained no matching errors
-in the requested window. Container replacement and rotation can shorten
-coverage, so report how long the audited revision was visible.
+A successful scan prints `scan_status=ok` and counts of matching log lines.
+Failures print a status and omit counts for that container. The loop checks
+the remaining containers and returns a nonzero exit status if any scan failed.
+Admin-side deadlock errors can lack rename context, so broad contention helps
+explain why a rename-specific count can be lower. The refresh marker applies
+to builds that include the pending-review hash refresh from `4c70f64`.
+Container replacement and rotation can shorten coverage, so report how long
+the audited revision was visible.
